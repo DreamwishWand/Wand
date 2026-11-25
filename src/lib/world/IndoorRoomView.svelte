@@ -5,7 +5,7 @@
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {stockToolWords} from './save-furniture-placement.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
- import {commitWorldCheckpoint} from '../ui/local-save-session';
+ import {localSaveSession,commitWorldCheckpoint} from '../ui/local-save-session';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {openCurrentItemDatabase,type ItemMasterRecord,type CompleteItemMasterRecord} from '../items/public-item-master.ts';
  import {worldArtwork} from './world-artwork.ts';
@@ -63,9 +63,9 @@
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen&&finishChoice?[finishChoice]:[])]);
  function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
- function load(next:File|null){seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
+ function load(next:File|null){const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
-  const done=(v:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);owned=parseOwnedFinishes(v);status='ready';}catch{status='error';}};
+  const done=(v:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);owned=parseOwnedFinishes(v);if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
   worker.onmessage=e=>done(e.data?.kind==='indoor-rooms'?e.data.result:null);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);worker.postMessage({command:'indoor-rooms',file:next});
  }
  function loadItems(ids:number[],art:number[]){const fresh=[...new Set(ids)].filter(id=>!asked.has(id));for(const id of fresh)asked.add(id);

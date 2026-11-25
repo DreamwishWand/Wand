@@ -147,8 +147,8 @@
    }).finally(()=>{if(epoch===recoveryEpoch)pendingWrites--;});
   }
   let writeChain:{revision:string|null;blocked:boolean}={revision:null,blocked:false};
+  function guardExternalSaveChange(){return (!$localSaveSession.worldCheckpoint||window.confirm(checkpointWords[locale][5]))&&guardSaveChange();}
   function guardSaveChange(){
-   if($localSaveSession.worldCheckpoint&&!window.confirm(checkpointWords[locale][5]))return false;
    return !timeline.snapshots.some(s=>s.edits.length)||!writeFailed&&!pendingWrites&&recovery.writable||window.confirm(recoveryText[8]);
   }
   beforeNavigate(({willUnload,cancel})=>{if(!willUnload&&!guardSaveChange())cancel();});
@@ -207,7 +207,7 @@
   }
   onMount(()=>{
     const unwatch=watchWandLanguage(v=>locale=v);
-    const unguard=registerLocalSaveChangeGuard(guardSaveChange);window.addEventListener('beforeunload',guardUnload);
+    const unguard=registerLocalSaveChangeGuard(guardExternalSaveChange);window.addEventListener('beforeunload',guardUnload);
     worker=new Worker(new URL('../../lib/world/public-world-terrain.worker.ts',import.meta.url),{type:'module'});
     worker.onmessage=e=>{
       const value=e.data;

@@ -12,7 +12,7 @@ test('checkpoint history maintains original and truncates redo when branching',(
  assert.equal(appendWorldCheckpoint(h,c,c),null);
  let many=undefined,source=a;
  for(let i=0;i<WORLD_CHECKPOINT_MAX_STEPS;i++){const n=file(i);many=appendWorldCheckpoint(many,source,n);assert.ok(many);source=n;}
- assert.equal(appendWorldCheckpoint(many,source,d),null);
+ const rolled=appendWorldCheckpoint(many,source,d);assert.ok(rolled);assert.equal(rolled.original,a);assert.equal(rolled.firstStep,1);assert.equal(rolled.files.length,WORLD_CHECKPOINT_MAX_STEPS+1);assert.equal(rolled.files.at(-1),d);
 });
 test('working copy updates the shared Save revision and preserves original',async()=>{
  const a=file(0),b=file(1),c=file(2);
@@ -23,7 +23,7 @@ test('working copy updates the shared Save revision and preserves original',asyn
  assert.equal(commitWorldCheckpoint(b,c),false);
  assert.ok(commitWorldCheckpoint(a,b));assert.ok(state.revision>revision);assert.equal(state.file,b);assert.equal(state.collectionStatus,'selected');
  assert.ok(travelWorldCheckpoint(b,-1));assert.equal(state.file,a);assert.ok(travelWorldCheckpoint(a,1));assert.equal(state.file,b);
- assert.ok(commitWorldCheckpoint(b,c));assert.equal(state.worldCheckpoint.files[0],a);assert.equal(await a.text(),'0');
+ assert.ok(commitWorldCheckpoint(b,c));assert.equal(state.worldCheckpoint.original,a);assert.equal(await a.text(),'0');
  assert.ok(closeLocalSaveFile());assert.equal(state.worldCheckpoint,undefined);
  }finally{release();unsubscribe();}
 });

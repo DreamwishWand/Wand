@@ -13,18 +13,25 @@ export interface LocalSaveSession{
 /** Explicitly applied, independently validated experimental copies. In-memory
  * only: preserve the original File and use a fresh revision for every change. */
 export interface WorldCheckpointHistory{
+ readonly original:File;
  readonly files:readonly File[];
  readonly cursor:number;
+ readonly firstStep:number;
 }
 export const WORLD_CHECKPOINT_MAX_BYTES=128*1024*1024;
 export const WORLD_CHECKPOINT_MAX_STEPS=32;
 export function appendWorldCheckpoint(history:WorldCheckpointHistory|undefined,source:File,copy:File):WorldCheckpointHistory|null{
  if(source===copy||copy.size<1||copy.size>32*1024*1024)return null;
- const base=history??{files:[source],cursor:0};
+ const base=history??{original:source,files:[source],cursor:0,firstStep:0};
  if(base.files[base.cursor]!==source)return null;
  const files=[...base.files.slice(0,base.cursor+1),copy];
- if(files.length>WORLD_CHECKPOINT_MAX_STEPS+1||files.reduce((n,f)=>n+f.size,0)>WORLD_CHECKPOINT_MAX_BYTES)return null;
- return {files,cursor:files.length-1};
+ let firstStep=base.firstStep;
+ const total=()=>files.reduce((n,f)=>n+f.size,0)+(files.includes(base.original)?0:base.original.size);
+ // Evict oldest *undo* checkpoints, never the original or current copy.
+ // The reachable history has no artificial jump back to the original.
+ while(files.length>2&&(files.length>WORLD_CHECKPOINT_MAX_STEPS+1||total()>WORLD_CHECKPOINT_MAX_BYTES)){files.shift();firstStep++;}
+ if(total()>WORLD_CHECKPOINT_MAX_BYTES)return null;
+ return {original:base.original,files,cursor:files.length-1,firstStep};
 }
 let nextRevision=0;
 let completedRevision=0;
@@ -99,6 +106,6 @@ export function travelWorldCheckpoint(source:File,delta:-1|1):boolean{
  if(current.file!==source||!current.worldCheckpoint)return false;
  const h=current.worldCheckpoint,cursor=h.cursor+delta;
  if(!Number.isInteger(cursor)||cursor<0||cursor>=h.files.length)return false;
- current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{files:h.files,cursor}};
+ current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{...h,cursor}};
  state.set(current);return true;
 }
