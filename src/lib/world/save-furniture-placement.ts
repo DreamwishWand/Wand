@@ -36,7 +36,7 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  if(count!==shape.cellCount)return null;
  let plan:StockPlan={action:'place',itemId:String(id),x,y,orientation};
  if(source){
-  if(!stockSourceEligible(source)||source.object.itemId!==String(id)||source.area!==g.key||source.factor!==g.factor||source.object.orientation!==orientation||nativeActionBlocked(source.object.editRestrictions,'move')||source.object.x===x&&source.object.y===y)return null;
+  if(!stockSourceEligible(source)||source.object.itemId!==String(id)||source.object.orientation!==orientation||nativeActionBlocked(source.object.editRestrictions,'move')||(source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
   plan={action:'duplicate',localOrdinal:source.object.localOrdinal,itemId:String(id),expectedX:source.object.x,expectedY:source.object.y,x,y};
  }
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan,destination:witness(g)};
