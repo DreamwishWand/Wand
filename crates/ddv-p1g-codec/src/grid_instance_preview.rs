@@ -1610,6 +1610,22 @@ mod terrain_session_tests{
         plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json");
         plan["stock"]=serde_json::json!({"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"});
         assert!(support_child_candidate(&serde_json::to_vec(&empty).unwrap(),&plan).is_ok());
+        let raw=serde_json::to_vec(&empty).unwrap();
+        plan["stock"]=serde_json::json!([
+         {"action":"place","itemId":40005161,"expectedStock":2,"x":0,"y":0,"orientation":"GridOrientation_Down"},
+         {"action":"place","itemId":40005161,"expectedStock":1,"x":2,"y":0,"orientation":"GridOrientation_Left"}
+        ]);
+        let d=support_child_candidate(&raw,&plan).unwrap();
+        let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["Objects"].as_object().unwrap().len(),2);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"],4);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["7"],empty["World"]["GridCollection"]["Grids"]["7"]);
+        assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+        assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"][1]["expectedStock"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["stock"][1]["expectedStock"]=Value::from(1);plan["stock"][1]["x"]=Value::from(0);assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["stock"][1]["x"]=Value::from(2);plan["stock"][1]["y"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
+
     }
     #[test]
     fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
