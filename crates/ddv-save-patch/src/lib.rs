@@ -957,6 +957,27 @@ pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+#[cfg(test)]
+mod cardinal_road_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":1262},"Player":{"ListInventories":{"0":{"Inventory":{"40100068":{"Amount":17,"Marker":"Favorite"}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2}}}}}}}"#;
+ fn destination()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(20,20)}}
+ #[test]fn road_add_erase_preserve_ownership_and_unknown_bytes(){
+  let add=preview_cardinal_road_cells(SOURCE,&destination(),&[(8,4),(12,4)],false).unwrap();
+  let old:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let changed:serde_json::Value=serde_json::from_str(&add.patched_json).unwrap();
+  assert_eq!(old["Player"],changed["Player"]);assert_eq!(old["GameInfo"],changed["GameInfo"]);assert!(add.patched_json.contains("\"Unknown\":1e2"));assert!(!add.export_authorized);
+  let g=&changed["World"]["GridCollection"]["Grids"]["7"];assert_eq!(g["NextGridObjectID"],5);assert_eq!(g["Objects"]["3"]["State"],serde_json::Value::Null);
+  let erased=preview_cardinal_road_cells(&add.patched_json,&destination(),&[(8,4),(12,4)],true).unwrap();let after:serde_json::Value=serde_json::from_str(&erased.patched_json).unwrap();
+  assert_eq!(after["Player"],old["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["Objects"],old["World"]["GridCollection"]["Grids"]["7"]["Objects"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
+ }
+ #[test]fn rejects_duplicate_off_lattice_and_unknown_neighbor(){
+  for cells in [vec![(8,4),(8,4)],vec![(5,4)],vec![(4,4)],vec![(80,4)]]{assert!(preview_cardinal_road_cells(SOURCE,&destination(),&cells,false).is_err());}
+  let unknown=SOURCE.replace("\"State\":null","\"State\":{\"FenceMode\":{\"Diagonal\":true}}");
+  assert!(preview_cardinal_road_cells(&unknown,&destination(),&[(8,4)],false).is_err());
+  assert!(preview_cardinal_road_cells(&unknown,&destination(),&[(4,4)],true).is_err());
+  assert!(preview_cardinal_road_cells(SOURCE,&destination(),&[(12,4)],true).is_err());
+ }
+}
 /// Ordinary, non-variation furniture stock adjustment. The caller must
 /// separately establish canonical item identity and default/no-state placement
 /// semantics from the game catalog; this intentionally remains a rehearsal.
