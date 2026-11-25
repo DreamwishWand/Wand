@@ -1,13 +1,28 @@
 //! v1.25 validated generated-native-greedy layout; current build
 //! catalog/terrain and save validation are distinct from this compiler.
-//! Only the two runtime-tested families are accepted here.
+//! Candidate family IDs are inherited from the exact v1.25 catalog;
+//! the current source worker must validate a family before enabling writes.
 use std::collections::{BTreeMap,BTreeSet};
 use super::PatchError;
 pub type Point=(i32,i32);
 pub const MAX_FENCE_NODES:usize=128;
 #[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord)]
 pub struct FencePart{pub item:u32,pub x:i32,pub y:i32,pub left:bool,pub diagonal:bool}
-pub fn supported_family(base:u32)->bool{matches!(base,40700246|40700268)}
+type Family=(String,u32,Vec<u32>,Vec<u32>);
+fn families()->&'static [Family]{
+ static CATALOG:std::sync::OnceLock<Vec<Family>>=std::sync::OnceLock::new();
+ CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../src/lib/world/fence-family-candidates.json")).expect("bundled fence candidates"))
+}
+fn family(base:u32)->Option<&'static Family>{families().iter().find(|f|f.1==base)}
+pub fn supported_family(base:u32)->bool{family(base).is_some()}
+pub fn part_key(base:u32,diagonal:bool,item:u32)->Option<usize>{
+ let f=family(base)?;if item==base{return Some(0);}
+ let ids=if diagonal{&f.3}else{&f.2};ids.iter().position(|id|*id==item).map(|i|i+1)
+}
+pub fn part_item(base:u32,diagonal:bool,key:usize)->Option<u32>{
+ let f=family(base)?;if key==0{return Some(base);}
+ let ids=if diagonal{&f.3}else{&f.2};ids.get(key-1).copied()
+}
 fn edge(a:Point,b:Point)->(Point,Point){if a<b{(a,b)}else{(b,a)}}
 fn dir(a:Point,b:Point)->Point{(b.0-a.0,b.1-a.1)}
 /// Exact graph, not inferred proximity. Every edge is a single native quantum.
@@ -37,7 +52,8 @@ pub fn compile_fence_with_posts(base:u32,factor:u32,diagonal:bool,nodes:&[Point]
   (a!=(-b.0,-b.1)).then_some(p)
  }).collect();
  let mut bases=anchors.clone();let mut seen=BTreeSet::new();let mut ext=Vec::new();
- let max_interval=if diagonal{5}else{7};
+ let f=family(base).ok_or(bad)?;
+ let max_interval=1+if diagonal{f.3.len()}else{f.2.len()};
  for &start in &anchors{
   for &first in &neighbors[&start]{
    if seen.contains(&edge(start,first)){continue;}
@@ -60,7 +76,7 @@ pub fn compile_fence_with_posts(base:u32,factor:u32,diagonal:bool,nodes:&[Point]
      let (dx,dy)=dir(a,b);
      let (x,y)=(a.0+if dx!=0{q}else{0},a.1+if dy==0{0}else if dx==0||dy>0{q}else{-(key as i32)*q});
      if x<0||y<0{return Err(bad);}
-     ext.push(FencePart{item:base+if diagonal{6+key as u32}else{key as u32},x,y,left:dx==0||diagonal&&dy<0,diagonal});
+     ext.push(FencePart{item:part_item(base,diagonal,key).ok_or(bad)?,x,y,left:dx==0||diagonal&&dy<0,diagonal});
     }
     at=end;
    }
@@ -96,7 +112,7 @@ pub fn decompile_fence(base:u32,factor:u32,diagonal:bool,parts:&[FencePart])->Re
  }
  let mut points=posts.clone();let mut edges=BTreeSet::new();
  for p in parts.iter().filter(|p|p.item!=base){
-  let key=p.item.checked_sub(base+if diagonal{6}else{0}).filter(|k|*k>=1&&*k<=if diagonal{4}else{6}).ok_or(bad)? as i32;
+  let key=part_key(base,diagonal,p.item).filter(|k|*k>0).ok_or(bad)? as i32;
   let (a,step)=match (diagonal,p.left){
    (false,false)=>((p.x-q,p.y),(q,0)),
    (false,true)=>((p.x,p.y-q),(0,q)),
@@ -148,9 +164,20 @@ mod tests{
    assert!(decompile_fence(B,2,diagonal,&without).is_err());
   }
  }
+ #[test]fn catalog_all_families_and_noncontiguous_ids(){
+  assert_eq!(families().len(),24);let mut ids=BTreeSet::new();
+  for f in families(){
+   assert!(ids.insert(f.1));assert_eq!(f.2.len(),6);assert_eq!(f.3.len(),4);
+   for &id in f.2.iter().chain(f.3.iter()){assert!(ids.insert(id));}
+   for diagonal in [false,true]{let (n,e)=straight(3,false,diagonal);let p=compile_fence(f.1,2,diagonal,&n,&e).unwrap();
+    assert!(p.iter().any(|p|p.item==part_item(f.1,diagonal,1).unwrap()));
+    assert_eq!(decompile_fence(f.1,2,diagonal,&p).unwrap().0.into_iter().collect::<BTreeSet<_>>(),n.into_iter().collect());}
+  }
+  assert_eq!(part_item(40700000,false,1),Some(40700057));assert_eq!(part_item(40700202,true,1),Some(40700203));
+ }
  #[test]fn invalid_edges_fail_closed(){
   assert!(compile_fence(B,1,false,&[(0,0),(2,0)],&[((0,0),(2,0))]).is_err());
   assert!(compile_fence(B,1,false,&[(0,0),(1,1)],&[((0,0),(1,1))]).is_err());
-  assert!(compile_fence(40700000,1,false,&[(0,0)],&[]).is_err());
+  assert!(compile_fence(40799999,1,false,&[(0,0)],&[]).is_err());
  }
 }
