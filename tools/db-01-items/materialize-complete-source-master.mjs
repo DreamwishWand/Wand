@@ -1048,6 +1048,38 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       for(const [key,child] of Object.entries(value))addSource(field+'.'+key,id,child,depth+1);
     }
   };
+  // Only audited CurrencyCost occurrences; never combine acquisition costs,
+  // building unlock costs and per-use costs into a single "item price".
+  const currencyIds=new Set(rows.filter(r=>r.nativeCategory==='Currency').map(r=>r.itemId));
+  const costEntries=row=>{
+    const p=row.sourceAttributes??{};
+    const result=[];
+    const emit=(kind,path,cost,level=null)=>{
+      if(cost===undefined||cost===null||typeof cost!=='object'||Array.isArray(cost))return;
+      const currencyPresent=Object.hasOwn(cost,'Id'),amountPresent=Object.hasOwn(cost,'Amount');
+      check(!currencyPresent||Number.isSafeInteger(cost.Id),'COST_CURRENCY');
+      check(!amountPresent||Number.isSafeInteger(cost.Amount),'COST_AMOUNT');
+      const currencyItemId=currencyPresent?cost.Id:null;
+      result.push({kind,sourcePath:'source.'+path,currencyItemId,amount:amountPresent?cost.Amount:null,
+        currencyFieldPresent:currencyPresent,amountFieldPresent:amountPresent,
+        currencyDefinitionResolved:currencyIds.has(currencyItemId),upgradeLevel:level,
+        runtimeCostVerified:false});
+    };
+    if(['Furniture','Clothing'].includes(row.nativeCategory)){
+      emit('purchase_override','PriceOverride.Price',p.PriceOverride?.Price);
+    }
+    if(row.nativeCategory==='Building'){
+      emit('building_specific_unlock','SpecificUnlockCost',p.SpecificUnlockCost);
+      if(Array.isArray(p.UnlockCost))p.UnlockCost.forEach((cost,i)=>emit('building_unlock','UnlockCost['+i+']',cost));
+      if(Array.isArray(p.UpgradeInfo))p.UpgradeInfo.forEach((u,i)=>{
+        emit('building_upgrade','UpgradeInfo['+i+'].Cost',u?.Cost,Number.isSafeInteger(u?.Level)?u.Level:null);
+      });
+    }
+    if(row.nativeCategory==='Furniture'){
+      for(const key of ['AutoCooker','Gardener'])emit('machine_action',key+'.ActionCost',p[key]?.ActionCost);
+    }
+    return result;
+  };
   // Expand original fixed32 masks into exact individual set bits for
   // selective reverse lookup. No floor, layer or placement rule is inferred.
   const uint32=v=>Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
@@ -1126,6 +1158,16 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
     const sequences=storeLayout.sequenceLinks.get(row.itemId);
     if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
+    const costs=costEntries(row);
+    if(costs.length){
+      add('cost.configuredOccurrences',row.itemId,costs);
+      add('cost.configuredKinds',row.itemId,[...new Set(costs.map(v=>v.kind))].sort());
+      const keys=[...new Set(costs.filter(v=>v.currencyDefinitionResolved).map(v=>JSON.stringify([v.kind,v.currencyItemId])))].sort();
+      if(keys.length)add('cost.configuredKindCurrencyKeys',row.itemId,keys);
+      const explicit=costs.filter(v=>v.currencyDefinitionResolved&&v.amountFieldPresent);
+      if(explicit.length)add('cost.configuredKindCurrencyAmountKeys',row.itemId,
+        [...new Set(explicit.map(v=>JSON.stringify([v.kind,v.currencyItemId,v.amount])))].sort());
+    }
     const purchaseCurrency=catalogFacts.purchaseCurrencies.get(row.itemId);
     if(purchaseCurrency){
       add('acquisition.purchaseCurrencySelection',row.itemId,purchaseCurrency);
