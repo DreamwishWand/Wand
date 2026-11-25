@@ -5,17 +5,21 @@ import type {CollectionQuestSummary} from './quest-evidence.ts';
 import type {CollectionAcquisitionWithDistribution}
   from './distribution-evidence.ts';
 
-export type CollectionEvidenceKind='acquisition'|'quests';
+import type {CollectionConcreteAcquisition} from './concrete-acquisition.ts';
+import type {ItemMasterLocale} from '../items/public-item-master.ts';
+
+export type CollectionEvidenceKind='acquisition'|'quests'|'concrete';
 export interface CollectionEvidenceRequest {
   readonly requestId:number;
   readonly kind:CollectionEvidenceKind;
   readonly itemId:number;
   readonly basePath:string;
+  readonly locale?:ItemMasterLocale;
 }
-type Summary=CollectionAcquisitionWithDistribution|CollectionQuestSummary;
+type Summary=CollectionAcquisitionWithDistribution|CollectionQuestSummary|CollectionConcreteAcquisition;
 export type CollectionEvidenceReply=
   | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {
-      ok:true;summary:CollectionAcquisitionWithDistribution|CollectionQuestSummary;
+      ok:true;summary:Summary;
     }>
   | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {ok:false}>;
 
@@ -28,6 +32,7 @@ export interface CollectionSourceWorker {
 export interface CollectionEvidenceHandle {
   loadAcquisition(itemId:number,basePath:string):
     Promise<CollectionAcquisitionWithDistribution>;
+  loadConcreteAcquisition(itemId:number,basePath:string,locale:ItemMasterLocale):Promise<CollectionConcreteAcquisition>;
   loadQuests(itemId:number,basePath:string):
     Promise<CollectionQuestSummary>;
   release():void;
@@ -36,16 +41,20 @@ interface Pending {
   readonly key:string;
   readonly kind:CollectionEvidenceKind;
   readonly itemId:number;
+  readonly locale?:ItemMasterLocale;
   resolve:(value:Summary)=>void;
   reject:(error:Error)=>void;
 }
 const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 
-function isSummary(raw:unknown,kind:CollectionEvidenceKind,id:number):
+const LOCALES:readonly ItemMasterLocale[]=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
+function isSummary(raw:unknown,kind:CollectionEvidenceKind,id:number,locale?:ItemMasterLocale):
   raw is Summary{
   if(raw===null||typeof raw!=='object'||Array.isArray(raw))return false;
   const s=raw as Record<string,unknown>;
-  if(s.itemId!==id||s.staticSourceOnly!==true)return false;
+  if(s.itemId!==id)return false;
+  if(kind==='concrete')return s.locale===locale&&[s.configuredNames,s.candidateNames].every(v=>Array.isArray(v)&&v.every(x=>typeof x==='string'&&x.trim().length>0));
+  if(s.staticSourceOnly!==true)return false;
   const d=s.distribution as Record<string,unknown>|undefined;
   return kind==='acquisition'
     ?Array.isArray(s.kinds)&&Array.isArray(s.candidates)&&
@@ -103,7 +112,7 @@ export function createCollectionEvidencePool(makeWorker:()=>CollectionSourceWork
       pending.delete(message.requestId);
       inflight.delete(entry.key);
       if(message.kind!==entry.kind||message.itemId!==entry.itemId||
-         message.ok!==true||!isSummary(message.summary,entry.kind,entry.itemId)){
+         message.ok!==true||!isSummary(message.summary,entry.kind,entry.itemId,entry.locale)){
         entry.reject(new Error('COLLECTION_SOURCE_EVIDENCE_MISMATCH'));
         return;
       }
@@ -114,13 +123,14 @@ export function createCollectionEvidencePool(makeWorker:()=>CollectionSourceWork
     worker=created;
     return created;
   }
-  function load(kind:CollectionEvidenceKind,itemId:number,basePath:string):
+  function load(kind:CollectionEvidenceKind,itemId:number,basePath:string,locale?:ItemMasterLocale):
     Promise<Summary>{
     if(!Number.isSafeInteger(itemId)||itemId<=0||
        typeof basePath!=='string'||
-       (basePath!==''&&!BASE.test(basePath)))
+       (basePath!==''&&!BASE.test(basePath))||
+       (kind==='concrete'?locale===undefined||!LOCALES.includes(locale):locale!==undefined))
       return Promise.reject(new TypeError('COLLECTION_SOURCE_REQUEST_INVALID'));
-    const key=basePath+'|'+kind+'|'+itemId;
+    const key=basePath+'|'+kind+'|'+itemId+'|'+(locale??'');
     const cached=cache.get(key);
     if(cached)return Promise.resolve(cached);
     const previous=inflight.get(key);
@@ -132,9 +142,9 @@ export function createCollectionEvidencePool(makeWorker:()=>CollectionSourceWork
     let resolve!: (value:Summary)=>void;
     let reject!: (error:Error)=>void;
     const result=new Promise<Summary>((r,j)=>{resolve=r;reject=j;});
-    pending.set(requestId,{key,kind,itemId,resolve,reject});
+    pending.set(requestId,{key,kind,itemId,locale,resolve,reject});
     inflight.set(key,result);
-    try{running.postMessage({requestId,kind,itemId,basePath});}
+    try{running.postMessage({requestId,kind,itemId,basePath,...(locale?{locale}:{})});}
     catch{
       pending.delete(requestId);
       inflight.delete(key);
@@ -146,14 +156,15 @@ export function createCollectionEvidencePool(makeWorker:()=>CollectionSourceWork
     acquire():CollectionEvidenceHandle {
       refs++;
       let released=false;
-      function request(kind:CollectionEvidenceKind,id:number,base:string):
+      function request(kind:CollectionEvidenceKind,id:number,base:string,locale?:ItemMasterLocale):
         Promise<Summary>{
         if(released)return Promise.reject(new Error('COLLECTION_SOURCE_HANDLE_RELEASED'));
-        return load(kind,id,base);
+        return load(kind,id,base,locale);
       }
       return {
         loadAcquisition:(id,base)=>request('acquisition',id,base) as
           Promise<CollectionAcquisitionWithDistribution>,
+        loadConcreteAcquisition:(id,base,locale)=>request('concrete',id,base,locale) as Promise<CollectionConcreteAcquisition>,
         loadQuests:(id,base)=>request('quests',id,base) as
           Promise<CollectionQuestSummary>,
         release:()=>{
