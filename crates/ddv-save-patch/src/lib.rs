@@ -1275,6 +1275,24 @@ pub fn preview_indoor_grid_stock_place(source:&str,d:&PlainGridDestination,item_
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }
+/// Move one ordinary outdoor furniture record to a codec-resolved owned room floor.
+pub fn preview_outdoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
+ validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let grids=c.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+ let g=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
+ let layout=g.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
+ let data=g.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
+ if !full_grid_scope(layout).is_some_and(|scope|outdoor_world_path(scope,data))||
+    g.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
+    grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
+     return Err(PatchError::InvalidTarget);
+ }
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
 /// Grid-local identities are allocated from the destination counter; stock is untouched.
 pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{

@@ -157,3 +157,13 @@ export const indoorTerrainWords={
  'zh-CN':['原始房间地形','移动','从库存放置','点击目标位置','搜索家具','可放置于空闲格。'],
  'pt-BR':['Terreno original','Mover','Colocar do estoque','Clique no destino','Buscar móveis','Coloque nas células livres.']
 } as const;
+
+/** A cut transfer uses existing furniture, not inventory. Verify the target
+ * floor with the same native footprint and collision rules as stock placement. */
+export function indoorTransferPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,itemId:number,x:number,y:number,orientation:string):Omit<IndoorPlace,'expectedStock'>|null{
+ const t=indoorEditableTree(face);
+ return t&&face?.kind==='floor'&&face.terrain&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,x,y,orientation}:null;
+}
+export const indoorTransferWords={
+ ja:'切り取った家具を配置',en:'Place cut furniture',fr:'Placer le meuble coupé',it:'Posiziona mobile tagliato',de:'Ausgeschnittenes Möbel platzieren','es-ES':'Colocar mueble cortado','zh-CN':'放置剪切的家具','pt-BR':'Colocar móvel recortado'
+} as const;
