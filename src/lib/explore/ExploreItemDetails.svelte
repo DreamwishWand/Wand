@@ -15,6 +15,7 @@
     buy:['購入','Purchase','Achat','Acquisto','Kauf','Compra','购买','Compra'],
     sell:['売却','Sell','Vente','Vendita','Verkauf','Venta','出售','Venda'],
     unavailable:['価格情報なし','No price data','Prix indisponible','Prezzo non disponibile','Keine Preisdaten','Sin datos de precio','无价格数据','Sem preço'],
+    cache:['キャッシュ値','Cached value','Valeur en cache','Valore in cache','Cachewert','Valor en caché','缓存值','Valor em cache'],
     loading:['読み込み中…','Loading…','Chargement…','Caricamento…','Laden…','Cargando…','加载中…','Carregando…']
   };
   const l=(key:keyof typeof words)=>words[key][langs.indexOf(locale)]??words[key][1];
@@ -36,9 +37,9 @@
     {#if loading}<p>{l('loading')}</p>
     {:else if !buy.length&&!sell.length}<p>{l('unavailable')}</p>
     {:else}
-      {#each [[l('buy'),buy],[l('sell'),sell]] as pair}
-        {#if typeof pair[0]==='string'&&Array.isArray(pair[1])&&pair[1].length}
-          <div class="price-row"><strong>{pair[0]}</strong>{#each pair[1] as cost}<span>{cost.amount?.toLocaleString(locale)} {cost.currency?.name}</span>{/each}</div>
+      {#each [{name:l('buy'),costs:buy},{name:l('sell'),costs:sell}] as pair}
+        {#if pair.costs.length}
+          <div class="price-row"><strong>{pair.name}</strong>{#each pair.costs as cost}<span>{cost.amount?.toLocaleString(locale)} {cost.currency?.name}{#if cost.source==='dynamic_cache'} <small>({l('cache')})</small>{/if}</span>{/each}</div>
         {/if}
       {/each}
     {/if}

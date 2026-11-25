@@ -62,8 +62,13 @@ export const BROWSE_TYPES=['furniture','landscaping','path','fence','buildings',
 export type BrowseType=typeof BROWSE_TYPES[number];
 export function browseType(i:ExploreItem):BrowseType{
   const cats=categoriesOf(i);
-  for(const type of ['landscaping','path','fence','buildings','environment','wallpaper','flooring','window-door','ceiling','wall'] as const)
-    if(cats.includes(type))return type;
+  if(i.nativeCategory==='Building'||i.nativeCategory==='Skin'&&i.subtype!==3)return 'buildings';
+  if(i.nativeCategory==='Environment'||i.nativeCategory==='Skin'&&i.subtype===3)return 'environment';
+  if(i.nativeCategory==='Trimming')return i.subtype===0?'wallpaper':'flooring';
+  if(i.subtype===1)return 'path';
+  if(i.subtype===2)return 'landscaping';
+  if(i.subtype===7)return 'fence';
+  for(const type of ['window-door','ceiling','wall'] as const)if(cats.includes(type))return type;
   return 'furniture';
 }
 /** For non-furniture lists, source subtype / tag groups replace arbitrary

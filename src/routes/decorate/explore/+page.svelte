@@ -46,18 +46,19 @@
   const active=$derived(boards.boards.find(b=>b.id===boards.active)??null);
   const activeIds=$derived(new Set(active?.entries.map(e=>e.itemId)??[]));
   const favoriteIds=$derived(new Set(boards.favorites));
-  const universeNames=$derived(new Map([...sourceUniverses.map(u=>[String(u.tagId),{label:u.names[locale]??u.names.en??u.key,sort:u.names[locale]??u.names.en??u.key}] as const),...COLLECTION_UNIVERSE_TAG_NAMES.map(u=>[String(u.id),{label:u.names[locale],sort:locale==='ja'?u.jaReading:u.names[locale]}] as const)]));
+  const universeNames=$derived(new Map([...COLLECTION_UNIVERSE_TAG_NAMES.map(u=>[String(u.id),{label:u.names[locale],sort:locale==='ja'?u.jaReading:u.names[locale]}] as const),...sourceUniverses.map(u=>[String(u.tagId),{label:u.names[locale]??u.names.en??u.key,sort:locale==='ja'?(COLLECTION_UNIVERSE_TAG_NAMES.find(x=>x.id===u.tagId)?.jaReading??u.names.ja??u.key):u.names[locale]??u.names.en??u.key}] as const)]));
   function universeName(key:string){return key==='none'?t('ユニバースなし','No universe'):key==='unknown'?t('ユニバース未確認','Universe unconfirmed'):universeNames.get(key)?.label??t('ユニバース未確認','Universe unconfirmed');}
   function sortUniverse(a:string,b:string){
     return universeRank(a)-universeRank(b)||(universeNames.get(a)?.sort??a).localeCompare(universeNames.get(b)?.sort??b,locale);
   }
   const allGroups=$derived(groupItems(items.filter(i=>browseType(i)==='furniture')));
-  const universeOptions=$derived([...new Set([...universeNames.keys(),...allGroups.keys()])].sort(sortUniverse));
+  const universeOptions=$derived([...new Set([...universeNames.keys(),...items.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])])].sort(sortUniverse));
   const scopedItems=$derived(items.filter(i=>matchesScope(i,scope)));
-  const browseTypes=$derived(BROWSE_TYPES.filter(type=>scopedItems.some(i=>browseType(i)===type)));
+  const availableBrowseTypes=$derived(new Set(scopedItems.map(browseType)));
+  const browseTypes=$derived(BROWSE_TYPES.filter(type=>availableBrowseTypes.has(type)));
   const browseItems=$derived(browse==='allTypes'?scopedItems:scopedItems.filter(i=>browseType(i)===browse));
   const tagName=(key:string)=>tagLabels[key]?.[locale]??tagLabels[key]?.en??collectionDb01TagLabel(locale,key);
-  const scopedUniverses=$derived(new Set(scopedItems.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])));
+  const scopedUniverses=$derived(new Set(browseItems.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])));
   const scopeCategories=$derived(new Set(browseItems.flatMap(categoriesOf)));
   const categoryOptions=$derived(CATEGORY_KEYS.filter(key=>scopeCategories.has(key)||filters.categories?.includes(key)));
   const worldOptions=$derived(sourceWorlds.map(w=>({key:w.key,label:w.names[locale]??w.names.en??w.key})));
@@ -185,7 +186,7 @@
     });
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
     const w=new Worker(new URL('../../../lib/explore/catalog.worker.ts',import.meta.url),{type:'module'});
-    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];tagLabels?:Record<string,Record<string,string>>;error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];tagLabels=e.data.tagLabels??{};releases=e.data.releases??[];}else failed=true;loading=false;};
+    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];tagLabels?:Record<string,Record<string,string>>;error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];releases=e.data.releases??[];loading=false;}else if(e.data.tagLabels){tagLabels=e.data.tagLabels;}else{failed=true;loading=false;}};
     w.onerror=()=>{failed=true;loading=false;};
     w.postMessage({base});
     void fetch(base+'/ddv/collection/item-images-r39.json').then(r=>r.ok?r.json():null).then(d=>{if(d?.schema==='wand.collection.item-images.r39@1'&&d.items)images=d.items;}).catch(()=>{});

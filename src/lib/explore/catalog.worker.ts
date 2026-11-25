@@ -31,6 +31,7 @@ self.onmessage=async(event:MessageEvent<Request>)=>{
     }
     let worldTags:readonly ItemMasterTagLabel[]=[];
     const tagLabels:Record<string,Record<string,string>>={};
+    let tagIds:number[]=[];
     const subtypeNames=new Map<number,string|null>();
     let enriched=items;
     if(facetResult.status==='fulfilled'&&facetResult.value){
@@ -40,22 +41,21 @@ self.onmessage=async(event:MessageEvent<Request>)=>{
       const keys=new Map(worldTags.map(row=>[row.tagId,row.key]));
       const worlds=new Map(facets.worldSourceTagItems.map(([id,tags])=>[id,tags.flatMap(tag=>{const key=keys.get(tag);return key?[key]:[];})]));
       enriched=items.map(i=>({...i,worlds:worlds.get(i.itemId)??[],nativeSubtypeName:subtypeNames.get(i.itemId)??null}));
-      // Only tag identity/name columns, never complete Item shards.
-      // Original localized labels enhance filter UI; failure does not block browse.
-      try{
-        const used=new Set(items.flatMap(i=>i.tags.map(([,key])=>key)));
-        const ids=facets.nativeSubtypeItems.filter(([,type])=>type==='Tag').map(([id])=>id);
-        const rows=await db.getItemFields(ids,['nativeKey',...ITEM_MASTER_LOCALES.map(l=>'names.'+l)]);
-        for(const row of rows){
-          const key=row?.values.nativeKey;
-          if(!row||typeof key!=='string'||!used.has(key))continue;
-          const names:Record<string,string>={};
-          for(const l of ITEM_MASTER_LOCALES){const value=row.values['names.'+l];if(typeof value==='string'&&value)names[l]=value;}
-          tagLabels[key]=names;
-        }
-      }catch{}
-
+      tagIds=facets.nativeSubtypeItems.filter(([,type])=>type==='Tag').map(([id])=>id);
     }
-    self.postMessage({items:enriched,universeTags:data.universeTags??[],worldTags,tagLabels,releases});
+    self.postMessage({items:enriched,universeTags:data.universeTags,worldTags,releases});
+    // Localized optional filter labels must never delay the first catalog paint.
+    try{
+      const used=new Set(items.flatMap(i=>i.tags.map(([,key])=>key)));
+      const rows=await db.getItemFields(tagIds,['nativeKey',...ITEM_MASTER_LOCALES.map(l=>'names.'+l)]);
+      for(const row of rows){
+        const key=row?.values.nativeKey;
+        if(!row||typeof key!=='string'||!used.has(key))continue;
+        const names:Record<string,string>={};
+        for(const l of ITEM_MASTER_LOCALES){const value=row.values['names.'+l];if(typeof value==='string'&&value)names[l]=value;}
+        tagLabels[key]=names;
+      }
+      self.postMessage({tagLabels});
+    }catch{}
   }catch{self.postMessage({error:true});}
 };
