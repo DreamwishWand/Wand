@@ -6,6 +6,23 @@ export interface LocalSaveSession{
   readonly file:File|null;
   readonly revision:number;
   readonly collectionStatus:LocalSaveReadStatus;
+  readonly worldCheckpoint?:WorldCheckpointHistory;
+}
+/** Explicitly applied, independently validated experimental copies. In-memory
+ * only: preserve the original File and use a fresh revision for every change. */
+export interface WorldCheckpointHistory{
+ readonly files:readonly File[];
+ readonly cursor:number;
+}
+export const WORLD_CHECKPOINT_MAX_BYTES=128*1024*1024;
+export const WORLD_CHECKPOINT_MAX_STEPS=32;
+export function appendWorldCheckpoint(history:WorldCheckpointHistory|undefined,source:File,copy:File):WorldCheckpointHistory|null{
+ if(source===copy||copy.size<1||copy.size>32*1024*1024)return null;
+ const base=history??{files:[source],cursor:0};
+ if(base.files[base.cursor]!==source)return null;
+ const files=[...base.files.slice(0,base.cursor+1),copy];
+ if(files.length>WORLD_CHECKPOINT_MAX_STEPS+1||files.reduce((n,f)=>n+f.size,0)>WORLD_CHECKPOINT_MAX_BYTES)return null;
+ return {files,cursor:files.length-1};
 }
 let nextRevision=0;
 let completedRevision=0;
@@ -55,4 +72,22 @@ export function updateCollectionRead(revision:number,status:Exclude<LocalSaveRea
 /** Reject responses from a file that has since been replaced or closed. */
 export function isCurrentLocalSaveSelection(revision:number,file:File):boolean{
   return current.revision===revision && current.file===file;
+}
+
+/** Only callers with a verified copy receipt may apply a new checkpoint.
+ * No external file-selection bypass: the exact active source is required.
+ * The World Editor checks outstanding transform drafts before invoking. */
+export function commitWorldCheckpoint(source:File,copy:File):boolean{
+ if(current.file!==source)return false;
+ const history=appendWorldCheckpoint(current.worldCheckpoint,source,copy);
+ if(!history)return false;
+ current={file:copy,revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:history};
+ state.set(current);return true;
+}
+export function travelWorldCheckpoint(source:File,delta:-1|1):boolean{
+ if(current.file!==source||!current.worldCheckpoint)return false;
+ const h=current.worldCheckpoint,cursor=h.cursor+delta;
+ if(!Number.isInteger(cursor)||cursor<0||cursor>=h.files.length)return false;
+ current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{files:h.files,cursor}};
+ state.set(current);return true;
 }
