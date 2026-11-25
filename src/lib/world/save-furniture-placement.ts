@@ -11,7 +11,7 @@ export type StockPlan={action:'place';itemId:string;x:number;y:number;orientatio
 export interface StockCandidate{area:string;x:number;y:number;factor:1|2;shape:SourceObjectShape;plan:StockPlan;destination:StockDestination|null}
 export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===400;
 export function stockSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
- return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&!p.object.surfaceCapable&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');
+ return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
 export function stockPickup(p:MainlandSavedObject|null):StockCandidate|null{
@@ -22,7 +22,7 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  if(!ordinaryFurniture(id)||!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!r||!def||def.itemId!==id||def.layer!=='furniture'||def.surfaceCapable||nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ if(!r||!def||def.itemId!==id||def.layer!=='furniture'||nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
  const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
  if(x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
  let count=0;

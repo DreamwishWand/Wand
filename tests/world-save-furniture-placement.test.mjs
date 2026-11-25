@@ -18,7 +18,8 @@ test('stock placement requires a unique complete native footprint and ordinary f
 test('pickup and duplicate preserve original object address and reject surface or no-op',()=>{
  const p={area:'A',factor:1,shape,...mainlandMapAnchor(g,0,0),object:{localOrdinal:1,itemId:'40005160',x:0,y:0,orientation:'GridOrientation_Down',layer:'furniture',surfaceCapable:false}};
  assert.equal(stockPickup(p).plan.localOrdinal,1);
- assert.equal(stockPickup({...p,object:{...p.object,surfaceCapable:true}}),null);
+ assert.ok(stockPickup({...p,object:{...p.object,surfaceCapable:true}}));
+ assert.equal(stockPickup({...p,object:{...p.object,layer:'surface',surfaceCapable:true}}),null);
  const q=stockPlacement([g],rasters,geometry,40005160,'GridOrientation_Down',1.5,-1.5,p);
  assert.equal(q.plan.action,'duplicate');assert.equal(q.plan.expectedX,0);
  assert.equal(stockPlacement([g],rasters,geometry,40005160,'GridOrientation_Down',.5,-.5,p),null);

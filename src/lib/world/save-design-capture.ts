@@ -20,8 +20,11 @@ export function captureSaveDesign(grids:readonly PublicTerrainGridRef[],rasters:
    if(seen.has(o.localOrdinal))return null;
    seen.add(o.localOrdinal);
    if(!g||!map||p.factor!==g.factor||!Number.isSafeInteger(id)||id<1||id>0xffffffff||o.subgrid||o.nativeType==='Building'||o.layer!=='furniture'&&o.layer!=='ground'&&o.layer!=='fence'||
-     o.surfaceCapable||!p.shape||!isCardinal(o.orientation)||nativeActionBlocked(o.editRestrictions,'select')||
+     !p.shape||!isCardinal(o.orientation)||nativeActionBlocked(o.editRestrictions,'select')||
      map.layoutId!==g.layoutId||map.gridDataPath!==g.gridDataPath||map.sourceGridFactor!==g.factor){omitted++;continue;}
+   // A mixed ground/surface capability is not itself a support relation.
+   // Top-level source-bound furniture is representable; SubGrid parents
+   // and surface-only layers are already excluded above.
    const orientation=CARDINAL_ORIENTATIONS.indexOf(o.orientation),key=id+':'+orientation*4,shape=map.shapes[key];
    if(!shape||shape!==p.shape){omitted++;continue;}
    const existing=defs.get(id),shapes=Object.fromEntries([0,4,8,12].map(code=>id+':'+code).filter(key=>map.shapes[key]).map(key=>[key,map.shapes[key]]));

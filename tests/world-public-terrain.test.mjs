@@ -281,6 +281,9 @@ test('copy real source-local furniture to independent world design with fresh lo
  const a={area:g.key,object:o,shape,factor:g.factor,...mainlandMapAnchor(g,o.x,o.y)},maps=new Map([[g.key,m]]);
  const capture=captureSaveDesign(grids,rasters,maps,[a,{...a,object:{...o,localOrdinal:987655,subgrid:{status:'resolved_full',objectCount:1}}}],2);
  assert.equal(capture.count,1);assert.equal(capture.omitted,3);assert.ok(!capture.text.includes('987654')&&!capture.text.includes('localOrdinal'));
+ const mixedCapability=captureSaveDesign(grids,rasters,maps,[{...a,object:{...o,surfaceCapable:true}}]);
+ assert.equal(mixedCapability?.count,1);
+ assert.equal(captureSaveDesign(grids,rasters,maps,[{...a,object:{...o,layer:'surface',surfaceCapable:true}}]),null);
  const frame=composeMainlandDesignFrame(grids,rasters),incoming=parseMainlandDesign(capture.text,frame);
  const def={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:m.shapes},defs=new Map([[def.itemId,def]]);
  const first=mergeSaveDesign(emptyDesign(),incoming,defs,frame.raster.sizeX,frame.raster.sizeY);

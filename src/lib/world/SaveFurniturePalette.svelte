@@ -56,7 +56,8 @@
   const q=stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source);if(!q){status='error';return;}
   candidate=q;point=p;status='idle';stockChange=null;
  }
- export function turn(delta:number){if(!placing||source||status==='working')return;candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
+ $: rotationAllowed=definitions.size>0&&[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional');
+ export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
  export function validate(){
   if(!candidate||!file||blocked||!canStart||status==='working')return;
   const q=candidate,f=file;ownPreview?.terminate();status='working';stockChange=null;
@@ -73,18 +74,18 @@
  <aside class="save-furniture-palette" aria-label={w[0]}>
   <div class="palette-head"><strong>{w[0]}</strong><button type="button" aria-label={w[8]} on:click={onClose}>×</button></div>
   {#if blocked||!canStart}<small role="status">{w[12]}</small>{:else}
-   {#if chosen&&stockSourceEligible(chosen)}
+   {#if chosen&&stockSourceEligible(chosen)&&!placing&&!candidate}
     <div class="palette-actions"><button type="button" disabled={!duplicateEligible} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{w[4]}</button><button type="button" disabled={!counts?.has(Number(chosen.object.itemId))} on:click={pickup}>{w[5]}</button></div>
    {/if}
    {#if placing||candidate}
-    <div class="palette-actions">{#if placing&&!source}<button type="button" aria-label={w[14]} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
+    <div class="palette-actions">{#if placing&&!source}<button type="button" aria-label={w[14]} disabled={!rotationAllowed} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} disabled={!rotationAllowed} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
     {#if candidate&&candidate.plan.action!=='remove'}<button type="button" disabled={status==='working'} on:click={validate}>{candidate.plan.action==='duplicate'?w[4]:w[3]}</button>{:else if placing}<small>{w[6]}</small>{/if}
    {/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
    {#if stockState==='loading'||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if stockState==='error'||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
     <div class="stock-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-100)limit=Math.min(items.length,limit+80);}}>
-     {#each visible as item (item.itemId)}<button type="button" class="stock-item" aria-pressed={placing&&itemId===item.itemId} on:click={()=>begin(item.itemId)} title={item.name}>{#if artwork.has(item.itemId)}<img src={artwork.get(item.itemId)} alt="" loading="lazy"/>{/if}<span>{item.name}</span><small>{w[2]} {counts?.get(item.itemId)}</small></button>{/each}
+     {#each visible as item (item.itemId)}<button type="button" class="stock-item" data-item-id={item.itemId} aria-pressed={placing&&itemId===item.itemId} on:click={()=>begin(item.itemId)} title={item.name}>{#if artwork.has(item.itemId)}<img src={artwork.get(item.itemId)} alt="" loading="lazy"/>{/if}<span>{item.name}</span><small>{w[2]} {counts?.get(item.itemId)}</small></button>{/each}
      {#if !items.length}<small>{w[13]}</small>{/if}
     </div>
    {/if}
