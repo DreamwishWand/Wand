@@ -114,3 +114,26 @@ pub fn preview_fence_erase(source:&str,d:&PlainGridDestination,base:u32,seed:Poi
  validate_json_without_edit(&candidate)?;
  Ok(FenceEraseDraft{draft:GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false},removed,allocated})
 }
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":1262},"Player":{"ListInventories":{"0":{"Inventory":{"40700246":{"Amount":17,"Marker":"Favorite"}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":6,"Objects":{"1":{"ID":1,"ItemID":40700246,"X":20,"Y":20,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40700252,"X":20,"Y":22,"Orientation":"GridOrientation_Left","State":null},"3":{"ID":3,"ItemID":40700246,"X":20,"Y":34,"Orientation":"GridOrientation_Down","State":null},"4":{"ID":4,"ItemID":40700246,"X":20,"Y":36,"Orientation":"GridOrientation_Down","State":null},"5":{"ID":5,"ItemID":40000001,"X":20,"Y":28,"Orientation":"GridOrientation_Down","Unknown":1e2}}}}}}}"#;
+ fn destination()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(40,40)}}
+ #[test]fn interior_erase_splits_and_keeps_existing_posts(){
+  let result=preview_fence_erase(SOURCE,&destination(),40700246,(20,20),&[(20,28)]).unwrap();
+  let old:Value=serde_json::from_str(SOURCE).unwrap();let new:Value=serde_json::from_str(&result.draft.patched_json).unwrap();
+  let before=&old["World"]["GridCollection"]["Grids"]["7"]["Objects"];let after=&new["World"]["GridCollection"]["Grids"]["7"]["Objects"];
+  for k in ["1","3","4","5"]{assert_eq!(before[k],after[k]);}
+  assert!(after.get("2").is_none());assert_eq!(result.removed,vec![("2".into(),40700252)]);assert_eq!(result.allocated.len(),3);
+  assert_eq!(new["Player"],old["Player"]);assert!(result.draft.patched_json.contains("\"Unknown\":1e2"));
+  let native:Vec<_>=after.as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
+  let (nodes,edges)=fence_topology::decompile_fence(40700246,2,false,&native).unwrap();assert_eq!(nodes.len(),8);assert_eq!(edges.len(),6);assert!(!nodes.contains(&(20,28)));
+ }
+ #[test]fn reject_empty_stale_and_unknown_state(){
+  assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,20),&[(22,20)]).is_err());
+  assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,22),&[(20,28)]).is_err());
+  let unknown=SOURCE.replace("\"State\":null","\"State\":{\"FenceMode\":{\"Diagonal\":true}}");
+  assert!(preview_fence_erase(&unknown,&destination(),40700246,(20,20),&[(20,28)]).is_err());
+ }
+}
