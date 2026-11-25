@@ -1649,6 +1649,36 @@ mod terrain_session_tests{
         plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
     }
     #[test]
+    fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1},"40005162":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+          "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
+            "1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8,"DesignID":null}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Left","State":{"SubGrid":{"GridID":9}}}}},
+          "9":{"ID":9,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005162,"X":0,"Y":0,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40005162,"X":2,"Y":0,"Orientation":"GridOrientation_Down"}}}
+        }}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":20,"sizeY":20});
+        let draft=support_parent_duplicate_candidate(save,1,40005160,(4,6),(10,12),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None).unwrap();
+        let original:Value=serde_json::from_slice(save).unwrap();
+        let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        let c=&result["World"]["GridCollection"];let g=&c["Grids"];
+        assert_eq!(c["NextGridID"],22);
+        assert_eq!(g["7"]["NextGridObjectID"],3);
+        assert_eq!(g["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
+        assert_eq!(g["7"]["Objects"]["2"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(g["20"]["Objects"]["1"]["State"]["SubGrid"]["GridID"],21);
+        assert_eq!(g["21"]["Objects"],g["9"]["Objects"]);
+        for id in ["8","9"]{assert_eq!(g[id],original["World"]["GridCollection"]["Grids"][id]);}
+        assert_eq!(g["7"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]);
+        for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+        assert!(draft.patched_json.contains("\"Other\":1e2"));
+        let run=|v:&Value|support_parent_duplicate_candidate(&serde_json::to_vec(v).unwrap(),1,40005160,(4,6),(10,12),&witness,None,None);
+        let mut bad=original.clone();bad["World"]["GridCollection"]["NextGridID"]=Value::from(9);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["FutureGridID"]=Value::from(21);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=Value::from(1);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["Unknown"]=Value::from(1);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["State"]["SubGrid"]["DesignID"]=Value::from(1);assert!(run(&bad).is_err());
+    }
+    #[test]
     fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
