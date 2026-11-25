@@ -90,21 +90,35 @@ export function createCanonicalRecipeReader(db:PublicCompleteItemMaster){
       const r=byId.get(recipeId);return r?.resultItemId===resultIds[i]?[r]:[];
     }))));
   }
-  async function getFixedIngredientUses(itemIds:readonly number[]){
+  /** Reverse lookup for explicit items or selectors. A tag reference is not
+   * a statement that every tagged item is eligible in a live cooking session. */
+  async function getIngredientUses(itemIds:readonly number[],role:'item'|'ingredient_type'|'tag'='item'){
     check(Array.isArray(itemIds)&&itemIds.length<=10000&&itemIds.every(id),'INGREDIENT_IDS');
+    check(role==='item'||role==='ingredient_type'||role==='tag','INGREDIENT_ROLE');
+    const pattern=role==='item'?/^source\.Ingredients\[(\d+)\]\.(?:ItemID|ValidItemsList\.List\[\d+\])$/:
+      role==='ingredient_type'?/^source\.Ingredients\[(\d+)\]\.Any$/:
+      /^source\.Ingredients\[(\d+)\]\.TagsList\.List\[\d+\]$/;
     const refs=await db.getItemsReferences(itemIds,'incoming');
-    const candidates=refs.map(list=>(list??[]).flatMap(([recipeId,path])=>{
-      const match=/^source\.Ingredients\[(\d+)\]\.ItemID$/.exec(path);
-      return match?[{recipeId,index:Number(match[1])}]:[];
-    }));
+    const candidates=refs.map(list=>{
+      const unique=new Map<string,{recipeId:number;index:number}>();
+      for(const [recipeId,path] of list??[]){
+        const match=pattern.exec(path);
+        if(match){const index=Number(match[1]);unique.set(recipeId+':'+index,{recipeId,index});}
+      }
+      return [...unique.values()].sort((a,b)=>a.recipeId-b.recipeId||a.index-b.index);
+    });
     const ids=[...new Set(candidates.flat().map(x=>x.recipeId))].sort((a,b)=>a-b);
     const recipes=await getRecipes(ids);
     const byId=new Map(recipes.flatMap(r=>r?[[r.recipeId,r] as const]:[]));
     return Object.freeze(candidates.map((group,i)=>refs[i]===null?null:Object.freeze(group.flatMap(({recipeId,index})=>{
-      const r=byId.get(recipeId),ing=r?.ingredients[index];
-      return r&&ing?.kind==='item'&&ing.itemId===itemIds[i]?[Object.freeze({recipeId,resultItemId:r.resultItemId,
-        recipeKind:r.kind,ingredientIndex:index,quantity:ing.quantity})]:[];
+      const r=byId.get(recipeId),ing=r?.ingredients[index],itemId=itemIds[i];
+      if(!r||!ing)return [];
+      const matched=role==='item'?(ing.kind==='item'&&ing.itemId===itemId||ing.kind==='item_alternatives'&&ing.itemIds.includes(itemId)):
+        role==='ingredient_type'?ing.kind==='ingredient_type'&&ing.tagId===itemId:
+        ing.kind==='all_tags'&&ing.tagIds.includes(itemId);
+      return matched?[Object.freeze({recipeId,resultItemId:r.resultItemId,recipeKind:r.kind,ingredientIndex:index,
+        selectorKind:ing.kind,quantity:ing.quantity})]:[];
     }))));
   }
-  return Object.freeze({release:db.release,getRecipes,listRecipeIds,getResultRecipes,getFixedIngredientUses});
+  return Object.freeze({release:db.release,getRecipes,listRecipeIds,getResultRecipes,getIngredientUses});
 }
