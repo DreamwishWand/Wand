@@ -2,7 +2,7 @@
  * evidence that a chiral object has a representable mirrored orientation. */
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {exclusiveAnchorClass} from './saved-map-transform.ts';
-import {currentDesign,canPasteDesign,pasteDesign,translateDesignTargets,type DesignClipItem,type DesignTimeline,type DesignItemGeometry} from './design-layout.ts';
+import {currentDesign,canPasteDesign,pasteDesign,translateDesignTargets,transformDesignGroup,type DesignClipItem,type DesignTimeline,type DesignItemGeometry} from './design-layout.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export type SymmetryMode='vertical'|'horizontal'|'point';
 /** Axis/center coordinate is represented in half cells: x2=2*x. */
@@ -73,4 +73,33 @@ export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs
 export function symmetricMoveDesign(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,s:DesignSymmetry,dx:number,dy:number,eligible:ReadonlySet<number>,width:number,height:number){
  const targets=symmetricMoveTargets(t,ids,defs,s,dx,dy,eligible);
  return targets?translateDesignTargets(t,targets,defs,width,height):null;
+}
+
+/** Rotate the chosen group and its uniquely identified reflected counterpart.
+ * Compute the selected group using the existing native-footprint rotation,
+ * then reflect the resulting poses. A selected object and its counterpart
+ * may never request conflicting poses. One transaction preserves all IDs. */
+export function symmetricRotateDesign(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,s:DesignSymmetry,turns:number,eligible:ReadonlySet<number>,width:number,height:number):DesignTimeline|null{
+ if(!ids.length||!Number.isSafeInteger(turns)||turns%4===0||new Set(ids).size!==ids.length)return null;
+ const original=currentDesign(t),byId=new Map(original.map(p=>[p.id,p])),byPose=new Map<string,number[]>();
+ for(const p of original){const k=key(p),matches=byPose.get(k)??[];matches.push(p.id);byPose.set(k,matches);}
+ const rotated=transformDesignGroup(t,ids,defs,0,0,turns,width,height);
+ if(!rotated)return null;
+ const changed=new Map(currentDesign(rotated).map(p=>[p.id,p]));
+ const targets=new Map<number,{id:number;x:number;y:number;orientation:number}>();
+ function put(id:number,p:SymmetryItem){
+  if(!eligible.has(id))return false;
+  const prev=targets.get(id);
+  if(prev)return prev.x===p.x&&prev.y===p.y&&prev.orientation===p.orientation;
+  targets.set(id,{id,x:p.x,y:p.y,orientation:p.orientation});return true;
+ }
+ for(const id of ids){
+  const p=byId.get(id),next=changed.get(id),g=p?defs.get(p.itemId):null;
+  if(!p||!next||!g||!eligible.has(id)||byPose.get(key(p))?.length!==1)return null;
+  const before=reflectedDesignItem(p,g,s),after=reflectedDesignItem(next,g,s);
+  if(!before||!after)return null;
+  const matches=byPose.get(key(before));
+  if(matches?.length!==1||!put(id,next)||!put(matches[0],after))return null;
+ }
+ return translateDesignTargets(t,[...targets.values()],defs,width,height);
 }

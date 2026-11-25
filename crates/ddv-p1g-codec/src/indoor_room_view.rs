@@ -40,7 +40,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
  let mut out=Vec::new();let mut total=0usize;
  for(h,f,room,surfaces)in rooms{
   let mut rows=Vec::new();
-  for(kind,_native_wall,grid,material)in surfaces{
+  for(kind,native_wall,grid,material)in surfaces{
    let mut counts=BTreeMap::<u64,usize>::new();let mut state="unresolved";
    if let Some(n)=grid{
     let key=n.to_string();
@@ -61,13 +61,66 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
      }
     }
    }
-   rows.push(json!({"kind":kind,"ordinal":rows.len()+1,"finish":material,"gridStatus":state,"items":counts.into_iter().map(|(item,quantity)|json!({"itemId":item,"quantity":quantity})).collect::<Vec<_>>() }));
+   rows.push(json!({"kind":kind,"ordinal":rows.len()+1,"wallPosition":native_wall,"finish":material,"gridStatus":state,"items":counts.into_iter().map(|(item,quantity)|json!({"itemId":item,"quantity":quantity})).collect::<Vec<_>>() }));
   }
   let name=room.get("Name").and_then(Value::as_str).filter(|s|s.chars().count()<=128).unwrap_or("");
   out.push(json!({"ordinal":out.len()+1,"house":h,"floor":f,"name":name,"ceiling":finish(room.get("Ceiling")),"surfaces":rows}));
  }
- Ok(json!({"contract":"wand.db05.indoor-rooms@1","rooms":out,"geometryVerified":false,"writerAuthorized":false}).to_string())
+ Ok(json!({"contract":"wand.db05.indoor-rooms@1","rooms":out,"geometryVerified":false,"writerAuthorized":false,"ownedFinishIds":owned_finishes(&root)}).to_string())
 }
+
+/// Exact positive ownership in a unique compatible Trimming route. An
+/// unrecognized route makes the picker empty, not a fabricated unlock.
+fn owned_finishes(root:&Value)->Vec<u32>{
+ let Some(map)=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(Value::as_object)else{return vec![];};
+ let mut routes=map.iter().filter(|(_,v)|v.get("CompatibleItemType").and_then(Value::as_str)==Some("ItemType_Trimming"));
+ let Some((key,route))=routes.next()else{return vec![];};
+ if routes.next().is_some()||route.get("ID").and_then(Value::as_u64).is_none_or(|n|n.to_string()!=*key)||route.as_object().is_none_or(|o|o.keys().any(|k|k.starts_with("Compatible")&&k!="CompatibleItemType")){return vec![];}
+ let Some(items)=route.get("Inventory").and_then(Value::as_object)else{return vec![];};
+ let mut result=Vec::new();
+ for(k,v)in items{if let Ok(n)=k.parse::<u32>(){if n.to_string()==*k&&matches!(n/100000,1600|1601)&&v.get("Amount").and_then(Value::as_u64).is_some_and(|a|a>0&&a<=i32::MAX as u64){result.push(n);}}}
+ if result.len()>20000{return vec![];}result.sort_unstable();result
+}
+pub(super) fn finish_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ use ddv_save_patch::{RoomFinishTarget,RoomFinishAction,preview_room_finish};
+ if plan.len()>2048{return Err(CodecError::Bounds);}
+ let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+ let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+ let p=value.as_object().ok_or(CodecError::Json)?;
+ if p.len()!=5||p.keys().any(|k|!matches!(k.as_str(),"roomOrdinal"|"itemId"|"kind"|"wall"|"expected")){return Err(CodecError::Json);}
+ let ordinal=p.get("roomOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=2048).ok_or(CodecError::Json)?;
+ let item=p.get("itemId").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
+ if !owned_finishes(&root).contains(&item){return Err(CodecError::Patch);}
+ let houses=root.get("World").and_then(|v|v.get("PlayerHouses")).and_then(Value::as_array).ok_or(CodecError::Json)?;
+ if houses.len()>128{return Err(CodecError::Bounds);}
+ let mut seen=0u64;let mut target=None;
+ 'find:for(h,house)in houses.iter().enumerate(){
+  let Some(floors)=house.get("Floors")else{continue;};let floors=floors.as_array().ok_or(CodecError::Json)?;
+  if floors.len()>128{return Err(CodecError::Bounds);}
+  for(f,floor)in floors.iter().enumerate(){
+   let Some(rooms)=floor.get("Rooms")else{continue;};let rooms=rooms.as_object().ok_or(CodecError::Json)?;
+   for key in rooms.keys(){seen+=1;if seen==ordinal{
+    let slot=key_id(key).and_then(|n|u8::try_from(n).ok()).filter(|n|*n<=3).ok_or(CodecError::Json)?;
+    let house_item_id=house.get("HouseItemID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(CodecError::Json)?;
+    target=Some(RoomFinishTarget{house_index:h,house_item_id,floor_index:f,room_slot:slot});break 'find;
+   }}
+  }
+ }
+ let target=target.ok_or(CodecError::Json)?;
+ let wall=p.get("wall").ok_or(CodecError::Json)?;
+ let action=match p.get("kind").and_then(Value::as_str){
+  Some("floor") if wall.is_null()=>RoomFinishAction::Flooring{expected:p.get("expected").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?},
+  Some("wall")=>{
+   let wall=if wall.is_null(){None}else{Some(wall.as_u64().and_then(|n|u8::try_from(n).ok()).filter(|n|*n<4).ok_or(CodecError::Json)?)};
+   let old=p.get("expected").and_then(Value::as_array).filter(|v|v.len()==4).ok_or(CodecError::Json)?;
+   let mut expected=[None;4];for(i,v)in old.iter().enumerate(){if !v.is_null(){expected[i]=Some(v.as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?);}}
+   RoomFinishAction::Wallpaper{wall,expected}
+  },
+  _=>return Err(CodecError::Json)
+ };
+ preview_room_finish(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,target,item,action).map_err(|_|CodecError::Patch)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;

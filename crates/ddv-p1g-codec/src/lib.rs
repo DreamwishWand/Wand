@@ -1379,6 +1379,29 @@ mod browser_amount_preview {
             saved_grid_references_json(source)
                 .map_err(|_|fail("DB05_GRID_INDEX_INVALID"))
         }
+        pub fn preview_indoor_finish(&self,plan:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
+            let source=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_INDOOR_NOT_OPEN"))?.profile.as_slice()
+            };
+            let mut draft=indoor_room_view::finish_candidate(source,plan).map_err(|_|fail("DB05_ROOM_FINISH_REJECTED"))?;
+            let result=(||->Result<String,JsValue>{
+                let invalid=||fail("DB05_ROOM_FINISH_REOPEN");
+                if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{return Err(invalid());}
+                validate_profile(draft.patched_json.as_bytes()).map_err(|_|invalid())?;
+                if matches!(self.kind,InputKind::EncryptedP1g){
+                    let opened=self.p1g.as_ref().ok_or_else(invalid)?;
+                    let mut archive=rezip_profile(&opened.original_zip,&opened.layout,draft.patched_json.as_bytes()).map_err(|_|invalid())?;
+                    let encrypted=ecb_encrypt(&archive);archive.zeroize();
+                    let mut encrypted=encrypted.map_err(|_|invalid())?;
+                    let verified=OpenedP1g::open(&encrypted).is_ok_and(|r|r.profile==draft.patched_json.as_bytes());
+                    encrypted.zeroize();if !verified{return Err(invalid());}
+                }
+                Ok(serde_json::json!({"contract":"wand.db05.room-finish-preview@1","changed":true,"reopenVerified":true,"untouchedBytesPreserved":true,"inventoryUnchanged":true,"currentBuildRuntimeVerified":false,"exportAuthorized":false}).to_string())
+            })();
+            draft.patched_json.zeroize();result
+        }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
             let source=match self.kind{
