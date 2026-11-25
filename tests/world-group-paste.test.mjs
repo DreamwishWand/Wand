@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -65,4 +65,13 @@ test('point and horizontal reflection are native orientation transforms; unrepre
  const horizontal=symmetricWorldCandidate(poses,{mode:'horizontal',x:10,y:-10},false,[grid],rasters,defs,stock,[],0);
  assert.deepEqual(horizontal.rows.map(p=>[p.x,p.y,p.orientation]),[[4,16,'GridOrientation_Up']]);
  assert.equal(symmetricWorldCandidate(poses,{mode:'vertical',x:10.25,y:-3},false,[grid],rasters,defs,stock,[],0),null);
+});
+
+test('cut follows world navigation but never another File or conflicting ordinal',()=>{
+ const source=[saved(2,4,-3)],file=new File(['original'],'profile.json'),cut={file,scope:'Village04',rows:captureCutWitness(source)};
+ assert.equal(cutClipboardMatches(cut,file,'Village04',source),true);
+ assert.equal(cutClipboardMatches(cut,file,'Village04',[]),false);
+ assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',[saved(4,4,-3)]),true);
+ assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',source),false);
+ assert.equal(cutClipboardMatches(cut,new File(['original'],'profile.json'),'VillageExpansion01',[]),false);
 });
