@@ -95,3 +95,15 @@ export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly Mainland
  const next=valid?stageWorldEdit(m,timeline,p.object.localOrdinal,x,y,orientation,terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length?'原本地形属性不一致候補・衝突未判定':'衝突・上下関係未判定'):null;
  return {...anchor,shape,valid:!!next,next};
 }
+
+/** Integer coordinates at the selected object's native cell resolution,
+ * expressed against the original world origin (X,+Z), never a Grid ID.
+ * factor=2 preserves the half-step lattice instead of rounding it away. */
+export function mainlandSavedCell(p:MainlandSavedObject):{x:number;z:number}|null{
+ const x=p.x*p.factor,z=-p.y*p.factor;
+ return Number.isSafeInteger(x)&&Number.isSafeInteger(z)?{x,z}:null;
+}
+export function mainlandSavedDraftAtCell(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,x:number,z:number,orientation:string|null){
+ if(!Number.isSafeInteger(x)||!Number.isSafeInteger(z)||!mainlandSavedCell(p))return null;
+ return mainlandSavedDraft(p,grids,rasters,maps,timeline,(x+.5)/p.factor,-(z+.5)/p.factor,orientation);
+}

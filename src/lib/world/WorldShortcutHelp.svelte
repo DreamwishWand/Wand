@@ -1,7 +1,7 @@
 <script lang="ts">
  import type {WandLanguage} from '../ui/preferences.ts';
  export let locale:WandLanguage='ja';
- export let designMode=false;
+ export let designMode=false,worldOverview=false;
  let open=false;
  const translations={
  ja:['キーボードショートカット','閉じる','コピー','切り取り','貼り付け','複製','全選択','取り消し','やり直し','削除','移動（1マス）','回転','取消・選択解除','確定','拡大・縮小','全体表示','セーブ編集ではコピー・切り取り・貼り付け・複製・削除は未対応です。'],
@@ -25,7 +25,7 @@
  </button>
  {#if open}<section aria-label={labels[0]} class="shortcut-panel">
   <header><strong>{labels[0]}</strong><button type="button" aria-label={labels[1]} on:click={()=>open=false}>×</button></header>
-  <dl>{#each keys as key,i}<div class:unavailable={!designMode&&unavailable.has(i)}><dt>{labels[i+2]}</dt><dd><kbd>{key}</kbd></dd></div>{/each}{#if designMode}<div><dt>{nw[0]}</dt><dd><kbd>[ / ]</kbd></dd></div><div><dt>{nw[1]}</dt><dd><kbd>Enter / Space</kbd></dd></div><div><dt>{nw[2]}</dt><dd><kbd>Space + Drag / Middle Drag</kbd></dd></div>{/if}</dl>
+  <dl>{#each keys as key,i}<div class:unavailable={!designMode&&unavailable.has(i)}><dt>{labels[i+2]}</dt><dd><kbd>{key}</kbd></dd></div>{/each}{#if designMode||worldOverview}<div><dt>{nw[0]}</dt><dd><kbd>[ / ]</kbd></dd></div>{#if designMode}<div><dt>{nw[1]}</dt><dd><kbd>Enter / Space</kbd></dd></div>{/if}<div><dt>{nw[2]}</dt><dd><kbd>Space + Drag / Middle Drag</kbd></dd></div>{/if}</dl>
   {#if !designMode}<p>{labels[16]}</p>{/if}
  </section>{/if}
 </div>

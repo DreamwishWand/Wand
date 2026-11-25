@@ -161,11 +161,11 @@
     {#if worldReady}<button type="button" aria-pressed={overviewOpen} aria-label={overviewLabel} title={overviewLabel} on:click={()=>overviewOpen=!overviewOpen}>{overviewLabel}</button>{/if}
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
-  <WorldShortcutHelp {locale} {designMode}/>
+  <WorldShortcutHelp {locale} {designMode} worldOverview={overviewOpen}/>
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
   {#if error}<p class="workspace-message" role="alert">{error}</p>{/if}
   {#if selected&&raster&&!designMode}
-    <div class="workspace-grid" >
+    <div class="workspace-grid" class:overview-covered={overviewOpen}>
       {#if !shapeMap||!terrainDisplayed}<div class="terrain-side" class:inactiveMap={Boolean(shapeMap)&&!showSeparateTerrain}>
         <MediaMapGridOverlay initialSchematic compact
           selection={{platform:'Steam',gameVersion:'1.26.2',regionKey:selected.scope,viewKey:selected.key,layoutId:selected.layoutId,nativeGridId:selected.gridIdNative,gridDataPath:selected.gridDataPath,sizeX:selected.sizeX,sizeY:selected.sizeY}}
@@ -201,7 +201,7 @@
  .navigation-toggle{display:grid;place-items:center;width:38px;height:38px;flex:none;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.navigation-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}.navigation-toggle:focus-visible{outline:2px solid var(--wand-focus)}
  nav{max-width:calc(100% - 43px);padding:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}nav[hidden]{display:none}
  .workspace-message{position:absolute;z-index:13;top:52px;left:8px;padding:6px;background:var(--wand-card);border-radius:5px}
- .workspace-grid,.terrain-side{position:absolute;inset:0;gap:0}.terrain-side>.note{position:absolute;z-index:4;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:5px 7px;border-radius:5px;background:var(--wand-card)}
+ .workspace-grid,.terrain-side{position:absolute;inset:0;gap:0}.workspace-grid.overview-covered{display:none}.terrain-side>.note{position:absolute;z-index:4;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:5px 7px;border-radius:5px;background:var(--wand-card)}
  .save-side{position:absolute;z-index:5;left:6px;bottom:38px;max-width:calc(100% - 65px);padding:4px 7px;border-radius:5px;background:var(--wand-card)}
  .save-side.hasShape{z-index:1;inset:0;max-width:none;padding:0;border-radius:0;background:none}.inactiveMap,.save-side.hasShape.inactiveMap{display:none}
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
- import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,type MainlandSavedObject} from './mainland-saved-objects.ts';
  import {currentWorldEdits,emptyWorldTimeline,travelWorldTimeline,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -16,6 +16,7 @@
  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import MapCameraControls from './MapCameraControls.svelte';
+ import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
@@ -48,13 +49,78 @@
  $: visibleObjects=visibleMainlandSaved(allObjects,viewport);
  let mapWidth=0,mapHeight=0,selected:number|null=null,query='',searchOpen=false,limit=60,layersOpen=false;
  let moving=false,hover:{x:number;y:number}|null=null;
+ let root:HTMLElement,preciseOpen=false,preciseX:number|undefined,preciseZ:number|undefined,preciseSeen='',moveError=false;
+ let spacePan=false,suppressClick=false;
+ type ObjectDrag={pointer:number;target:MainlandSavedObject;start:{x:number;y:number};cell:{x:number;z:number};clientX:number;clientY:number;end:{x:number;z:number};moved:boolean};
+ let objectDrag:ObjectDrag|null=null;
  const editWords={ja:['移動','左回転','右回転','取消','元に戻す','やり直す','同じエリア内に移動してください'],en:['Move','Rotate left','Rotate right','Cancel','Undo','Redo','Move within the same area'],fr:['Déplacer','Rotation gauche','Rotation droite','Annuler','Annuler','Rétablir','Déplacez dans la même zone'],it:['Sposta','Ruota a sinistra','Ruota a destra','Annulla','Annulla','Ripeti','Sposta nella stessa zona'],de:['Verschieben','Links drehen','Rechts drehen','Abbrechen','Rückgängig','Wiederholen','Im selben Bereich verschieben'],'es-ES':['Mover','Girar a la izquierda','Girar a la derecha','Cancelar','Deshacer','Rehacer','Mueve dentro de la misma zona'],'zh-CN':['移动','向左旋转','向右旋转','取消','撤销','重做','请在同一区域内移动'],'pt-BR':['Mover','Girar à esquerda','Girar à direita','Cancelar','Desfazer','Refazer','Mova na mesma área']} as const;
  $: ew=editWords[locale]??editWords.en;
+ const preciseWords={ja:['精密配置','適用','ワールド座標（対象の1マス単位）'],en:['Precise placement','Apply','World coordinates (object cell units)'],fr:['Placement précis','Appliquer','Coordonnées du monde (cases de l’objet)'],it:['Posizionamento preciso','Applica','Coordinate del mondo (celle dell’oggetto)'],de:['Präzise Platzierung','Anwenden','Weltkoordinaten (Objektzellen)'],'es-ES':['Colocación precisa','Aplicar','Coordenadas del mundo (celdas del objeto)'],'zh-CN':['精确放置','应用','世界坐标（物品格单位）'],'pt-BR':['Posicionamento preciso','Aplicar','Coordenadas do mundo (células do objeto)']} as const;
+ $: pw=preciseWords[locale]??preciseWords.en;
+ $: nativeCell=chosen?mainlandSavedCell(chosen):null;
+ $: preciseSignature=chosen&&nativeCell?chosen.object.localOrdinal+':'+nativeCell.x+':'+nativeCell.z:'';
+ $: if(preciseSignature!==preciseSeen){preciseSeen=preciseSignature;preciseX=nativeCell?.x;preciseZ=nativeCell?.z;moveError=false;}
+ $: canMove=!!chosen&&!!nativeCell&&layerSelectable(layerState,chosen.object)&&mainlandSavedMoveEligible(chosen)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
+ $: preciseChanged=typeof preciseX==='number'&&typeof preciseZ==='number'&&Number.isSafeInteger(preciseX)&&Number.isSafeInteger(preciseZ)&&!!nativeCell&&(preciseX!==nativeCell.x||preciseZ!==nativeCell.z);
+ $: draggedDraft=objectDrag?.moved&&bound?mainlandSavedDraftAtCell(objectDrag.target,bound,rasters,saveMaps,timeline,objectDrag.end.x,objectDrag.end.z,objectDrag.target.object.orientation):null;
+ function applyCell(x:number,z:number){
+  if(!canMove||!chosen||!bound)return false;
+  const q=mainlandSavedDraftAtCell(chosen,bound,rasters,saveMaps,timeline,x,z,chosen.object.orientation);
+  if(!q?.next){moveError=true;return false;}
+  timeline=q.next;stopMove();return true;
+ }
+ function applyPrecise(){if(preciseChanged&&typeof preciseX==='number'&&typeof preciseZ==='number')applyCell(preciseX,preciseZ);}
+ function pointerPoint(e:MouseEvent){const matrix=svg?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
+ function startPointer(e:PointerEvent){
+  suppressClick=false;
+  if(saveMode&&!moving&&!spacePan&&!e.shiftKey&&e.button===0&&e.pointerType!=='touch'&&!pending.size&&!failed&&!saveLoading&&!saveFailed){
+   const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
+   if(p&&hit&&cell&&mainlandSavedMoveEligible(hit)){
+    objectDrag={pointer:e.pointerId,target:hit,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false};return;
+   }
+  }
+  gesture.begin(e,camera.zoom>1&&(!moving||e.button===1||e.shiftKey||spacePan||e.pointerType==='touch'));
+ }
+ function updateObjectDrag(e:PointerEvent){
+  const d=objectDrag;if(!d||d.pointer!==e.pointerId)return false;
+  if(!d.moved&&Math.hypot(e.clientX-d.clientX,e.clientY-d.clientY)<5)return true;
+  const p=pointerPoint(e);if(!p)return true;
+  if(!d.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* pointer ended */}selected=d.target.object.localOrdinal;}
+  objectDrag={...d,moved:true,end:{x:d.cell.x+Math.round((p.x-d.start.x)*d.target.factor),z:d.cell.z+Math.round((d.start.y-p.y)*d.target.factor)}};e.preventDefault();return true;
+ }
+ function finishPointer(e:PointerEvent,commit:boolean){
+  gesture.end(e);if(objectDrag?.pointer!==e.pointerId)return;
+  if(commit)updateObjectDrag(e);
+  const d=objectDrag;objectDrag=null;
+  if(!d?.moved)return;
+  suppressClick=true;
+  if(!commit||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
+  const q=mainlandSavedDraftAtCell(d.target,bound,rasters,saveMaps,timeline,d.end.x,d.end.z,d.target.object.orientation);
+  if(q?.next){timeline=q.next;stopMove();}else moveError=true;
+ }
+ function keys(e:KeyboardEvent){
+  if(!worldShortcutTarget(e,root))return;
+  const mapFocused=e.target instanceof HTMLElement&&!!e.target.closest('.mainland-map');
+  if(mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.code==='Space'){spacePan=true;e.preventDefault();return;}
+  if(saveMode&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
+   const list=allObjects.filter(p=>layerSelectable(layerState,p.object));if(!list.length)return;
+   const i=list.findIndex(p=>p.object.localOrdinal===selected),delta=e.key==='['?-1:1;
+   focus(list[i<0?(delta>0?0:list.length-1):(i+delta+list.length)%list.length]);e.preventDefault();return;
+  }
+  const action=worldShortcut(e);if(!action)return;
+  if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
+  if(!saveMode)return;
+  if(action==='undo'||action==='redo'){e.preventDefault();travel(action==='undo'?-1:1);return;}
+  if(action==='cancel'){e.preventDefault();if(objectDrag){objectDrag=null;return;}if(moving||preciseOpen){stopMove();preciseOpen=false;return;}selected=null;return;}
+  if(action==='confirm'&&mapFocused&&moving&&draft?.next){e.preventDefault();timeline=draft.next;stopMove();return;}
+  if(action==='rotate-left'||action==='rotate-right'){if(chosen){e.preventDefault();rotate(action==='rotate-left'?-1:1);}return;}
+  const n=NUDGE[action];if(n&&nativeCell&&chosen){e.preventDefault();applyCell(nativeCell.x+n[0],nativeCell.z-n[1]);}
+ }
  $: draft=moving&&hover&&chosen&&bound&&!pending.size&&!failed?mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,hover.x,hover.y,chosen.object.orientation):null;
- function stopMove(){moving=false;hover=null;}
- function rotate(delta:number){if(!chosen||!bound||!isCardinal(chosen.object.orientation)||!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||pending.size||failed)return;const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(chosen.object.orientation)+delta+4)%4];const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,chosen.x+.25/chosen.factor,chosen.y-.25/chosen.factor,orientation);if(q?.next){timeline=q.next;stopMove();}}
+ function stopMove(){moving=false;hover=null;moveError=false;objectDrag=null;}
+ function rotate(delta:number){if(!chosen||!bound||!isCardinal(chosen.object.orientation)||!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||pending.size||failed||saveLoading||saveFailed)return;const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(chosen.object.orientation)+delta+4)%4];const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,chosen.x+.25/chosen.factor,chosen.y-.25/chosen.factor,orientation);if(q?.next){timeline=q.next;stopMove();}}
  function travel(delta:-1|1){stopMove();timeline=travelWorldTimeline(timeline,delta);}
- function follow(e:PointerEvent){const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
+ function follow(e:PointerEvent){if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: chosen=allObjects.find(p=>p.object.localOrdinal===selected)??null;
  let artwork=new Map<number,string>(),artworkPending=new Set<number>(),names=new Map<number,string>(),nameEpoch=0;
@@ -114,22 +180,24 @@
   try{images=new Map(images).set(k,makeImage(r));rasters=new Map(rasters).set(k,r);}catch{failed=true;}
  }
  function click(e:MouseEvent){
+  if(suppressClick){suppressClick=false;return;}
   if(gesture.consumeClick()||e.detail===0||!bound||pending.size||failed)return;
   const m=svg.getScreenCTM();if(!m)return;
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
-  if(saveMode&&moving&&chosen&&layerSelectable(layerState,chosen.object)){const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else hover={x:p.x,y:p.y};return;}
+  if(saveMode&&moving&&chosen&&canMove){const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else hover={x:p.x,y:p.y};return;}
   if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){selected=hit.object.localOrdinal;overlaps=[];return;}selected=null;}
   const hits=mainlandTerrainHits(bound,rasters,p.x,p.y);
   overlaps=hits.length>1?hits:[];if(hits.length===1)onChoose(hits[0].key);
  }
  onDestroy(()=>{nameEpoch++;subscribed?.removeEventListener('message',receive);});
 </script>
-<section class="mainland-overview" aria-label={title||words[0]}>
+<svelte:window on:keydown={keys} on:keyup={e=>{if(e.code==='Space')spacePan=false;}} on:blur={()=>{spacePan=false;objectDrag=null;}}/>
+<section class="mainland-overview" bind:this={root} aria-label={title||words[0]}>
  <div class="overview-tools"><strong>{title||words[0]}</strong>{#if saveMode}<button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
- on:pointerdown={e=>gesture.begin(e,camera.zoom>1&&(!moving||e.button===1||e.shiftKey||e.pointerType==='touch'))} on:pointermove={follow}
- on:pointerup={e=>gesture.end(e)} on:pointercancel={e=>gesture.end(e)} on:pointerleave={()=>{gesture.leave();hover=null;}}>
+ on:pointerdown={startPointer} on:pointermove={follow}
+ on:pointerup={e=>finishPointer(e,true)} on:pointercancel={e=>finishPointer(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;}}>
   <svg bind:this={svg} {viewBox} aria-hidden="true">
    <rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="#27313a"/>
    {#each [...(bound??[])].sort((a,b)=>a.origin.position[1]-b.origin.position[1]) as g (g.key)}
@@ -145,6 +213,7 @@
      {#if p.object.subgrid}<circle cx={(p.shape?.width??1)/2} cy={(p.shape?.height??1)/2} r={Math.min(1.5,4*p.factor/Math.max(1,cellPixels))} fill="#d6a6ef" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
     </g>
    {/each}
+   {#if draggedDraft&&objectDrag}<path class="mainland-save-ghost" d={draggedDraft.shape.path} transform={'translate('+draggedDraft.x+' '+draggedDraft.y+') scale('+1/objectDrag.target.factor+' '+(-1/objectDrag.target.factor)+')'} fill={draggedDraft.valid?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#if draft&&chosen}<path class="mainland-save-ghost" d={draft.shape.path} transform={'translate('+draft.x+' '+draft.y+') scale('+1/chosen.factor+' '+(-1/chosen.factor)+')'} fill={draft.valid?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
   </svg>
  </button>
@@ -152,13 +221,15 @@
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
  {#if saveMode&&searchOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" on:click={()=>focus(p)}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}
  {#if saveMode&&layersOpen}<div class="overview-layers"><WorldLayerControls {locale} state={layerState} disabled={false} onChange={s=>{layerState=s;selected=null;stopMove();}}/></div>{/if}
- {#if saveMode&&chosen}<div class="overview-selection"><strong>{name(chosen,names)}</strong><button type="button" aria-pressed={moving} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedMoveEligible(chosen)||saveLoading||failed} on:click={()=>{moving=!moving;hover=null;}}>{moving?ew[3]:ew[0]}</button><button type="button" aria-label={ew[1]} title={ew[1]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||failed} on:click={()=>rotate(-1)}>⟲</button><button type="button" aria-label={ew[2]} title={ew[2]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||failed} on:click={()=>rotate(1)}>⟳</button><button type="button" disabled={!layerSelectable(layerState,chosen.object)} on:click={()=>onChoose(chosen!.area,chosen!.object.localOrdinal)}>{sw[2]}</button>{#if moving}<small>{ew[6]}</small>{/if}</div>{/if}
+ {#if saveMode&&chosen}<div class="overview-selection"><strong>{name(chosen,names)}</strong><button type="button" aria-pressed={moving} disabled={!canMove} on:click={()=>{moving=!moving;hover=null;}}>{moving?ew[3]:ew[0]}</button><button type="button" aria-label={ew[1]} title={ew[1]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(-1)}>⟲</button><button type="button" aria-label={ew[2]} title={ew[2]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(1)}>⟳</button><button type="button" disabled={!layerSelectable(layerState,chosen.object)} on:click={()=>onChoose(chosen!.area,chosen!.object.localOrdinal)}>{sw[2]}</button><button type="button" aria-label={pw[0]} aria-pressed={preciseOpen} disabled={!canMove} on:click={()=>{preciseOpen=!preciseOpen;stopMove();}}>{pw[0]}</button>{#if moving||moveError}<small role={moveError?'alert':undefined}>{ew[6]}</small>{/if}</div>{/if}
+ {#if saveMode&&chosen&&preciseOpen&&nativeCell}<form class="overview-precise" on:submit|preventDefault={applyPrecise}><strong>{pw[2]}</strong><label>X<input type="number" step="1" bind:value={preciseX} disabled={!canMove}/></label><label>Z<input type="number" step="1" bind:value={preciseZ} disabled={!canMove}/></label><button type="submit" disabled={!canMove||!preciseChanged}>{pw[1]}</button><button type="button" aria-label={words[1]} on:click={()=>preciseOpen=false}>×</button></form>{/if}
  {#if saveMode}<div class="overview-history"><button type="button" aria-label={ew[4]} title={ew[4]} disabled={timeline.cursor===0} on:click={()=>travel(-1)}>↶</button><button type="button" aria-label={ew[5]} title={ew[5]} disabled={timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button></div>{/if}
  {#if overlaps.length}<div class="overlap-choices"><small>{words[4]}</small>{#each overlaps as g (g.key)}<button type="button" on:click={()=>onChoose(g.key)}>{label(g.key)}</button>{/each}</div>{/if}
 </section>
 <style>
- .mainland-overview{position:absolute;inset:0;z-index:20;background:var(--wand-bg);color:var(--wand-text);overflow:hidden;isolation:isolate}.mainland-map{position:absolute;inset:0;width:100%;height:100%;background:#27313a;border:0;padding:0;touch-action:none}.mainland-map svg{display:block;width:100%;height:100%}
+ .mainland-overview{position:absolute;inset:0;z-index:14;background:var(--wand-bg);color:var(--wand-text);overflow:hidden;isolation:isolate}.mainland-map{position:absolute;inset:0;width:100%;height:100%;background:#27313a;border:0;padding:0;touch-action:none}.mainland-map svg{display:block;width:100%;height:100%}
  .overview-tools,.overlap-choices,.mainland-overview p{position:absolute;z-index:4;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:5px 8px}.overview-tools{top:6px;left:6px;display:flex;gap:8px;align-items:center}.overview-tools button{display:grid;place-items:center;width:34px;height:34px}.overview-tools svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7}.mainland-overview p{top:52px;left:6px;margin:0}.overlap-choices{left:8px;bottom:8px;display:grid;gap:4px;max-width:calc(100% - 70px)}button:not(.mainland-map){background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:5px;cursor:pointer;padding:5px 8px}
+ .overview-precise{position:absolute;z-index:6;right:6px;top:52px;display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:end;width:min(280px,calc(100% - 12px));padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.overview-precise strong{grid-column:1/-1;font-size:12px}.overview-precise label{display:grid;gap:3px;font-size:12px;min-width:0}.overview-precise input{box-sizing:border-box;width:100%;padding:6px;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:5px}.overview-precise button:disabled{opacity:.45}
  .overview-search,.overview-layers,.overview-selection{position:absolute;z-index:5;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;padding:6px}
  .overview-search{top:100px;bottom:45px;left:6px;width:min(270px,65%);display:flex;flex-direction:column;gap:5px}.overview-search input{font:inherit;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);padding:6px;min-width:0}.overview-results{overflow:auto;display:grid;gap:3px;align-content:start}.overview-results button{display:flex;align-items:center;gap:7px;text-align:left;min-height:32px}.overview-results img{width:36px;height:36px;object-fit:contain}.overview-layers{top:52px;right:6px;max-height:75%;overflow:auto}.overview-selection{bottom:6px;left:6px;display:flex;align-items:center;gap:8px;max-width:calc(100% - 65px)} .mainland-overview p.save-status{top:52px;max-width:75%}.overview-selection{flex-wrap:wrap}.overview-history{position:absolute;z-index:5;right:60px;bottom:6px;display:flex;gap:4px}.overview-history button{min-width:34px;min-height:34px}
 </style>

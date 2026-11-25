@@ -141,7 +141,7 @@ test('actual mainland terrain resolves two distinct native areas in one local de
  assert.equal(resolveMainlandDesign(modified,a.x,a.y,boundaryShape),null);
 });
 
-import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft} from '../src/lib/world/mainland-saved-objects.ts';
+import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell} from '../src/lib/world/mainland-saved-objects.ts';
 test('mainland saved objects preserve exact grid identity, staged coordinates and shape holes',()=>{
  const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
  const p={localOrdinal:1,localGridOrdinal:3,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',subgrid:null};
@@ -172,6 +172,10 @@ test('mainland save move drafts remain native same-grid and reject overlaps or o
  const a={area:g.key,object:o,shape,factor:g.factor,...mainlandMapAnchor(g,o.x,o.y)},maps=new Map([[g.key,m]]),timeline=emptyWorldTimeline();
  const b=mainlandMapAnchor(g,8.5,9.5),draft=mainlandSavedDraft(a,grids,rasters,maps,timeline,b.x,b.y,o.orientation);
  assert(draft?.valid);assert.equal(currentWorldEdits(draft.next)[0].plan.replacementX,8);assert.equal(currentWorldEdits(draft.next)[0].plan.replacementY,9);
+ const coords=mainlandSavedCell(a);assert.deepEqual(coords,{x:2*g.origin.position[0]+4,z:2*g.origin.position[2]+6});
+ const exact=mainlandSavedDraftAtCell(a,grids,rasters,maps,timeline,coords.x+4,coords.z+3,o.orientation);assert.deepEqual(exact.next,draft.next);
+ assert.equal(mainlandSavedDraftAtCell(a,grids,rasters,maps,timeline,coords.x+.5,coords.z,o.orientation),null);
+ assert.equal(mainlandSavedDraftAtCell(a,grids,rasters,maps,timeline,coords.x+5000,coords.z,o.orientation)?.valid,false);
  const outside=mainlandMapAnchor(g,50.5,50.5);assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,outside.x,outside.y,o.orientation)?.valid,false);
  const other=grids.find(g=>g.key==='Forest'),far=mainlandMapAnchor(other,4.5,6.5);
  assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,far.x,far.y,o.orientation)?.valid,false);
