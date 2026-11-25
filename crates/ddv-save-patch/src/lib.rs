@@ -1198,7 +1198,7 @@ pub fn preview_plain_grid_place(
 /// Insert an ordinary leaf into an existing owned support Grid. The caller
 /// has resolved its exact parent chain and verified the original support
 /// footprint. Unlike terrain grids, multiple supports may share a data path.
-pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+fn validate_support_grid_destination(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str)->Result<(),PatchError>{
  if item_id/100_000!=400||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||
     !d.data_path.starts_with("GridData/Furniture/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
@@ -1213,8 +1213,20 @@ pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item
     c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|v|v.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
  let objects=g.get("Objects").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
  if objects.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1))){return Err(PatchError::AmbiguousTarget);}
+ Ok(())
+}
+pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ validate_support_grid_destination(source,d,item_id,xy,orientation)?;
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
+}
+/// Atomic relocation of a plain leaf between two separately resolved owned support grids.
+/// Grid-local identities are allocated from the destination counter; stock is untouched.
+pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
+ validate_support_grid_destination(source,d,target.item_id,xy,orientation)?;
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
 }
 
 /// One atomic stock+placement candidate. Never create an absent stock entry:
