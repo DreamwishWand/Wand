@@ -22,6 +22,16 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[]):Desi
  const a=rows as DesignClipItem[],x=Math.min(...a.map(p=>p.dx)),y=Math.min(...a.map(p=>p.dy));
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
+export interface CutWitness{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string}
+export interface CutClipboard{file:File;rows:CutWitness[]}
+export const worldFurnitureCut=writable<CutClipboard|null>(null);
+export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitness[]|null{
+ if(!captureFurnitureGroup(items))return null;
+ return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as Cardinal,area:p.area}));
+}
+export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[]):boolean{
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&stockSourceEligible(p)&&!nativeActionBlocked(p.object.editRestrictions,'move')));
+}
 export type GroupGeometry=ReadonlyMap<number,ReadonlyMap<number,DesignItemGeometry>>;
 export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:Cardinal;destination:StockDestination}
 export interface GroupPasteCandidate{rows:GroupPasteRow[];ghosts:StockCandidate[]}
@@ -66,6 +76,21 @@ export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonl
  }
  return {rows,ghosts};
 }
+export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
+ if(cut.length!==candidate.rows.length)return null;
+ const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
+ return rows.every((r,i)=>r.itemId===cut[i].itemId)?rows:null;
+}
+export const groupCutWords={
+ ja:['切り取り','切り取り済み（貼り付けまで元の家具は残ります）','家具を移動','移動元を確認できません。'],
+ en:['Cut','Cut (originals remain until paste)','Move furniture','Source furniture unavailable.'],
+ fr:['Couper','Coupé (originaux conservés jusqu’au collage)','Déplacer','Meubles source indisponibles.'],
+ it:['Taglia','Tagliato (originali conservati fino a incolla)','Sposta mobili','Origine non disponibile.'],
+ de:['Ausschneiden','Ausgeschnitten (Originale bleiben bis zum Einfügen)','Möbel verschieben','Quellmöbel nicht verfügbar.'],
+ 'es-ES':['Cortar','Cortado (originales hasta pegar)','Mover muebles','Origen no disponible.'],
+ 'zh-CN':['剪切','已剪切（粘贴前保留原物品）','移动家具','无法确认原物品。'],
+ 'pt-BR':['Recortar','Recortado (originais mantidos até colar)','Mover móveis','Origem indisponível.']
+} as const;
 export const groupPasteWords={
  ja:['家具をコピー','貼り付け','複製','コピー済み','配置先をクリック','在庫または配置先を確認できません。','形状・在庫を確認中…','配置を確認','取消','左回転','右回転'],
  en:['Copy furniture','Paste','Duplicate','Copied','Choose destination','Stock or destination unavailable.','Checking geometry and stock…','Review placement','Cancel','Rotate left','Rotate right'],
