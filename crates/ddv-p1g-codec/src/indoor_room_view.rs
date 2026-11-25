@@ -292,7 +292,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   for (target,expected,xy,orientation,room_source) in moves{
    let mut draft=(if room_source{ddv_save_patch::preview_indoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}).map_err(|_|CodecError::Patch)?;
    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
-   working.zeroize();**working=std::mem::take(&mut draft.patched_json);last=Some(draft);
+   working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
   }
   let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
  }
