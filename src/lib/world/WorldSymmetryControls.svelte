@@ -12,6 +12,7 @@
  export let onChange:(s:DesignSymmetry|null)=>void;
  export let onPick:()=>void;
  export let onMirror:()=>void;
+ export let showMirror=true;
  const copy={
  ja:['対称編集','無効','垂直軸','水平軸','点対称','軸・中心を指定','マップ上で位置を選択','中央に戻す','選択を対称複製','半マス単位で指定できます。','現在の形状・向き・範囲では対称配置できません。'],
  en:['Symmetry','Off','Vertical axis','Horizontal axis','Point symmetry','Pick axis / center','Pick a location on the map','Reset to center','Mirror selection','Half-cell positions are supported.','The selected shapes, directions or bounds do not allow symmetry.'],
@@ -39,8 +40,8 @@
  </div>
  <button type="button" aria-pressed={picking} disabled={busy} on:click={onPick}>{picking?labels[6]:labels[5]}</button>
  <button type="button" disabled={busy} on:click={()=>value&&onChange({...value,x2:width,y2:height})}>{labels[7]}</button>
- <button type="button" disabled={busy||!count||!valid||picking} on:click={onMirror}>{labels[8]}</button>
- {#if count&&!valid}<small role="status">{labels[10]}</small>{/if}
+ {#if showMirror}<button type="button" disabled={busy||!count||!valid||picking} on:click={onMirror}>{labels[8]}</button>
+ {#if count&&!valid}<small role="status">{labels[10]}</small>{/if}{/if}
  <small>{labels[9]}</small>
  {/if}
 </section>
