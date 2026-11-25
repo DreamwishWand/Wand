@@ -27,7 +27,7 @@
  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
  import WorldSymmetryControls from './WorldSymmetryControls.svelte';
- import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
+ import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,symmetricRotateDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
  import DesignInspector from './DesignInspector.svelte';
  import PlacedDesignSearch from './PlacedDesignSearch.svelte';
@@ -458,6 +458,7 @@
      if(rotated){pasting=rotated;hover=scenePoint(lastPoint,rotated);error='';}else save(null);
      return;
    }
+   if(symmetry&&selectedIds.size&&!placing){save(symmetricRotateDesign(timeline,[...selectedIds],definitions,symmetry,-delta,editableIds,width,height));return;}
    if(groupIds.length){save(transformDesignGroup(timeline,groupIds,definitions,0,0,-delta,width,height));return;}
    if(placing){if(!nativeActionBlocked(placing.editRestrictions,'rotate')&&!exclusiveAnchorClass(String(placing.itemId)))orientation=(orientation+delta+4)%4;return;}
    if(chosen&&chosenGeometry)save(transformDesign(timeline,chosen.id,chosenGeometry,chosen.x,chosen.y,(chosen.orientation+delta+4)%4,width,height));
