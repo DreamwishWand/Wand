@@ -19,5 +19,5 @@
  <small>{blocked?w[6]:w[4]}</small>{#if history.firstStep>0}<small>{w[8]}</small>{/if}
 </section>
 <style>
- .checkpoint-controls{display:grid;gap:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;font-size:12px;max-width:320px}.checkpoint-buttons{display:flex;gap:4px;flex-wrap:wrap}button,a{font:inherit;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:4px;padding:4px}button:disabled{opacity:.45}a{color:var(--wand-accent)}small{color:var(--wand-muted)}
+ .checkpoint-controls{display:grid;gap:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;font-size:12px;max-width:320px}.checkpoint-buttons{display:flex;gap:4px;flex-wrap:wrap;pointer-events:auto}button,a{font:inherit;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:4px;padding:4px}button:disabled{opacity:.45}a{color:var(--wand-accent)}small{color:var(--wand-muted)}
 </style>
