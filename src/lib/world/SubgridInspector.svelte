@@ -1,5 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
+ import SupportSceneControls from './SupportSceneControls.svelte';
+ import {supportSceneWords} from './support-scene.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
@@ -49,6 +51,7 @@
  $: stockOptions=stockCatalog.filter(o=>o.name.normalize('NFKC').toLocaleLowerCase().includes(stockQuery.normalize('NFKC').toLocaleLowerCase().trim())).slice(0,200);
  $: pickup=tree&&selected>=0?supportStockPickup(tree,selected,counts,removable):null;
  $: stockShape=stockId?shapes[stockId+':'+CARDINAL_ORIENTATIONS.indexOf(stockOrientation)*4]:null;
+ let sceneOpen=false;
  let tree:SupportTree|null=null,shapes:Readonly<Record<string,SourceObjectShape>>={},request=0,loading=false,error=false;
  let images=new Map<number,string>(),imageEpoch=0,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: words=supportWords[locale];
@@ -66,7 +69,7 @@
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
  function stopOwn(){own?.terminate();own=null;}
  function clearCopy(){if(copy)URL.revokeObjectURL(copy.url);copy=null;}
- export function cancel(){childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
+ export function cancel(){sceneOpen=false;childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
  function refresh(show:boolean,source:File|null,p:MainlandSavedObject|null){
   cancel();request=0;activeOpen=show;activeFile=source;activeOrdinal=p?.object.localOrdinal??0;stack=[];path=[];owners=[];selected=-1;tree=null;terrain=null;shapes={};editable=new Set();removable=new Set();counts=new Map();stockCatalog=[];catalogRequest=0;images=new Map();imageEpoch++;
   if(!show||!source||!p?.object.subgrid)return;
@@ -227,7 +230,9 @@
  <aside class="support-panel" aria-label={words[0]}>
   <header><strong>{words[0]} · {tree?.objects.length??'—'}</strong><button type="button" on:click={onClose} aria-label={words[7]}>×</button></header>
   {#if loading}<small role="status">{words[12]}</small>{/if}
-  {#if tree}
+  {#if tree&&sceneOpen}<SupportSceneControls {tree} ownerItemId={owners[owners.length-1]} {parent} {file} {worker} {path} {counts} {names} {base} {locale} {canMove} {nextRequest} onBack={()=>sceneOpen=false} onApplied={onClose}/>
+  {:else if tree}
+   {#if !loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
    {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(Number(transferTarget.object.itemId))??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
    {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
    <div class="support-heading">{#if stack.length>1}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={back}>{words[11]}</button>{/if}<strong>{words[1]}</strong></div>

@@ -419,3 +419,28 @@ test('support direct drag preserves grab offset on native cells',()=>{
  assert.equal(supportDragDestination(o,{x:0,y:0},{x:Infinity,y:1}),null);
  assert.equal(supportDragDestination(o,{x:0,y:0},{x:2147483647,y:1}),null);
 });
+
+import {captureSupportScene,parseSupportScene,supportScenePlan,supportSceneCounts} from '../src/lib/world/support-scene.ts';
+test('portable support Scene keeps native coordinates, validates stock and refuses nested reconstruction',()=>{
+ const item=40000001,owner=40000002,sourcePath='GridData/Furniture/Example.json';
+ const child={itemId:item,x:0,y:0,orientation:'GridOrientation_Down',child:null};
+ const tree={factor:1,sourcePath,objects:[child,{...child,x:1}]};
+ const scene=captureSupportScene(owner,tree);
+ assert.deepEqual(parseSupportScene(JSON.stringify(scene)),scene);
+ assert.deepEqual([...supportSceneCounts(scene.tree)],[[item,2]]);
+ const target={...tree,objects:[]};
+ const raster={sizeX:2,sizeY:1,nativeFloorValues:Uint32Array.from([1024,1024])};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'};
+ const shapes={[item+':8']:shape},counts=new Map([[item,2]]),allowed=new Set([item]);
+ assert.deepEqual(supportScenePlan(scene,owner,target,shapes,raster,counts,allowed).map(p=>[p.x,p.expectedStock]),[[0,2],[1,1]]);
+ assert.equal(supportScenePlan(scene,owner,target,shapes,raster,new Map([[item,1]]),allowed),null);
+ assert.equal(supportScenePlan(scene,owner,tree,shapes,raster,counts,allowed),null);
+ assert.equal(supportScenePlan(scene,owner+1,target,shapes,raster,counts,allowed),null);
+ assert.equal(supportScenePlan(scene,owner,{...target,factor:2},shapes,raster,counts,allowed),null);
+ assert.equal(supportScenePlan(scene,owner,target,shapes,raster,counts,new Set()),null);
+ const nested=captureSupportScene(owner,{...tree,objects:[{...child,child:tree}]});
+ assert.equal(supportSceneCounts(nested.tree).get(item),3);
+ assert.equal(supportScenePlan(nested,owner,target,shapes,raster,counts,allowed),null);
+ assert.throws(()=>parseSupportScene(JSON.stringify({...scene,tree:{...tree,sourcePath:'../private.json'}})));
+ assert.throws(()=>parseSupportScene(JSON.stringify({...scene,tree:{...tree,objects:[{...child,gridId:42}]}})));
+});
