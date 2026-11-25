@@ -18,7 +18,7 @@ test('reviewed store display gates exclude hidden items and unsupported furnitur
   const categories=new Map(await db.getFieldRows('nativeCategory'));
   assert.equal(rows.length,8787);
   assert.equal(statuses.size,8787);
-  const counts={};const hiddenByCategory={};
+  const counts={};const hiddenByCategory={},generatorByCategory={},remainingByCategory={};
   for(const [id,value] of rows){
     assert.equal(value.scope,'generated_furniture_clothing_display');
     assert.equal(value.otherNativeConditionsVerified,false);
@@ -27,6 +27,7 @@ test('reviewed store display gates exclude hidden items and unsupported furnitur
     assert.equal(value.status,statuses.get(id));
     assert.equal(value.furnitureTypeGate,types.get(id)??null);
     assert.equal(value.hidden,catalog.get(id)?.hidden??null);
+    assert.equal(value.generatorExcluded,catalog.get(id)?.generatorExcluded??null);
     counts[value.status]=(counts[value.status]??0)+1;
     const category=categories.get(id);
     if(value.status==='excluded_by_hidden'){
@@ -34,17 +35,27 @@ test('reviewed store display gates exclude hidden items and unsupported furnitur
       hiddenByCategory[category]=(hiddenByCategory[category]??0)+1;
     }
     if(value.status==='excluded_by_furniture_type')assert.equal(value.furnitureTypeGate,false);
-    if(value.status==='not_excluded_by_reviewed_gates')assert.equal(value.hidden,false);
+    if(value.status==='excluded_by_generator'){
+      assert.equal(value.hidden,false);assert.equal(value.generatorExcluded,true);
+      generatorByCategory[category]=(generatorByCategory[category]??0)+1;
+    }
+    if(value.status==='not_excluded_by_reviewed_gates'){
+      assert.equal(value.hidden,false);assert.equal(value.generatorExcluded,false);
+      remainingByCategory[category]=(remainingByCategory[category]??0)+1;
+    }
   }
-  assert.deepEqual(counts,{excluded_by_furniture_type:1458,excluded_by_hidden:1537,not_excluded_by_reviewed_gates:5792});
+  assert.deepEqual(counts,{excluded_by_furniture_type:1458,excluded_by_hidden:1537,excluded_by_generator:3344,not_excluded_by_reviewed_gates:2448});
   assert.deepEqual(hiddenByCategory,{Furniture:1440,Clothing:97});
+  assert.deepEqual(generatorByCategory,{Furniture:2304,Clothing:1040});
+  assert.deepEqual(remainingByCategory,{Furniture:1544,Clothing:904});
   const excluded=await db.findItemIdsByField('acquisition.storeDisplayScreenStatus',{kind:'equals',value:'excluded_by_hidden'});
   assert.deepEqual(excluded,rows.filter(([,v])=>v.status==='excluded_by_hidden').map(([id])=>id));
   const details=await openCurrentItemDetails('',fetcher);
-  const ids=[40000047,40200001,40300001,50000329,99999999];
+  const ids=[40000047,40200001,40300001,50000329,40000048,50700002,50700017,99999999];
   const selected=await details.getSelectedItems(ids,['nativeCategory'],{sourceRelations:true});
   assert.deepEqual(selected.map(row=>row?.storeDisplayScreen?.status??null),[
-    'not_excluded_by_reviewed_gates','excluded_by_furniture_type','excluded_by_hidden','excluded_by_hidden',null]);
-  assert.equal(selected[4],null);
+    'excluded_by_generator','excluded_by_furniture_type','excluded_by_hidden','excluded_by_hidden',
+    'not_excluded_by_reviewed_gates','not_excluded_by_reviewed_gates','excluded_by_generator',null]);
+  assert.equal(selected[7],null);
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/acquisition/public/')));
 });
