@@ -467,3 +467,19 @@ test('portable support Scene can change positions and quantities using observed 
  assert.equal(supportSceneTemplateCompatible(scene,40000001,{...source,objects:[{...source.objects[0],child:{...nested,sourcePath:'GridData/Furniture/Other.json'}}]}),false);
  assert.equal(supportSceneTemplateCompatible({...scene,tree:{...scene.tree,objects:[{...leaf,itemId:40000003}]}},40000001,source),false);
 });
+
+import {parseMixedScene,mixedSceneCounts,mixedSceneFromClip} from '../src/lib/world/support-scene.ts';
+test('mixed Scenes preserve the individual trees of repeated support roots and total stock',()=>{
+ const owner=40000001,item=40000002,sourcePath='GridData/Furniture/Example.json';
+ const leaf={itemId:item,x:0,y:0,orientation:'GridOrientation_Down',child:null};
+ const a=captureSupportScene(owner,{factor:2,sourcePath,objects:[leaf]}),b=captureSupportScene(owner,{factor:1,sourcePath,objects:[]});
+ const clip=[{itemId:owner,dx:0,dy:0,orientation:2},{itemId:item,dx:2,dy:0,orientation:1},{itemId:owner,dx:4,dy:2,orientation:0}];
+ const scene=mixedSceneFromClip(clip,[a,null,b]);
+ assert.deepEqual(parseMixedScene(JSON.stringify(scene)),scene);
+ assert.deepEqual([...mixedSceneCounts(scene.items)],[[item,2],[owner,2]]);
+ assert.equal(scene.items[0].support.tree.factor,2);
+ assert.equal(scene.items[2].support.tree.objects.length,0);
+ assert.throws(()=>mixedSceneFromClip(clip,[a,b,null]));
+ assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:31},(_,x)=>({...leaf,x}))})]));
+ assert.throws(()=>parseMixedScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:1}))})));
+});
