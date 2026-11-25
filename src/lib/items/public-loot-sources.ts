@@ -3,7 +3,7 @@
  * and raw weights are not drop probabilities. Dynamic filters are retained
  * without enumerating their possible runtime outputs.
  */
-import type {PublicCompleteItemMaster,ItemFieldValue} from './public-item-master.ts';
+import {ITEM_MASTER_LOCALES,type PublicCompleteItemMaster,type ItemFieldValue,type ItemMasterLocale} from './public-item-master.ts';
 
 const SOURCE='580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c';
 const DUMP='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08';
@@ -48,9 +48,44 @@ export interface LootTableDefinition {
   readonly currentAvailabilityVerified:false;
   readonly guaranteedRewardVerified:false;
 }
+export type LootReferrerRole='stall_slot'|'loot_present'|'ephemeral_treasure'|'consummable_default_item'|
+  'blocker_reward'|'critter_like_reward'|'critter_favorite_reward'|'snippet_reward'|'quest_override_reward'|
+  'recurring_weed_override'|'other_reference';
+export interface LootTableReferrer {
+  readonly sourceItemId:number;
+  readonly sourceCategory:string;
+  readonly sourceClass:string|null;
+  readonly sourcePath:string;
+  readonly role:LootReferrerRole;
+  readonly name:string|null;
+  readonly iconGuid:string|null;
+  readonly locale:ItemMasterLocale;
+  readonly acquisitionContextVerified:false;
+}
+export interface LootTableReferrers {
+  readonly tableItemId:number;
+  readonly status:'indexed'|'not_indexed'|'not_loot_table';
+  readonly referrers:readonly Readonly<LootTableReferrer>[];
+  readonly coverageComplete:false;
+}
+function referrerRole(cls:string|null,category:string,path:string):LootReferrerRole{
+  if(cls==='StallBuildingItemData'&&/^source\.SlotLootTableItemID\[\d+\]$/.test(path))return 'stall_slot';
+  if(cls==='LootPresentItemData'&&path==='source.LootTableItemID')return 'loot_present';
+  if(cls==='EphemeralItemData'&&path==='source.TreasureLootTable')return 'ephemeral_treasure';
+  if(cls==='ConsummableItemData'&&path==='source.DefaultItem.ItemID')return 'consummable_default_item';
+  if(cls==='FurnitureBlockerItemData'&&path==='source.RewardLootTableItemID')return 'blocker_reward';
+  if(cls==='CritterItemData'&&path==='source.LikeRewardLootTableItemID')return 'critter_like_reward';
+  if(cls==='CritterItemData'&&path==='source.FavoriteRewardLootTableItemID')return 'critter_favorite_reward';
+  if(cls==='SnippetItemData'&&path==='source.RewardLootTableItemID')return 'snippet_reward';
+  if(category==='Mission'&&/^source\.OverrideRewards\.Rewards\[\d+\]$/.test(path))return 'quest_override_reward';
+  if(category==='RecurringEvent'&&path==='source.WeedOverrides.WeedLootTable')return 'recurring_weed_override';
+  return 'other_reference';
+}
 export interface LootItemSourceEvidence {
   readonly occurrence:Readonly<LootItemOccurrence>;
   readonly group:Readonly<LootSourceGroup>;
+  /** Only loaded when a locale is explicitly requested. */
+  readonly tableReferrers?:Readonly<LootTableReferrers>;
 }
 export interface LootItemEvidence {
   readonly itemId:number;
@@ -105,8 +140,38 @@ export function createLootSourceReader(db:PublicCompleteItemMaster){
       status:!available?'not_indexed' as const:r.values.nativeCategory==='LootTable'?'indexed' as const:'not_loot_table' as const,
       definition:available&&r.values.nativeCategory==='LootTable'?definition(r.itemId,r.values['source.Rewards']):null})));
   }
-  async function getForItems(itemIds:readonly number[]):Promise<readonly (Readonly<LootItemEvidence>|null)[]>{
-    input(itemIds);const available=await indexed();
+  async function getTableReferrers(tableIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<LootTableReferrers>|null)[]>{
+    input(tableIds);check(ITEM_MASTER_LOCALES.includes(locale),'LOCALE');
+    const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
+    const available=await indexed()&&catalog.has('references.incoming')&&catalog.has('sourceClass')&&catalog.has('names.'+locale)&&catalog.has('iconGuid');
+    const rows=await db.getItemFields(tableIds,['nativeCategory']);
+    const wanted=[...new Set(rows.flatMap(r=>r?.values.nativeCategory==='LootTable'?[r.itemId]:[]))].sort((a,b)=>a-b);
+    const incoming=available?await db.getItemsReferences(wanted,'incoming'):[];
+    const refs=new Map(wanted.map((id,i)=>[id,incoming[i]??[]]));
+    const sourceIds=[...new Set(incoming.flatMap(r=>(r??[]).map(e=>e[0])))].sort((a,b)=>a-b);
+    const identities=new Map<number,Readonly<Omit<LootTableReferrer,'sourcePath'|'role'>>>();
+    for(let start=0;start<sourceIds.length;start+=10000){
+      for(const row of await db.getItemFields(sourceIds.slice(start,start+10000),['nativeCategory','sourceClass','names.'+locale,'iconGuid'])){
+        if(!row)continue;
+        const v=row.values,name=v['names.'+locale],cls=v.sourceClass,icon=v.iconGuid;
+        check(typeof v.nativeCategory==='string','REFERRER_CATEGORY');
+        identities.set(row.itemId,Object.freeze({sourceItemId:row.itemId,sourceCategory:v.nativeCategory,
+          sourceClass:typeof cls==='string'?cls:null,name:typeof name==='string'&&name.length?name:null,
+          iconGuid:typeof icon==='string'&&/^[a-f0-9]{32}$/.test(icon)?icon:null,locale,acquisitionContextVerified:false}));
+      }
+    }
+    return Object.freeze(rows.map(r=>{
+      if(!r)return null;
+      const status:LootTableReferrers['status']=!available?'not_indexed':r.values.nativeCategory==='LootTable'?'indexed':'not_loot_table';
+      const referrers=status==='indexed'?(refs.get(r.itemId)??[]).map(([id,sourcePath])=>{
+        const identity=identities.get(id);check(identity,'REFERRER_IDENTITY');
+        return Object.freeze({...identity,sourcePath,role:referrerRole(identity.sourceClass,identity.sourceCategory,sourcePath)});
+      }):[];
+      return Object.freeze({tableItemId:r.itemId,status,referrers:Object.freeze(referrers),coverageComplete:false as const});
+    }));
+  }
+  async function getForItems(itemIds:readonly number[],locale?:ItemMasterLocale):Promise<readonly (Readonly<LootItemEvidence>|null)[]>{
+    input(itemIds);check(locale===undefined||ITEM_MASTER_LOCALES.includes(locale),'LOCALE');const available=await indexed();
     if(!available)return Object.freeze((await db.getItemFields(itemIds,['itemId'])).map(r=>r?Object.freeze({
       itemId:r.itemId,status:'not_indexed' as const,sources:Object.freeze([]),guaranteedRewardVerified:false as const,currentAvailabilityVerified:false as const}):null));
     const incoming=await db.getNativeAcquisitionCandidates(itemIds);
@@ -118,15 +183,22 @@ export function createLootSourceReader(db:PublicCompleteItemMaster){
         check(r?.definition,'TABLE_JOIN');definitions.set(r.itemId,r.definition);
       }
     }
+    const tableReferrers=new Map<number,Readonly<LootTableReferrers>>();
+    if(locale!==undefined)for(let start=0;start<tableIds.length;start+=10000){
+      for(const context of await getTableReferrers(tableIds.slice(start,start+10000),locale)){
+        if(context)tableReferrers.set(context.tableItemId,context);
+      }
+    }
     const occurrences=new Map<string,Readonly<LootItemSourceEvidence>>();
     for(const table of definitions.values())for(const occurrence of table.occurrences){
       const group=table.groups[occurrence.groupIndex];check(group,'GROUP_JOIN');
-      occurrences.set(table.tableItemId+':'+occurrence.sourcePath,Object.freeze({occurrence,group}));
+      const context=tableReferrers.get(table.tableItemId);
+      occurrences.set(table.tableItemId+':'+occurrence.sourcePath,Object.freeze({occurrence,group,...(context?{tableReferrers:context}:{})}));
     }
     return Object.freeze(groups.map((g,i)=>g===null?null:Object.freeze({itemId:itemIds[i],status:'indexed' as const,
       sources:Object.freeze(g.map(e=>{
         const r=occurrences.get(e[0]+':'+e[2]);check(r&&r.occurrence.itemId===itemIds[i],'OCCURRENCE_JOIN');return r;
       })),guaranteedRewardVerified:false as const,currentAvailabilityVerified:false as const})));
   }
-  return Object.freeze({release,getForTables,getForItems});
+  return Object.freeze({release,getForTables,getForItems,getTableReferrers});
 }
