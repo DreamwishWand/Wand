@@ -12,6 +12,7 @@ import init,{decode_public_terrain} from './wasm/pkg/wand_world_core.js';
 import wasmUrl from './wasm/pkg/wand_world_core_bg.wasm?url';
 import {openPublicItemMaster} from '../items/public-item-master.ts';
 import {parsePublicTerrainBundle,parsePublicTerrainRelease,sameTerrainGrid,PUBLIC_TERRAIN_ROOT,publicShapeDefinitions,publicShapeSource,type PublicTerrainBundle,type PublicTerrainRelease,type PublicTerrainRegion} from './public-terrain-projection.ts';
+import {supportTerrainRow} from './subgrid-local.ts';
 import {buildSavedShapeMap,parseSavedShapePoints} from './saved-shape-map.ts';
 const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMessage:(data:unknown,transfer?:Transferable[])=>void};
 let release:PublicTerrainRelease|null=null;
@@ -40,6 +41,16 @@ function getMaster(){
  return master??=(openPublicItemMaster(basePath,fetch,{scope:'complete',gameVersion:'1.26.2'}).catch(e=>{master=null;throw e;}));
 }
 let geometry:Promise<ReturnType<typeof publicShapeDefinitions>>|null=null;
+let supportCatalog:Promise<unknown>|null=null;
+let supportPaths:Promise<Map<number,unknown>>|null=null;
+async function boundSupportTerrain(path:unknown,owner:unknown){
+ if(typeof path!=='string'||!/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(path)||path.includes('..')||typeof owner!=='number'||!Number.isSafeInteger(owner))return null;
+ supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+ const value=(await supportPaths).get(owner) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
+ if(value?.SubGrid?.SubGridDataPath!==path)return null;
+ supportCatalog??=fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/support-terrain.json').then(r=>{if(!r.ok)throw Error('support data');return r.json();}).catch(e=>{supportCatalog=null;throw e;});
+ return supportTerrainRow(await supportCatalog,path);
+}
 async function loadGeometry(){
   if(!geometry)geometry=(async()=>{
     const db=await getMaster();
@@ -85,7 +96,9 @@ scope.onmessage=async({data})=>{
         const obj=cache.resolve(row.itemId,row.orientationCode);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'move')&&!nativeActionBlocked(obj.editRestrictions,'rotate'))editable.add(row.itemId);
       }
-      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable]}:{})});return;
+      let terrain:TerrainRaster|null=null;
+      if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
+      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable],terrain}:{})});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
     const grid=region?.grids.find(g=>g.key===data.key);

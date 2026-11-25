@@ -313,3 +313,26 @@ test('same-style cardinal road cells select only their source grid and translate
  const occupied={...m,objects:[o,p,{...p,localOrdinal:4,x:8}]};
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
+
+import {supportTerrainRow,supportFreeEdit,parseSupportTree} from '../src/lib/world/subgrid-local.ts';
+test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
+ const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
+ assert.equal(catalog.grids.length,11);
+ const sourcePath='GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json';
+ const raster=supportTerrainRow(catalog,sourcePath);
+ assert.deepEqual([...raster.nativeFloorValues],[4096,4096,4096,0]);
+ const tree=parseSupportTree({contract:'wand.world.subgrid-local@1',worldTransformVerified:false,tree:{factor:2,sourcePath,objects:[
+ {itemId:40000001,x:0,y:0,orientation:'GridOrientation_Down',child:null},
+ {itemId:40000002,x:0,y:2,orientation:'GridOrientation_Down',child:null}
+ ]}});
+ const cell={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1h-1z',acceptedFloorTypesFlag:4096};
+ const shapes={'40000001:8':cell,'40000001:12':{...cell,width:2,cellCount:2,runs:[{x:0,y:0,width:2}]},'40000002:8':cell};
+ const allowed=new Set([40000001,40000002]);
+ assert.ok(supportFreeEdit(tree,shapes,allowed,raster,0,2,0,'GridOrientation_Down'));
+ assert.ok(supportFreeEdit(tree,shapes,allowed,raster,0,2,0,'GridOrientation_Left'));
+ assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,2,2,'GridOrientation_Down'),null);
+ assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,0,2,'GridOrientation_Down'),null);
+ assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,3,0,'GridOrientation_Left'),null);
+ assert.equal(supportFreeEdit(tree,{...shapes,'40000001:8':{...cell,acceptedFloorTypesFlag:512}},allowed,raster,0,2,0,'GridOrientation_Down'),null);
+ assert.equal(supportTerrainRow(catalog,'GridData/Unknown.json'),null);
+});

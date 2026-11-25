@@ -4,7 +4,7 @@ import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-export interface SupportTree{factor:1|2;objects:SupportObject[]}
+export interface SupportTree{factor:1|2;objects:SupportObject[];sourcePath:string|null}
 export interface SupportObject{itemId:number;x:number;y:number;orientation:string;child:SupportTree|null}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function parseSupportTree(value:unknown):SupportTree{
@@ -15,7 +15,7 @@ export function parseSupportTree(value:unknown):SupportTree{
   const objects=v.objects.map((row:unknown)=>{
    if(++count>512||!record(row)||typeof row.itemId!=='number'||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||typeof row.x!=='number'||typeof row.y!=='number'||!Number.isInteger(row.x)||!Number.isInteger(row.y)||row.x< -2147483648||row.x>2147483647||row.y< -2147483648||row.y>2147483647||typeof row.orientation!=='string'||! /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(row.orientation))throw Error('subgrid object');
    return {itemId:row.itemId,x:row.x,y:row.y,orientation:row.orientation,child:row.child===null?null:visit(row.child,depth+1)};
-  });return {factor:v.factor,objects};
+  });const sourcePath=typeof v.sourcePath==='string'&&/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(v.sourcePath)&&!v.sourcePath.includes('..')&&v.sourcePath.length<=512?v.sourcePath:null;return {factor:v.factor,objects,sourcePath};
  }
  return visit(value.tree,0);
 }
@@ -81,4 +81,31 @@ export const childEditWords={
  'es-ES':['Girar a la izquierda','Girar a la derecha','Intercambiar posiciones','Elegir objeto','Celdas ocupadas sin cambios','Revisar','Seleccionar objeto'],
  'zh-CN':['向左旋转','向右旋转','交换位置','选择交换对象','仅限占用格不变的操作','确认编辑','选择物品'],
  'pt-BR':['Girar à esquerda','Girar à direita','Trocar posições','Escolher objeto','Células ocupadas inalteradas','Revisar','Selecionar objeto']
+} as const;
+
+export function supportTerrainRow(value:unknown,path:string):TerrainRaster|null{
+ if(!record(value)||value.contract!=='wand.world.support-terrain@1'||value.gameVersion!=='1.26.2'||value.platform!=='Steam'||!Array.isArray(value.grids))return null;
+ const rows=value.grids.filter(r=>Array.isArray(r)&&r[0]===path);if(rows.length!==1)return null;
+ const r=rows[0];if(r.length!==5||!Number.isSafeInteger(r[1])||!Number.isSafeInteger(r[2])||r[1]<1||r[2]<1||r[1]>256||r[2]>256||typeof r[3]!=='string'||!/^[a-f0-9]{64}$/.test(r[3])||!Array.isArray(r[4])||r[4].length!==r[1]*r[2]||!r[4].every((v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff))return null;
+ return {sizeX:r[1],sizeY:r[2],nativeFloorValues:Uint32Array.from(r[4])};
+}
+export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,raster:TerrainRaster,index:number,x:number,y:number,orientation:string):SupportChildEdit[]|null{
+ const a=tree.objects[index];if(!a||a.child||Math.floor(a.itemId/100000)!==400||!editable.has(a.itemId)||!isCardinal(a.orientation)||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x===a.x&&y===a.y&&orientation===a.orientation)return null;
+ const oldKey=supportShapeKey(a),before=oldKey?shapes[oldKey]:null,shape=shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ if(!shape||!before||shape.acceptedFloorTypesFlag===undefined||before.acceptedFloorTypesFlag===undefined||shape.cellCount>65536||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},before,a.x,a.y).length||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ for(let i=0;i<tree.objects.length;i++){if(i===index)continue;const o=tree.objects[i],k=supportShapeKey(o),other=k?shapes[k]:null;if(!other)return null;
+  if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
+  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return null;
+ }
+ return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
+}
+export const supportFreeWords={
+ ja:['支持面内を移動','配置先をクリック','配置可能面','対応原本がないため自由移動は無効'],
+ en:['Move within support','Click destination','Support surface','Free movement unavailable without source data'],
+ fr:['Déplacer sur le support','Cliquez la destination','Surface de support','Déplacement libre indisponible'],
+ it:['Sposta sul supporto','Seleziona destinazione','Superficie','Spostamento libero non disponibile'],
+ de:['Auf der Fläche verschieben','Ziel anklicken','Auflagefläche','Freie Bewegung nicht verfügbar'],
+ 'es-ES':['Mover sobre soporte','Pulsa destino','Superficie','Movimiento libre no disponible'],
+ 'zh-CN':['在支撑面内移动','点击目的地','支撑面','缺少原始数据，无法自由移动'],
+ 'pt-BR':['Mover no suporte','Clique no destino','Superfície','Movimento livre indisponível']
 } as const;

@@ -573,7 +573,8 @@ fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&st
    let nested=if obj.get("State").and_then(|s|s.get("SubGrid")).is_some(){visit(grids,diff,owners,&child,key,seen,count,depth+1)?}else{Value::Null};
    rows.push(serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":orientation,"child":nested}));
   }
-  Ok(serde_json::json!({"factor":factor,"objects":rows}))
+  let path=g.get("GridDataPath").and_then(Value::as_str).filter(|p|p.starts_with("GridData/Furniture/")&&p.ends_with(".json")&&p.len()<=512&&!p.contains("..")&&!p.contains('\\')&&!p.chars().any(char::is_control));
+  Ok(serde_json::json!({"factor":factor,"objects":rows,"sourcePath":path}))
  }
  let mut seen=HashSet::from([parent_grid.to_owned()]);let mut count=0;
  visit(grids,diff,&owners,parent_grid,parent_object,&mut seen,&mut count,0)
@@ -592,7 +593,7 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
 /// footprint and mask. Never infer bounds from occupied extent.
 pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
- let o=plan.as_object().filter(|o|o.len()==6&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"path"|"edits"))).ok_or(bad)?;
+ let o=plan.as_object().filter(|o|(6..=7).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"path"|"edits"|"terrainPath"))).ok_or(bad)?;
  let int=|v:&Value,k:&str|v.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
  let item=o.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
@@ -618,6 +619,17 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
  let objects=grids.get(&gid).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
  let edits=o.get("edits").and_then(Value::as_array).filter(|a|matches!(a.len(),1|2)).ok_or(bad)?;
  let swap=edits.len()==2;
+ let mut terrain=None;
+ if let Some(path)=o.get("terrainPath"){
+  if swap{return Err(bad);}
+  let path=path.as_str().ok_or(bad)?;let g=grids.get(&gid).ok_or(bad)?;
+  if g.get("GridDataPath").and_then(Value::as_str)!=Some(path){return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as usize;
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+  let row=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=row[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;let sy=row[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;
+  let cells=row[4].as_array().filter(|a|a.len()==sx*sy).ok_or(bad)?.clone();terrain=Some((sx,sy,factor,cells));
+ }
  let mut seen=HashSet::new();let mut result=Vec::new();let mut ids=Vec::new();
  for e in edits{
   let row=e.as_object().filter(|r|r.len()==8&&r.keys().all(|k|matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))).ok_or(bad)?;
@@ -628,10 +640,14 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   if v.get("ItemID").and_then(Value::as_u64)!=Some(item)||v.get("ID").and_then(Value::as_u64)!=key_id(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(before)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||
      v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
      !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&new)||
-     if swap{before==after||old!=new}else{before!=after||old==new}{return Err(bad);}
+     if swap{before==after||old!=new}else if terrain.is_some(){before==after&&old==new}else{before!=after||old==new}{return Err(bad);}
+  if let Some((sx,sy,factor,cells))=&terrain{
+   let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as usize)/ *factor<*sx&&(y as usize)/ *factor<*sy&&cells[(y as usize)/ *factor* *sx+(x as usize)/ *factor].as_u64().is_some_and(|n|n!=0);
+   if !valid(before)||!valid(after)||objects.iter().any(|(other,o)|other!=id&&o.as_object().and_then(observed_coordinates)==Some(after)){return Err(bad);}
+  }
   if objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(before)).count()!=1{return Err(bad);}
   ids.push(id.clone());
-  result.push(ddv_save_patch::GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:id.clone(),item_id:item},expected:before,position:swap.then_some(after),orientation:(!swap).then(||(old.to_owned(),new.to_owned()))});
+  result.push(ddv_save_patch::GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:id.clone(),item_id:item},expected:before,position:(before!=after).then_some(after),orientation:(old!=new).then(||(old.to_owned(),new.to_owned()))});
  }
  if swap&&(result[0].position!=Some(result[1].expected)||result[1].position!=Some(result[0].expected)){return Err(bad);}
  if grid_identity_dependencies_for_ids(profile,&gid,&ids)?.blocking()>0{return Err(bad);}
@@ -1172,6 +1188,23 @@ mod terrain_session_tests{
         root["World"]["GridCollection"]["Grids"]["21"]=other;
         root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
+    fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","edits":[{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":2,"y":0,"orientation":"GridOrientation_Left"}]});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["X"]=Value::from(2);
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Left");
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["edits"][0]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(4);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(0);plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/Table01-GridData.json");assert!(support_child_candidate(save,&plan).is_err());
     }
     #[test]
     fn child_rotation_and_swap_change_only_selected_scalars(){
