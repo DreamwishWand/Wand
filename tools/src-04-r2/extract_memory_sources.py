@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import re
+import struct
 import zlib
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
@@ -117,6 +118,39 @@ def pointer(tree, field, obj, files, expected):
         raise ValueError("Wrong pointer type: "+field)
     return target
 
+def stripped_mask_tree(raw):
+    """Exact Unity 6000.0.62f1 MonoBehaviour layout observed in all 23
+    Steam 1.26.2 memory-mask objects. Caller must verify the MonoScript
+    class and both local Texture2D references; never infer by asset name.
+    """
+    if len(raw) < 56 or struct.unpack_from("<iq", raw, 0) != (0, 0):
+        raise ValueError("Unexpected ScriptableObject header")
+    if raw[12:16] != b"\x01\0\0\0":
+        raise ValueError("Unexpected enabled field")
+    size = struct.unpack_from("<i", raw, 28)[0]
+    if not 1 <= size <= 256:
+        raise ValueError("Unexpected object name size")
+    end = (32 + size + 3) & ~3
+    if end + 24 != len(raw) or any(raw[32+size:end]):
+        raise ValueError("Unexpected mask payload size")
+    raw[32:32+size].decode("utf-8", errors="strict")
+    result = {}
+    for key, offset in (("m_Script",16),("Mask",end),("Outline",end+12)):
+        fid,pid = struct.unpack_from("<iq",raw,offset)
+        if fid < 0 or not pid or (key != "m_Script" and fid != 0):
+            raise ValueError("Unexpected mask pointer")
+        result[key] = {"m_FileID":fid,"m_PathID":pid}
+    return result
+
+def mask_tree(obj):
+    try:
+        return obj.read_typetree()
+    except Exception:
+        # The shipped source is stripped (no embedded type tree).
+        if str(getattr(obj.assets_file,"unity_version","")) != "6000.0.62f1":
+            raise
+        return stripped_mask_tree(obj.get_raw_data())
+
 def exact_objects(aa, locations):
     import UnityPy
     allpaths = sorted({p for locs in locations.values() for loc in locs
@@ -168,7 +202,7 @@ def exact_objects(aa, locations):
             try:
                 ident,_=object_identity(obj,bundles)
                 if cls=="MemoryShardMaskData":
-                    tree=obj.read_typetree()
+                    tree=mask_tree(obj)
                     script=pointer(tree,"m_Script",obj,files,"MonoScript").read()
                     if script.m_ClassName!="MemoryShardMaskData" or script.m_Namespace!="Mdl.Activities":
                         raise ValueError("Wrong script type")
@@ -229,13 +263,19 @@ def run(parts,aa,root,out,index_only=False):
         "items":rows,"locations":locs,"assets":{},"errors":{}}
     if not index_only:
         existing=manifests(root)
+        materialized={}
         for guid,match,error in exact_objects(aa,locs):
             if error:
                 report["errors"].setdefault(guid,[]).append(error)
                 continue
             identity,refs,bundles=match
             try:
-                assets={k:materialize(v,bundles,existing,out,k!="Image") for k,v in refs.items()}
+                assets={}
+                for k,v in refs.items():
+                    cache_key=(object_identity(v,bundles)[0],k!="Image")
+                    if cache_key not in materialized:
+                        materialized[cache_key]=materialize(v,bundles,existing,out,k!="Image")
+                    assets[k]=materialized[cache_key]
                 value={"unityAssetId":identity,"images":assets}
                 prior=report["assets"].get(guid)
                 if prior is not None and prior!=value:
