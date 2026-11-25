@@ -1035,7 +1035,29 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       for(const [key,child] of Object.entries(value))addSource(field+'.'+key,id,child,depth+1);
     }
   };
+  // Expand original fixed32 masks into exact individual set bits for
+  // selective reverse lookup. No floor, layer or placement rule is inferred.
+  const uint32=v=>Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
+  const bits=v=>Array.from({length:32},(_,i)=>2**i).filter(b=>Math.floor(v/b)%2===1);
   for(const row of rows){
+    const g=row.sourceAttributes?.GridAreaData;
+    if(g){
+      if(Object.hasOwn(g,'AcceptedFloorTypesFlag')){
+        check(uint32(g.AcceptedFloorTypesFlag),'PLACEMENT_FLOOR_MASK');
+        add('placement.sourceAcceptedFloorBits',row.itemId,bits(g.AcceptedFloorTypesFlag));
+      }
+      if(Object.hasOwn(g,'Layers')){
+        check(Array.isArray(g.Layers)&&g.Layers.every(uint32),'PLACEMENT_LAYER_MASK');
+        const union=g.Layers.reduce((mask,v)=>(mask|v)>>>0,0);
+        add('placement.sourceLayerBits',row.itemId,bits(union));
+        add('placement.sourceLayerSlotCount',row.itemId,g.Layers.length);
+      }
+      if(Number.isSafeInteger(g.SizeX)&&Number.isSafeInteger(g.SizeY)&&g.SizeX>0&&g.SizeY>0&&Number.isSafeInteger(g.SizeX*g.SizeY)){
+        add('placement.sourceSizeXY',row.itemId,[g.SizeX,g.SizeY]);
+        add('placement.sourceBoundingCellCount',row.itemId,g.SizeX*g.SizeY);
+        if(Array.isArray(g.Layers))add('placement.sourceLayerCountMatchesBounds',row.itemId,g.Layers.length===g.SizeX*g.SizeY);
+      }
+    }
     // Exact native StoreInfo furniture-type helper, NOT final shop
     // eligibility (other display filters, state, ownership still apply).
     if(furnitureDisplayRule&&row.nativeCategory==='Furniture'){
@@ -1060,6 +1082,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(layout){
       add('acquisition.storeLayoutCandidates',row.itemId,layout);
       if(layout.matchingAreaKeys.length)add('acquisition.storeLayoutAreaKeys',row.itemId,layout.matchingAreaKeys);
+      const dimensions=storeLayout.dimensionComparisons.get(row.itemId);
+      if(dimensions?.length)add('acquisition.storeLayoutDimensionComparisons',row.itemId,dimensions);
     }
     const display=storeLayout.displayDefinitions.get(row.itemId);
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
