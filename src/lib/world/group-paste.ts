@@ -160,6 +160,9 @@ export const groupSceneWords={
  'zh-CN':['所需物品','库存不足','无法打开场景。','场景超过单次放置上限。'],
  'pt-BR':['Itens necessários','Estoque insuficiente','Não é possível abrir a cena.','A cena excede o limite de posicionamento.']
 } as const;
+export const groupSymmetryWords={
+ ja:['対称編集','対称複製'],en:['Symmetry','Mirror selection'],fr:['Symétrie','Dupliquer en miroir'],it:['Simmetria','Duplica simmetricamente'],de:['Symmetrie','Auswahl spiegeln'],'es-ES':['Simetría','Duplicar selección en espejo'],'zh-CN':['对称编辑','对称复制所选物品'],'pt-BR':['Simetria','Duplicar seleção em espelho']
+} as const;
 export const groupPasteWords={
  ja:['家具をコピー','貼り付け','複製','コピー済み','配置先をクリック','在庫または配置先を確認できません。','形状・在庫を確認中…','配置を確認','取消','左回転','右回転'],
  en:['Copy furniture','Paste','Duplicate','Copied','Choose destination','Stock or destination unavailable.','Checking geometry and stock…','Review placement','Cancel','Rotate left','Rotate right'],
