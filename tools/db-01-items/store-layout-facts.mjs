@@ -8,7 +8,7 @@ const check=(ok,code)=>{if(!ok)throw Error('DB01_STORE_LAYOUT_'+code)};
 const SHELF_TYPES=['Feet','Back','Hand','Head','Neck','Top','Bottom','Costume','Jewelry',
   'SmallFurniture','Trimming','WallFurniture','BayWindowFurniture'];
 export function buildStoreLayoutFacts(source,rows,screens){
-  const result={areas:[],displayDefinitions:new Map(),sequenceLinks:new Map(),candidates:new Map()};
+  const result={areas:[],displayDefinitions:new Map(),sequenceLinks:new Map(),candidates:new Map(),dimensionComparisons:new Map()};
   const version=source.target.gameVersion;
   check(/^\d+\.\d+\.\d+$/.test(version),'VERSION');
   const path=new URL('../../data/ddv/item-master/store-layout-source-steam-'+version+'.json',import.meta.url);
@@ -93,6 +93,24 @@ export function buildStoreLayoutFacts(source,rows,screens){
     if(matchingAreas.length)matches[category]++;
     const matchingAreaKeys=matchingAreas.map(a=>a.key);
     const gridReviewAreaKeys=matchingAreas.filter(a=>a.filter.grid).map(a=>a.key);
+    // Compare serialized dimensions to the original explicit numeric bounds.
+    // This does not evaluate GridAreaSizeQualifier, layer exclusions, dynamic
+    // tags, ignored-size handling, stride, or the native layout predicate.
+    const g=row.sourceAttributes?.GridAreaData;
+    const size=g&&Number.isSafeInteger(g.SizeX)&&g.SizeX>0&&
+      Number.isSafeInteger(g.SizeY)&&g.SizeY>0?[g.SizeX,g.SizeY]:null;
+    const within=(xy,filter)=>xy.every((n,i)=>
+      (!filter.minArea||n>=filter.minArea[i])&&(!filter.maxArea||n<=filter.maxArea[i]));
+    const comparisons=matchingAreas.filter(a=>a.filter.grid).map(a=>{
+      const f=a.filter.grid;
+      return {areaKey:a.key,sourceSizeXY:size,
+        directWithinNumericBounds:size?within(size,f):null,
+        swappedWithinNumericBounds:size&&f.canRotate===true?within([size[1],size[0]],f):null,
+        directIgnoreSizeTagIds:(f.ignoreSizeForTags??[]).filter(id=>tags.has(id)),
+        gridPredicateEvaluated:false,storeMembershipVerified:false,
+        currentAvailabilityVerified:false};
+    });
+    if(comparisons.length)result.dimensionComparisons.set(row.itemId,comparisons);
     for(const key of matchingAreaKeys)perArea[category+'.'+key]=(perArea[category+'.'+key]??0)+1;
     result.candidates.set(row.itemId,{matchingAreaKeys,gridReviewAreaKeys,
       basis:'native_type_subtype_and_direct_source_tags',
