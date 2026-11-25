@@ -20,7 +20,8 @@ scope.onmessage=async({data})=>{
   }else{
    const p=data.parent;
    if(!p||!Number.isSafeInteger(p.localOrdinal)||p.localOrdinal<1||p.localOrdinal>20000||!Number.isSafeInteger(p.itemId)||p.itemId<1||p.itemId>0xffffffff||![p.x,p.y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647))throw Error('parent');
-   scope.postMessage({kind:'subgrid-local',result:JSON.parse(wasm.inspect_subgrid(p.localOrdinal,p.itemId,p.x,p.y))});
+   let stock:unknown=null;try{stock=JSON.parse(wasm.list_furniture_catalog_stock());}catch{/* Read-only inspection does not require stock. */}
+   scope.postMessage({kind:'subgrid-local',result:JSON.parse(wasm.inspect_subgrid(p.localOrdinal,p.itemId,p.x,p.y)),stock});
   }
  }catch{scope.postMessage({kind:'subgrid-error'});}
  finally{bytes?.fill(0);wasm?.close();wasm?.free();}

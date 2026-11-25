@@ -99,6 +99,32 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  }
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
+export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
+export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string):SupportStockPlan|null{
+ if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!Number.isInteger(count)||count<1||count>2147483647||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return null;
+ const shape=shapes[itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ if(!shape||!shape.cellCount||shape.cellCount>65536||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ for(const o of tree.objects){const key=supportShapeKey(o),other=key?shapes[key]:null;if(!other)return null;
+  if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
+  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return null;
+ }
+ return {action:'place',itemId,expectedStock:count,x,y,orientation};
+}
+export function supportStockPickup(tree:SupportTree,index:number,counts:ReadonlyMap<number,number>,removable:ReadonlySet<number>):SupportStockPlan|null{
+ const o=tree.objects[index];if(!o||o.child||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!isCardinal(o.orientation))return null;
+ const count=counts.get(o.itemId);if(count===undefined||count>=2147483647)return null;
+ return {action:'pickup',itemId:o.itemId,expectedStock:count,index,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation};
+}
+export const supportStockWords={
+ ja:['小物を配置','在庫から選択','片付ける','複製','配置先をクリック','在庫なし','在庫を検索'],
+ en:['Place object','Choose from stock','Put away','Duplicate','Click destination','No stock','Search stock'],
+ fr:['Placer un objet','Choisir dans le stock','Ranger','Dupliquer','Cliquez la destination','Stock vide','Rechercher'],
+ it:['Posiziona oggetto','Scegli dalle scorte','Riponi','Duplica','Seleziona destinazione','Nessuna scorta','Cerca'],
+ de:['Objekt platzieren','Aus Bestand wählen','Einlagern','Duplizieren','Ziel anklicken','Kein Bestand','Suchen'],
+ 'es-ES':['Colocar objeto','Elegir del inventario','Guardar','Duplicar','Pulsa destino','Sin existencias','Buscar'],
+ 'zh-CN':['放置物品','从库存选择','收起','复制','点击目的地','无库存','搜索库存'],
+ 'pt-BR':['Colocar objeto','Escolher do estoque','Guardar','Duplicar','Clique no destino','Sem estoque','Buscar']
+} as const;
 export const supportFreeWords={
  ja:['支持面内を移動','配置先をクリック','配置可能面','対応原本がないため自由移動は無効'],
  en:['Move within support','Click destination','Support surface','Free movement unavailable without source data'],
