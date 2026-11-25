@@ -13,7 +13,7 @@ import {supportParentEligible} from './subgrid-local.ts';
 /** Half-cell coordinates and canonical item IDs only. No native Save IDs,
  * bytes, state, or system clipboard. Remains in this tab across world views. */
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
-function cutEligible(p:MainlandSavedObject,allowSupport:boolean){return stockSourceEligible(p)||allowSupport&&supportParentEligible(p)&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
+function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
 export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
