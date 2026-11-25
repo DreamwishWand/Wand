@@ -1282,7 +1282,12 @@ try{
   await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
     name:'synthetic-public-world.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
   await publicWorld.locator('.mainland-overview .mainland-save-object').first().waitFor({timeout:30000});
+  await publicWorld.locator('.mainland-overview').getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
+  await publicWorld.locator('.mainland-overview .mainland-terrain').nth(33).waitFor({timeout:60000});
+  await publicWorld.locator('.mainland-overview').getByLabel('ワールド',{exact:true}).selectOption('Village04');
+  await publicWorld.locator('.mainland-overview .mainland-save-object').first().waitFor({timeout:30000});
   await publicWorld.locator('.mainland-overview').getByRole('button',{name:'閉じる',exact:true}).click();
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:30000});
   await publicWorld.locator('.saved-object').first().waitFor({timeout:30000});
   assert.equal(await publicWorld.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');

@@ -226,7 +226,7 @@
 </script>
 <svelte:head><title>World Editor · Dreamwish Wand</title></svelte:head>
 <section class="world-workspace">
-  <div class="world-navigation"><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
+  <div class="world-navigation" class:overview-navigation-hidden={overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
     <div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>setDesignMode(false)}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>setDesignMode(true)}>装飾設計</button></div>
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
       {#each scopes as scope}<option value={scope}>{scopeNames[scope]??scope}</option>{/each}
@@ -259,7 +259,7 @@
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'ワールドの地形を読み込めませんでした。':'Unable to load world terrain.'):(locale==='ja'?'ワールドの地形読み込み中…':'Loading world terrain…')}</p>{/if}
   <DecorationDesign bind:layerState active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
+  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
 </section>
 <style>
   .world-workspace{height:calc(100dvh - var(--shell-height,60px));min-height:0;min-width:0;padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--wand-bg);color:var(--wand-text);overflow:hidden}
@@ -276,6 +276,7 @@
   .note,p{font-size:11px;color:var(--wand-muted);margin:0}
   @media(max-width:700px){nav button,nav select{font-size:12px;padding:4px 6px}}
  .world-workspace{padding:0;gap:0;position:relative;isolation:isolate}
+ .world-navigation.overview-navigation-hidden{display:none}
  .world-navigation{position:absolute;z-index:12;top:6px;left:6px;right:50px;display:flex;align-items:center;gap:5px;pointer-events:none}.world-navigation>*{pointer-events:auto}
  .navigation-toggle{display:grid;place-items:center;width:38px;height:38px;flex:none;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.navigation-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}.navigation-toggle:focus-visible{outline:2px solid var(--wand-focus)}
  nav{max-width:calc(100% - 43px);padding:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}nav[hidden]{display:none}

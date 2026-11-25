@@ -34,6 +34,8 @@
  export let worldOptions:readonly {key:string;label:string}[]=[];
  export let worldKey='';
  export let onWorldChange:(key:string)=>void=()=>{};
+ export let onDesign:()=>void=()=>{};
+ const designWords={ja:'装飾設計',en:'Decoration design',fr:'Décoration',it:'Progettazione',de:'Dekoration','es-ES':'Decoración','zh-CN':'装饰设计','pt-BR':'Decoração'} as const;
  export let sessions:readonly TerrainScopeReceipt[]=[];
  export let saveMaps:ReadonlyMap<string,SavedShapeMap>=new Map();
  export let saveLoading=false,saveFailed=false;
@@ -118,7 +120,7 @@
  function applyPrecise(){if(preciseChanged&&typeof preciseX==='number'&&typeof preciseZ==='number')applyCell(preciseX,preciseZ);}
  function pointerPoint(e:MouseEvent){const matrix=svg?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
  function startPointer(e:PointerEvent){
-  suppressClick=false;
+  suppressClick=false;clearTransfer();
   if(saveMode&&!moving&&!spacePan&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.button===0&&e.pointerType!=='touch'&&!pending.size&&!failed&&!saveLoading&&!saveFailed){
    const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
    if(p&&hit&&cell&&mainlandSavedMoveEligible(hit)){
@@ -238,7 +240,7 @@
   const m=svg.getScreenCTM();if(!m)return;
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
   if(saveMode&&moving&&chosen&&canMove){const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else if(!offerTransfer(chosen,p.x,p.y))hover={x:p.x,y:p.y};return;}
-  if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){if(multiMode||e.ctrlKey||e.metaKey||e.shiftKey)toggleGroup(hit.object.localOrdinal);else{clearGroup();selected=hit.object.localOrdinal;}overlaps=[];return;}clearGroup();selected=null;overlaps=[];return;}
+  if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){clearTransfer();if(multiMode||e.ctrlKey||e.metaKey||e.shiftKey)toggleGroup(hit.object.localOrdinal);else{clearGroup();selected=hit.object.localOrdinal;}overlaps=[];return;}clearGroup();selected=null;overlaps=[];return;}
   const hits=mainlandTerrainHits(bound,rasters,p.x,p.y);
   overlaps=hits.length>1?hits:[];if(hits.length===1)onChoose(hits[0].key);
  }
@@ -246,7 +248,7 @@
 </script>
 <svelte:window on:keydown={keys} on:keyup={e=>{if(e.code==='Space')spacePan=false;}} on:blur={()=>{spacePan=false;objectDrag=null;range=null;}}/>
 <section class="mainland-overview" bind:this={root} aria-label={title||words[0]}>
- <div class="overview-tools">{#if worldOptions.length>1}<select aria-label={tw[6]} value={worldKey} on:change={e=>onWorldChange(e.currentTarget.value)}>{#each worldOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}</select>{:else}<strong>{title||words[0]}</strong>{/if}{#if saveMode}<button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+ <div class="overview-tools">{#if worldOptions.length>1}<select aria-label={tw[6]} value={worldKey} on:change={e=>onWorldChange(e.currentTarget.value)}>{#each worldOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}</select>{:else}<strong>{title||words[0]}</strong>{/if}{#if saveMode}<button type="button" aria-label={designWords[locale]} title={designWords[locale]} on:click={onDesign}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 12-12 4 4L7 21H3zM12 8l4 4M3 21h18"/></svg></button><button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={startPointer} on:pointermove={follow}
