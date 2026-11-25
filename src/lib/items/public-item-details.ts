@@ -18,6 +18,7 @@ import {
   type ItemLocalizedTextRecord,
   type ItemFieldProjection,
 } from './public-item-master.ts';
+import {readItemPriceDetails,type ItemPriceDetails} from './public-item-price-details.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
   type Db01ItemAcquisition,
@@ -66,6 +67,8 @@ export interface PublicLocalizedCompleteItemDetails extends PublicCompleteItemDe
 export interface PublicItemSelectionOptions {
   readonly acquisition?: boolean;
   readonly sourceRelations?: boolean;
+  /** Localized configured price details, only when explicitly requested. */
+  readonly priceLocale?:ItemMasterLocale;
 }
 /** Exact configured source facts, not proof of a current grant or stock.
  * Source-specific friendship rewards are distinct from default rewards. */
@@ -119,6 +122,7 @@ export interface StoreDisplayScreen {
   readonly currentAvailabilityVerified:false;
 }
 export interface PublicSelectedItem extends ItemFieldProjection {
+  readonly priceDetails?:Readonly<ItemPriceDetails>;
   readonly storeDisplayScreen?:Readonly<StoreDisplayScreen>;
   /** Original catalog predicates, not proof of store membership or live stock. */
   readonly catalogFacts?:Readonly<CatalogAcquisitionFacts>;
@@ -144,6 +148,7 @@ export interface PublicItemDetailsClient {
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
   getSelectedItems(itemIds:readonly number[],fields:readonly string[],
     options?:PublicItemSelectionOptions):Promise<readonly (Readonly<PublicSelectedItem>|null)[]>;
@@ -357,10 +362,14 @@ export async function openPublicItemDetails(
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
     },
+    async getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
+      return readItemPriceDetails(await complete(),itemIds,locale);
+    },
     async getSelectedItems(itemIds:readonly number[],fields:readonly string[],selection:PublicItemSelectionOptions={}){
       const reader=await complete();
       const projected=await reader.getItemFields(itemIds,fields);
       if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
+      const priceDetails=selection.priceLocale!==undefined?await readItemPriceDetails(reader,itemIds,selection.priceLocale):null;
       // Current services use the same canonical content-addressed revision
       // for Item fields and acquisition. No whole acquisition sidecar is
       // fetched, even when both source relations and summary are requested.
@@ -381,8 +390,10 @@ export async function openPublicItemDetails(
         const metadata=selectedFields.length
           ?await reader.getItemFields(knownIds,selectedFields):[];
         const byId=new Map(metadata.flatMap(row=>row?[[row.itemId,row.values] as const]:[]));
-        return Object.freeze(projected.map(row=>{
+        return Object.freeze(projected.map((row,i)=>{
           if(!row)return null;
+          const price=priceDetails?.[i];
+          assert(!price||price.itemId===row.itemId,'PRICE_ITEM_ID_MISMATCH');
           const values=byId.get(row.itemId);
           const itemId=String(row.itemId);
           // Missing sparse row means no known route in this projection,
@@ -409,7 +420,7 @@ export async function openPublicItemDetails(
           const additionalSources=selection.sourceRelations&&selectedFields.includes('acquisition.additionalSources')
             ?(values?.['acquisition.additionalSources'] as unknown as readonly AdditionalItemSource[]|undefined)??Object.freeze([])
             :undefined;
-          return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+          return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(acquisition?{acquisition}:{}),
             ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
             ...(additionalSources?{additionalSources}:{}),
             ...(selection.sourceRelations&&values?.['acquisition.storeDisplayScreen']?{
@@ -424,15 +435,17 @@ export async function openPublicItemDetails(
         selection.acquisition&&acquisitionStatus==='current'?sidecar():null,
         selection.sourceRelations&&acquisitionStatus==='current'?sources():null
       ]);
-      return Object.freeze(projected.map(row=>{
+      return Object.freeze(projected.map((row,i)=>{
         if(!row)return null;
+        const price=priceDetails?.[i];
+        assert(!price||price.itemId===row.itemId,'PRICE_ITEM_ID_MISMATCH');
         const acquisition=origins?.getItem(row.itemId);
         const sourceRelations=index?.getItem(row.itemId);
         if(acquisition&&sourceRelations)assert(
           acquisition.categories.length===sourceRelations.categories.length&&
           sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
           'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
-        return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+        return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(acquisition?{acquisition}:{}),
           ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus,currentAvailabilityVerified:false as const});
       }));
     },
