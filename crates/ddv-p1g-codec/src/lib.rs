@@ -1698,6 +1698,35 @@ mod browser_amount_preview {
             draft.patched_json.zeroize();
             Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
         }
+        pub fn prepare_fence_erase_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_FENCE_ERASE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
+            let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"seed"|"erase"))).ok_or_else(invalid)?;
+            if o.get("erase").and_then(|v|v.as_bool())!=Some(true){return Err(invalid());}
+            let base=o.get("base").and_then(|v|v.as_u64()).and_then(|n|u32::try_from(n).ok()).filter(|n|ddv_save_patch::fence_topology::supported_family(*n)).ok_or_else(invalid)?;
+            let point=|v:&serde_json::Value|->Result<(i32,i32),JsValue>{
+                let pair=v.as_array().filter(|a|a.len()==2).ok_or_else(invalid)?;
+                let int=|i:usize|pair[i].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid);
+                Ok((int(0)?,int(1)?))
+            };
+            let seed=point(o.get("seed").ok_or_else(invalid)?)?;
+            let nodes=o.get("nodes").and_then(|v|v.as_array()).filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::fence_topology::MAX_FENCE_NODES).ok_or_else(invalid)?;
+            let xy=nodes.iter().map(point).collect::<Result<Vec<_>,_>>()?;
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
+            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(1262){return Err(invalid());}
+            let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
+            let mut result=ddv_save_patch::fence_erase::preview_fence_erase(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy).map_err(|_|invalid())?;
+            for (id,item) in result.removed.iter().chain(result.allocated.iter()){
+                let target=ddv_save_patch::GridCoordinateTarget{kind:ddv_save_patch::GridObjectKind::Full,grid_id:dest.grid_id.clone(),object_id:id.clone(),item_id:*item};
+                let refs=match grid_instance_preview::grid_identity_dependencies(original,&target){
+                    Ok(r)=>r,Err(_)=>{result.draft.patched_json.zeroize();return Err(invalid());}
+                };
+                if refs.blocking()>0||refs.historical>0{result.draft.patched_json.zeroize();return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
+            }
+            self.prepare_copy_from_patched(result.draft.patched_json,true)
+        }
         pub fn prepare_isolated_fence_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_FENCE_PLAN_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
