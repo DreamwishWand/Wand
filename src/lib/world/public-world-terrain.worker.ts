@@ -1,3 +1,6 @@
+import {parseSupportScene} from './support-scene.ts';
+import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
+import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {createSourceGeometryCache} from './source-object-map.ts';
@@ -111,6 +114,31 @@ scope.onmessage=async({data})=>{
       }
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
+    }
+    if(data.command==='support-scene-geometry'){
+      if(!release)throw Error('source');
+      const scene=parseSupportScene(JSON.stringify(data.scene));
+      const definitions=await loadGeometry();let total=1;
+      async function check(owner:number,t:SupportTree,depth:number):Promise<boolean>{
+        if(depth>8||!t.sourcePath)return false;
+        const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
+        const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},t.factor);
+        for(const o of t.objects){
+          if(++total>32)return false;
+          const code=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4;
+          const p=cache.resolve(o.itemId,code);
+          if(!p.shapeKey||p.layer!=='furniture'||nativeActionBlocked(p.editRestrictions,'select')||nativeActionBlocked(p.editRestrictions,'move')||nativeActionBlocked(p.editRestrictions,'remove'))return false;
+          const source=(await supportPaths!).get(o.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
+          if(o.child?source?.SubGrid?.SubGridDataPath!==o.child.sourcePath:!!source?.SubGrid?.SubGridDataPath||p.surfaceCapable)return false;
+        }
+        const staged:SupportTree={...t,objects:[]};
+        for(const o of t.objects){
+          if(!supportPlacementFits(staged,cache.shapes,terrain,o.itemId,o.x,o.y,o.orientation))return false;
+          staged.objects.push(o);if(o.child&&!await check(o.itemId,o.child,depth+1))return false;
+        }
+        return true;
+      }
+      scope.postMessage({kind:'support-scene-geometry',requestId:id,valid:await check(scene.ownerItemId,scene.tree,0)});return;
     }
     if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
