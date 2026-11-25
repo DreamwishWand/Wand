@@ -1,3 +1,4 @@
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 /** Local single-open Save projection across all public Grid witnesses. */
 import init,{WasmAmountPreview} from '../save/wasm/p1g-pkg/ddv_p1g_codec.js';
 import wasmUrl from '../save/wasm/p1g-pkg/ddv_p1g_codec_bg.wasm?url';
@@ -18,7 +19,7 @@ scope.onmessage=async({data})=>{
   });
   bytes=new Uint8Array(await data.file.arrayBuffer());
   const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
-  const format=data.filename.toLowerCase().endsWith('.json')?'json':'p1g';
+  const format=detectLocalSaveFormat(bytes);
   await init(wasmUrl);
   wasm=new WasmAmountPreview(format);
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));

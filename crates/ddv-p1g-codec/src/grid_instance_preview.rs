@@ -360,9 +360,16 @@ impl GridIdentityDependencies{
     pub fn blocking(&self)->usize{self.active+self.navigation+self.related+self.unknown}
 }
 pub(super) fn grid_identity_dependencies(profile:&[u8],target:&GridCoordinateTarget)->Result<GridIdentityDependencies,CodecError>{
+    grid_identity_dependencies_for_ids(profile,&target.grid_id,std::slice::from_ref(&target.object_id))
+}
+/// Same conservative reference test for many identities in one Grid and
+/// one bounded scan. Aggregate hit counts are not per-object counts.
+pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:&[String])->Result<GridIdentityDependencies,CodecError>{
+    if ids.is_empty()||ids.len()>512{return Err(CodecError::Bounds);}
+    let grid=key_id(grid_id).ok_or(CodecError::Json)?;
+    let objects:HashSet<u64>=ids.iter().map(|s|key_id(s).ok_or(CodecError::Json)).collect::<Result<_,_>>()?;
+    if objects.len()!=ids.len(){return Err(CodecError::Json);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
-    let grid=key_id(&target.grid_id).ok_or(CodecError::Json)?;
-    let object=key_id(&target.object_id).ok_or(CodecError::Json)?;
     let mut out=GridIdentityDependencies::default();
     // Iterative scan with explicit depth and node bounds. No private path,
     // identifier or arbitrary field name leaves the Worker.
@@ -381,15 +388,15 @@ pub(super) fn grid_identity_dependencies(profile:&[u8],target:&GridCoordinateTar
                     if k=="gridid"{grid_values.push(value.as_u64());}
                     if k=="gridobjectid"{object_values.push(value.as_u64());}
                 }
-                if object_values.iter().any(|v|*v==Some(object)){
+                if object_values.iter().any(|v|v.is_some_and(|id|objects.contains(&id))){
                     if grid_values.iter().any(|v|*v==Some(grid)){
                         if flags.0{out.active+=1;}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
                     }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){out.unknown+=1;}
                 }
                 for (key,value) in o{
                     let k=normal(key);
-                    if k=="saplinggridobjectid"&&value.as_u64()==Some(object)&&owning.is_none_or(|g|g==grid){out.related+=1;}
-                    else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64()==Some(object){out.unknown+=1;}
+                    if k=="saplinggridobjectid"&&value.as_u64().is_some_and(|id|objects.contains(&id))&&owning.is_none_or(|g|g==grid){out.related+=1;}
+                    else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64().is_some_and(|id|objects.contains(&id)){out.unknown+=1;}
                     let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"));
                     // Owning Grid context is recognized only for exact
                     // full/diff map key+embedded ID. Do not infer from a generic ID.

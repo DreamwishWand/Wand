@@ -1,3 +1,4 @@
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 /** Local furniture stock rehearsal and explicit test-only copy output. */
 import init,{WasmAmountPreview} from '../save/wasm/p1g-pkg/ddv_p1g_codec.js';
 import {testSaveExportEnabled} from './test-save-export.ts';
@@ -10,7 +11,7 @@ scope.onmessage=async({data})=>{
   if(exporting&&(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true))throw Error('test-only');
   if((!exporting&&data?.command!=='furniture-stock-preview')||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||!data.plan||typeof data.plan!=='object')throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
-  wasm=new WasmAmountPreview(data.file.name.toLowerCase().endsWith('.json')?'json':'p1g');
+  wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   if(exporting){

@@ -1,3 +1,4 @@
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 /** Private local-only structural rehearsal. Only a boolean receipt leaves WASM. */
 import init,{WasmAmountPreview} from '../save/wasm/p1g-pkg/ddv_p1g_codec.js';
 import {testSaveExportEnabled} from './test-save-export.ts';
@@ -13,7 +14,7 @@ scope.onmessage=async({data})=>{
     !data.plan||typeof data.plan!=='object')throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());
   await init(wasmUrl);
-  wasm=new WasmAmountPreview(data.file.name.toLowerCase().endsWith('.json')?'json':'p1g');
+  wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   if(exporting){const copy=readExperimentalCopy(wasm.prepare_grid_transfer_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));scope.postMessage({kind:'transfer-copy',...copy},[copy.bytes.buffer]);return;}

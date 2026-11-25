@@ -98,6 +98,27 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:'terrain',requestId:id,key:grid.key,sizeX:grid.sizeX,sizeY:grid.sizeY,nativeFloorValues:values},[values.buffer]);
       return;
     }
+    if(data.command==='fence-family'){
+      const family=data.itemId===40700246?'biome2fence':data.itemId===40700268?'fairylightfence':null;
+      if(!family)throw Error('unsupported family');
+      const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
+      const base=definitions.get(String(data.itemId));
+      if(!base||!fenceBaseDefinition(data.itemId,base))throw Error('base');
+      const shapeFor=(id:number,code:number,w:number,h:number)=>{
+        const item=cache.resolve(id,code),shape=item.shapeKey?cache.shapes[item.shapeKey]:null;
+        if(!shape||item.layer!=='fence'||shape.width!==w||shape.height!==h||shape.cellCount!==w*h||shape.runs.length!==h||!shape.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===w))throw Error('fence shape');
+        return shape;
+      };
+      const q=grid.factor,baseShape=shapeFor(data.itemId,8,q,q);
+      if(baseShape.acceptedFloorTypesFlag===undefined)throw Error('fence mask');
+      for(let k=1;k<=6;k++){
+        const id=data.itemId+k,d=definitions.get(String(id)),name=String(d?.nativeName??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+        const f=d?.footprint as {sizeX?:number;sizeY?:number}|null|undefined;
+        if(d?.nativeType!=='Furniture'||!name.includes(family)||!name.includes('ext')||name.includes('diag')||f?.sizeX!==k||f?.sizeY!==1)throw Error('fence variation');
+        for(const [code,w,h] of [[8,k*q,q],[12,q,k*q]])if(shapeFor(id,code,w,h).acceptedFloorTypesFlag!==baseShape.acceptedFloorTypesFlag)throw Error('fence mask');
+      }
+      scope.postMessage({kind:'fence-family',requestId:id,key:grid.key,itemId:data.itemId,factor:q,verified:true});return;
+    }
     if(data.command==='design-catalog'){
       const locale=data.locale as WandLanguage;
       const [definitions,names]=await Promise.all([loadGeometry(),(await getMaster()).getBrowseNames(locale)]);
