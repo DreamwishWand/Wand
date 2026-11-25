@@ -303,6 +303,30 @@ test('local design file round trip, exact grid identity, current geometry, atomi
  assert.equal(restoreDesign(emptyDesign(),parsed.map(p=>({...p,itemId:road.itemId,x:0,y:0})),new Map([[road.itemId,road]]),10,10),null);
 });
 
+import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft} from '../src/lib/world/design-draft.ts';
+test('local design recovery preserves undo and redo, identity and safe synthetic placement history',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape}};
+ const grid={key:'draft-test',layoutId:'SceneLayouts/Village04/A.json',gridDataPath:'GridData/A.json',gridIdNative:1,sizeX:20,sizeY:20,factor:1};
+ const loc=designDraftLocation(grid,null),defs=new Map([[g.itemId,g]]);
+ let timeline=placeDesign(emptyDesign(),g,1,2,2,20,20);timeline=placeDesign(timeline,g,4,2,2,20,20);
+ timeline=travelDesign(timeline,-1);
+ const draft=makeDesignDraft(loc,timeline,{zoom:2,x:.5,y:.5},[1,2]);
+ const restored=parseDesignDraft(JSON.parse(JSON.stringify(draft)),loc);
+ assert.deepEqual(restored.timeline,timeline);assert.deepEqual(restored.selection,[1]);assert.deepEqual(draftItemIds(restored),[g.itemId]);
+ assert.equal(currentDesign(travelDesign(restored.timeline,1)).length,2);
+ assert.equal(validateDesignDraft(restored,loc,null,defs),true);
+ assert.equal(validateDesignDraft(restored,loc,null,new Map()),false);
+ assert.throws(()=>parseDesignDraft(draft,designDraftLocation({...grid,factor:2},null)),/CONTEXT/);
+ assert.throws(()=>parseDesignDraft({...draft,timeline:{...timeline,nextId:1}},loc),/PLACEMENT/);
+ assert.throws(()=>parseDesignDraft({...draft,timeline:{...timeline,cursor:100}},loc),/HISTORY/);
+ const unsafe=structuredClone(draft);unsafe.timeline.snapshots[2][1].x=19;
+ assert.equal(validateDesignDraft(parseDesignDraft(unsafe,loc),loc,null,defs),false);
+ const duplicate=structuredClone(draft);duplicate.timeline.snapshots[2][1].id=1;
+ assert.throws(()=>parseDesignDraft(duplicate,loc),/PLACEMENT/);
+});
+
+
 import {designClipboard,rotateDesignClipboard,pasteDesign,removeDesignGroup,transformDesignGroup} from '../src/lib/world/design-layout.ts';
 import {worldShortcut} from '../src/lib/world/world-shortcuts.ts';
 test('desktop shortcut mapping accepts Control and Command without swallowing unrelated modifiers or IME',()=>{
@@ -508,3 +532,28 @@ test('region fill stops at original terrain boundaries and existing paths; overs
  assert.equal(rotateDesignClipboard(clip,new Map([[itemId,{...g,editRestrictions:{rotate:'denied'}}]]),1),null);
  assert.equal(rotateDesignClipboard(clip,new Map(),1),null);
  });
+
+import {symmetricMoveTargets,symmetricMoveDesign} from '../src/lib/world/design-symmetry.ts';
+test('linked symmetry translation is atomic, preserves identity, rejects ambiguity and respects restrictions',()=>{
+ const itemId=40000001,shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{[itemId+':0']:shape,[itemId+':8']:shape}};
+ const defs=new Map([[itemId,g]]),axis={mode:'vertical',x2:20,y2:20};
+ let t=placeDesign(emptyDesign(),g,3,4,0,20,20);t=placeDesign(t,g,15,4,0,20,20);
+ const eligible=new Set([1,2]);
+ assert.deepEqual(symmetricMoveTargets(t,[1],defs,axis,2,1,eligible),[{id:1,x:5,y:5},{id:2,x:13,y:5}]);
+ const next=symmetricMoveDesign(t,[1],defs,axis,2,1,eligible,20,20);
+ assert.deepEqual(currentDesign(next).map(p=>[p.id,p.x,p.y]),[[1,5,5],[2,13,5]]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(t));assert.equal(next.nextId,t.nextId);
+ assert.equal(symmetricMoveDesign(t,[1,2],defs,axis,2,0,eligible,20,20),null);
+ assert.ok(symmetricMoveDesign(t,[1,2],defs,axis,0,1,eligible,20,20));
+ assert.equal(symmetricMoveDesign(t,[1],defs,axis,1,0,new Set([1]),20,20),null);
+ assert.equal(symmetricMoveDesign(t,[1],defs,axis,-4,0,eligible,20,20),null);
+ const ambiguous=placeDesign(t,g,15,4,0,20,20);
+ assert.equal(symmetricMoveTargets(ambiguous,[1],defs,axis,1,0,new Set([1,2,3])),null);
+ const duplicateSource=placeDesign(t,g,3,4,0,20,20);assert.equal(symmetricMoveTargets(duplicateSource,[1],defs,axis,1,0,new Set([1,2,3])),null);
+ const center=placeDesign(emptyDesign(),g,9,4,0,20,20);
+ assert.ok(symmetricMoveDesign(center,[1],defs,axis,0,2,new Set([1]),20,20));
+ assert.equal(symmetricMoveDesign(center,[1],defs,axis,1,0,new Set([1]),20,20),null);
+ const point={mode:'point',x2:20,y2:20};let pt=placeDesign(emptyDesign(),g,3,4,0,20,20);pt=placeDesign(pt,g,15,15,2,20,20);
+ assert.deepEqual(symmetricMoveTargets(pt,[1],defs,point,2,-1,eligible),[{id:1,x:5,y:3},{id:2,x:13,y:16}]);
+});

@@ -163,11 +163,33 @@ export function removeDesignGroup(t:DesignTimeline,ids:readonly number[],defs:Re
  if(!chosen.length||chosen.length!==set.size||chosen.some(p=>!defs.has(p.itemId)||nativeActionBlocked(defs.get(p.itemId)?.editRestrictions,'remove')))return null;
  return commit(t,old.filter(p=>!set.has(p.id)));
 }
+/** Apply different integer translations to existing objects as one history entry.
+ * All selected and counterpart IDs must be eligible; no partial changes. */
+export function translateDesignTargets(t:DesignTimeline,targets:readonly {id:number;x:number;y:number}[],defs:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number):DesignTimeline|null{
+ const old=currentDesign(t),byId=new Map(old.map(p=>[p.id,p])),updates=new Map<number,DesignPlacement>();
+ if(!targets.length||targets.length>old.length)return null;
+ for(const target of targets){
+  const p=byId.get(target.id),g=p?defs.get(p.itemId):null;
+  if(!p||!g||updates.has(p.id)||!Number.isSafeInteger(target.x)||!Number.isSafeInteger(target.y)||nativeActionBlocked(g.editRestrictions,'select'))return null;
+  if((p.x!==target.x||p.y!==target.y)&&nativeActionBlocked(g.editRestrictions,'move'))return null;
+  updates.set(p.id,p.x===target.x&&p.y===target.y?p:{...p,x:target.x,y:target.y});
+ }
+ const anchors=new Set<string>();
+ for(const p of old){if(updates.has(p.id))continue;const kind=exclusiveAnchorClass(String(p.itemId));if(kind)anchors.add(kind+':'+p.x+':'+p.y);}
+ if([...updates.values()].every(p=>byId.get(p.id)===p))return null;
+ for(const p of updates.values()){
+  const g=defs.get(p.itemId)!;
+  if(!designCandidateValid([],p,g,width,height))return null;
+  const kind=exclusiveAnchorClass(String(p.itemId));if(kind){const k=kind+':'+p.x+':'+p.y;if(anchors.has(k))return null;anchors.add(k);}
+ }
+ return commit(t,old.map(p=>updates.get(p.id)??p));
+}
 export function transformDesignGroup(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,turns:number,width:number,height:number):DesignTimeline|null{
  const set=new Set(ids),old=currentDesign(t),chosen=old.filter(p=>set.has(p.id));
  if(!chosen.length||chosen.length!==set.size||![dx,dy,turns].every(Number.isSafeInteger))return null;
  const turn=((turns%4)+4)%4;
  if(!dx&&!dy&&!turn)return null;
+ if(!turn)return translateDesignTargets(t,chosen.map(p=>({id:p.id,x:p.x+dx,y:p.y+dy})),defs,width,height);
  const left=Math.min(...chosen.map(p=>p.x)),top=Math.min(...chosen.map(p=>p.y));
  const shape=(p:DesignPlacement)=>defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
  if(chosen.some(p=>!shape(p)))return null;
@@ -233,7 +255,7 @@ function planNetworkDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly
 }
 export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'ground');}
 export function planFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'fence');}
-function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
+export function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
  if(!plan)return null;
  if(!plan.add.length&&!plan.remove.length)return t;
  const removed=new Set(plan.remove);
