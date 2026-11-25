@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
  import {base} from '$app/paths';
- import {openCurrentItemDatabase,type ItemMasterRecord} from '../items/public-item-master.ts';
+ import {openCurrentItemDatabase,type ItemMasterRecord,type CompleteItemMasterRecord} from '../items/public-item-master.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,type IndoorRoom} from './indoor-room-view.ts';
  import type {WandLanguage} from '../ui/preferences';
@@ -13,10 +13,10 @@
  $: wallReady=!!room&&room.surfaces.length===5&&room.surfaces.slice(1).every((s,i)=>s.wallPosition===i);
  function cancelPreview(){preview?.terminate();preview=null;previewStatus='idle';finishChoice=0;allWalls=false;}
  function checkFinish(){if(!file||!room||!face||!wallReady||!choices.includes(finishChoice)||previewStatus==='working')return;const expected=surface===0?face.finish:room.surfaces.slice(1).map(s=>s.finish);if(surface===0&&typeof expected!=='number')return;const plan={roomOrdinal:room.ordinal,itemId:finishChoice,kind:surface===0?'floor':'wall',wall:surface===0||allWalls?null:face.wallPosition,expected};const current=file;preview?.terminate();const own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});preview=own;previewStatus='working';const done=(data:unknown)=>{own.terminate();if(preview!==own||file!==current)return;preview=null;previewStatus=verifyFinishReceipt(data)?'valid':'error';};own.onmessage=e=>done(e.data?.kind==='room-finish-preview'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'room-finish-preview',file:current,plan});}
- let records=new Map<number,ItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>();
+ let records=new Map<number,ItemMasterRecord|CompleteItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>();
  let db:ReturnType<typeof openCurrentItemDatabase>|null=null,closeButton:HTMLButtonElement,root:HTMLDivElement;
  onMount(()=>{const previous=document.activeElement;closeButton?.focus();return ()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};});
- function keys(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled])')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ function keys(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled])')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -24,7 +24,7 @@
  $: filtered=(face?.items??[]).filter(p=>name(p.itemId,records,locale,w[12]).normalize('NFKC').toLocaleLowerCase().includes(query.normalize('NFKC').toLocaleLowerCase().trim()));
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen?choices.slice(0,80):[])]);
- function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
+ function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
  function load(next:File|null){seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
   const done=(v:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);owned=parseOwnedFinishes(v);status='ready';}catch{status='error';}};
