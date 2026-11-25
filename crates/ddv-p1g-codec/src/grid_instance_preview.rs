@@ -1175,7 +1175,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
                old.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid")){return Err(bad);}
             let refs=grid_identity_dependencies(profile,target)?;
             if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
-            Some(subgrid_tree(collection,&target.grid_id,&target.object_id)?)
+            Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
             if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
             None
