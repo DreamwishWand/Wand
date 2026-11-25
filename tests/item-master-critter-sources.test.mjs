@@ -90,7 +90,15 @@ test('126 original critter food filters reuse the shared definition evidence and
   const rabbit=rows.find(r=>r.critterItemId===120100000);
   assert.equal(rabbit.favorite,null);
   assert.equal(rabbit.like.facts.cropTypeCondition,2);
-  const [carrot,missing,duplicate]=await reader.getForFoodFilterCandidates([30200000,99999999,30200000]);
+  // Separate calls through the shared detail entry point must reuse the
+  // same candidate promises and inverse preparation for this exact DB.
+  const secondReader=createCritterSourceReader(db);
+  assert.equal(secondReader,reader);
+  const repeated=await secondReader.getFoodFilterCandidates([120100000]);
+  assert.equal(repeated[0].like,rabbit.like);
+  const otherDb=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  assert.notEqual(createCritterSourceReader(otherDb),reader);
+  const [carrot,missing,duplicate]=await secondReader.getForFoodFilterCandidates([30200000,99999999,30200000]);
   assert.equal(carrot.status,'indexed');assert.equal(missing,null);assert.deepEqual(carrot,duplicate);
   assert(carrot.references.some(r=>r.critterItemId===120100000&&r.preference==='like'&&r.evidence.cropTypeMatch===true));
   for(const ref of carrot.references){
