@@ -1324,7 +1324,7 @@ try{
   assert.equal(await groupForm.getByRole('button',{name:'一括移動',exact:true}).isDisabled(),true);
   await groupForm.getByRole('button',{name:'選択解除',exact:true}).click();
   await wholeSave.getByRole('button',{name:'複数選択',exact:true}).click();
-  await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
+  if(!(await wholeSave.locator('.overview-results').isVisible()))await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
   await wholeSave.locator('.overview-results button').first().click();
   await wholeSave.getByRole('button',{name:'家具パレット',exact:true}).click();
   const palette=wholeSave.locator('.save-furniture-palette');
@@ -1501,8 +1501,18 @@ try{
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).waitFor({timeout:30000});
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).click();
   await publicWorld.locator('.world-export').getByRole('link',{name:'編集済みコピーを保存',exact:true}).waitFor({timeout:30000});
-  // A copied layout is an independent design, not a Save mutation.
-  await publicWorld.locator('.mainland-overview').getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
+  // The earlier transform/recovery fixture deliberately uses coordinates
+  // outside the public terrain. Capture must NOT copy those placements.
+  // Use a distinct synthetic Save with real source-ground cells for capture.
+  const captureSave=structuredClone(worldSave);
+  captureSave.World.GridCollection.Grids['101'].Objects['1'].X=60;
+  captureSave.World.GridCollection.Grids['101'].Objects['1'].Y=35;
+  captureSave.World.GridCollection.Grids['101'].Objects['4'].X=70;
+  captureSave.World.GridCollection.Grids['101'].Objects['4'].Y=40;
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'capture-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(captureSave))});
+  const captureMap=publicWorld.locator('.mainland-overview');
+  await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(1).waitFor({timeout:30000});
+  await captureMap.getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
   const capturePanel=publicWorld.locator('.design-capture');
   await capturePanel.waitFor({timeout:30000}).catch(async error=>{throw Error('Capture did not open: '+(await publicWorld.innerText()).slice(0,2000),{cause:error});});
   // A previous design may be offered by the local recovery store.
