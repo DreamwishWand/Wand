@@ -15,6 +15,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
+import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
@@ -1392,6 +1393,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   // localized-text coverage; do not imply every newly exposed key is translated.
   const localizations=loadLocalizations(project,e,version,source,byId);
   const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
+  attachOriginalSceneFacts(project,source,byId);
   const linkedLocalizations=loadLinkedLocalizations(project,e,version,source,byId,localizations);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
