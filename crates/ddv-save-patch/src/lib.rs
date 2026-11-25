@@ -7,6 +7,7 @@
 use std::collections::{HashMap,HashSet};
 use std::ops::Range;
 pub mod fence_topology;
+pub mod fence_erase;
 
 pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;
