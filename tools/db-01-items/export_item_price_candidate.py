@@ -123,14 +123,22 @@ def main():
     p.add_argument('--static-zip', type=Path, required=True)
     p.add_argument('--private-out', type=Path, required=True)
     p.add_argument('--catalog-zip', type=Path, required=True)
+    p.add_argument('--approved-public-out', type=Path, help='Owner-approved numeric price projection only (2026-11-25; DATABASE.md)')
     a = p.parse_args()
     require(not a.private_out.exists(), 'NO_OVERWRITE')
+    if a.approved_public_out:
+        require(not a.approved_public_out.exists() and a.approved_public_out.resolve() != a.private_out.resolve(), 'PUBLIC_NO_OVERWRITE')
     require(not a.private_out.resolve().is_relative_to(Path(__file__).resolve().parents[2]), 'PRIVATE_OUTPUT_PATH')
     doc = build(a.protodb.read_bytes(), a.static_zip)
     join = verify_catalog(doc, a.catalog_zip)
     raw = (json.dumps(doc, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n').encode()
     with a.private_out.open('xb') as out:
         out.write(raw)
+    if a.approved_public_out:
+        public = (json.dumps([[r[0],r[2],r[4],r[5]] for r in doc['items']], separators=(',', ':')) + '\n').encode()
+        require(sha(public) == '84a6befdb0727c8f683c15dc1220567df2fc2fe0fbd0d9439cbcc83257176055', 'PUBLIC_SHA')
+        with a.approved_public_out.open('xb') as out:
+            out.write(public)
     print(json.dumps({'items':len(doc['items']),'coverage':doc['coverage'],'sha256':sha(raw),'bytes':len(raw),'catalogJoin':join,'publicationAuthorized':False}, sort_keys=True))
 
 if __name__ == '__main__':

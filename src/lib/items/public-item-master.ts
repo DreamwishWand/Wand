@@ -297,7 +297,23 @@ export interface CompleteItemMasterRelations {
   readonly sourceFieldDeclarations: Readonly<Record<string,Readonly<Record<string,number>>>>;
   readonly gameRuntimeMembershipVerified: false;
 }
+export interface OriginalPriceProjection {
+  readonly sourceGameVersion:string;
+  readonly sourceProtoDbSha256:string;
+  readonly projectionSha256:string;
+  readonly publicationAuthorized:true;
+  readonly runtimePriceVerified:false;
+  readonly itemCount:number;
+  readonly purchaseEntries:number;
+  readonly sellEntries:number;
+  readonly purchaseExplicitAmounts:number;
+  readonly sellExplicitAmounts:number;
+  readonly staticItems:number;
+  readonly dynamicCacheItems:number;
+  readonly currencyCount:number;
+}
 export interface ItemMasterRelease {
+  readonly originalPriceProjection?:Readonly<OriginalPriceProjection>;
   readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionProjection>;
   readonly schema: 'wand.item-master.release@1';
   readonly version: string;
@@ -461,7 +477,23 @@ export interface ItemAcquisitionSourceQueryResult {
   readonly coverageComplete:false;
   readonly currentAvailabilityVerified:false;
 }
+export interface OriginalItemPriceCost {
+  readonly currencyItemId:number;
+  /** Null is an omitted original wire amount, not a verified zero or free price. */
+  readonly amount:number|null;
+  readonly amountFieldPresent:boolean;
+}
+export interface OriginalItemPriceFacts {
+  readonly itemId:number;
+  readonly status:'configured'|'no_source_row'|'not_indexed';
+  readonly sourceGameVersion:string|null;
+  readonly providerKind:'static'|'dynamic_cache'|null;
+  readonly purchaseCosts:readonly OriginalItemPriceCost[];
+  readonly sellCosts:readonly OriginalItemPriceCost[];
+  readonly runtimePriceVerified:false;
+}
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
+  getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
   getItemContentOrigins(itemIds:readonly number[]):Promise<readonly (Readonly<ItemContentOrigin>|null)[]>;
   /** Additional canonical filters are ANDed with the explicit origin filter. */
@@ -1125,6 +1157,37 @@ export async function openPublicItemMaster(
       return (await itemReferences([id],direction))[0];
     },
     getItemsReferences:itemReferences,
+    async getOriginalItemPrices(ids:readonly number[]){
+      const metadata=m.originalPriceProjection;
+      const fields=['price.sourceProviderKind','price.purchaseCosts','price.sellCosts'];
+      const catalog=new Set((await fieldReader.getFieldCatalog()).map(f=>f.field));
+      const indexed=metadata?.publicationAuthorized===true&&metadata.runtimePriceVerified===false&&
+        metadata.sourceGameVersion===m.target.gameVersion&&fields.every(f=>catalog.has(f));
+      const rows=await fieldReader.getItemFields(ids,indexed?fields:['nativeCategory']);
+      function costs(v:unknown):readonly OriginalItemPriceCost[]{
+        if(v===undefined)return Object.freeze([]);
+        assert(Array.isArray(v),'INVALID_PRICE_COSTS');
+        const seen=new Set<number>();
+        return Object.freeze(v.map(x=>{
+          assert(isObject(x)&&ID(x.currencyItemId)&&!seen.has(x.currencyItemId)&&
+            typeof x.amountFieldPresent==='boolean'&&
+            (x.amountFieldPresent?typeof x.amount==='number'&&Number.isInteger(x.amount)&&x.amount>=0&&x.amount<=2147483647:x.amount===null),'INVALID_PRICE_COST');
+          seen.add(x.currencyItemId);
+          return Object.freeze({currencyItemId:x.currencyItemId,amount:x.amount as number|null,amountFieldPresent:x.amountFieldPresent});
+        }));
+      }
+      return Object.freeze(rows.map(row=>{
+        if(row===null)return null;
+        const provider=row.values[fields[0]];
+        assert(provider===undefined||provider==='static'||provider==='dynamic_cache','INVALID_PRICE_PROVIDER');
+        const purchaseCosts=costs(row.values[fields[1]]),sellCosts=costs(row.values[fields[2]]);
+        assert(provider!==undefined||!purchaseCosts.length&&!sellCosts.length,'PRICE_PROVIDER_MISSING');
+        return Object.freeze({itemId:row.itemId,
+          status:!indexed?'not_indexed' as const:provider===undefined?'no_source_row' as const:'configured' as const,
+          sourceGameVersion:indexed?m.target.gameVersion:null,
+          providerKind:provider??null,purchaseCosts,sellCosts,runtimePriceVerified:false as const});
+      }));
+    },
     async getConfiguredPriceOverrides(ids:readonly number[]){
       const field='source.PriceOverride' as const;
       const catalog=await fieldReader.getFieldCatalog();

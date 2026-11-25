@@ -195,3 +195,48 @@ test('configured cost projection retains exact original amount presence, currenc
   assert(!actual.get(40005160)?.some(x=>x.kind==='purchase_override'));
   console.log('DB01_CONFIGURED_COST_CENSUS',JSON.stringify({itemIds:all.size,occurrences:Object.fromEntries(kinds)}));
 });
+
+test('approved original purchase and sale prices match every sanitized source row',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const rows=JSON.parse(await readFile('data/ddv/item-master/original-price-amounts-steam-1.26.2.json','utf8'));
+  const meta=db.release.originalPriceProjection;
+  assert.equal(meta.publicationAuthorized,true);
+  assert.equal(meta.runtimePriceVerified,false);
+  assert.equal(meta.itemCount,9537);
+  assert.equal(meta.purchaseEntries,9416);
+  assert.equal(meta.sellEntries,1192);
+  assert.equal(meta.purchaseExplicitAmounts,9036);
+  assert.equal(meta.sellExplicitAmounts,718);
+  assert.equal(meta.currencyCount,8);
+  const provider=new Map(await db.getFieldRows('price.sourceProviderKind'));
+  const buy=new Map(await db.getFieldRows('price.purchaseCosts'));
+  const sell=new Map(await db.getFieldRows('price.sellCosts'));
+  const source=new Map(await db.getFieldRows('price.sourceRecordIndex'));
+  const cats=new Map(await db.getFieldRows('nativeCategory'));
+  const keys=(costs)=>costs.map(([currencyItemId,amount])=>({currencyItemId,amount,amountFieldPresent:amount!==null}));
+  assert.equal(provider.size,9537);
+  assert.equal(source.size,9537);
+  assert.equal(buy.size,9056);
+  assert.equal(sell.size,1149);
+  for(const [id,ordinal,purchases,sales] of rows){
+    assert(cats.has(id));
+    assert.equal(provider.get(id),ordinal===274?'dynamic_cache':'static');
+    assert.equal(source.get(id),ordinal);
+    assert.deepEqual(buy.get(id)??[],keys(purchases));
+    assert.deepEqual(sell.get(id)??[],keys(sales));
+    for(const [currency] of [...purchases,...sales])assert.equal(cats.get(currency),'Currency');
+  }
+  const omitted=rows.find(r=>r[3].some(c=>c[1]===null));
+  const noPrice=[...cats.keys()].find(id=>!provider.has(id));
+  const [actual,missing,unknown,duplicate,staticRow]=await db.getOriginalItemPrices([omitted[0],noPrice,2147483647,omitted[0],30000031]);
+  assert.equal(actual.status,'configured');assert.equal(actual.providerKind,'dynamic_cache');
+  assert(actual.sellCosts.some(c=>c.amount===null&&!c.amountFieldPresent));
+  assert.deepEqual(actual,duplicate);assert.equal(actual.runtimePriceVerified,false);
+  assert.equal(missing.status,'no_source_row');assert.equal(unknown,null);
+  assert.deepEqual(staticRow.sellCosts,[{currencyItemId:80000000,amount:70,amountFieldPresent:true}]);
+  assert.deepEqual(staticRow.purchaseCosts,[{currencyItemId:80000000,amount:70,amountFieldPresent:true}]);
+  const matches=await db.findItemIdsByField('price.sellAmountKeys',{kind:'contains',value:JSON.stringify([80000000,70])});
+  assert.deepEqual(matches,rows.filter(r=>r[3].some(([currency,amount])=>currency===80000000&&amount===70)).map(r=>r[0]));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
