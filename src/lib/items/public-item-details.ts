@@ -36,6 +36,8 @@ import {
   DB02_SOURCE_ROLES,
 } from '../acquisition/db01-item-source-relations.ts';
 
+import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from './public-item-acquisition-details.ts';
+
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
 /** DB-02 source datasets are independently verified only for this version. */
@@ -148,6 +150,8 @@ export interface PublicItemDetailsClient {
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  /** Resolve source evidence and original localized identities without sidecars. */
+  getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemAcquisitionSourceDetails>|null)[]>;
   getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
   getSelectedItems(itemIds:readonly number[],fields:readonly string[],
@@ -358,6 +362,9 @@ export async function openPublicItemDetails(
         :Object.freeze((await sidecar()).listItemIds(category).map(id=>Number(id)));
       idLists.set(category, ids);
       return ids;
+    },
+    async getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
+      return readItemAcquisitionSourceDetails(await complete(),itemIds,locale);
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
