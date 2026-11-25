@@ -3,6 +3,7 @@
  import {browser} from '$app/environment';
  import {testSaveExportEnabled} from './test-save-export.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
+ import {rememberReplayStep} from './checkpoint-journal.ts';
  import {commitWorldCheckpoint} from '../ui/local-save-session';
  import {currentWorldEdits,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
@@ -35,7 +36,7 @@
     worker=null;busy=false;const receipt=v.receipt;
     if(!exporting&&v.kind==='result'&&receipt?.contract==='wand.db05.grid-mixed-batch-preview@1'&&receipt.changedCount===requestPlans.length&&receipt.lexicalBytesPreserved===true&&receipt.reopenVerified===true&&receipt.exportAuthorized===false){checked=requestSignature;return;}
     if(exporting&&v.kind==='copy'&&v.bytes instanceof Uint8Array&&v.bytes.byteLength>0&&v.bytes.byteLength<=32*1024*1024&&receipt?.contract==='wand.db05.experimental-copy@1'&&receipt.copyBytes===v.bytes.byteLength&&receipt.originalUnchanged===true&&receipt.independentReopenVerified===true&&receipt.experimentalCopyOnly===true&&receipt.productionWriterAuthorized===false){
-     try{copyFile=new File([v.bytes.slice().buffer as ArrayBuffer],source.name,{type:source.type||'application/octet-stream'});url=URL.createObjectURL(copyFile);const dot=source.name.lastIndexOf('.');name=dot>0?source.name.slice(0,dot)+'-world-edited'+source.name.slice(dot):source.name+'-world-edited';}catch{error=true;}finally{v.bytes.fill(0);}return;
+     try{copyFile=new File([v.bytes.slice().buffer as ArrayBuffer],source.name,{type:source.type||'application/octet-stream'});rememberReplayStep(copyFile,'export-grid-mixed-batch-copy',requestPlans);url=URL.createObjectURL(copyFile);const dot=source.name.lastIndexOf('.');name=dot>0?source.name.slice(0,dot)+'-world-edited'+source.name.slice(dot):source.name+'-world-edited';}catch{error=true;}finally{v.bytes.fill(0);}return;
     }
     v.bytes?.fill(0);checked='';error=true;
    };
