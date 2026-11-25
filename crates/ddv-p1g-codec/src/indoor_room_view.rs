@@ -359,6 +359,32 @@ mod tests{
   plan["transfer"]["expectedX"]=json!(9);assert!(furniture_candidate(raw,&plan.to_string()).is_err());
  }
  #[test]
+ fn room_cut_moves_between_owned_floors_and_outdoors_without_inventory(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43},"1":{"FloorGridID":44}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"44":{"ID":44,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":7,"Objects":{}}}}}}"#;
+  let witness=json!({"roomOrdinal":1,"index":0});
+  let mut plan=json!({"roomOrdinal":2,"surfaceOrdinal":1,"transfer":{"roomSource":witness,"itemId":40000001,"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":3,"y":3,"orientation":"GridOrientation_Left"}});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"].as_object().unwrap().is_empty());
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["44"]["Objects"]["7"]["Orientation"],"GridOrientation_Left");
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["44"]["NextGridObjectID"],8);
+  assert!(d.patched_json.contains("\"Marker\":1e2"));
+  plan["roomOrdinal"]=json!(1);assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  let dest=json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":16,"sizeY":16});
+  let mut cut=json!({"roomSource":{"roomOrdinal":1,"index":0},"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":dest,"x":5,"y":5,"orientation":"GridOrientation_Up"});
+  let d=crate::grid_instance_preview::group_cut_candidate(raw,&json!([cut.clone()]).to_string()).unwrap();let j:Value=serde_json::from_str(&d).unwrap();
+  assert!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"].as_object().unwrap().is_empty());
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["Orientation"],"GridOrientation_Up");
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
+  assert!(d.contains("\"Marker\":1e2"));
+  let mut shared:Value=serde_json::from_slice(raw).unwrap();
+  shared["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]["1"]["FloorGridID"]=json!(43);
+  assert!(room_to_outdoor_candidate(&serde_json::to_vec(&shared).unwrap(),&cut).is_err());
+  let mut stale:Value=serde_json::from_slice(raw).unwrap();
+  stale["World"]["SpawnedObjects"]=json!([{"GridID":43,"GridObjectID":1}]);
+  assert!(room_to_outdoor_candidate(&serde_json::to_vec(&stale).unwrap(),&cut).is_err());
+  cut["expectedX"]=json!(9);assert!(room_to_outdoor_candidate(raw,&cut).is_err());
+ }
+ #[test]
  fn decoded_room_source_masks_bind_only_exact_path_and_allow_stock_place(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let report:Value=serde_json::from_str(&project(raw).unwrap()).unwrap();
