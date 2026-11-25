@@ -1501,7 +1501,12 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         universeStatus:association?.applied?'source_linked':r.universeSourceStatus,
         ...(association?.applied?{universeAssociation:association.candidate,
           originalUniverseStatus:r.universeSourceStatus}:{}),iconGuid:r.iconGuid,
-        ...(placementContexts.has(i)?{sourcePlacement:placementContexts.get(i)}:{}),
+        ...(placementContexts.has(i)?{sourcePlacement:{
+          floorClass:placementContexts.get(i).floor?.kind??null,
+          acceptedFloorMask:placementContexts.get(i).floor?.mask??null,
+          surface:placementContexts.get(i).floor?.surface??null,
+          scene:placementContexts.get(i).scene,
+          placementLegalityVerified:false}}:{}),
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
         prefabGuid:r.artwork.prefabGuid??null,nativeKey:r.nativeKey,
