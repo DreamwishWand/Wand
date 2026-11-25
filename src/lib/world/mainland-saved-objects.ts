@@ -74,6 +74,10 @@ import {CARDINAL_ORIENTATIONS,isCardinal,worldMoveEligible,worldRotateEligible,e
 export function mainlandSavedMoveEligible(p:MainlandSavedObject|null){
  return !!p?.shape&&p.object.layer!=='surface'&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object);
 }
+/** Position-only network group editing. Native state stays untouched. */
+export function mainlandSavedGroupMoveEligible(p:MainlandSavedObject|null){
+ return !!p?.shape&&p.object.layer!=='surface'&&worldMoveEligible(p.object)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
+}
 export function mainlandSavedRotateEligible(p:MainlandSavedObject|null){
  return !!p?.shape&&p.object.layer!=='surface'&&worldRotateEligible(p.object);
 }
@@ -85,7 +89,7 @@ export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly Mainland
  const shape=m.shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];if(!shape)return null;
  const moved=x!==p.object.x||y!==p.object.y,turned=orientation!==p.object.orientation;
  const anchor=mainlandMapAnchor(g,x,y);
- let valid=(moved||turned)&&(!moved||mainlandSavedMoveEligible(p))&&(!turned||mainlandSavedRotateEligible(p))&&
+ let valid=(moved||turned)&&(!moved||(geometryOnly?mainlandSavedGroupMoveEligible(p):mainlandSavedMoveEligible(p)))&&(!turned||mainlandSavedRotateEligible(p))&&
  x>=0&&y>=0&&x+shape.width<=g.sizeX*g.factor&&y+shape.height<=g.sizeY*g.factor&&shape.cellCount<=65536;
  if(valid){
   outer:for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
@@ -134,7 +138,7 @@ export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],gri
   let valid=true;
   for(const p of items){
    const x=p.x+dx/factor,y=p.y-dz/factor;
-   const q=mainlandSavedMoveEligible(p)?mainlandSavedDraft(p,grids,rasters,maps,timeline,x+.5/p.factor,y-.5/p.factor,p.object.orientation,true):null;
+   const q=mainlandSavedGroupMoveEligible(p)?mainlandSavedDraft(p,grids,rasters,maps,timeline,x+.5/p.factor,y-.5/p.factor,p.object.orientation,true):null;
    ghosts.push({object:p,draft:q,x,y});
    if(!q?.valid){valid=false;continue;}
    targets.push({ordinal:p.object.localOrdinal,x:p.object.x+dx*p.factor/factor,y:p.object.y+dz*p.factor/factor,orientation:p.object.orientation,shapeKey:p.object.shapeKey});
