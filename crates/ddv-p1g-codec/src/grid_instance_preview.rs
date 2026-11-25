@@ -1080,6 +1080,97 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
     Ok(std::mem::take(&mut *working))
 }
 
+/// Cut is a deferred relocation: no stock changes, no intermediate Save
+/// output. Same-grid objects retain their native identities; cross-grid
+/// ordinary leaves require unreferenced old and newly allocated identities.
+pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_grid_transfer};
+    use zeroize::{Zeroize,Zeroizing};
+    let bad=CodecError::Json;
+    if plan.len()>65536{return Err(CodecError::Bounds);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+    let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
+    let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+    let mut selections=Vec::with_capacity(rows.len());
+    let mut destinations=HashMap::<String,PlainGridDestination>::new();
+    let mut poses=Vec::with_capacity(rows.len());
+    let mut anchors=HashSet::new();
+    for row in rows{
+        let o=row.as_object().filter(|o|o.len()==9&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+        let orientation=|k:&str|o.get(k).and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).map(str::to_owned).ok_or(bad);
+        selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation("expectedOrientation")?)));
+        let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
+        if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
+        let d=destinations.get(&key).ok_or(bad)?;
+        let xy=(int("x")?,int("y")?);
+        if xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||!anchors.insert((d.grid_id.clone(),xy)){return Err(bad);}
+        poses.push((key,xy,orientation("orientation")?));
+    }
+    let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let selected:HashSet<_>=targets.iter().map(|t|(t.grid_id.clone(),t.object_id.clone())).collect();
+    let mut new_counts=HashMap::<String,u64>::new();
+    let mut old_refs=HashMap::<String,Vec<String>>::new();
+    let mut same=Vec::new();
+    let mut cross=Vec::new();
+    for ((target,selection),(key,xy,orientation)) in targets.iter().zip(&selections).zip(&poses){
+        let source=grids.get(&target.grid_id).ok_or(bad)?;
+        let layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+        let data=source.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
+        let d=destinations.get(key).ok_or(bad)?;
+        let scope=|s:&str|s.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).map(str::to_owned);
+        if scope(layout).is_none()||scope(layout)!=scope(&d.layout_path)||!data.starts_with("GridData/")||
+           source.get("ID").and_then(Value::as_u64)!=key_id(&target.grid_id)||
+           collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)))||
+           grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&g.get("GridDataPath").and_then(Value::as_str)==Some(data)).count()!=1{return Err(bad);}
+        let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
+        if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+           old.get("State").is_some_and(|v|!v.is_null())||old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
+        let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+        if occupied.iter().any(|(id,v)|!selected.contains(&(d.grid_id.clone(),id.clone()))&&v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
+        let before=selection.4.as_ref().ok_or(bad)?;
+        if target.grid_id==d.grid_id{
+            if *xy!=selection.2||before!=orientation{
+                same.push(GridMixedEdit{target:target.clone(),expected:selection.2,position:(*xy!=selection.2).then_some(*xy),orientation:(before!=orientation).then(||(before.clone(),orientation.clone()))});
+            }
+        }else{
+            *new_counts.entry(d.grid_id.clone()).or_default()+=1;
+            old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
+            cross.push((target,selection.2,d,*xy,orientation));
+        }
+    }
+    if same.is_empty()&&cross.is_empty(){return Err(bad);}
+    for (grid,ids) in old_refs{
+        let refs=grid_identity_dependencies_for_ids(profile,&grid,&ids)?;
+        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    }
+    for (grid,count) in new_counts{
+        let next=grids.get(&grid).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
+        let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+        let refs=grid_identity_dependencies_for_ids(profile,&grid,&ids)?;
+        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    }
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+    let update=|working:&mut Zeroizing<String>,mut draft:ddv_save_patch::GridCoordinateDraft|->Result<(),CodecError>{
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        working.zeroize();**working=draft.patched_json;Ok(())
+    };
+    if !same.is_empty(){
+        let draft=preview_existing_grid_mixed_batch(&working,&same).map_err(|_|CodecError::Patch)?;
+        update(&mut working,draft)?;
+    }
+    for (target,expected,d,xy,orientation) in cross{
+        let draft=preview_plain_grid_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+        update(&mut working,draft)?;
+    }
+    Ok(std::mem::take(&mut *working))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
