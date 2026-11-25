@@ -49,11 +49,13 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     db.getItemFields(ids,fields.length?fields:['itemId']),
     nativeStatus==='indexed'?db.getNativeAcquisitionCandidates(ids):null
   ]);
-  const contexts=rows.map((row,i)=>{
+  type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
+    native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[]};
+  const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
     const record=row.values[relation] as unknown as {itemId:string;links:readonly Db01ItemSourceLink[]}|undefined;
     check(!record||record.itemId===String(row.itemId)&&Array.isArray(record.links),'RELATION_JOIN');
-    const indexed=record?.links??[];
+    const indexed:readonly Db01ItemSourceLink[]=record?.links??[];
     check(indexed.every(l=>DB02_SOURCE_KINDS.includes(l.kind)&&DB02_SOURCE_ROLES.includes(l.role)&&typeof l.sourceId==='string'&&l.gameSourceOnly===true&&l.grantedVerified===false&&l.currentlyAvailableVerified===false),'RELATION');
     const extras=(row.values[additional]??[]) as unknown as readonly AdditionalItemSource[];
     check(Array.isArray(extras)&&extras.every(l=>l.currentAvailabilityVerified===false),'ADDITIONAL');
