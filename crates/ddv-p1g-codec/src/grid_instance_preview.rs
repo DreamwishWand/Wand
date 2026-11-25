@@ -1225,6 +1225,32 @@ mod terrain_session_tests{
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
     }
     #[test]
+    fn support_stock_place_and_pickup_are_atomic_and_preserve_other_records(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005161":{"Amount":2,"Marker":"ItemMarker_Favorite"}}}},"Other":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","stock":{"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"}});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let original:Value=serde_json::from_slice(save).unwrap();let mut expected=original.clone();
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(1);
+        expected["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"]=Value::from(3);
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40005161,"X":2,"Y":0,"Orientation":"GridOrientation_Left"});
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);assert!(draft.patched_json.contains("\"Other\":1e2"));
+        plan["stock"]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"]["y"]=Value::from(0);plan["stock"]["expectedStock"]=Value::from(1);assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"]["expectedStock"]=Value::from(2);plan["stock"]["x"]=Value::from(0);assert!(support_child_candidate(save,&plan).is_err());
+        plan.as_object_mut().unwrap().remove("terrainPath");
+        plan["stock"]=serde_json::json!({"action":"pickup","itemId":40005161,"expectedStock":1,"index":1,"expectedX":2,"expectedY":0,"expectedOrientation":"GridOrientation_Left"});
+        let picked=support_child_candidate(draft.patched_json.as_bytes(),&plan).unwrap();
+        let mut expected_after=original.clone();expected_after["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"]=Value::from(3);
+        assert_eq!(serde_json::from_str::<Value>(&picked.patched_json).unwrap(),expected_after);
+        let mut empty=original.clone();empty["World"]["GridCollection"]["Grids"]["8"]["Objects"]=serde_json::json!({});
+        plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json");
+        plan["stock"]=serde_json::json!({"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"});
+        assert!(support_child_candidate(&serde_json::to_vec(&empty).unwrap(),&plan).is_ok());
+    }
+    #[test]
     fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
