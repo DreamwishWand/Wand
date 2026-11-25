@@ -15,6 +15,7 @@
  import type {DesignSymmetry} from './design-symmetry.ts';
  import {mainlandExtent,sourceWorldScope} from './mainland-world-coordinates.ts';
  import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
+ import {parseSupportScene,supportSceneRootCounts,type SupportScene} from './support-scene.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
@@ -28,6 +29,7 @@
  $: frame=mainlandExtent(grids);
  $: scope=grids[0]?sourceWorldScope(grids[0]):'';
  $: axis=symmetry?{mode:symmetry.mode,x:frame.x+symmetry.x2/2,y:frame.y+frame.h-symmetry.y2/2}:null;
+ let supportScene:SupportScene|null=null,supportRequest=0,supportValid=false;
  let sceneInput:HTMLInputElement,scene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='corner',sceneReading=false,sceneEpoch=0,sceneError='',sceneNames=new Map<number,string>();
  $: w=groupPasteWords[locale];$: sy=groupSymmetryWords[locale];$: st=sceneWords[locale];$: gs=groupSceneWords[locale];$: cutText=groupCutWords[locale];
  $: if($worldFurnitureCut&&$worldFurnitureCut.file!==file){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);copied=false;}
@@ -35,13 +37,13 @@
  $: selection=captureFurnitureGroup(items);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  $: if(active&&(source!==file||blocked))cancel();
- $: required=sceneItemCounts(clip);
- $: geometryReady=active&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!activeCut||cutClipboardMatches(activeCut,file,scope,objects));
- $: baseReady=geometryReady&&!!counts&&groupStockAvailable(clip,counts);
- $: anchorPoint=point&&scene?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor):point;
- $: preview=geometryReady?previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene):null;
+ $: required=supportScene?supportSceneRootCounts(supportScene):sceneItemCounts(clip);
+ $: geometryReady=active&&(!supportScene||supportValid)&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!activeCut||cutClipboardMatches(activeCut,file,scope,objects));
+ $: baseReady=geometryReady&&!!counts&&(supportScene?[...required].every(([id,n])=>(counts!.get(id)??0)>=n):groupStockAvailable(clip,counts));
+ $: anchorPoint=point&&(scene||supportScene)?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor):point;
+ $: preview=geometryReady?previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene||!!supportScene):null;
  $: ghost=candidate??(preview&&(!cutRows||groupCutPlan(cutRows,preview))?preview:null);
- $: actualRequired=ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
+ $: actualRequired=supportScene?required:ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
  $: ready=geometryReady&&!!counts&&(axis||mirrorOnly?!!ghost&&[...actualRequired].every(([id,n])=>(counts!.get(id)??0)>=n):baseReady);
  function previewGroup(clip:readonly DesignClipItem[],point:{x:number;y:number}|null,axis:WorldSymmetryAxis|null,mirror:WorldGroupPose[]|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:Map<number,Map<number,DesignItemGeometry>>,objects:readonly MainlandSavedObject[],omitted:number,required:Map<number,number>,counts:Map<number,number>|null,baseReady:boolean,scene:boolean){
   // Stock is evaluated independently from shape preview. All final rows must
@@ -53,7 +55,7 @@
   return base&&axis?symmetricWorldCandidate(groupCandidatePoses(base),axis,true,grids,rasters,defs,capacity,objects,omitted):base;
  }
  function changeSymmetry(value:DesignSymmetry|null){
-  if(writing||copy||cutRows)return;
+  if(writing||copy||cutRows||supportScene)return;
   symmetry=value;symmetryPicking=false;candidate=null;error=false;
  }
  function chooseMirror(){if(!preview||writing||copy||symmetryPicking)return;candidate=preview;error=false;}
@@ -81,7 +83,11 @@
   const original=file,own=worker,epoch=++sceneEpoch;sceneReading=true;sceneError='';
   try{
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const doc=convertSceneFactor(parseSceneAnyFactor(await f.text()),2);
+   const raw=await f.text();
+   if(epoch!==sceneEpoch||file!==original||worker!==own||blocked)return;
+   let supportDoc:SupportScene|null=null;try{supportDoc=parseSupportScene(raw);}catch{/* Flat Scene parser below. */}
+   if(supportDoc){if(!begin(false,null,supportDoc))sceneError=gs[2];return;}
+   const doc=convertSceneFactor(parseSceneAnyFactor(raw),2);
    if(epoch!==sceneEpoch||file!==original||worker!==own||blocked)return;
    if(!doc)throw Error('factor');
    if(doc.items.length>WORLD_BATCH_LIMIT){sceneError=gs[3];return;}
@@ -90,24 +96,25 @@
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
- export function begin(duplicate=false,sceneDoc:ScenePreset|null=null){
-  const data=sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc?null:$worldFurnitureCut;
+ export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:SupportScene|null=null){
+  const data=supportDoc?[{itemId:supportDoc.ownerItemId,dx:0,dy:0,orientation:2}]:sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length)return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects)){error=true;return false;}
-  cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;sceneAnchor=sceneDoc?.anchor??'corner';
+  cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;sceneAnchor=sceneDoc?.anchor??'corner';
+  if(supportDoc){supportRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:supportRequest,scene:supportDoc});}
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
-  const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
+  const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
   const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>();
   for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId});}
-  pending=new Map(pending);for(const id of ids)void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
+  pending=new Map(pending);for(const id of (supportDoc?[...supportSceneRootCounts(supportDoc).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;
  }
- function receive(e:MessageEvent){const d=e.data,req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
+ function receive(e:MessageEvent){const d=e.data;if(supportRequest&&d?.requestId===supportRequest){supportRequest=0;supportValid=d.kind==='support-scene-geometry'&&d.valid===true;if(!supportValid)error=true;return;}const req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
   if(d.kind!=='design-shapes'||d.key!==req.key||!Array.isArray(d.result)){error=true;return;}
   const expected=new Set(clip.map(p=>p.itemId));
-  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable&&!cutRows?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
+  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable&&g.itemId!==supportScene?.ownerItemId&&!cutRows?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
   const next=new Map(defs);for(const g of d.result as DesignItemGeometry[]){if(g.name)sceneNames=new Map(sceneNames).set(g.itemId,g.name);const factors=new Map(next.get(g.itemId));factors.set(req.factor,g);next.set(g.itemId,factors);}defs=next;
  }
  export function hover(p:{x:number;y:number}|null){if(active&&!candidate&&!writing&&!copy&&!symmetryPicking&&!mirrorOnly)point=p;}
@@ -116,8 +123,8 @@
   if(symmetryPicking&&symmetry){changeSymmetry({...symmetry,x2:Math.round((p.x-frame.x)*2),y2:Math.round((frame.y+frame.h-p.y)*2)});return;}
   if(!geometryReady)return;
   if(mirrorOnly){chooseMirror();return;}
-  const at=scene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;
-  const q=previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene);
+  const at=scene||supportScene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;
+  const q=previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene||!!supportScene);
   if(!q||cutRows&&!groupCutPlan(cutRows,q)){error=true;return;}candidate=q;point=p;error=false;
  }
  export function turn(delta:number){if(!geometryReady||writing||copy||mirrorOnly)return;const q=rotateFurnitureGroup(clip,defs,delta);if(!q){error=true;return;}clip=q;candidate=null;error=false;}
@@ -125,19 +132,21 @@
   if(!active||!allowed||blocked||!ready||!file||source!==file||!candidate||writing||copy)return;
   const f=file,q=candidate,plan=cutRows?groupCutPlan(cutRows,q):q.rows;
   if(!plan||!counts||!cutRows&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||activeCut&&!cutClipboardMatches(activeCut,file,scope,objects)){error=true;return;}
-  const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writing=own;error=false;
-  const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:cutRows?'group-cut-export':'group-paste-export',file:f,plan,allowExperimentalCopy:true});
+  const root=supportScene?q.rows[0]:null;
+  if(supportScene&&(!root||q.rows.length!==1||!supportValid||![...supportSceneRootCounts(supportScene)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
+  const own=supportScene?new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'}):new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writing=own;error=false;
+  const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!==(root?'support-parent-copy':'furniture-stock-copy'))throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage(root?{command:'support-parent-copy',file:f,plan:{createScene:true,itemId:Number(root.itemId),x:root.x,y:root.y,orientation:root.orientation,destination:root.destination,scene:supportScene},allowExperimentalCopy:true}:{command:cutRows?'group-cut-export':'group-paste-export',file:f,plan,allowExperimentalCopy:true});
  }
  function apply(){if(!allowed||blocked||!copy||!file||source!==file)return;if(activeCut&&!cutClipboardMatches(activeCut,file,scope,objects)){error=true;return;}if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}if(cutRows){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}cancel();}
- export function cancel(){read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
+ export function cancel(){read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;supportScene=null;supportRequest=0;supportValid=false;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
 </script>
 <input class="scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
- {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
- {#if !cutRows&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
- {#if scene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}
+ {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene||supportScene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||supportRequest||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
+ {#if !cutRows&&!supportScene&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
+ {#if scene||supportScene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene||supportScene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}
  {#if !copy}<div><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(-1)} aria-label={w[9]}>⟲</button><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(1)} aria-label={w[10]}>⟳</button>{#if candidate}<button type="button" disabled={!ready||!!writing} on:click={validate}>{w[7]}</button>{/if}</div>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}{#if error}<small role="alert">{w[5]}</small>{/if}<button type="button" on:click={cancel}>{w[8]}</button></aside>
  {:else if sceneError}<span class="copied" role="alert">{sceneError}</span>{:else if copied||$worldFurnitureCut}<span class="copied" role="status">{$worldFurnitureCut?cutText[1]:w[3]} · {$worldFurnitureClipboard.length}</span>{:else if error}<span class="copied" role="alert">{cutText[3]}</span>{/if}
