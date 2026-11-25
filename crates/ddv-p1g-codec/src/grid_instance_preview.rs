@@ -656,6 +656,45 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   return ddv_save_patch::preview_support_grid_transfer(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&d,(x,y),orientation).map_err(|_|CodecError::Patch);
  }
  if let Some(stock)=o.get("stock"){
+  // A support template is restored onto an existing, empty, exact native
+  // surface. Do not allocate a new Grid or copy source identities/state.
+  if let Some(rows)=stock.as_array(){
+   use zeroize::{Zeroize,Zeroizing};
+   if rows.is_empty()||rows.len()>32||!objects.is_empty(){return Err(bad);}
+   let path=o.get("terrainPath").and_then(Value::as_str).ok_or(bad)?;
+   let g=grids.get(&gid).ok_or(bad)?;
+   if g.get("GridDataPath").and_then(Value::as_str)!=Some(path){return Err(bad);}
+   let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
+   let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+   let entry=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+   let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+   let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+   let cells=entry[4].as_array().filter(|a|a.len()==(sx*sy) as usize).ok_or(bad)?;
+   let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0).ok_or(bad)?;
+   let ids=(0..rows.len() as u64).map(|n|next.checked_add(n).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+   let refs=grid_identity_dependencies_for_ids(profile,&gid,&ids)?;
+   if refs.blocking()>0||refs.historical>0{return Err(bad);}
+   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
+   let mut anchors=HashSet::new();let mut moves=Vec::new();
+   for row in rows{
+    let m=row.as_object().filter(|m|m.len()==6&&m.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))).ok_or(bad)?;
+    if m.get("action").and_then(Value::as_str)!=Some("place"){return Err(bad);}
+    let item=m.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+    let amount=m.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+    let xy=(int(row,"x")?,int(row,"y")?);
+    if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor||!anchors.insert(xy)||cells[((xy.1 as u32/factor)*sx+xy.0 as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
+    let orientation=m.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    moves.push((item,amount,xy,orientation));
+   }
+   let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+   let mut last=None;
+   for (item,amount,xy,orientation) in moves{
+    let mut draft=ddv_save_patch::preview_support_grid_stock_place(&working,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch)?;
+    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+    working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
+   }
+   let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
+  }
   let row=stock.as_object().ok_or(bad)?;
   let action=row.get("action").and_then(Value::as_str).ok_or(bad)?;
   let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
@@ -1590,6 +1629,22 @@ mod terrain_session_tests{
         plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json");
         plan["stock"]=serde_json::json!({"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"});
         assert!(support_child_candidate(&serde_json::to_vec(&empty).unwrap(),&plan).is_ok());
+        let raw=serde_json::to_vec(&empty).unwrap();
+        plan["stock"]=serde_json::json!([
+         {"action":"place","itemId":40005161,"expectedStock":2,"x":0,"y":0,"orientation":"GridOrientation_Down"},
+         {"action":"place","itemId":40005161,"expectedStock":1,"x":2,"y":0,"orientation":"GridOrientation_Left"}
+        ]);
+        let d=support_child_candidate(&raw,&plan).unwrap();
+        let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["Objects"].as_object().unwrap().len(),2);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"],4);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["7"],empty["World"]["GridCollection"]["Grids"]["7"]);
+        assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+        assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"][1]["expectedStock"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["stock"][1]["expectedStock"]=Value::from(1);plan["stock"][1]["x"]=Value::from(0);assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["stock"][1]["x"]=Value::from(2);plan["stock"][1]["y"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
+
     }
     #[test]
     fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
