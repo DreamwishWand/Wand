@@ -1120,6 +1120,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const context=placementContexts.get(row.itemId);
     if(context){
       add('placement.sourceContext',row.itemId,context);
+      if(context.ordinaryScope)add('placement.sourceOrdinaryScopeHint',row.itemId,context.ordinaryScope.scopeHint);
       if(context.floor){
         add('placement.sourceFloorClass',row.itemId,context.floor.kind);
         add('placement.sourceFloorTypeNames',row.itemId,context.floor.floorTypes);
@@ -1508,6 +1509,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
           acceptedFloorMask:placementContexts.get(i).floor?.mask??null,
           surface:placementContexts.get(i).floor?.surface??null,
           scene:placementContexts.get(i).scene,
+          ordinaryScope:placementContexts.get(i).ordinaryScope,
           placementLegalityVerified:false}}:{}),
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
