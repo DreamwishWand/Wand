@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
-from extract_memory_sources import read_memory_rows, targets, pointer, materialize, stripped_mask_tree, verify_game_version
+from extract_memory_sources import read_memory_rows, targets, pointer, materialize, stripped_mask_tree, verify_game_version, owned_serialized_files
 
 class MemorySourceTests(unittest.TestCase):
     def create(self, root, rows):
@@ -54,6 +54,14 @@ class MemorySourceTests(unittest.TestCase):
             pointer(tree,"Mask",obj,[own,other,other],"Texture2D")
         with self.assertRaises(ValueError):
             pointer(tree,"Mask",obj,[own,other],"Sprite")
+
+    def test_unitypy_leaf_files_none(self):
+        from types import SimpleNamespace as N
+        leaf=N(files=None)
+        resource=N(files=None)
+        nested=N(files={"serialized":leaf,"resource":resource})
+        root=N(files={"nested":nested,"duplicate":leaf})
+        self.assertEqual(owned_serialized_files(root,[leaf]),[leaf])
 
     def test_game_version_guard(self):
         with tempfile.TemporaryDirectory() as d:
