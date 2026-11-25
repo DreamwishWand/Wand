@@ -285,6 +285,24 @@ mod tests{
   assert!(furniture_candidate(&serde_json::to_vec(&shared).unwrap(),&pickup.to_string()).is_err());
  }
  #[test]
+ fn outdoor_to_room_transfer_preserves_stock_and_rejects_stale_or_shared_targets(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"transfer":{"localOrdinal":1,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":2,"y":2,"orientation":"GridOrientation_Left"}});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();
+  let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["Orientation"],"GridOrientation_Left");
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["NextGridObjectID"],6);
+  assert!(d.patched_json.contains("\"Marker\":1e2"));
+  let mut stale:Value=serde_json::from_slice(raw).unwrap();
+  stale["World"]["SpawnedObjects"]=json!([{"GridID":42,"GridObjectID":1}]);
+  assert!(furniture_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+  let mut shared:Value=serde_json::from_slice(raw).unwrap();
+  shared["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]["1"]=json!({"FloorGridID":43});
+  assert!(furniture_candidate(&serde_json::to_vec(&shared).unwrap(),&plan.to_string()).is_err());
+  plan["transfer"]["expectedX"]=json!(9);assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+ }
+ #[test]
  fn decoded_room_source_masks_bind_only_exact_path_and_allow_stock_place(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let report:Value=serde_json::from_str(&project(raw).unwrap()).unwrap();
