@@ -849,7 +849,14 @@ pub fn preview_plain_grid_transfer(
     // five-field record, and the byte locator rejects duplicate JSON keys.
     let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
     let intermediate=removed.patched_json;
-    let mut locator=JsonLocator::grid_axis(&intermediate,target,"X")?;
+    insert_plain_grid_record(&intermediate,destination,target.item_id,replacement,orientation)
+}
+
+/// Private common allocator, including an empty Objects map.
+/// It is called only after the destination witness has been validated.
+fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:destination.grid_id.clone(),object_id:"1".into(),item_id};
+    let mut locator=JsonLocator::grid_axis(intermediate,&selector,"X")?;
     locator.signed_path=None;locator.item_path=None;
     let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&destination.grid_id)];
     let mut objects=prefix.clone();objects.push(k("Objects"));
@@ -864,7 +871,7 @@ pub fn preview_plain_grid_transfer(
     }
     let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
     let member=format!("{}\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"}}",
-        if map.is_empty(){""}else{","},next,next,target.item_id,replacement.0,replacement.1,orientation);
+        if map.is_empty(){""}else{","},next,next,item_id,replacement.0,replacement.1,orientation);
     let mut replacements=[(mr.end-1..mr.end-1,member),(cr,following.to_string())];
     replacements.sort_unstable_by_key(|(r,_)|r.start);
     let mut candidate=String::new();let mut last=0;
@@ -873,6 +880,105 @@ pub fn preview_plain_grid_transfer(
     if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
     validate_json_without_edit(&candidate)?;
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
+/// Ordinary, non-variation furniture stock adjustment. The caller must
+/// separately establish canonical item identity and default/no-state placement
+/// semantics from the game catalog; this intentionally remains a rehearsal.
+/// Zero entries are retained, including Marker and any unknown fields.
+pub fn preview_default_furniture_stock(
+    source:&str,item_id:u64,expected:u32,delta:i8
+)->Result<QuantityDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
+       item_id/100_000!=400||!matches!(delta,-1|1)||expected>i32::MAX as u32{
+        return Err(PatchError::InvalidTarget);
+    }
+    let replacement=if delta<0{expected.checked_sub(1)}else{expected.checked_add(1)}
+        .filter(|n|*n<=i32::MAX as u32).ok_or(PatchError::InvalidQuantity)?;
+    let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:item_id.to_string()})?;
+    locator.amount_path=vec![Segment::Index(usize::MAX)];
+    let route=vec![k("Player"),k("ListInventories"),k("0")];
+    let mut amount=route.clone();amount.extend([k("Inventory"),k(&item_id.to_string()),k("Amount")]);
+    locator.capture.insert(route.clone(),None);locator.capture.insert(amount.clone(),None);locator.walk_complete()?;
+    let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
+    let row:serde_json::Value=serde_json::from_str(&source[span(&route)?]).map_err(|_|PatchError::InvalidDocument)?;
+    let obj=row.as_object().ok_or(PatchError::InvalidTarget)?;
+    if row.get("ID").and_then(|v|v.as_u64())!=Some(0)||
+       row.get("CompatibleItemType").and_then(|v|v.as_str())!=Some("ItemType_Furniture")||
+       obj.keys().any(|k|k.starts_with("Compatible")&&!matches!(k.as_str(),"CompatibleItemType"|"CompatibleFurnitureTypes")){
+        return Err(PatchError::InvalidTarget);
+    }
+    let restriction=row.get("CompatibleFurnitureTypes").and_then(|v|v.as_object()).ok_or(PatchError::InvalidTarget)?;
+    if restriction.len()!=1{return Err(PatchError::InvalidTarget);}
+    let list=restriction.get("List").and_then(|v|v.as_array()).ok_or(PatchError::InvalidTarget)?;
+    let mut unique=HashSet::new();
+    for token in list{
+        let token=token.as_str().ok_or(PatchError::InvalidTarget)?;
+        if !matches!(token,"FurnitureItemType_Default"|"FurnitureItemType_GroundAlteration"|"FurnitureItemType_Door"|"FurnitureItemType_Request"|"FurnitureItemType_Blocker"|"FurnitureItemType_Fence"|"FurnitureItemType_AncientMachine"|"FurnitureItemType_SnippetTrap")||!unique.insert(token){return Err(PatchError::InvalidTarget);}
+    }
+    if !unique.contains("FurnitureItemType_Default"){return Err(PatchError::InvalidTarget);}
+    let range=span(&amount)?;
+    let original=source[range.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
+    if original!=expected{return Err(PatchError::AmountMismatch);}
+    let mut candidate=String::with_capacity(source.len()+10);
+    candidate.push_str(&source[..range.start]);candidate.push_str(&replacement.to_string());candidate.push_str(&source[range.end..]);
+    validate_json_without_edit(&candidate)?;
+    Ok(QuantityDraft{patched_json:candidate,changed:true,original_amount:u64::from(expected),replacement_amount:u64::from(replacement),untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
+/// Check exact full Grid identity before inserting a new object. Unlike the
+/// historical selected-object rehearsal, no pre-existing furniture is needed.
+pub fn preview_plain_grid_place(
+    source:&str,destination:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400||
+       !valid_id(&destination.grid_id)||destination.grid_id.starts_with('0')||
+       full_grid_scope(&destination.layout_path).is_none()||
+       !destination.data_path.starts_with("GridData/")||!destination.data_path.ends_with(".json")||
+       destination.data_path.contains("..")||destination.data_path.contains('\\')||
+       !matches!(destination.tessellation,1|2)||destination.size.0==0||destination.size.1==0||
+       destination.size.0>65536||destination.size.1>65536||
+       xy.0<0||xy.1<0||xy.0 as u32>=destination.size.0*destination.tessellation||
+       xy.1 as u32>=destination.size.1*destination.tessellation||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
+        return Err(PatchError::InvalidTarget);
+    }
+    let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+    let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+    let grid=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
+    let matches_path=|v:&serde_json::Value|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(destination.layout_path.as_str())&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str());
+    if !matches_path(grid)||grids.values().filter(|v|matches_path(v)).count()!=1||
+       grid.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
+       grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation))||
+       collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&destination.grid_id))){
+        return Err(PatchError::AmbiguousTarget);
+    }
+    insert_plain_grid_record(source,destination,item_id,xy,orientation)
+}
+
+/// One atomic stock+placement candidate. Never create an absent stock entry:
+/// its native UseIsNewMarker policy and canonical variation must be proven
+/// first. An existing zero entry can receive picked-up furniture safely at
+/// the lexical level. All unrelated bytes are preserved.
+pub enum FurnitureStockAction<'a>{
+    Place{destination:&'a PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&'a str},
+    Pickup{target:&'a GridCoordinateTarget,expected:(i32,i32)},
+    Duplicate{target:&'a GridCoordinateTarget,expected:(i32,i32),xy:(i32,i32)},
+}
+pub fn preview_furniture_stock_transaction(source:&str,expected_stock:u32,action:FurnitureStockAction<'_>)->Result<GridCoordinateDraft,PatchError>{
+    let (item,delta)=match &action{
+        FurnitureStockAction::Place{item_id,..}=>(*item_id,-1),
+        FurnitureStockAction::Pickup{target,..}=>(target.item_id,1),
+        FurnitureStockAction::Duplicate{target,..}=>(target.item_id,-1),
+    };
+    // Check the stock against the original before staging either change.
+    let amount=preview_default_furniture_stock(source,item,expected_stock,delta)?;
+    let draft=match action{
+        FurnitureStockAction::Place{destination,item_id,xy,orientation}=>preview_plain_grid_place(&amount.patched_json,destination,item_id,xy,orientation)?,
+        FurnitureStockAction::Pickup{target,expected}=>preview_plain_grid_structure(&amount.patched_json,target,expected,PlainGridStructureAction::Remove)?,
+        FurnitureStockAction::Duplicate{target,expected,xy}=>preview_plain_grid_structure(&amount.patched_json,target,expected,PlainGridStructureAction::Duplicate{x:xy.0,y:xy.1})?,
+    };
+    Ok(draft)
 }
 
 /// One optimistic-concurrency checked change to an existing GridObject.
@@ -1554,6 +1660,27 @@ mod structural_tests{
   assert!(preview_plain_grid_transfer(&state,&target(),(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
   let wrong=PlainGridDestination{layout_path:"SceneLayouts/VillageExpansion01/B.json".into(),..dest.clone()};
   assert!(preview_plain_grid_transfer(source,&target(),(1,2),&wrong,(5,6),"GridOrientation_Right").is_err());
+ }
+ #[test]
+ fn stock_transaction_roundtrip_retains_zero_marker_unknown_bytes_and_allocator(){
+  let original=r#"{"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default","FurnitureItemType_Fence"]},"Inventory":{"40000001":{"Amount":1,"Marker":"ItemMarker_Favorite","Extra":1e2}}}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":8,"Objects":{}}}}}}"#;
+  let dest=PlainGridDestination{grid_id:"10".into(),layout_path:"SceneLayouts/Village04/A.json".into(),data_path:"GridData/A.json".into(),tessellation:1,size:(20,20)};
+  let place=||FurnitureStockAction::Place{destination:&dest,item_id:40000001,xy:(1,2),orientation:"GridOrientation_Down"};
+  let d=preview_furniture_stock_transaction(original,1,place()).unwrap();
+  assert!(d.patched_json.contains(r#""Amount":0,"Marker":"ItemMarker_Favorite","Extra":1e2"#));
+  assert!(d.patched_json.contains(r#""NextGridObjectID":9"#));
+  assert!(!d.export_authorized&&!d.writer_authorized);
+  assert!(preview_furniture_stock_transaction(&d.patched_json,0,place()).is_err());
+  assert!(preview_furniture_stock_transaction(original,2,place()).is_err());
+  let placed=GridCoordinateTarget{object_id:"8".into(),..target()};
+  let picked=preview_furniture_stock_transaction(&d.patched_json,0,FurnitureStockAction::Pickup{target:&placed,expected:(1,2)}).unwrap();
+  assert_eq!(picked.patched_json,original.replace(r#""NextGridObjectID":8"#,r#""NextGridObjectID":9"#));
+  let duplicate=preview_furniture_stock_transaction(&d.patched_json.replace(r#""Amount":0"#,r#""Amount":2"#),2,FurnitureStockAction::Duplicate{target:&placed,expected:(1,2),xy:(3,4)}).unwrap();
+  assert!(duplicate.patched_json.contains(r#""Amount":1"#));
+  assert!(duplicate.patched_json.contains(r#""NextGridObjectID":10"#));
+  assert!(preview_furniture_stock_transaction(&original.replace("FurnitureItemType_Default","FurnitureItemType_Door"),1,place()).is_err());
+  assert!(preview_furniture_stock_transaction(&original.replace(r#""Amount":1"#,r#""Amount":2147483648"#),1,place()).is_err());
+  assert!(preview_furniture_stock_transaction(&original.replace(r#""40000001""#,r#""40000002""#),1,place()).is_err());
  }
  #[test]
  fn structural_drafts_reject_stale_counter_state_and_non_cardinal(){

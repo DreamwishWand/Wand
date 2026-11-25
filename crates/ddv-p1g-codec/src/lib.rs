@@ -1744,6 +1744,71 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(amount_draft.patched_json,true)
         }
 
+        /// Local stock and placement candidate. The candidate is independently
+        /// reopened and zeroized without setting the export/copy buffer.
+        /// Source structural guards are shared with the existing preview.
+        pub fn preview_furniture_stock_structure(&self,plan:&str,destination:&str)->Result<String,JsValue>{
+            use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
+            if !self.ready||self.closed||self.copy_prepared||plan.len()>4096||destination.len()>4096{
+                return Err(fail("DB05_FURNITURE_STOCK_SESSION_INVALID"));
+            }
+            let invalid=||fail("DB05_FURNITURE_STOCK_PLAN_INVALID");
+            let value:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=value.as_object().ok_or_else(invalid)?;
+            let item=o.get("itemId").and_then(|v|v.as_str()).and_then(|v|v.parse::<u64>().ok()).ok_or_else(invalid)?;
+            let int=|key:&str|o.get(key).and_then(|v|v.as_i64()).and_then(|v|i32::try_from(v).ok()).ok_or_else(invalid);
+            let action=o.get("action").and_then(|v|v.as_str()).ok_or_else(invalid)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_FURNITURE_STOCK_SESSION_INVALID"))?.profile.as_slice()
+            };
+            let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
+            let stock=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(item.to_string().as_str())).and_then(|v|v.get("Amount")).and_then(|v|v.as_u64()).and_then(|v|u32::try_from(v).ok()).ok_or(fail("DB05_FURNITURE_STOCK_UNAVAILABLE"))?;
+            let json=std::str::from_utf8(original).map_err(|_|invalid())?;
+            let mut draft=if action=="place"{
+                if o.len()!=5||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation")){return Err(invalid());}
+                let dest:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
+                let dest=grid_instance_preview::resolve_plain_grid_destination(original,&dest).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
+                let orientation=o.get("orientation").and_then(|v|v.as_str()).ok_or_else(invalid)?;
+                preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
+            }else{
+                // Reuse the original-source structural rehearsal, including
+                // dependency blocking when the removal guard is available.
+                self.preview_plain_grid_structure(plan)?;
+                let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
+                let expected=(int("expectedX")?,int("expectedY")?);
+                let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
+                    .map_err(|_|fail("DB05_FURNITURE_STOCK_STALE"))?.pop().ok_or_else(invalid)?;
+                match action{
+                    "remove"=>preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Pickup{target:&target,expected}),
+                    "duplicate"=>{
+                        let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
+                        let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
+                        if dest.grid_id!=target.grid_id{return Err(invalid());}
+                        let orientation=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(target.grid_id.as_str())).and_then(|v|v.get("Objects")).and_then(|v|v.get(target.object_id.as_str())).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str()).ok_or_else(invalid)?;
+                        preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
+                    },
+                    _=>return Err(invalid())
+                }
+            }.map_err(|_|fail("DB05_FURNITURE_STOCK_REJECTED"))?;
+            let result=(||->Result<String,JsValue>{
+                if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(invalid());}
+                validate_profile(draft.patched_json.as_bytes()).map_err(|_|invalid())?;
+                if matches!(self.kind,InputKind::EncryptedP1g){
+                    let opened=self.p1g.as_ref().ok_or_else(invalid)?;
+                    let mut archive=rezip_profile(&opened.original_zip,&opened.layout,draft.patched_json.as_bytes()).map_err(|_|invalid())?;
+                    let encrypted=ecb_encrypt(&archive);archive.zeroize();
+                    let mut encrypted=encrypted.map_err(|_|invalid())?;
+                    let verified=OpenedP1g::open(&encrypted).is_ok_and(|reopened|reopened.profile==draft.patched_json.as_bytes());
+                    encrypted.zeroize();
+                    if !verified{return Err(fail("DB05_FURNITURE_STOCK_REOPEN"));}
+                }
+                let remaining=if action=="remove"{stock.checked_add(1)}else{stock.checked_sub(1)}.ok_or_else(invalid)?;
+                Ok(serde_json::json!({"contract":"wand.db05.furniture-stock-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"reopenVerified":true,"stockBefore":stock,"stockAfter":remaining,"exportAuthorized":false,"runtimeReferencesVerified":false}).to_string())
+            })();
+            draft.patched_json.zeroize();result
+        }
+
         pub fn preview_inventory(
             &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
         )->Result<String,JsValue>{
