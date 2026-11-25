@@ -6,6 +6,7 @@
  import type {TerrainRaster} from './terrain-binding.ts';
  import type {SourceObjectShape} from './source-object-map.ts';
  import {parseSupportTree,supportItems,supportExtent,supportShapeKey,supportParentCandidate,supportParentEligible,supportWords,supportChildEdits,childEditWords,supportFreeEdit,supportFreeWords,supportStockPlacement,supportStockPickup,supportStockWords,type SupportStockPlan,type SupportChildEdit,type SupportTree,type SupportParentCandidate} from './subgrid-local.ts';
+ import {testSaveWords} from './test-save-export.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {commitWorldCheckpoint} from '../ui/local-save-session';
@@ -21,6 +22,7 @@
  let supportSvg:SVGSVGElement;
  let counts=new Map<number,number>(),removable=new Set<number>(),catalogRequest=0,stockCatalog:{itemId:number;name:string}[]=[],stockQuery='',stockOpen=false,stockId=0,stockPlacing=false,stockOrientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down',stockDraft:SupportStockPlan|null=null;
  $: stw=supportStockWords[locale];
+ $: tw=testSaveWords[locale];
  $: stockOptions=stockCatalog.filter(o=>o.name.normalize('NFKC').toLocaleLowerCase().includes(stockQuery.normalize('NFKC').toLocaleLowerCase().trim())).slice(0,200);
  $: pickup=tree&&selected>=0?supportStockPickup(tree,selected,counts,removable):null;
  $: stockShape=stockId?shapes[stockId+':'+CARDINAL_ORIENTATIONS.indexOf(stockOrientation)*4]:null;
@@ -35,7 +37,7 @@
  $: partners=tree&&selected>=0?tree.objects.map((_,i)=>supportChildEdits(tree!,shapes,editable,selected,i,1)?i:-1).filter(i=>i>=0):[];
  $: extent=tree&&terrain?{x:-.5,y:-.5,w:terrain.sizeX*tree.factor+1,h:terrain.sizeY*tree.factor+1}:tree?supportExtent(tree,shapes):{x:0,y:0,w:1,h:1};
  $: if(open!==activeOpen||file!==activeFile||(parent?.object.localOrdinal??0)!==activeOrdinal)refresh(open,file,parent);
- $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree)requestShapes(tree);}
+ $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
  function stopOwn(){own?.terminate();own=null;}
  function clearCopy(){if(copy)URL.revokeObjectURL(copy.url);copy=null;}
  export function cancel(){placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
@@ -115,6 +117,7 @@
     {#if placing}<small role="status">{words[3]}</small>{:else if !ghost&&!edits&&!swap&&!copy&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<button type="button" disabled={loading} on:click={begin}>{words[2]}</button>{/if}
     {#if ghost&&!copy}<button type="button" disabled={loading} on:click={validate}>{words[4]}</button>{/if}
    {/if}
+   {#if (stockDraft||edits||ghost||copy)&&canMove}<small>{tw[1]}</small>{/if}
    {#if copy&&canMove}<button type="button" on:click={apply}>{words[5]}</button><a href={copy.url} download={copy.name}>{words[6]}</a>{/if}
   {/if}
   {#if error}<small role="alert">{words[8]}</small>{/if}
