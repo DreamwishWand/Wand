@@ -20,6 +20,7 @@
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
  export let canMove=false,nextRequest:()=>number,onClose:()=>void;
  export let placing=false,ghost:SupportParentCandidate|null=null,preview:SupportParentCandidate|null=null;
+ export let initialParentPoint:{x:number;y:number}|null=null,onInitialConsumed:()=>void=()=>{};
  let parentPoint:{x:number;y:number}|null=null;
  $: preview=placing&&parentPoint&&parent&&canMove?supportParentCandidate(parent,grids,rasters,parentPoint.x,parentPoint.y,parentOrientation??parent.object.orientation,parentShapes):null;
  export function hoverParent(point:{x:number;y:number}|null){parentPoint=placing?point:null;}
@@ -71,7 +72,7 @@
   if(!show||!source||!p?.object.subgrid)return;
   loading=true;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
-  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==p.object.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}stack=[root];owners=[Number(p.object.itemId)];showTree(root);}catch{error=true;}};
+  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==p.object.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}stack=[root];owners=[Number(p.object.itemId)];showTree(root);if(initialParentPoint){const point=initialParentPoint;onInitialConsumed();if(canMove){ghost=supportParentCandidate(p,grids,rasters,point.x,point.y,p.object.orientation,saveMaps.get(p.area)?.shapes??{});error=!ghost;}}}catch{onInitialConsumed();error=true;}};
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);
   session.postMessage({command:'inspect-subgrid',file:source,parent:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}});
  }
