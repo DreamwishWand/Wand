@@ -11,7 +11,7 @@ pub struct FenceEraseDraft{
 }
 fn number(v:&Value,key:&str)->Result<i32,PatchError>{v.get(key).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)}
 fn part(v:&Value,base:u32)->Result<FencePart,PatchError>{
- let item=v.get("ItemID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=base&&*n<=base+6).ok_or(PatchError::InvalidTarget)?;
+ let item=v.get("ItemID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|fence_topology::part_key(base,false,*n).is_some()).ok_or(PatchError::InvalidTarget)?;
  if v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||v.get("State").is_some_and(|v|!v.is_null()){return Err(PatchError::InvalidTarget);}
  let left=match v.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Down")=>false,Some("GridOrientation_Left") if item!=base=>true,_=>return Err(PatchError::InvalidTarget)};
  Ok(FencePart{item,x:number(v,"X")?,y:number(v,"Y")?,left,diagonal:false})
@@ -94,7 +94,7 @@ pub fn preview_fence_mutation(source:&str,d:&PlainGridDestination,base:u32,seed:
  let pinned:BTreeSet<_>=old_component.iter().filter(|p|p.item==base&&expected_nodes.contains(&(p.x,p.y))).map(|p|(p.x,p.y)).collect();
  let new_component:BTreeSet<_>=if let Some(target)=replacement{
   // Preserve the exact native layout, including non-semantic posts.
-  old_component.iter().map(|p|FencePart{item:target+(p.item-base),..*p}).collect()
+  old_component.iter().map(|p|{let key=fence_topology::part_key(base,false,p.item).ok_or(bad)?;Ok(FencePart{item:fence_topology::part_item(target,false,key).ok_or(bad)?,..*p})}).collect::<Result<BTreeSet<_>,PatchError>>()?
  }else if survivors.is_empty(){BTreeSet::new()}else{fence_topology::compile_fence_with_posts(base,d.tessellation,false,&survivors,&remaining_edges,&pinned)?.into_iter().collect()};
  let outside:Vec<_>=native.iter().copied().filter(|p|!old_component.contains(p)).collect();
  let (got_nodes,mut got_edges)=if replacement.is_some(){
