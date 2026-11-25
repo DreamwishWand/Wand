@@ -1597,6 +1597,30 @@ try{
   assert.ok(!(await indoor.innerText()).includes('3001'));
   await page.keyboard.press('Escape');
   await indoor.waitFor({state:'detached'});
+  // The child layout is inspected separately, preserving local coordinates
+  // and never merging its Grid into the mainland terrain or leaking IDs.
+  const supportSave=structuredClone(worldSave);
+  const root=supportSave.World.GridCollection.Grids['101'];
+  delete root.Objects['4'];delete supportSave.World.GridCollection.Grids['102'];
+  root.Objects['1'].State={SubGrid:{GridID:8001}};
+  supportSave.World.GridCollection.Grids['8001']={ID:8001,TessellationFactor:1,Objects:{'1':{ID:1,ItemID:40005160,X:1,Y:2,Orientation:'GridOrientation_Down',State:{SubGrid:{GridID:8002}}}}};
+  supportSave.World.GridCollection.Grids['8002']={ID:8002,Objects:{'1':{ID:1,ItemID:40005160,X:0,Y:0,Orientation:'GridOrientation_Down'}}};
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'support-fixture.profile',mimeType:'application/octet-stream',buffer:Buffer.from(JSON.stringify(supportSave))});
+  const supportMap=publicWorld.locator('.mainland-overview');
+  await supportMap.locator('.mainland-save-object').first().waitFor({timeout:30000});
+  await supportMap.getByRole('button',{name:'配置検索',exact:true}).click();
+  await supportMap.locator('.overview-results button').first().click();
+  await supportMap.getByRole('button',{name:'載っている小物 · 1',exact:true}).click();
+  const supportPanel=supportMap.locator('.support-panel');
+  await supportPanel.locator('.support-row').first().waitFor({timeout:30000});
+  assert.equal(await supportPanel.locator('.support-row').count(),1);
+  assert.equal(await supportPanel.locator('.support-map g').first().getAttribute('transform'),'translate(1 2)');
+  await supportPanel.getByRole('button',{name:'載っている小物 · 1',exact:true}).click();
+  assert.equal(await supportPanel.locator('.support-map g').first().getAttribute('transform'),'translate(0 0)');
+  await supportPanel.getByRole('button',{name:'戻る',exact:true}).click();
+  assert.equal(await supportPanel.locator('.support-map g').first().getAttribute('transform'),'translate(1 2)');
+  assert.ok(!(await supportPanel.innerText()).includes('8001'));
+  await supportPanel.getByRole('button',{name:'閉じる',exact:true}).click();
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();
