@@ -1027,7 +1027,7 @@ mod terrain_session_tests{
         assert!(resolve_plain_grid_destination(save,&wrong).is_err());
         for key in ["SpawnedObjects","GridObjectsCollected","LastUsedLinkedEnvironmentEnter","Unknown"]{
             let mut referenced:Value=serde_json::from_slice(save).unwrap();
-            referenced["Player"]=serde_json::json!({key:[{"GridID":20,"GridObjectID":3}]});
+            referenced["Player"]=serde_json::json!({(key):[{"GridID":20,"GridObjectID":3}]});
             assert!(resolve_plain_grid_destination(&serde_json::to_vec(&referenced).unwrap(),&witness).is_err());
             referenced["Player"][key][0]["GridID"]=serde_json::json!(21);
             assert!(resolve_plain_grid_destination(&serde_json::to_vec(&referenced).unwrap(),&witness).is_ok());
