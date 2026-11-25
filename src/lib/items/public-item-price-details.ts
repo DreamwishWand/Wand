@@ -2,8 +2,8 @@
  * referenced currencies from the already pinned current master.
  * These are configured source amounts, not live shop quotes or sale eligibility.
  */
-import type {PublicCompleteItemMaster,ItemMasterLocale,OriginalItemPriceFacts,
-  ConfiguredItemPriceOverride} from './public-item-master.ts';
+import {ITEM_MASTER_LOCALES,type PublicCompleteItemMaster,type ItemMasterLocale,type OriginalItemPriceFacts,
+  type ConfiguredItemPriceOverride} from './public-item-master.ts';
 
 export interface ItemPriceCurrency {
   readonly itemId:number;
@@ -35,7 +35,7 @@ function check(ok:unknown,code:string):asserts ok{
 }
 export async function readItemPriceDetails(db:PublicCompleteItemMaster,ids:readonly number[],locale:ItemMasterLocale):
   Promise<readonly (Readonly<ItemPriceDetails>|null)[]>{
-  check(['en','fr','de','es','it','ja','ko','zh-Hans'].includes(locale),'LOCALE');
+  check(ITEM_MASTER_LOCALES.includes(locale),'LOCALE');
   const [prices,overrides]=await Promise.all([db.getOriginalItemPrices(ids),db.getConfiguredPriceOverrides(ids)]);
   const currencies=new Set<number>();
   for(let i=0;i<prices.length;i++){
