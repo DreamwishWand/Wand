@@ -1,0 +1,42 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
+import {createCurrentQuestObjectiveReader} from '../src/lib/items/public-quest-objective-items.ts';
+
+test('all original quest item objectives retain selectors and ordered candidate paths',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const reader=createCurrentQuestObjectiveReader(db);
+  const quests=await db.findItemIdsByField('nativeCategory',{kind:'equals',value:'Mission'});
+  assert.equal(quests.length,1030);
+  const results=await reader.getForQuests(quests);
+  assert(results.every(r=>r.status==='indexed'));
+  const selectors=results.flatMap(r=>r.selectors);
+  const candidates=selectors.flatMap(s=>s.candidates.map(c=>({selector:s,candidate:c})));
+  assert.equal(candidates.length,4897);
+  assert.equal(candidates.filter(x=>x.candidate.role==='direct').length,4641);
+  assert.equal(candidates.filter(x=>x.candidate.role==='alternative').length,256);
+  assert.equal(selectors.filter(s=>s.selectorMode==='FilterGenerator').length,154);
+  assert(selectors.filter(s=>s.selectorMode==='FilterGenerator').every(s=>!s.candidates.length));
+  assert.equal(selectors.filter(s=>s.selectorMode==='ItemList').length,69);
+  assert.equal(new Set(candidates.map(x=>x.selector.questId)).size,627);
+  const ids=[...new Set(candidates.map(x=>x.candidate.itemId))].sort((a,b)=>a-b);
+  assert.equal(ids.length,2551);
+  const byKind={};
+  for(const {selector} of candidates)byKind[selector.objectiveKind]=(byKind[selector.objectiveKind]??0)+1;
+  assert.deepEqual(byKind,{Possess:2204,BringItem:1586,CraftItem:434,CookMeal:260,ConsumeItem:132,PickUp:104,
+    MineMineral:39,CatchFish:38,GardeningPlant:34,PurchaseItem:34,GardeningHarvest:23,GiftToCharacter:9});
+  const example=selectors.find(s=>s.questId===2070000651&&s.stepIndex===9&&s.objectiveKind==='BringItem');
+  assert.deepEqual(example.candidates.map(c=>c.itemId),[31600010,31600036]);
+  assert(example.candidates.every(c=>c.role==='alternative'));
+  const uses=await reader.getForItems(ids);
+  const reversed=uses.flatMap(r=>r.uses);
+  const key=x=>[x.selector.questId,x.candidate.sourcePath,x.candidate.itemId].join(':');
+  assert.deepEqual(reversed.map(key).sort(),candidates.map(key).sort());
+  const [known,unknown,duplicate]=await reader.getForItems([31200032,99999999,31200032]);
+  assert.equal(unknown,null);assert.deepEqual(known,duplicate);
+  assert(known.uses.some(x=>x.selector.questId===2070000628&&x.candidate.role==='direct'));
+  assert(reversed.every(x=>x.selector.runtimeRequirementVerified===false));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
+});

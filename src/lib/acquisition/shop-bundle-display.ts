@@ -6,6 +6,7 @@
  */
 import {hasPinnedShopCatalogEvidence,type ShopCatalogSource} from './public-native-shop.ts';
 import type {ItemMasterLocale,PublicCompleteItemMaster} from '../items/public-item-master.ts';
+import {getVerifiedShopTitle} from './shop-localized-titles.ts';
 import type {PublicItemMediaReader} from '../items/public-item-media.ts';
 
 const SHOP_CATEGORIES=new Set(['Seasonal Bundles','Featured','Spotlight Collection','Limited-Time Deals','Recommended']);
@@ -37,8 +38,9 @@ export async function createShopBundleDisplay(
       itemId:Number(p.itemId),quantity:p.quantity,name:names.get(Number(p.itemId))??null
     })));
     const first=components[0];
+    const localizedTitle=offer.title?getVerifiedShopTitle(offer.nativeOfferId,offer.title,locale):null;
     const name:ShopDisplayName=offer.title
-      ?Object.freeze({text:offer.title,locale:'en',source:'native_title',requestedLocaleVerified:locale==='en'})
+      ?Object.freeze({text:localizedTitle??offer.title,locale:localizedTitle?locale:'en',source:'native_title',requestedLocaleVerified:localizedTitle!==null||locale==='en'})
       :first?.name?Object.freeze({text:first.name,locale,source:'native_item_display_name',requestedLocaleVerified:true})
       :missing();
     return Object.freeze({snapshotKey,nativeOfferId:offer.nativeOfferId,sourceCategory:offer.sourceCategory,

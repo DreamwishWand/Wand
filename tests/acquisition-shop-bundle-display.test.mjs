@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {SHOP_TITLE_PROJECTION,getVerifiedShopTitle} from '../src/lib/acquisition/shop-localized-titles.ts';
 import {readFile} from 'node:fs/promises';
 import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot,loadPinnedShopBundleSources} from '../src/lib/acquisition/public-native-shop.ts';
 import {createShopBundleDisplay} from '../src/lib/acquisition/shop-bundle-display.ts';
@@ -28,7 +30,7 @@ test('Shop view preserves exact source components and native title precedence; u
   for(const r of view.records){
     const o=s.find(x=>x.snapshotKey===r.snapshotKey).getOffer(r.nativeOfferId);
     assert.deepEqual(r.components.map(p=>[String(p.itemId),p.quantity]),o.components.map(p=>[p.itemId,p.quantity]));
-    assert.equal(r.name.requestedLocaleVerified,!o.title);
+    assert.equal(r.name.requestedLocaleVerified,!o.title||getVerifiedShopTitle(o.nativeOfferId,o.title,'ja')!==null);
     assert.equal(r.artworkStatus,'not_verified');
     assert(!Object.hasOwn(r,'observedWindow'));
     assert(!Object.hasOwn(r,'saleDiscountPercent'));
@@ -65,4 +67,29 @@ test('four original-backed sources feed one price-free catalog and retain change
   const bad=async url=>{const res=await fetcher(url);if(!url.includes('shop-bundles-Shop20260923'))return res;
     const bytes=new Uint8Array(await res.arrayBuffer());bytes[10]^=1;return new Response(bytes);};
   await assert.rejects(loadPinnedShopBundleSources('/Wand',bad),/CATALOG_SHA/);
+});
+
+test('original Liveops locale projection joins only exact offer ID and title',async()=>{
+  assert.equal(createHash('sha256').update(JSON.stringify(SHOP_TITLE_PROJECTION)).digest('hex'),'2e6fc5639a702a3fcb8709e831795dab5e396e320d0b969db4b1489d813760dc');
+  const sources=await loadPinnedShopBundleSources('/Wand',fetcher);
+  const read={async getItemFields(ids,fields){return ids.map(itemId=>({itemId,values:{[fields[0]]:'Item '+itemId}}));}};
+  const media={async getItemImages(ids){return ids.map(()=>null);}};
+  for(const locale of SHOP_TITLE_PROJECTION.locales){
+    const view=await createShopBundleDisplay(sources,read,locale,media);
+    for(const row of SHOP_TITLE_PROJECTION.rows){
+      const appearances=view.getOfferAppearances(row[0]);
+      assert(appearances.length>0);
+      for(const r of appearances){
+        assert.equal(r.name.text,row[SHOP_TITLE_PROJECTION.locales.indexOf(locale)+1]);
+        assert.equal(r.name.locale,locale);
+        assert.equal(r.name.requestedLocaleVerified,true);
+      }
+    }
+    if(locale!=='en')for(const id of ['Bundle_GothicBridge','MegaBundle_WinterHolidayBundle','VanityBundle_0002']){
+      for(const r of view.getOfferAppearances(id))assert.equal(r.name.requestedLocaleVerified,false);
+    }
+  }
+  assert.equal(getVerifiedShopTitle('Bundle_HoneyBee','Different title','ja'),null);
+  assert.equal(getVerifiedShopTitle('Unknown','Sweet Bee Bundle','ja'),null);
+  assert.equal(getVerifiedShopTitle('Bundle_HoneyBee','Sweet Bee Bundle','ja'),'カワイイハチパック');
 });
