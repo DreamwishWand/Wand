@@ -14,6 +14,7 @@
  * + forward*Y*TileSize; right/forward RVAs 7677F00/7678760. No offset.
  * These are source coordinates, not active collision or Save-write authority.
  */
+import {DLC_ORIGIN_ROWS} from './dlc-world-origins.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
 import type {MapExtent} from './map-camera.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
@@ -29,10 +30,13 @@ const rows=[
  ['Beach','BeachLevel-GridData.json',-37,0,-142],
 ] as const;
 export const MAINLAND_ORIGINS:ReadonlyMap<string,MainlandOrigin>=new Map(rows.map(([key,path,x,y,z])=>[key,{gridDataPath:'GridData/Villages/Village04-'+path,position:[x,y,z] as const}]));
+const worldOrigins=new Map<string,ReadonlyMap<string,MainlandOrigin>>([['Village04',new Map([...MAINLAND_ORIGINS.values()].map(o=>[o.gridDataPath,o]))]]);
+for(const [scope,rows] of Object.entries(DLC_ORIGIN_ROWS))worldOrigins.set(scope,new Map(rows.map(([name,x,y,z])=>{const gridDataPath='GridData/Villages/'+scope+'/'+scope+'-'+name+'-GridData.json';return [gridDataPath,{gridDataPath,position:[x,y,z] as const}];})));
+export function sourceWorldScope(grid:PublicTerrainGridRef):string{return grid.layoutId.split('/')[1]??'';}
 export interface MainlandGrid extends PublicTerrainGridRef {readonly origin:MainlandOrigin;readonly bounds:MapExtent}
 export function bindMainlandGrid(grid:PublicTerrainGridRef):MainlandGrid|null{
- const origin=MAINLAND_ORIGINS.get(grid.key);
- if(!origin||origin.gridDataPath!==grid.gridDataPath||!grid.layoutId.startsWith('SceneLayouts/Village04/')||
+ const scope=sourceWorldScope(grid),origin=worldOrigins.get(scope)?.get(grid.gridDataPath);
+ if(!origin||origin.gridDataPath!==grid.gridDataPath||!grid.layoutId.startsWith('SceneLayouts/'+scope+'/')||scope==='Village04'&&MAINLAND_ORIGINS.get(grid.key)!==origin||
    !(grid.factor===1||grid.factor===2)||!Number.isSafeInteger(grid.sizeX)||!Number.isSafeInteger(grid.sizeY)||grid.sizeX<1||grid.sizeY<1)return null;
  // Map coordinates are half-world-unit ticks. X=east, display Y=-Z.
  // Source rasters are untessellated; native save coordinates are tessellated.
@@ -40,7 +44,8 @@ export function bindMainlandGrid(grid:PublicTerrainGridRef):MainlandGrid|null{
  return {...grid,origin,bounds:{x:2*x,y:-2*z-grid.sizeY,w:grid.sizeX,h:grid.sizeY}};
 }
 export function bindMainland(grids:readonly PublicTerrainGridRef[]):MainlandGrid[]|null{
- if(grids.length!==MAINLAND_ORIGINS.size||new Set(grids.map(g=>g.key)).size!==grids.length)return null;
+ const scope=grids[0]?sourceWorldScope(grids[0]):'',expected=worldOrigins.get(scope);
+ if(!expected||grids.length!==expected.size||new Set(grids.map(g=>g.key)).size!==grids.length||new Set(grids.map(g=>g.gridDataPath)).size!==grids.length||grids.some(g=>sourceWorldScope(g)!==scope))return null;
  const bound=grids.map(bindMainlandGrid);
  return bound.every((g):g is MainlandGrid=>g!==null)?bound:null;
 }

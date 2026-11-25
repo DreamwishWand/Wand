@@ -223,7 +223,7 @@ function planNetworkDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly
 }
 export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'ground');}
 export function planFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'fence');}
-function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
+export function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
  if(!plan)return null;
  if(!plan.add.length&&!plan.remove.length)return t;
  const removed=new Set(plan.remove);

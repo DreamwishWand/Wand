@@ -61,7 +61,7 @@ scope.onmessage=async({data})=>{
       return;
     }
     if(data.command==='mainland-design-terrain'){
-      const region=release?.entries.find(r=>r.scope==='Village04');if(!region)throw Error('mainland source');
+      const region=release?.entries.find(r=>r.scope===data.scope);if(!region)throw Error('mainland source');
       wasmReady??=init(wasmUrl).catch(e=>{wasmReady=null;throw e;});
       const [bundle]=await Promise.all([loadBundle(region),wasmReady]);
       const rasters=new Map<string,TerrainRaster>();
@@ -71,7 +71,7 @@ scope.onmessage=async({data})=>{
         rasters.set(g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:values});
       }
       const frame=composeMainlandDesignFrame(region.grids,rasters);
-      scope.postMessage({kind:'mainland-design-terrain',requestId:id,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
+      scope.postMessage({kind:'mainland-design-terrain',requestId:id,worldScope:region.scope,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
       return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));

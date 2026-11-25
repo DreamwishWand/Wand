@@ -1366,6 +1366,11 @@ try{
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  await publicWorld.getByRole('button',{name:'ワールド全体マップ',exact:true}).click();
+  const dlcOverview=publicWorld.locator('.mainland-overview');
+  await dlcOverview.locator('.mainland-terrain').nth(33).waitFor({timeout:60000});
+  assert.equal(await dlcOverview.locator('.mainland-terrain').count(),34);
+  await dlcOverview.getByRole('button',{name:'閉じる',exact:true}).click();
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('Village04');
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
