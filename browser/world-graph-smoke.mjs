@@ -1299,7 +1299,7 @@ try{
       Objects:{"2":{ID:2,ItemID:40005160,X:7,Y:6,Orientation:'GridOrientation_Down'}}}
   },DiffGrids:{}}}};
   await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
-    name:'synthetic-public-world.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+    name:'synthetic-public-world.profile',mimeType:'application/octet-stream',buffer:Buffer.from(JSON.stringify(worldSave))});
   await publicWorld.locator('.mainland-overview .mainland-save-object').first().waitFor({timeout:30000});
   await publicWorld.locator('.mainland-overview').getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
   await publicWorld.locator('.mainland-overview .mainland-terrain').nth(33).waitFor({timeout:60000});
