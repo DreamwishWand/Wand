@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+import {loadCurrentCollectionAcquisition} from '../src/lib/collection/current-acquisition.ts';
+import {readCollectionItemFacts} from '../src/lib/collection/current-item-facts.ts';
+import {collectionUniverseIds,COLLECTION_UNIVERSE_UNRESOLVED} from '../src/lib/collection/browse-layout.ts';
+test('current canonical browse association and acquisition categories are consumed without losing original identity',async()=>{
+  const fetcher=async url=>new Response(await readFile('static'+url),{status:200});
+  const {index,master}=await loadCompleteCollection('',fetcher);
+  const id=20100031;
+  assert.equal(index.rootsByItem.get(id),'buildings');
+  assert.deepEqual(index.browseUniverseIdsByItem.get(id),[2000500061]);
+  assert(collectionUniverseIds(index,'2000500061').includes(id));
+  assert(!collectionUniverseIds(index,COLLECTION_UNIVERSE_UNRESOLVED).includes(id));
+  const [source]=await master.getItemFields([id],['universeTagIds']);
+  assert.deepEqual(index.universeTagIdsByItem.get(id)??[],source.values.universeTagIds);
+  const acquisition=await loadCurrentCollectionAcquisition(master);
+  const rows=await master.getFieldRows('acquisition.effectiveCategories');
+  for(const [item,categories] of rows)assert.deepEqual(new Set(acquisition.getItem(item).categories),new Set(categories));
+  for(const item of acquisition.listItemIds('star_path'))assert(acquisition.getItem(item).categories.includes('star_path'));
+  const facts=await readCollectionItemFacts(master,30000031,'ja');
+  assert.equal(facts.partial,false);
+  assert.equal(facts.taxonomy.itemId,30000031);
+  assert.equal(facts.prices.itemId,30000031);
+  assert.equal(facts.sources.itemId,30000031);
+  assert(facts.recipes.some(row=>row.recipeId===2050300095));
+  for(const recipe of facts.recipes)for(const ingredient of recipe.ingredients)
+    if(ingredient.kind==='item')assert(facts.names.has(ingredient.itemId));
+  console.log('COLLECTION_CURRENT_DB01 '+JSON.stringify({release:master.release.version,browseAssociations:[...index.browseUniverseIdsByItem].filter(([id,tags])=>JSON.stringify(tags)!==JSON.stringify(index.universeTagIdsByItem.get(id)??[])).length,acquisitionIds:rows.length,recipeCount:facts.recipes.length}));
+});
