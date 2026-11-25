@@ -135,3 +135,63 @@ test('store layout numeric dimension comparisons are independent of unverified n
   assert(expectedCount>0&&entries>0&&validSizeCount>0);
   console.log('DB01_STORE_NUMERIC_BOUNDS_CENSUS',JSON.stringify({expectedCount,entries,validSizeCount}));
 });
+
+test('configured cost projection retains exact original amount presence, currency and purpose',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const categories=new Map(await db.getFieldRows('nativeCategory'));
+  const all=new Map(),kinds=new Map();
+  const emit=(id,kind,sourcePath,cost,upgradeLevel=null)=>{
+    if(cost===undefined||cost===null||typeof cost!=='object'||Array.isArray(cost))return;
+    const currencyFieldPresent=Object.hasOwn(cost,'Id'),amountFieldPresent=Object.hasOwn(cost,'Amount');
+    const currencyItemId=currencyFieldPresent?cost.Id:null;
+    const value={kind,sourcePath,currencyItemId,amount:amountFieldPresent?cost.Amount:null,
+      currencyFieldPresent,amountFieldPresent,currencyDefinitionResolved:categories.get(currencyItemId)==='Currency',
+      upgradeLevel,runtimeCostVerified:false};
+    const list=all.get(id)??[];list.push(value);all.set(id,list);
+    kinds.set(kind,(kinds.get(kind)??0)+1);
+  };
+  const fields=new Set((await db.getFieldCatalog()).map(f=>f.field));
+  for(const [field,kind,category] of [
+    ['PriceOverride.Price','purchase_override',null],
+    ['SpecificUnlockCost','building_specific_unlock','Building'],
+    ['UnlockCost','building_unlock','Building'],
+    ['UpgradeInfo','building_upgrade','Building'],
+    ['AutoCooker.ActionCost','machine_action','Furniture'],
+    ['Gardener.ActionCost','machine_action','Furniture']
+  ]){
+    const path='source.'+field;
+    if(!fields.has(path))continue;
+    for(const [id,value] of await db.getFieldRows(path)){
+      if(category?categories.get(id)!==category:!['Furniture','Clothing'].includes(categories.get(id)))continue;
+      if(field==='UpgradeInfo'&&Array.isArray(value)){
+        value.forEach((u,i)=>emit(id,kind,path+'['+i+'].Cost',u?.Cost,Number.isSafeInteger(u?.Level)?u.Level:null));
+      }else if(field==='UnlockCost'){
+        if(Array.isArray(value))value.forEach((v,i)=>emit(id,kind,path+'['+i+']',v));
+      }else emit(id,kind,path,value);
+    }
+  }
+  const actual=new Map(await db.getFieldRows('cost.configuredOccurrences'));
+  const keys=new Map(await db.getFieldRows('cost.configuredKindCurrencyKeys'));
+  const amountKeys=new Map(await db.getFieldRows('cost.configuredKindCurrencyAmountKeys'));
+  const kindKeys=new Map(await db.getFieldRows('cost.configuredKinds'));
+  const sorted=a=>[...new Set(a)].sort();
+  assert.equal(actual.size,all.size);assert.equal(kindKeys.size,all.size);
+  for(const [id,expected] of all){
+    const sortRows=a=>[...a].sort((x,y)=>x.sourcePath.localeCompare(y.sourcePath));
+    assert.deepEqual(sortRows(actual.get(id)),sortRows(expected));
+    assert.deepEqual(kindKeys.get(id),sorted(expected.map(x=>x.kind)));
+    const resolved=expected.filter(x=>x.currencyDefinitionResolved);
+    const withAmount=resolved.filter(x=>x.amountFieldPresent);
+    assert.deepEqual(keys.get(id),resolved.length?sorted(resolved.map(x=>JSON.stringify([x.kind,x.currencyItemId]))):undefined);
+    assert.deepEqual(amountKeys.get(id),withAmount.length?sorted(withAmount.map(x=>JSON.stringify([x.kind,x.currencyItemId,x.amount]))):undefined);
+  }
+  const shoe=actual.get(40000047).find(x=>x.kind==='purchase_override');
+  assert.equal(shoe.amount,16000);assert.equal(shoe.currencyItemId,80000000);
+  const upgrade=actual.get(20000011).find(x=>x.kind==='building_upgrade');
+  assert.equal(upgrade.upgradeLevel,1);assert.equal(upgrade.amount,null);assert.equal(upgrade.amountFieldPresent,false);
+  assert(actual.get(40800001).some(x=>x.kind==='machine_action'&&x.currencyItemId===80000003&&x.amount===25));
+  const ids=await db.findItemIdsByField('cost.configuredKindCurrencyAmountKeys',{kind:'contains',value:JSON.stringify(['purchase_override',80000000,16000])});
+  assert(ids.includes(40000047));
+  assert(!actual.get(40005160)?.some(x=>x.kind==='purchase_override'));
+  console.log('DB01_CONFIGURED_COST_CENSUS',JSON.stringify({itemIds:all.size,occurrences:Object.fromEntries(kinds)}));
+});

@@ -14,9 +14,9 @@ from pathlib import Path
 VISUAL = (
     "Background", "Image", "Layout", "LightLayout", "AdjustImage",
     "ImageAdjustment", "MegaBundleAdjustment", "OverrideAccentColor",
-    "AccentColor", "UnPinColor",
+    "AccentColor", "UnPinColor", "CategoryBackground",
 )
-CONTENT_VISUAL = ("Image", "ImageAdjustment", "ForcePreview2D")
+CONTENT_VISUAL = ("Image", "AdjustImage", "ImageAdjustment", "ForcePreview2D")
 
 def select(data, fields):
     return {k: data[k] for k in fields if k in data}
@@ -26,13 +26,16 @@ def extract(raw):
     if not isinstance(outer.get("Data"), dict):
         raise ValueError("Invalid Shop cache")
     rows = []
+    category_rows = []
     for snapshot_key, encoded in sorted(outer["Data"].items()):
         snap = json.loads(encoded) if isinstance(encoded, str) else encoded
         if snap.get("OnlineId") != snapshot_key:
             raise ValueError("Snapshot identity mismatch")
         seen = set()
         for category in snap["Categories"]:
-            for root in category["Data"].values():
+            for category_type, root in category["Data"].items():
+                category_rows.append({"snapshotKey": snapshot_key, "categoryType": category_type,
+                                      "visual": select(root, VISUAL)})
                 entries = [(None, o) for o in root.get("Bundles", [])]
                 for store in root.get("Stores", []):
                     sd = store["Data"]
@@ -51,6 +54,8 @@ def extract(raw):
                                          "quantity": part["Quantity"],
                                          "visual": select(part, CONTENT_VISUAL)})
                     rows.append({"snapshotKey": snapshot_key, "offerId": bid,
+                                 "categoryType": category_type,
+                                 "categoryVisual": select(root, VISUAL),
                                  "storeId": store["Id"] if store else None,
                                  "storeVisual": select(store["Data"], VISUAL) if store else {},
                                  "visual": select(d, VISUAL), "contents": contents})
@@ -58,7 +63,7 @@ def extract(raw):
             "privateOnly": True, "publicationAuthorized": False,
             "renderingVerified": False,
             "sourceSha256": hashlib.sha256(raw).hexdigest(),
-            "offers": rows}
+            "offers": rows, "categories": category_rows}
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)

@@ -162,17 +162,18 @@
   let structureWorker:Worker|null=null,structureStatus:'idle'|'working'|'valid'|'error'='idle';
   let structureAction:'duplicate'|'remove'|null=null;
   let structureSignature='';
+  let structureStock:{before:number;after:number}|null=null;
   $: structureEligible=Boolean(file&&chosen&&!groupMode&&!staged.length&&
     !chosen.subgrid&&chosen.shapeKey&&chosen.layer==='furniture'&&isCardinal(chosen.orientation)&&
     !nativeActionBlocked(chosen.editRestrictions,'select'));
   $: structureDuplicateEligible=structureEligible&&worldMoveEligible(chosen)&&
-    Number.isInteger(draftX)&&Number.isInteger(draftY)&&
+    Boolean(activeTerrain)&&Number.isInteger(draftX)&&Number.isInteger(draftY)&&
     (draftX!==chosen?.x||draftY!==chosen?.y)&&draftOrientation===chosen?.orientation;
   $: structureRemoveEligible=structureEligible&&!nativeActionBlocked(chosen?.editRestrictions,'remove');
   $: structureInputKey=JSON.stringify([chosen?.localOrdinal,chosen?.x,chosen?.y,draftX,draftY,draftOrientation,staged.length,groupMode]);
   $: if(structureSignature&&structureSignature!==structureInputKey)clearStructure();
   function clearStructure(){
-    structureWorker?.terminate();structureWorker=null;structureStatus='idle';structureAction=null;structureSignature='';
+    structureWorker?.terminate();structureWorker=null;structureStatus='idle';structureAction=null;structureSignature='';structureStock=null;
   }
   onDestroy(clearStructure);
   function rehearseStructure(action:'duplicate'|'remove'){
@@ -180,15 +181,19 @@
       !(action==='duplicate'?structureDuplicateEligible:structureRemoveEligible))return;
     clearStructure();
     structureStatus='working';structureAction=action;structureSignature=structureInputKey;
-    const own=new Worker(new URL('./structure-preview.worker.ts',import.meta.url),{type:'module'});
+    const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});
     structureWorker=own;
     function done(valid:boolean){
       if(structureWorker!==own)return;
       own.terminate();structureWorker=null;structureStatus=valid?'valid':'error';
     }
-    own.onmessage=({data})=>done(data?.kind==='structure-preview'&&data.validated===true);
+    own.onmessage=({data})=>{
+      if(structureWorker!==own)return;
+      const ok=data?.kind==='furniture-stock-preview'&&data.validated===true&&Number.isSafeInteger(data.stockBefore)&&Number.isSafeInteger(data.stockAfter);
+      if(ok)structureStock={before:data.stockBefore,after:data.stockAfter};done(ok);
+    };
     own.onerror=()=>done(false);
-    own.postMessage({command:'structure-preview',file,plan:{
+    own.postMessage({command:'furniture-stock-preview',file,destination:activeTerrain?{layoutId:map.layoutId,gridDataPath:map.gridDataPath,factor:activeTerrain.factor,sizeX:activeTerrain.raster.sizeX,sizeY:activeTerrain.raster.sizeY}:null,plan:{
       localOrdinal:chosen.localOrdinal,itemId:chosen.itemId,expectedX:chosen.x,expectedY:chosen.y,
       action,x:action==='duplicate'?draftX:null,y:action==='duplicate'?draftY:null
     }});
@@ -508,8 +513,8 @@
       {#if structureStatus!=='idle'}<button type="button" on:click={clearStructure}>プレビュー解除</button>{/if}
     </div>
     {#if structureStatus==='working'}<p role="status">ローカル処理中…</p>
-    {:else if structureStatus==='valid'}<p class="structure-result" role="status">{structureAction==='duplicate'?'複製':'削除'}の構造検証に成功しました。セーブには反映されません。</p>
-    {:else if structureStatus==='error'}<p role="alert">状態データ・ID・セーブ構造が未対応、または検証できませんでした。</p>{/if}
+    {:else if structureStatus==='valid'}<p class="structure-result" role="status">{structureAction==='duplicate'?'複製':'削除'}の構造検証に成功しました。{#if structureStock} 在庫 {structureStock.before} → {structureStock.after}。{/if} セーブには反映されません。</p>
+    {:else if structureStatus==='error'}<p role="alert">在庫不足・状態データ・参照関係・セーブ構造のため、検証できませんでした。</p>{/if}
     <small>構造検証のみ。追加・削除のセーブ出力は未対応。</small>
   {/if}
   {#if staged.length||timeline.snapshots.length>1}

@@ -8,9 +8,15 @@ from extract_shop_composition import extract
 
 LAYOUTS = {"Light_Dual", "Light_Single", "Light_Single_111", "Light_Single_1111", "Light_Mega_11", "Light_Mega_111", "Light_Mega_1111"}
 
+ONE_LINE = {"CompanionBundle", "DreamBundle", "SignatureBundle"}
+GRID = {"SeasonalBundle", "Featured", "SpotlightCollection", "LimitedTimeDeals", "Recommended"}
+
 def select(row):
     v, parts = row["visual"], row["contents"]
     layout = v.get("LightLayout", "Light_Dual")
+    category = row.get("categoryType")
+    if category not in ONE_LINE | GRID:
+        return {"layout": layout, "status": "unsupported_category", "bindings": {}}
     if layout not in LAYOUTS:
         return {"layout": layout, "status": "unsupported", "bindings": {}}
     def icon(i):
@@ -19,8 +25,17 @@ def select(row):
         part = parts[i]
         return part["visual"].get("Image") or {"nativeItemIconRequired": part["itemId"]}
     b = {}
-    if v.get("Background"):
-        b["Background"] = v["Background"]
+    # Offer.Background is retained in source but not bound as a Light card backdrop.
+    # CategoryBackground belongs to the menu, not the individual image.
+    if category in ONE_LINE:
+        main = v.get("Image") if v.get("Layout") not in ("Single_Mega_11", "Single_Mega_111", "Single_Mega_1111") and not layout.startswith("Light_Mega_") else None
+        b["CurrentImage"] = main or icon(0)
+        for i in range(len(parts)):
+            b["Scroll[" + str(i) + "].Icon"] = icon(i)
+        return {"layout": layout, "presentation": "one_line", "prefab": "LightBundle_With_Scroll",
+                "status": "candidate", "bindings": b,
+                "menuVisualCandidate": row.get("storeVisual", {}),
+                "offerBackgroundUnbound": v.get("Background")}
     if layout.startswith("Light_Mega_"):
         for i in range(len(layout.rsplit("_", 1)[1])):
             key = "OverridedImage" + str(i + 1)
@@ -34,7 +49,9 @@ def select(row):
         if layout == "Light_Single":
             for i in range(len(parts)):
                 b["Scroll[" + str(i) + "].Icon"] = icon(i)
-    return {"layout": layout, "status": "candidate", "bindings": b}
+    return {"layout": layout, "presentation": "grid", "status": "candidate", "bindings": b,
+            "menuVisualCandidate": row.get("categoryVisual", {}),
+            "offerBackgroundUnbound": v.get("Background")}
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -43,7 +60,7 @@ def main():
     a = p.parse_args()
     if any((x / ".git").exists() for x in a.out.resolve().parents):
         raise ValueError("Private output outside Git required")
-    rows = [{"snapshotKey": r["snapshotKey"], "offerId": r["offerId"], **select(r)}
+    rows = [{"snapshotKey": r["snapshotKey"], "offerId": r["offerId"], "categoryType": r["categoryType"], **select(r)}
             for p in a.cache for r in extract(p.read_bytes())["offers"]]
     with a.out.open("x", encoding="utf8") as f:
         json.dump({"schema": "wand.media.private-shop-card-selection@1",

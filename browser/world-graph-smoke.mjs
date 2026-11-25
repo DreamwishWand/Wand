@@ -1289,7 +1289,7 @@ try{
   assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(12 10)');
   await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
-  const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
+  const worldSave={GameInfo:{Version:1262},Player:{ListInventories:{'0':{ID:0,CompatibleItemType:'ItemType_Furniture',CompatibleFurnitureTypes:{List:['FurnitureItemType_Default','FurnitureItemType_Fence']},Inventory:{'40005160':{Amount:3,Marker:'ItemMarker_Favorite'}}}}},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
       GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',NextGridObjectID:10,
       Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'},
@@ -1343,6 +1343,16 @@ try{
   assert.equal(await groupForm.getByRole('button',{name:'一括移動',exact:true}).isDisabled(),true);
   await groupForm.getByRole('button',{name:'選択解除',exact:true}).click();
   await wholeSave.getByRole('button',{name:'複数選択',exact:true}).click();
+  if(!(await wholeSave.locator('.overview-results').isVisible()))await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
+  await wholeSave.locator('.overview-results button').first().click();
+  await wholeSave.getByRole('button',{name:'家具パレット',exact:true}).click();
+  const palette=wholeSave.locator('.save-furniture-palette');
+  await palette.locator('.stock-item[data-item-id="40005160"]').waitFor({timeout:30000});
+  await palette.getByRole('button',{name:'回収を検証',exact:true}).click();
+  await palette.locator('.stock-preview-result').waitFor({timeout:20000});
+  assert.match(await palette.locator('.stock-preview-result').innerText(),/在庫 3 → 4/);
+  assert.equal(await wholeSave.locator('.mainland-save-object').count(),oldTransforms.length);
+  await palette.getByRole('button',{name:'閉じる',exact:true}).click();
   await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();
   // Choose a source-backed furniture record through the normal picker and
   // compute the full terrain-origin raster with the real WASM Worker.
@@ -1419,13 +1429,14 @@ try{
   await publicPlot.getByLabel('移動先X').fill('12');
   await publicPlot.getByRole('button',{name:'複製を検証',exact:true}).click();
   await publicPlot.locator('.structure-result').waitFor({timeout:20000});
-  assert.match(await publicPlot.locator('.structure-result').innerText(),/複製の構造検証に成功/);
+  assert.match(await publicPlot.locator('.structure-result').innerText(),/複製の構造検証に成功.*在庫 3 → 2/);
   assert.equal(await publicPlot.getByRole('link',{name:'編集済みコピーを保存'}).count(),0);
   assert.equal(await publicPlot.getByRole('button',{name:'変更を検証',exact:true}).isDisabled(),true);
   await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
   await publicPlot.getByRole('button',{name:'元に戻す'}).click();
   await publicPlot.getByRole('button',{name:'削除を検証',exact:true}).click();
   await publicPlot.locator('.structure-remove-ghost').waitFor({timeout:20000});
+  assert.match(await publicPlot.locator('.structure-result').innerText(),/在庫 3 → 4/);
   assert.equal(await publicPlot.locator('.saved-object').count(),2);
   await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
   // All three root themes recolor service chrome without recoloring the map.
