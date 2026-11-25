@@ -362,7 +362,7 @@ test('support map selection uses exact occupied cells, including holes and overl
  assert.deepEqual(supportHitIndices(tree,shapes,2.5,3),[]);
 });
 
-import {appendSavedStroke,savedNetworkFreehand} from '../src/lib/world/cardinal-road-save.ts';
+import {appendSavedStroke,savedNetworkFreehand,cardinalRoadCandidate,cardinalFenceCandidate} from '../src/lib/world/cardinal-road-save.ts';
 test('saved network freehand samples use native logical cells and fail closed at bounds or limit',()=>{
  const g={origin:{position:[0,0,0]},factor:2,sizeX:8,sizeY:8};
  let p=appendSavedStroke([],{x:.1,y:-.1},g,4,2);
@@ -375,4 +375,22 @@ test('saved network freehand samples use native logical cells and fail closed at
  assert.equal(appendSavedStroke([],{x:-.1,y:0},g,4,2),null);
  assert.equal(appendSavedStroke([],{x:8,y:0},g,4,2),null);
  assert.ok(savedNetworkFreehand('connect-brush'));assert.ok(savedNetworkFreehand('erase-brush'));assert.equal(savedNetworkFreehand('line'),false);
+});
+
+test('new path and fence styles create plans without any saved network seed',()=>{
+ const grid={key:'A',factor:1,sizeX:20,sizeY:20,origin:{position:[0,0,0]},bounds:{x:0,y:-20,w:20,h:20},layoutId:'SceneLayouts/Village04/A.json',gridDataPath:'GridData/A.json'};
+ const rasters=new Map([['A',{sizeX:20,sizeY:20,nativeFloorValues:Uint32Array.from({length:400},()=>4)}]]);
+ const shape={width:2,height:2,cellCount:4,acceptedFloorTypesFlag:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:''};
+ const road={styleOnly:true,kind:'road',area:'A',factor:1,itemId:40100068,name:'Path',shape};
+ const a={x:2.1,y:-2.1},b={x:6.1,y:-2.1};
+ const candidate=cardinalRoadCandidate(road,[grid],rasters,[],a,b,'line');
+ assert.deepEqual(candidate.plan.cells,[[2,2],[4,2],[6,2]]);
+ assert.equal(candidate.plan.seed,undefined);
+ assert.equal(cardinalRoadCandidate(road,[grid],rasters,[],a,b,'erase-line'),null);
+ assert.equal(cardinalRoadCandidate(road,[grid],rasters,[],a,{x:22,y:-2},'line'),null);
+ const fence={...road,kind:'fence',itemId:40000001,shape:{...shape,width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]}};
+ const f=cardinalFenceCandidate(fence,[grid],rasters,[],a,{x:4.1,y:-2.1},'line');
+ assert.deepEqual(f.plan.nodes,[[2,2],[3,2],[4,2]]);
+ assert.equal(f.plan.seed,undefined);
+ assert.equal(cardinalFenceCandidate(fence,[grid],rasters,[],a,b,'connect-line'),null);
 });
