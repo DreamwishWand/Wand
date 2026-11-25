@@ -106,12 +106,13 @@ export interface CatalogAcquisitionFacts {
   readonly storeMembershipVerified:false;
   readonly currentAvailabilityVerified:false;
 }
-/** Only the reviewed native furniture type and IIsHiddable gates.
+/** Only the reviewed native furniture type, IIsHiddable and IAvailability gates.
  * Non-exclusion is not evidence of shop membership. */
 export interface StoreDisplayScreen {
-  readonly status:'excluded_by_furniture_type'|'excluded_by_hidden'|'not_excluded_by_reviewed_gates'|'unresolved';
+  readonly status:'excluded_by_furniture_type'|'excluded_by_hidden'|'excluded_by_generator'|'not_excluded_by_reviewed_gates'|'unresolved';
   readonly furnitureTypeGate:boolean|null;
   readonly hidden:boolean|null;
+  readonly generatorExcluded:boolean|null;
   readonly scope:'generated_furniture_clothing_display';
   readonly otherNativeConditionsVerified:false;
   readonly storeMembershipVerified:false;
