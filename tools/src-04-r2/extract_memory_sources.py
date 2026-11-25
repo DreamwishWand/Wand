@@ -151,6 +151,21 @@ def mask_tree(obj):
             raise
         return stripped_mask_tree(obj.get_raw_data())
 
+def owned_serialized_files(root, files):
+    """UnityPy leaf readers may expose files=None, not an empty dict."""
+    owned=[]
+    seen=set()
+    def visit(f):
+        if id(f) in seen:
+            return
+        seen.add(id(f))
+        if any(f is x for x in files):
+            owned.append(f)
+        for child in (getattr(f,"files",None) or {}).values():
+            visit(child)
+    visit(root)
+    return owned
+
 def exact_objects(aa, locations):
     import UnityPy
     allpaths = sorted({p for locs in locations.values() for loc in locs
@@ -168,6 +183,7 @@ def exact_objects(aa, locations):
             if paths:
                 work[paths].append((guid,loc))
     for paths, group in work.items():
+        print("Inspecting:", ", ".join(p.name for p in paths), "references:",len(group),flush=True)
         env = UnityPy.load(*(str(p) for p in paths))
         files = list(env.assets)
         # Each SerializedFile is owned by a loaded BundleFile; do not infer
@@ -178,13 +194,7 @@ def exact_objects(aa, locations):
                     if Path(str(k)).name.casefold() == p.name.casefold()]
             if len(root)!=1:
                 raise ValueError("Cannot establish loaded bundle identity: "+p.name)
-            owned=[]
-            def visit(f):
-                if any(f is x for x in files):
-                    owned.append(f)
-                for child in getattr(f,"files",{}).values():
-                    visit(child)
-            visit(root[0])
+            owned=owned_serialized_files(root[0],files)
             bundles.append((p.relative_to(aa).as_posix(),file_sha(p),owned))
         for guid,loc in group:
             cls=loc["class"]
@@ -192,7 +202,10 @@ def exact_objects(aa, locations):
             matches={}
             errors=[]
             for f in files:
-                found,err=exact_readers(f.container,loc["internalId"],wanted)
+                container=getattr(f,"container",None)
+                if container is None:
+                    continue
+                found,err=exact_readers(container,loc["internalId"],wanted)
                 matches.update(found)
                 errors.extend(err)
             if errors or len(matches)!=1:
