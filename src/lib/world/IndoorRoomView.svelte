@@ -31,7 +31,7 @@
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
  $: cutGhost=transferDraft??cutPreview;
 
- $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal)?$worldFurnitureCut:null;
+ $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>!r.supportFactor&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
  $: itw=indoorTerrainWords[locale];
  $: cutWords=groupCutWords[locale];
  $: canCut=editAllowed&&!!file&&!!cutSelection&&!moving&&!placing&&!swap&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!stockOpen;
