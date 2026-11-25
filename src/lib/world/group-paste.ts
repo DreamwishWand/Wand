@@ -25,7 +25,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[]):Desi
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
 export interface CutWitness{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string}
-export interface CutClipboard{file:File;rows:CutWitness[]}
+export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
 export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitness[]|null{
  if(!captureFurnitureGroup(items))return null;
@@ -33,6 +33,14 @@ export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitne
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[]):boolean{
  return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&stockSourceEligible(p)&&!nativeActionBlocked(p.object.editRestrictions,'move')));
+}
+/** Ordinals are global to the exact opened File. Other world views cannot
+ * inspect the source objects; any visible ordinal must still match. Rust
+ * re-resolves every source pose against the unchanged file before writing. */
+export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[]):boolean{
+ if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
+ if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects);
+ return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));
 }
 export type GroupGeometry=ReadonlyMap<number,ReadonlyMap<number,DesignItemGeometry>>;
 export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:Cardinal;destination:StockDestination}
