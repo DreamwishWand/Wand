@@ -56,3 +56,82 @@ test('original layout criteria, partial source matches and direct display sequen
   }
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/acquisition/public/')));
 });
+
+test('canonical grid facets preserve original unsigned mask bits, serialized size and layer-slot counts',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const grid=new Map(await db.getFieldRows('source.GridAreaData'));
+  const floor=new Map(await db.getFieldRows('placement.sourceAcceptedFloorBits'));
+  const layers=new Map(await db.getFieldRows('placement.sourceLayerBits'));
+  const dimensions=new Map(await db.getFieldRows('placement.sourceSizeXY'));
+  const bounds=new Map(await db.getFieldRows('placement.sourceBoundingCellCount'));
+  const slots=new Map(await db.getFieldRows('placement.sourceLayerSlotCount'));
+  const consistent=new Map(await db.getFieldRows('placement.sourceLayerCountMatchesBounds'));
+  const decode=mask=>Array.from({length:32},(_,i)=>2**i).filter(bit=>((mask&bit)>>>0)!==0);
+  let floorCount=0,layerCount=0,sizeCount=0,bothCount=0;
+  for(const [id,g] of grid){
+    if(Object.hasOwn(g,'AcceptedFloorTypesFlag')){
+      floorCount++;
+      assert.deepEqual(floor.get(id),decode(g.AcceptedFloorTypesFlag));
+    }else assert(!floor.has(id));
+    if(Object.hasOwn(g,'Layers')){
+      layerCount++;
+      const union=[...new Set(g.Layers.flatMap(decode))].sort((a,b)=>a-b);
+      assert.deepEqual(layers.get(id),union);
+      assert.equal(slots.get(id),g.Layers.length);
+    }else assert(!layers.has(id)&&!slots.has(id));
+    if(Number.isSafeInteger(g.SizeX)&&Number.isSafeInteger(g.SizeY)&&g.SizeX>0&&g.SizeY>0&&Number.isSafeInteger(g.SizeX*g.SizeY)){
+      sizeCount++;
+      assert.deepEqual(dimensions.get(id),[g.SizeX,g.SizeY]);
+      assert.equal(bounds.get(id),g.SizeX*g.SizeY);
+      if(Array.isArray(g.Layers)){
+        bothCount++;
+        assert.equal(consistent.get(id),g.Layers.length===g.SizeX*g.SizeY);
+      }else assert(!consistent.has(id));
+    }else assert(!dimensions.has(id)&&!bounds.has(id)&&!consistent.has(id));
+  }
+  assert(floorCount>7000&&sizeCount>7000);
+  assert.equal(floor.size,floorCount);assert.equal(layers.size,layerCount);
+  assert.equal(slots.size,layerCount);assert.equal(dimensions.size,sizeCount);
+  assert.equal(bounds.size,sizeCount);assert.equal(consistent.size,bothCount);
+  assert.deepEqual(dimensions.get(40005160),[1,1]);
+  assert.deepEqual(layers.get(40005160),[4,64]);
+  assert.deepEqual(dimensions.get(40000047),[3,2]);
+  assert.equal(bounds.get(40000047),6);
+  const surface=await db.findItemIdsByField('placement.sourceAcceptedFloorBits',{kind:'contains',value:4096});
+  assert(surface.length>0);
+  assert.deepEqual(surface,[...floor].filter(([,bits])=>bits.includes(4096)).map(([id])=>id));
+  console.log('DB01_PLACEMENT_SOURCE_CENSUS',JSON.stringify({floorCount,layerCount,sizeCount,bothCount,surfaceCount:surface.length}));
+});
+
+test('store layout numeric dimension comparisons are independent of unverified native grid predicates',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const areas=new Map((await db.getSourceRelations()).storeLayoutAreas.map(a=>[a.key,a.filter.grid]));
+  const grid=new Map(await db.getFieldRows('source.GridAreaData'));
+  const candidates=new Map(await db.getFieldRows('acquisition.storeLayoutCandidates'));
+  const comparisons=new Map(await db.getFieldRows('acquisition.storeLayoutDimensionComparisons'));
+  let expectedCount=0,entries=0,validSizeCount=0;
+  for(const [id,c] of candidates){
+    if(!c.gridReviewAreaKeys.length){assert(!comparisons.has(id));continue;}
+    expectedCount++;
+    const results=comparisons.get(id);
+    assert.deepEqual(results.map(v=>v.areaKey),c.gridReviewAreaKeys);
+    const g=grid.get(id);
+    const size=g&&Number.isSafeInteger(g.SizeX)&&g.SizeX>0&&Number.isSafeInteger(g.SizeY)&&g.SizeY>0?[g.SizeX,g.SizeY]:null;
+    for(const comparison of results){
+      entries++;
+      assert.deepEqual(comparison.sourceSizeXY,size);
+      const f=areas.get(comparison.areaKey);
+      const numeric=(x,y)=>!(f.minArea&&(x<f.minArea[0]||y<f.minArea[1])||f.maxArea&&(x>f.maxArea[0]||y>f.maxArea[1]));
+      assert.equal(comparison.directWithinNumericBounds,size?numeric(...size):null);
+      assert.equal(comparison.swappedWithinNumericBounds,size&&f.canRotate===true?numeric(size[1],size[0]):null);
+      assert(comparison.directIgnoreSizeTagIds.every(tag=>f.ignoreSizeForTags.includes(tag)));
+      assert.equal(comparison.gridPredicateEvaluated,false);
+      assert.equal(comparison.storeMembershipVerified,false);
+      assert.equal(comparison.currentAvailabilityVerified,false);
+      if(size)validSizeCount++;
+    }
+  }
+  assert.equal(comparisons.size,expectedCount);
+  assert(expectedCount>0&&entries>0&&validSizeCount>0);
+  console.log('DB01_STORE_NUMERIC_BOUNDS_CENSUS',JSON.stringify({expectedCount,entries,validSizeCount}));
+});
