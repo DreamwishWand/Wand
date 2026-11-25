@@ -165,7 +165,7 @@ export interface PublicItemDetailsClient {
   /** Original mining, timebending and seed production routes, not live availability. */
   getItemProductionSources(itemIds:readonly number[]):Promise<readonly (Readonly<ProductionItemEvidence>|null)[]>;
   /** Source-defined explicit loot and stall slots, never live stock or price. */
-  getItemLootSources(itemIds:readonly number[]):Promise<readonly (Readonly<LootItemEvidence>|null)[]>;
+  getItemLootSources(itemIds:readonly number[],locale?:ItemMasterLocale):Promise<readonly (Readonly<LootItemEvidence>|null)[]>;
   getItemStallSources(itemIds:readonly number[]):Promise<readonly (Readonly<StallItemEvidence>|null)[]>;
   getStallLootDetails(stallIds:readonly number[]):Promise<readonly (Readonly<StallLootEvidence>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
@@ -387,8 +387,8 @@ export async function openPublicItemDetails(
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
     },
-    async getItemLootSources(itemIds:readonly number[]){
-      return createLootSourceReader(await complete()).getForItems(itemIds);
+    async getItemLootSources(itemIds:readonly number[],locale?:ItemMasterLocale){
+      return createLootSourceReader(await complete()).getForItems(itemIds,locale);
     },
     async getItemStallSources(itemIds:readonly number[]){
       return createStallLootReader(await complete()).getForItems(itemIds);
