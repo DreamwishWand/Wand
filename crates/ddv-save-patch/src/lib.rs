@@ -812,7 +812,8 @@ pub fn preview_plain_grid_transfer(
     destination:&PlainGridDestination,replacement:(i32,i32),
     orientation:&str,
 )->Result<GridCoordinateDraft,PatchError>{
-    if target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
+       target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
        destination.grid_id.starts_with('0')||
        !matches!(destination.tessellation,1|2)||
        destination.size.0==0||destination.size.1==0||
@@ -830,9 +831,11 @@ pub fn preview_plain_grid_transfer(
     let to=grids.get(&destination.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from_layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::MissingTarget)?;
     let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
-    if full_grid_scope(from_layout)!=Some(to_scope)||
+    if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
+       full_grid_scope(from_layout)!=Some(to_scope)||
        !destination.data_path.starts_with("GridData/")||
        !destination.data_path.ends_with(".json")||destination.data_path.contains("..")||destination.data_path.contains('\\')||
+       (from_layout==destination.layout_path&&from.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str()))||
        to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
