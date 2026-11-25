@@ -1123,7 +1123,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
 /// output. Same-grid objects retain their native identities; cross-grid
 /// ordinary leaves require unreferenced old and newly allocated identities.
 pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_world_transfer};
+    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_world_transfer,preview_support_parent_grid_transfer};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
     if plan.len()>65536{return Err(CodecError::Bounds);}
@@ -1131,18 +1131,41 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
     let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    if rows.iter().any(|r|r.get("roomSource").is_some()){
+        if rows.len()>32{return Err(bad);}
+        // All source indices refer to one unchanged room; remove highest first
+        // so the remaining indices cannot shift. Reject mixed/duplicate witnesses.
+        let mut sorted=Vec::new();let mut room=None;let mut seen=HashSet::new();
+        for r in rows{
+            let w=r.get("roomSource").ok_or(bad)?;
+            let ordinal=w.get("roomOrdinal").and_then(Value::as_u64).ok_or(bad)?;
+            let index=w.get("index").and_then(Value::as_u64).ok_or(bad)?;
+            if room.is_some_and(|n|n!=ordinal)||!seen.insert(index){return Err(bad);}
+            room=Some(ordinal);sorted.push((index,r));
+        }
+        sorted.sort_by_key(|(index,_)|std::cmp::Reverse(*index));
+        let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+        for (_,row) in sorted{
+            let next=crate::indoor_room_view::room_to_outdoor_candidate(working.as_bytes(),row)?;
+            working.zeroize();*working=next;
+        }
+        return Ok(std::mem::take(&mut *working));
+    }
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
+    let mut hierarchy=Vec::with_capacity(rows.len());
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut poses=Vec::with_capacity(rows.len());
     let mut anchors=HashSet::new();
     for row in rows{
-        let o=row.as_object().filter(|o|o.len()==9&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        let o=row.as_object().filter(|o|(o.len()==9||o.len()==10&&o.contains_key("supportFactor"))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"))).ok_or(bad)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let orientation=|k:&str|o.get(k).and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).map(str::to_owned).ok_or(bad);
+        let factor=match o.get("supportFactor"){None=>None,Some(v)=>Some(v.as_u64().filter(|n|matches!(n,1|2)).ok_or(bad)?)};
+        hierarchy.push(factor);
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation("expectedOrientation")?)));
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
@@ -1151,13 +1174,28 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         if xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||!anchors.insert((d.grid_id.clone(),xy)){return Err(bad);}
         poses.push((key,xy,orientation("orientation")?));
     }
-    let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let targets=if hierarchy.iter().any(Option::is_some){
+        if rows.len()>32{return Err(bad);}
+        let (scan,_)=scan_grid_instances(profile)?;
+        if scan.sampled||scan.invalid>0{return Err(bad);}
+        let mut seen=HashSet::new();let mut out=Vec::new();
+        for (s,factor) in selections.iter().zip(&hierarchy){
+            if s.0==0||!seen.insert(s.0){return Err(bad);}
+            let (target,xy)=scan.private_targets.get(s.0-1).ok_or(bad)?;
+            if target.kind!=GridObjectKind::Full||target.item_id!=s.1||*xy!=Some(s.2)||
+               scan.subgrid_parents.contains(&s.0)!=factor.is_some()||
+               scan.rows.get(s.0-1).and_then(|r|r.get("orientation")).and_then(Value::as_str)!=s.4.as_deref(){return Err(bad);}
+            out.push(target.clone());
+        }
+        out
+    }else{resolve_grid_mixed_targets(profile,&selections)?};
     let selected:HashSet<_>=targets.iter().map(|t|(t.grid_id.clone(),t.object_id.clone())).collect();
     let mut new_counts=HashMap::<String,u64>::new();
     let mut old_refs=HashMap::<String,Vec<String>>::new();
     let mut same=Vec::new();
     let mut cross=Vec::new();
-    for ((target,selection),(key,xy,orientation)) in targets.iter().zip(&selections).zip(&poses){
+    let mut same_trees=Vec::new();
+    for (((target,selection),(key,xy,orientation)),factor) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
         let layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
         let data=source.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
@@ -1169,18 +1207,30 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
            grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&g.get("GridDataPath").and_then(Value::as_str)==Some(data)).count()!=1{return Err(bad);}
         let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
-           old.get("State").is_some_and(|v|!v.is_null())||old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
+           old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
+        let tree=if let Some(factor)=factor{
+            if scope(layout)!=scope(&d.layout_path)||u64::from(d.tessellation)!=*factor||
+               source.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(*factor)||
+               old.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid")){return Err(bad);}
+            let refs=grid_identity_dependencies(profile,target)?;
+            if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
+            Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
+        }else{
+            if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
+            None
+        };
         let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
         if occupied.iter().any(|(id,v)|!selected.contains(&(d.grid_id.clone(),id.clone()))&&v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
         let before=selection.4.as_ref().ok_or(bad)?;
         if target.grid_id==d.grid_id{
+            if let Some(tree)=tree{same_trees.push((target,tree));}
             if *xy!=selection.2||before!=orientation{
                 same.push(GridMixedEdit{target:target.clone(),expected:selection.2,position:(*xy!=selection.2).then_some(*xy),orientation:(before!=orientation).then(||(before.clone(),orientation.clone()))});
             }
         }else{
             *new_counts.entry(d.grid_id.clone()).or_default()+=1;
             old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
-            cross.push((target,selection.2,d,*xy,orientation));
+            cross.push((target,selection.2,d,*xy,orientation,tree));
         }
     }
     if same.is_empty()&&cross.is_empty(){return Err(bad);}
@@ -1203,9 +1253,22 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let draft=preview_existing_grid_mixed_batch(&working,&same).map_err(|_|CodecError::Patch)?;
         update(&mut working,draft)?;
     }
-    for (target,expected,d,xy,orientation) in cross{
-        let draft=preview_plain_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+    for (target,expected,d,xy,orientation,tree) in cross{
+        let draft=if let Some(tree)=tree{
+            let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+            let next=current.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+            let draft=preview_support_parent_grid_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+            let parsed:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
+            let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+            if subgrid_tree(c,&d.grid_id,&next)?!=tree{return Err(bad);}
+            draft
+        }else{preview_plain_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?};
         update(&mut working,draft)?;
+    }
+    if !same_trees.is_empty(){
+        let parsed:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+        let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+        for (target,tree) in same_trees{if subgrid_tree(c,&target.grid_id,&target.object_id)?!=tree{return Err(bad);}}
     }
     Ok(std::mem::take(&mut *working))
 }
@@ -1718,6 +1781,35 @@ mod terrain_session_tests{
         moved["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=Value::from(4);
         assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),moved);
         assert!(support_parent_move_candidate(&bytes,1,40005160,(4,6),(4,6),&dest,None,None).is_err());
+        // A mixed support/ordinary group retains the full nested hierarchy,
+        // including unknown descendant bytes, and rejects unmarked parents.
+        let mut group:Value=serde_json::from_slice(save).unwrap();
+        group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40000001,"X":12,"Y":6,"Orientation":"GridOrientation_Down"});
+        group["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
+        let raw=serde_json::to_vec(&group).unwrap();
+        let mut plan=serde_json::json!([
+         {"localOrdinal":1,"itemId":"40005160","expectedX":4,"expectedY":6,"expectedOrientation":"GridOrientation_Down","destination":witness.clone(),"x":8,"y":10,"orientation":"GridOrientation_Left","supportFactor":2},
+         {"localOrdinal":2,"itemId":"40000001","expectedX":12,"expectedY":6,"expectedOrientation":"GridOrientation_Down","destination":witness.clone(),"x":16,"y":10,"orientation":"GridOrientation_Down"}
+        ]);
+        let result:Value=serde_json::from_str(&group_cut_candidate(&raw,&plan.to_string()).unwrap()).unwrap();
+        let grids=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(grids["7"]["Objects"]["1"]["State"],group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(grids["7"]["Objects"]["1"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(grids["7"]["Objects"]["2"]["X"],16);
+        assert_eq!(grids["8"],group["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(grids["9"],group["World"]["GridCollection"]["Grids"]["9"]);
+        group["World"]["GridCollection"]["Grids"]["10"]=cross["World"]["GridCollection"]["Grids"]["10"].clone();
+        let raw=serde_json::to_vec(&group).unwrap();
+        plan[0]["destination"]=dest.clone();plan[1]["destination"]=dest.clone();
+        // Plain cross-grid transfer requires outdoor scope paths, so leave
+        // the ordinary record on its original Grid in this synthetic fixture.
+        plan[1]["destination"]=witness.clone();
+        let result:Value=serde_json::from_str(&group_cut_candidate(&raw,&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"],group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["8"],group["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["9"],group["World"]["GridCollection"]["Grids"]["9"]);
+        plan[0]["supportFactor"]=Value::from(1);assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
+        plan[0].as_object_mut().unwrap().remove("supportFactor");assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
         let mut alias:Value=serde_json::from_slice(save).unwrap();
         let mut duplicate=alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"].clone();duplicate["ID"]=Value::from(2);alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=duplicate;
         alias["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
