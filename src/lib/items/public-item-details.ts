@@ -185,7 +185,16 @@ export async function openPublicItemDetails(
   // the game version is unchanged (for example an in-version DLC release).
   const currentMaster=options.gameVersion==='current'&&options.scope===undefined
     ?await openCurrentItemDatabase(basePath,fetcher):null;
-  const master=currentMaster??await openPublicItemMaster(basePath, fetcher, options);
+  let legacyTask:Promise<Awaited<ReturnType<typeof openPublicItemMaster>>>|null=null;
+  function legacyMaster(){
+    if(legacyTask)return legacyTask;
+    const task=openPublicItemMaster(basePath,fetcher,currentMaster
+      ?{gameVersion:currentMaster.release.target.gameVersion}:options);
+    legacyTask=task;
+    void task.catch(()=>{if(legacyTask===task)legacyTask=null;});
+    return task;
+  }
+  const master=currentMaster??await legacyMaster();
   const legacyAcquisitionCompatible=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION;
   const acquisitionStatus=(currentMaster?Boolean(currentMaster.release.acquisitionProjection):legacyAcquisitionCompatible)
     ?'current' as const:'pending_update' as const;
@@ -318,12 +327,12 @@ export async function openPublicItemDetails(
     release: master.release,
     acquisitionStatus,
     async getItem(itemId: number) {
-      const definition = await master.getItem(itemId);
+      const definition = await (await legacyMaster()).getItem(itemId);
       if (!definition) return null;
       return combine(definition, await sidecar());
     },
     async getItems(itemIds: readonly number[]) {
-      const definitions = await master.getItems(itemIds);
+      const definitions = await (await legacyMaster()).getItems(itemIds);
       if (!definitions.some(Boolean)) return definitions.map(() => null);
       const origins = await sidecar();
       return definitions.map(definition =>
@@ -444,13 +453,13 @@ export async function openPublicItemDetails(
     },
     getLocalizedCompleteItems:localizedCompleteItems,
     async getItemWithSources(itemId: number) {
-      const definition = await master.getItem(itemId);
+      const definition = await (await legacyMaster()).getItem(itemId);
       if (!definition) return null;
       const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
       return combineWithSourceLinks(combine(definition, acquisition), sourceIndex);
     },
     async getItemsWithSources(itemIds: readonly number[]) {
-      const definitions = await master.getItems(itemIds);
+      const definitions = await (await legacyMaster()).getItems(itemIds);
       if (!definitions.some(Boolean)) return definitions.map(() => null);
       const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
       return definitions.map(definition =>
