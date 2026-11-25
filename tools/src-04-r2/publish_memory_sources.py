@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Publish existing memory sources without re-encoding. Local plan by default."""
+"""Generate missing 512px memory thumbnails and publish independent sources."""
 import argparse
 import json
 import os
 import re
 from pathlib import Path
-from bundle_thumbnails import image_info, write_json
+from bundle_thumbnails import image_info, write_json, resize, POLICY, MAX_EDGE
 from extract_memory_sources import read_memory_rows
 from publish_bundle_thumbnails import census, publish, key, info, check, BUCKET
 
@@ -41,6 +41,53 @@ def prepare(root, parts):
            "references":refs,"images":{v["sha256"]:v for v in objects.values()}}
     return objects,index
 
+def add_thumbnails(root,objects,index):
+    """Only resize completed images. Never resize the native masks or outlines."""
+    cache_file=root/"memory-thumbnail-cache.json"
+    cache={}
+    if cache_file.is_file():
+        previous=json.loads(cache_file.read_bytes())
+        if previous.get("policy")==POLICY:
+            cache=previous.get("images",{})
+    mapping={}
+    originals=sorted({v["Image"] for v in index["references"].values() if "Image" in v})
+    for n,sha in enumerate(originals,1):
+        original=objects[key(sha)]
+        cached=cache.get(sha)
+        thumb=None
+        if max(original["width"],original["height"])<=MAX_EDGE:
+            thumb=original
+        elif isinstance(cached,dict):
+            candidate=info(cached)
+            path=root/key(candidate["sha256"])
+            if path.is_file() and max(candidate["width"],candidate["height"])<=MAX_EDGE and candidate["width"]<=original["width"] and candidate["height"]<=original["height"]:
+                check(image_info(path.read_bytes(),candidate["sha256"])==candidate,"Cached thumbnail mismatch")
+                thumb=candidate
+        if thumb is None:
+            _,thumb,raw=resize({**original,"path":root/key(sha)})
+            path=root/key(thumb["sha256"])
+            if path.exists():
+                check(path.read_bytes()==raw,"Thumbnail collision")
+            else:
+                tmp=path.with_suffix(".tmp")
+                tmp.write_bytes(raw)
+                tmp.replace(path)
+        k=key(thumb["sha256"])
+        check(k not in objects or objects[k]==thumb,"Thumbnail metadata conflict")
+        objects[k]=thumb
+        mapping[sha]=thumb
+        if n%25==0 or n==len(originals):
+            write_json(cache_file,{"policy":POLICY,"images":{**cache,**mapping}})
+            print(f"  Memory thumbnails {n}/{len(originals)}",flush=True)
+    for refs in index["references"].values():
+        if "Image" in refs:
+            refs["Thumbnail"]=mapping[refs["Image"]]["sha256"]
+    index["schema"]="wand.media.memory-index@2"
+    index["thumbnailPolicy"]=POLICY
+    index["maxThumbnailLongEdge"]=MAX_EDGE
+    index["images"]={v["sha256"]:v for v in objects.values()}
+    return len({v["sha256"] for v in mapping.values()})
+
 def split(objects,canonical):
     existing={}
     pending={}
@@ -57,14 +104,16 @@ def main():
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--db01",type=Path,action="append",required=True)
     p.add_argument("--r2",action="store_true",help="Read public bucket and optionally publish missing images")
-    p.add_argument("--max-new-uploads",type=int,default=308)
-    p.add_argument("--max-new-bytes",type=int,default=392539518)
+    p.add_argument("--max-new-uploads",type=int,default=576)
+    p.add_argument("--max-new-bytes",type=int,default=500000000)
     a=p.parse_args()
     root=a.root.resolve()
     check(not any((x/".git").exists() for x in [root,*root.parents]),"Private working directory required")
     objects,index=prepare(root,a.db01)
+    original_count=len(objects)
+    thumbnail_count=add_thumbnails(root,objects,index)
     write_json(root/"memory-index-candidate.json",index)
-    summary={"uniqueImages":len(objects),"totalBytes":sum(v["bytes"] for v in objects.values()),"publicationVerified":False}
+    summary={"originalAndMaskImages":original_count,"uniqueThumbnails":thumbnail_count,"uniqueImages":len(objects),"totalBytes":sum(v["bytes"] for v in objects.values()),"publicationVerified":False}
     if not a.r2:
         print(json.dumps(summary,indent=2))
         return
