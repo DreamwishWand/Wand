@@ -26,6 +26,11 @@ PINS={
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
 WINDOWS=(
+ (0x410806a,48,'72028d492bf0938cd7f64912037fe13ab0b3c6ae2696a65092291ec0f8d447ff'),
+ (0x410810b,49,'c37d4063adc632b85c8bf905120c0de04bfd498c13d41b3d2a07fbc226037512'),
+ (0x41080a0,18,'66f834479adcf1ef9107eb480df32dc0157c5b6d877902e2d80360f211b58e49'),
+ (0x37c91f0,8,'163c95912674c5738efefaa6da090487c58957c11c975cfb8d4479259179f95f'),
+ (0xaa6440,8,'a2b9905bb83a58f4063dc0d01cb011ce0324f0b9e43ddbde411581c1192174ae'),
  (0x383ab10,10,'0d3a66f75f5697f2e94fd328359de1da1d0ec500322f901c3eeff4b1b63c49a0'),
  (0x383ab9a,4,'3b9112f85b93c8bee80d192c8f678356a68ca8d15e32b026647571265be67f6f'),
  (0x383abcd,10,'962301f6d839b4d0a1f764814453ace58a3a776a4a38aad390045e167dae28da'),
@@ -61,6 +66,12 @@ def audit(assembly,dump,proto,itemlist):
   require(match is not None and 'IPriceOverrider' in match[0],'INTERFACE_'+cls)
   body=schema[match.end():schema.index('\n}',match.end())]
   require(f'public const int PriceOverrideFieldNumber = {n};' in body,'FIELD_'+cls)
+ for cls,field in [('FurnitureItemData',24),('ClothingItemData',29)]:
+  match=re.search(r'^public sealed class '+cls+r'\s*:[^\n]+\n\{',schema,re.M)
+  require(match is not None and 'IIsHiddable' in match[0],'HIDDEN_INTERFACE_'+cls)
+  body=schema[match.end():schema.index('\n}',match.end())]
+  require(f'public const int IsHiddenFieldNumber = {field};' in body,'HIDDEN_FIELD_'+cls)
+ require('public abstract bool get_IsHidden();' in schema,'HIDDEN_INTERFACE_METHOD')
  for token in ['public const PriceOverride.OverrideOneofCase Price = 2;',
                'private PriceOverride.OverrideOneofCase overrideCase_; // 0x20',
                'public const ItemType Furniture = 4;',
@@ -87,10 +98,15 @@ def audit(assembly,dump,proto,itemlist):
    r=fields(row);i=one(r,1);require(i not in providers,'DUP_PROVIDER')
    providers[i]=[(one(fields(v),1),one(fields(v),2)) for n,w,v in r if n==2 and w==2]
  require(len(providers)==9537,'PROVIDER_CENSUS')
- counts=Counter();gate=Counter()
+ counts=Counter();gate=Counter();screen=Counter()
  for family,base in [('Furniture',40000000),('Clothing',50000000)]:
   for i,f in frames(authenticated(itemlist/(family+'.json'),family+'.json'),base):
    if family=='Furniture':gate[i//100000 in (400,403)]+=1
+   if family=='Furniture' and i//100000 not in (400,403):screen['excluded_by_furniture_type']+=1
+   else:
+    hidden=single(f,24 if family=='Furniture' else 29,0)
+    require(hidden in (None,0,1),'HIDDEN_WIRE')
+    screen['excluded_by_hidden' if hidden else 'not_excluded_by_reviewed_gates']+=1
    n=23 if family=='Clothing' else {400:21,403:21,401:13,407:13,402:11}.get(i//100000)
    if n is None:continue
    value=single(f,n,2)
@@ -106,9 +122,12 @@ def audit(assembly,dump,proto,itemlist):
    counts[match]+=1
  require(counts=={'amount_differs':808,'no_provider':302,'exact':25,'currency_missing':21},'OVERRIDE_CENSUS')
  require(gate=={True:5288,False:1458},'FURNITURE_GATE_CENSUS')
+ require(screen=={'excluded_by_furniture_type':1458,'excluded_by_hidden':1537,
+                 'not_excluded_by_reviewed_gates':5792},'STORE_SCREEN_CENSUS')
  return {'gameVersion':'1.26.2','platform':'Steam','nativeWindowsVerified':len(WINDOWS),
   'nativeCallEdgesVerified':len(CALLS),'matchingCurrencyExplicitOverridePrecedesProviders':True,
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
+  'storeDisplayScreen':dict(screen),'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}
 if __name__=='__main__':
