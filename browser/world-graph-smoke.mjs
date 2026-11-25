@@ -1493,7 +1493,7 @@ try{
   // A copied layout is an independent design, not a Save mutation.
   await publicWorld.locator('.mainland-overview').getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
   const capturePanel=publicWorld.locator('.design-capture');
-  await capturePanel.waitFor({timeout:30000});
+  await capturePanel.waitFor({timeout:30000}).catch(async error=>{throw Error('Capture did not open: '+(await publicWorld.innerText()).slice(0,2000),{cause:error});});
   // A previous design may be offered by the local recovery store.
   const resumeDesign=publicWorld.locator('.design-workspace').getByRole('button',{name:'作業を再開',exact:true});
   const addCapture=capturePanel.getByRole('button',{name:'装飾設計に追加',exact:true});
