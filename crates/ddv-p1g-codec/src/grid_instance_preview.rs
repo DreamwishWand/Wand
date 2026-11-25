@@ -772,7 +772,7 @@ pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64
 pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None)
 }
-pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
  let tree=m.get("tree").ok_or(CodecError::Json)?;
  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|CodecError::Json)?;
@@ -792,7 +792,31 @@ pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u6
   }Ok(())
  }
  check(tree,&catalog,&mut 1,0)?;
+ Ok(tree)
+}
+pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let tree=checked_support_scene(item,scene)?;
  support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,Some(tree))
+}
+pub(super) fn support_scene_place_candidate(profile:&[u8],item:u64,xy:(i32,i32),witness:&Value,orientation:&str,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let bad=CodecError::Json;
+ let tree=checked_support_scene(item,scene)?;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let dest=resolve_plain_grid_destination(profile,witness)?;
+ let scope=dest.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
+ if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){return Err(bad);}
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+ let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+ let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
+ if refs.blocking()>0||refs.historical>0{return Err(bad);}
+ let d=ddv_save_patch::support_clone::preview_support_scene_place(std::str::from_utf8(profile).map_err(|_|bad)?,item,&dest,xy,orientation,tree).map_err(|_|CodecError::Patch)?;
+ let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
+ let after=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+ if &subgrid_tree(after,&dest.grid_id,&next)?!=tree||!d.changed||!d.untouched_bytes_preserved||d.export_authorized||d.writer_authorized{return Err(bad);}
+ Ok(d)
 }
 fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool,scene:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
