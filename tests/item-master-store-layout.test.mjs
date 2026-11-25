@@ -293,8 +293,16 @@ test('lowest ingredient source selection uses actual fixed recipe, mission exclu
   assert.equal(fish.estimate.ingredients[0].priceSource,'native_default_if_lookup_fails');
   assert.equal(fish.nativeTieOrderVerified,false);
   const tag=await estimateSourceLowestMealSellPrice(db,30300132,2050000138);
-  assert.equal(tag.slots[0].status,'unresolved_selector');
-  assert.equal(tag.estimate,null);
+  assert.equal(tag.slots[0].status,'source_minimum');
+  assert.equal(tag.slots[0].candidateCount,8);
+  assert.deepEqual(tag.selectedIngredientIds,[30200015]);
+  assert.equal(tag.estimate.sourceSnapshotEstimate,26);
+  assert.equal(tag.estimate.tagMatchingBasis,'original_direct_tags_only');
+  const succotash=await estimateSourceLowestMealSellPrice(db,30300706,2050000663);
+  assert.equal(succotash.slots[2].candidateCount,24);
+  assert.deepEqual(succotash.selectedIngredientIds,[30200225,30200010,30200143]);
+  assert.equal(succotash.estimate.sourceSnapshotEstimate,260);
+  assert.equal(succotash.actualSellPrice,null);
   const puzzle=await estimateSourceLowestMealSellPrice(db,30300494,2050000467);
   assert(puzzle.slots.some(s=>s.status==='no_source_candidate'));
   assert.equal(puzzle.estimate,null);
