@@ -5,16 +5,8 @@
 import type {DesignItemGeometry,DesignPlacement} from './design-layout.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {localNetworkScope,type RoadPoint,type NetworkScope} from './road-design.ts';
-const priorBases=new Map<number,string>([
- [40700000,'IronBricks'],[40700007,'BambooFence01'],[40700014,'BambooFence02'],
- [40700021,'ChainFence01'],[40700028,'ChainFence02'],[40700035,'DarkMountainFence'],
- [40700042,'DarkWoodFence'],[40700049,'UrbanWhiteFence'],[40700060,'AncientFence'],
- [40700067,'AtlanteanFence01'],[40700081,'IronFence01'],[40700088,'WoodenFence01'],
- [40700104,'LionKingFences01'],[40700112,'MythopiaFence01'],[40700191,'ClassicFarmFence'],
- [40700202,'ClassicFarmFenceSnow'],[40700213,'RusticLogFence'],[40700224,'RusticLogFenceSnow'],
- [40700246,'Biome2Fence'],[40700257,'BirdFeathersFence'],[40700268,'FairyLightFence'],
- [40700279,'LuxuriousWhiteFence'],[40700295,'ClassicFarmFence01'],[40700306,'HoneyLimestoneFence']
-]);
+import {fenceFamilyCandidates} from './fence-family-catalog.ts';
+const priorBases=new Map(fenceFamilyCandidates.map(f=>[f.base,f.name]));
 export function knownFenceBaseId(id:number){return priorBases.has(id);}
 const normalize=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
 export function fenceBaseIdentity(id:number,nativeKey:unknown){

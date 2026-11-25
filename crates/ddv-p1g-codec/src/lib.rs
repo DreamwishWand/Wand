@@ -1735,7 +1735,8 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_FENCE_PLAN_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(o.len()==3||o.len()==4)&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"diagonal"))).ok_or_else(invalid)?;
+            let diagonal=match o.get("diagonal"){None=>false,Some(v)=>v.as_bool().ok_or_else(invalid)?};
             let base=o.get("base").and_then(|v|v.as_u64()).and_then(|n|u32::try_from(n).ok()).filter(|n|ddv_save_patch::fence_topology::supported_family(*n)).ok_or_else(invalid)?;
             let nodes=o.get("nodes").and_then(|v|v.as_array()).filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::fence_topology::MAX_FENCE_NODES).ok_or_else(invalid)?;
             let mut xy=Vec::new();for n in nodes{
@@ -1747,13 +1748,19 @@ mod browser_amount_preview {
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
             if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
-            let edges=ddv_save_patch::fence_topology::cardinal_fence_graph(&xy,dest.tessellation).map_err(|_|invalid())?;
-            let parts=ddv_save_patch::fence_topology::compile_fence(base,dest.tessellation,false,&xy,&edges).map_err(|_|invalid())?;
+            let edges=if diagonal{
+                let q=dest.tessellation as i32;
+                if xy.len()<2||xy.iter().any(|&(x,y)|x<0||y<0||x>131072||y>131072){return Err(invalid());}
+                let dx=xy[1].0-xy[0].0;let dy=xy[1].1-xy[0].1;
+                if dx.abs()!=q||dy.abs()!=q||xy.windows(2).any(|p|p[1].0-p[0].0!=dx||p[1].1-p[0].1!=dy){return Err(invalid());}
+                xy.windows(2).map(|p|(p[0],p[1])).collect()
+            }else{ddv_save_patch::fence_topology::cardinal_fence_graph(&xy,dest.tessellation).map_err(|_|invalid())?};
+            let parts=ddv_save_patch::fence_topology::compile_fence(base,dest.tessellation,diagonal,&xy,&edges).map_err(|_|invalid())?;
             let next=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&dest.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(|v|v.as_u64()).ok_or_else(invalid)?;
             let ids=(0..parts.len()).map(|offset|next.checked_add(offset as u64).map(|n|n.to_string()).ok_or_else(invalid)).collect::<Result<Vec<_>,_>>()?;
             let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids).map_err(|_|invalid())?;
             if refs.blocking()>0||refs.historical>0{return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
-            let draft=ddv_save_patch::preview_isolated_fence(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,false,&xy,&edges).map_err(|_|invalid())?;
+            let draft=ddv_save_patch::preview_isolated_fence(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,diagonal,&xy,&edges).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
         pub fn prepare_cardinal_road_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{

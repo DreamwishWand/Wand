@@ -1,6 +1,7 @@
 import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {createSourceGeometryCache} from './source-object-map.ts';
+import {fenceFamily,fenceFamilyCandidates} from './fence-family-catalog.ts';
 import {fenceBaseDefinition} from './fence-design.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
 import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
@@ -102,8 +103,8 @@ scope.onmessage=async({data})=>{
       const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
       const q=grid.factor;
       const verifyFamily=(itemId:number)=>{
-        const family=itemId===40700246?'biome2fence':itemId===40700268?'fairylightfence':null;
-        if(!family)throw Error('unsupported family');
+        const entry=fenceFamily(itemId),family=entry?.name.toLowerCase().replace(/[^a-z0-9]/g,'');
+        if(!entry||!family)throw Error('unsupported family');
         const base=definitions.get(String(itemId));
         if(!base||!fenceBaseDefinition(itemId,base))throw Error('base');
         const shapeFor=(id:number,code:number,w:number,h:number)=>{
@@ -114,7 +115,7 @@ scope.onmessage=async({data})=>{
         const baseShape=shapeFor(itemId,8,q,q);
         if(baseShape.acceptedFloorTypesFlag===undefined)throw Error('fence mask');
         for(let k=1;k<=6;k++){
-          const id=itemId+k,d=definitions.get(String(id)),name=String(d?.nativeName??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const id=entry.ext[k-1],d=definitions.get(String(id)),name=String(d?.nativeName??'').toLowerCase().replace(/[^a-z0-9]/g,'');
           const f=d?.footprint as {sizeX?:number;sizeY?:number}|null|undefined;
           if(d?.nativeType!=='Furniture'||!name.includes(family)||!name.includes('ext')||name.includes('diag')||f?.sizeX!==k||f?.sizeY!==1)throw Error('fence variation');
           for(const [code,w,h] of [[8,k*q,q],[12,q,k*q]])if(shapeFor(id,code,w,h).acceptedFloorTypesFlag!==baseShape.acceptedFloorTypesFlag)throw Error('fence mask');
@@ -122,12 +123,32 @@ scope.onmessage=async({data})=>{
         return baseShape.acceptedFloorTypesFlag;
       };
       const mask=verifyFamily(data.itemId);
+      let diagonalVerified=false;
+      try{
+        const f=fenceFamily(data.itemId)!;
+        for(let k=1;k<=4;k++){
+          const id=f.diagExt[k-1],d=definitions.get(String(id));
+          const name=String(d?.nativeName??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const fp=d?.footprint as {sizeX?:number;sizeY?:number}|null|undefined;
+          if(d?.nativeType!=='Furniture'||!name.includes(f.name.toLowerCase().replace(/[^a-z0-9]/g,''))||!name.includes('diag')||!name.includes('ext')||fp?.sizeX!==k||fp?.sizeY!==k)throw Error('diagonal family');
+          for(const code of [8,12]){
+            const item=cache.resolve(id,code),shape=item.shapeKey?cache.shapes[item.shapeKey]:null;
+            if(!shape||item.layer!=='fence'||shape.width!==k*q||shape.height!==k*q||shape.acceptedFloorTypesFlag!==mask||nativeActionBlocked(item.editRestrictions,'select'))throw Error('diagonal shape');
+          }
+        }
+        diagonalVerified=true;
+      }catch{/* Cardinal mode remains available. */}
+
+      const options:number[]=[];
+      if(data.replacement===undefined){for(const f of fenceFamilyCandidates){if(f.base===data.itemId)continue;try{if(verifyFamily(f.base)===mask)options.push(f.base);}catch{/* Not current-source verified; omit. */}}}
+      const localized=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const replacementOptions=options.map(id=>({id,name:localized.get(id)??fenceFamily(id)!.name})).sort((a,b)=>a.name.localeCompare(b.name,data.locale));
       let replacementVerified=false;
       if(data.replacement!==undefined){
         if(data.replacement===data.itemId||verifyFamily(data.replacement)!==mask)throw Error('replacement mask');
         replacementVerified=true;
       }
-      scope.postMessage({kind:'fence-family',requestId:id,key:grid.key,itemId:data.itemId,factor:q,verified:true,replacement:data.replacement,replacementVerified});return;
+      scope.postMessage({kind:'fence-family',requestId:id,key:grid.key,itemId:data.itemId,factor:q,verified:true,replacement:data.replacement,replacementVerified,replacementOptions,diagonalVerified});return;
     }
     if(data.command==='design-catalog'){
       const locale=data.locale as WandLanguage;
