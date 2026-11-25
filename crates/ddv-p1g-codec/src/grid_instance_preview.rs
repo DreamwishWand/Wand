@@ -1928,6 +1928,33 @@ mod terrain_session_tests{
         assert!(support_scene_place_candidate(&serde_json::to_vec(&conflict).unwrap(),40005160,(10,12),&witness,"GridOrientation_Left",&scene).is_err());
         let mut no_stock=blank.clone();no_stock["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"]=Value::from(0);
         assert!(support_scene_place_candidate(&serde_json::to_vec(&no_stock).unwrap(),40005160,(10,12),&witness,"GridOrientation_Left",&scene).is_err());
+        // Two identical support roots with different orientations and a
+        // plain root share a single stock and allocation transaction.
+        let mut mixed=blank.clone();
+        for (id,n) in [("40005160",2),("40005161",2),("40005162",5)]{
+            mixed["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"]=Value::from(n);
+        }
+        let raw_mixed=serde_json::to_vec(&mixed).unwrap();
+        let mut rows=serde_json::json!([
+            {"itemId":"40005160","x":2,"y":2,"orientation":"GridOrientation_Down","destination":witness,"scene":scene},
+            {"itemId":"40005162","x":6,"y":6,"orientation":"GridOrientation_Down","destination":witness},
+            {"itemId":"40005160","x":10,"y":12,"orientation":"GridOrientation_Left","destination":witness,"scene":scene}
+        ]);
+        let result=group_paste_candidate(&raw_mixed,&rows.to_string()).unwrap();
+        let result:Value=serde_json::from_str(&result).unwrap();
+        let c=result["World"]["GridCollection"].as_object().unwrap();
+        assert_eq!(c["NextGridID"],24);
+        assert_eq!(subgrid_tree(c,"7","2").unwrap(),scene["tree"]);
+        assert_eq!(subgrid_tree(c,"7","4").unwrap(),scene["tree"]);
+        assert_eq!(c["Grids"]["7"]["Objects"]["3"]["ItemID"],40005162);
+        assert_eq!(c["Grids"]["7"]["NextGridObjectID"],5);
+        for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+        assert_eq!(c["Grids"]["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
+        assert_eq!(c["Grids"]["7"]["Objects"]["4"]["State"]["SubGrid"]["GridID"],22);
+        // Failure after staging the first roots must return no candidate.
+        assert!(group_paste_candidate(&raw,&rows.to_string()).is_err());
+        rows[2]["x"]=Value::from(2);rows[2]["y"]=Value::from(2);
+        assert!(group_paste_candidate(&raw_mixed,&rows.to_string()).is_err());
         let run=|v:&Value|support_parent_duplicate_candidate(&serde_json::to_vec(v).unwrap(),1,40005160,(4,6),(10,12),&witness,None,None);
         let mut bad=original.clone();bad["World"]["GridCollection"]["NextGridID"]=Value::from(9);assert!(run(&bad).is_err());
         let mut bad=original.clone();bad["World"]["FutureGridID"]=Value::from(21);assert!(run(&bad).is_err());
