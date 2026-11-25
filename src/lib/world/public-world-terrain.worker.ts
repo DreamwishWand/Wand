@@ -119,12 +119,13 @@ scope.onmessage=async({data})=>{
       if(!release)throw Error('source');
       const scene=parseSupportScene(JSON.stringify(data.scene));
       const definitions=await loadGeometry();let total=1;
+      const itemIds=new Set<number>([scene.ownerItemId]);
       async function check(owner:number,t:SupportTree,depth:number):Promise<boolean>{
         if(depth>8||!t.sourcePath)return false;
         const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
         const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},t.factor);
         for(const o of t.objects){
-          if(++total>32)return false;
+          if(++total>32)return false;itemIds.add(o.itemId);
           const code=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4;
           const p=cache.resolve(o.itemId,code);
           if(!p.shapeKey||p.layer!=='furniture'||nativeActionBlocked(p.editRestrictions,'select')||nativeActionBlocked(p.editRestrictions,'move')||nativeActionBlocked(p.editRestrictions,'remove'))return false;
@@ -138,7 +139,9 @@ scope.onmessage=async({data})=>{
         }
         return true;
       }
-      scope.postMessage({kind:'support-scene-geometry',requestId:id,valid:await check(scene.ownerItemId,scene.tree,0)});return;
+      const valid=await check(scene.ownerItemId,scene.tree,0);
+      const names=valid&&typeof data.locale==='string'?new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage)):new Map<number,string>();
+      scope.postMessage({kind:'support-scene-geometry',requestId:id,valid,names:[...itemIds].flatMap(itemId=>names.has(itemId)?[[itemId,names.get(itemId)]]:[])});return;
     }
     if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');

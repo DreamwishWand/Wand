@@ -38,7 +38,7 @@ fn reserved_ref(v:&Value,ids:&HashSet<u32>,grid_context:bool)->bool{
 }
 struct CloneTree<'a>{
  grids:&'a Map<String,Value>,diff:Option<&'a Map<String,Value>>,seen:HashSet<u32>,
- next:u32,created:Vec<(u32,Value)>,stock:Vec<u64>,templates:HashMap<u64,Vec<u32>>,plain:HashSet<u64>
+ next:u32,created:Vec<(u32,Value)>,stock:Vec<u64>,templates:HashMap<u64,Vec<u32>>,plain:HashSet<u64>,source_only:bool
 }
 impl CloneTree<'_>{
  fn clone_grid(&mut self,old:u32,owner:u64,depth:usize)->Result<u32,PatchError>{
@@ -68,11 +68,11 @@ impl CloneTree<'_>{
   let path=m.get("sourcePath").and_then(Value::as_str).ok_or(BAD)?;
   let factor=m.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(BAD)?;
   let rows=m.get("objects").and_then(Value::as_array).filter(|a|a.len()<LIMIT).ok_or(BAD)?;
-  let template_ids=self.templates.get(&owner).ok_or(BAD)?;
+  let template_ids=self.templates.get(&owner);
   // Use only observed native metadata for this owner/path/factor, not
   // arbitrary grid metadata supplied by the portable document.
   let mut template=None;
-  for old in template_ids{
+  for old in template_ids.into_iter().flatten(){
    let g=self.grids.get(&old.to_string()).ok_or(BAD)?;
    if g.get("GridDataPath").and_then(Value::as_str)!=Some(path)||g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(factor){continue;}
    let mut shape=g.clone();let m=shape.as_object_mut().ok_or(BAD)?;
@@ -80,7 +80,7 @@ impl CloneTree<'_>{
    if template.as_ref().is_some_and(|v|v!=&shape){return Err(BAD);}
    template=Some(shape);
   }
-  let mut g=template.ok_or(BAD)?;
+  let mut g=if self.source_only{serde_json::json!({"GridDataPath":path,"TessellationFactor":factor})}else{template.ok_or(BAD)?};
   let fresh=self.next;self.next=self.next.checked_add(1).ok_or(BAD)?;
   let slot=self.created.len();self.created.push((fresh,Value::Null));
   let mut objects=Map::new();let mut anchors=HashSet::new();
@@ -95,7 +95,7 @@ impl CloneTree<'_>{
    self.stock.push(i);
    let mut value=serde_json::json!({"ID":key.parse::<u32>().map_err(|_|BAD)?,"ItemID":i,"X":xy.0,"Y":xy.1,"Orientation":orientation});
    let child=o.get("child").ok_or(BAD)?;
-   if child.is_null(){if !self.plain.contains(&i)||self.templates.contains_key(&i){return Err(BAD);}}
+   if child.is_null(){if !self.source_only&&(!self.plain.contains(&i)||self.templates.contains_key(&i)){return Err(BAD);}}
    else{let id=self.scene_grid(i,child,depth+1)?;value["State"]=serde_json::json!({"SubGrid":{"GridID":id,"DesignID":null}});}
    objects.insert(key,value);
   }
@@ -127,14 +127,36 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
  if dest.values().any(|o|o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let child=state_child(src)?.ok_or(BAD)?;
- let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![target.item_id],templates:HashMap::new(),plain:HashSet::new()};
+ let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![target.item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:false};
  let cloned=tree.clone_grid(child,target.item_id,0)?;
  let new_child=if let Some(scene)=scene{
   tree.next=next;tree.created.clear();tree.stock=vec![target.item_id];
   tree.scene_grid(target.item_id,scene,0)?
  }else{cloned};
+ let mut state=src.get("State").cloned().ok_or(BAD)?;state["SubGrid"]["GridID"]=Value::from(new_child);
+ install(source,&root,target,d,xy,orientation,next,tree,state)
+}
+/// Place a source-bound portable scene with no existing native template.
+/// The codec/UI must verify each owner/path and native terrain before calling.
+pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400{return Err(BAD);}
+ let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ let next=id(c.get("NextGridID").ok_or(BAD)?)?;
+ if next==0||grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
+ let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
+ if dest.values().any(|o|o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
+ let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id};
+ let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:true};
+ let new_child=tree.scene_grid(item_id,scene,0)?;
+ install(source,&root,&target,d,xy,orientation,next,tree,serde_json::json!({"SubGrid":{"GridID":new_child,"DesignID":null}}))
+}
+fn install(source:&str,root:&Value,target:&GridCoordinateTarget,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,next:u32,tree:CloneTree<'_>,state:Value)->Result<GridCoordinateDraft,PatchError>{
  let reserved=(next..tree.next).collect::<HashSet<_>>();
- if reserved_ref(&root,&reserved,false){return Err(BAD);}
+ if reserved_ref(root,&reserved,false){return Err(BAD);}
  let inventory=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(Value::as_object).ok_or(BAD)?;
  let mut amounts=HashMap::new();for i in &tree.stock{let v=inventory.get(&i.to_string()).and_then(|v|v.get("Amount")).ok_or(BAD)?;amounts.insert(*i,id(v)?);}
  let mut working=source.to_owned();
@@ -149,6 +171,5 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  let mut patches=[(mr.end-1..mr.end-1,members),(cr,tree.next.to_string())];patches.sort_unstable_by_key(|(r,_)|r.start);
  let mut candidate=String::new();let mut last=0;for (r,v) in patches{if r.start<last{return Err(BAD);}candidate.push_str(&working[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&working[last..]);
  validate_json_without_edit(&candidate)?;
- let mut state=src.get("State").cloned().ok_or(BAD)?;state["SubGrid"]["GridID"]=Value::from(new_child);
  insert_grid_record(&candidate,d,target.item_id,xy,orientation,Some(&serde_json::to_string(&state).map_err(|_|BAD)?))
 }
