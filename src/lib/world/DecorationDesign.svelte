@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
  import {snapWorldRoad,worldRoadStroke,worldRoadPlan,worldRoadComponent,replaceWorldRoad} from './world-road-lattice.ts';
  import NetworkStyleControls from './NetworkStyleControls.svelte';
@@ -38,6 +39,10 @@
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
+ export let capturedLayout:SaveDesignCapture|null=null;
+ export let onDismissCapture:()=>void=()=>{};
+ $: captureText=captureWords[locale]??captureWords.en;
+ $: visibleCapture=capturedLayout&&worldFrame?.scope===capturedLayout.scope?capturedLayout:null;
  export let layerState:WorldLayerState=defaultWorldLayers();
  let layersOpen=false;
  let seenLayers=layerState;
@@ -241,7 +246,7 @@
  function togglePlacedSearch(){closeNetworkStyle();placedSearchOpen=!placedSearchOpen;if(placedSearchOpen){inspectorOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
 
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
- let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>}|null=null;
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
   en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
@@ -280,6 +285,17 @@
    own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
+ }
+ function addCapturedLayout(){
+  const capture=visibleCapture;if(!capture||!grid||!worldFrame||!worker||busyImport)return;
+  error='';
+  try{
+   const sourceAreas=new Map<number,string>(),incoming=parseMainlandDesign(capture.text,worldFrame,sourceAreas);
+   if(incoming.length!==capture.count)throw Error('capture count');
+   cancel();const id=nextRequest();
+   pendingImport={id,key:grid.key,placements:incoming,timeline,sourceAreas,capture};
+   worker.postMessage({command:'design-shapes',requestId:id,key:grid.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
+  }catch{pendingImport=null;error=words[3];}
  }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
@@ -332,11 +348,13 @@
      if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
      const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(worldFrame&&(!pending.sourceAreas||!mainlandImportMatches(worldFrame,pending.placements,incoming,pending.sourceAreas))){error=words[3];return;}
-     const next=restoreDesign(timeline,pending.placements,incoming,width,height);
+     if(pending.capture&&pending.capture!==capturedLayout)return;
+     const merged=new Map([...definitions,...incoming]);
+     const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;groupIds=[];cancel();layouts={...layouts,[contextKey]:next};persistRecovery(next);error='';return;
+     selected=null;groupIds=[];cancel();if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -612,6 +630,7 @@
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
+   {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
    {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
    {:else if recoveryBlocked}<p role="status">{rw[3]}</p>
@@ -707,6 +726,7 @@
  </div>
 {/if}
 <style>
+ .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
  .file-input{display:none}
  .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
  .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}

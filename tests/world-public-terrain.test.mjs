@@ -269,3 +269,24 @@ test('road lattice follows odd source origins and preserves a single world timel
  assert.equal(worldRoadPlan(f,start,a,[off,{x:off.x+8,y:off.y}],false),null);
  assert.equal(currentDesign(travelDesign(next,-1)).length,0);
 });
+
+import {captureSaveDesign,mergeSaveDesign} from '../src/lib/world/save-design-capture.ts';
+test('copy real source-local furniture to independent world design with fresh local IDs and undoable non-destructive merge',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
+ const rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]));
+ rasters.get(g.key).nativeFloorValues[6*g.sizeX+4]=4;
+ const shape={width:1,height:1,runs:[{x:0,y:0,width:1}],cellCount:1,path:'M0 0h1v1H0Z'};
+ const o={localOrdinal:987654,localGridOrdinal:777,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',shapeKey:'40005160:8',orientationCode:8,name:'Fixture',layer:'furniture',surfaceCapable:false};
+ const m={layoutId:g.layoutId,gridIdNative:g.gridIdNative,gridDataPath:g.gridDataPath,sourceGridFactor:g.factor,objects:[o],shapes:{[o.shapeKey]:shape},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
+ const a={area:g.key,object:o,shape,factor:g.factor,...mainlandMapAnchor(g,o.x,o.y)},maps=new Map([[g.key,m]]);
+ const capture=captureSaveDesign(grids,rasters,maps,[a,{...a,object:{...o,localOrdinal:987655,subgrid:{status:'resolved_full',objectCount:1}}}],2);
+ assert.equal(capture.count,1);assert.equal(capture.omitted,3);assert.ok(!capture.text.includes('987654')&&!capture.text.includes('localOrdinal'));
+ const frame=composeMainlandDesignFrame(grids,rasters),incoming=parseMainlandDesign(capture.text,frame);
+ const def={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:m.shapes},defs=new Map([[def.itemId,def]]);
+ const first=mergeSaveDesign(emptyDesign(),incoming,defs,frame.raster.sizeX,frame.raster.sizeY);
+ assert.equal(currentDesign(first).length,1);assert.equal(first.cursor,1);
+ assert.equal(mergeSaveDesign(first,incoming,defs,frame.raster.sizeX,frame.raster.sizeY),first);
+ const second=mergeSaveDesign(first,[...incoming,{...incoming[0],id:2}],defs,frame.raster.sizeX,frame.raster.sizeY);
+ assert.equal(currentDesign(second).length,2);assert.equal(second.cursor,2);
+ assert.deepEqual(second.snapshots[1],currentDesign(first));
+});

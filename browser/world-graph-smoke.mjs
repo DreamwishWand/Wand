@@ -1490,6 +1490,17 @@ try{
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).waitFor({timeout:30000});
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).click();
   await publicWorld.locator('.world-export').getByRole('link',{name:'編集済みコピーを保存',exact:true}).waitFor({timeout:30000});
+  // A copied layout is an independent design, not a Save mutation.
+  await publicWorld.locator('.mainland-overview').getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
+  const capturePanel=publicWorld.locator('.design-capture');
+  await capturePanel.waitFor({timeout:30000});
+  // A previous design may be offered by the local recovery store.
+  const resumeDesign=publicWorld.locator('.design-workspace').getByRole('button',{name:'作業を再開',exact:true});
+  if(await resumeDesign.isVisible())await resumeDesign.click();
+  const addCapture=capturePanel.getByRole('button',{name:'装飾設計に追加',exact:true});
+  await addCapture.click({timeout:30000});
+  await capturePanel.waitFor({state:'detached',timeout:30000});
+  await publicWorld.locator('.design-coordinate-space .design-object').first().waitFor({timeout:30000});
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();
