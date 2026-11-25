@@ -24,12 +24,19 @@ export interface ItemFieldProjection {
 }
 export type ItemFieldMatch={readonly kind:'present'}|
   {readonly kind:'equals'|'contains';readonly value:ItemFieldScalar};
+/** OR within one field, AND across fields. An absent sparse row never equals null. */
+export interface ItemFieldFilter {
+  readonly field:string;
+  readonly anyOf:readonly ItemFieldMatch[];
+}
 export interface ItemFieldReader {
   getFieldCatalog():Promise<readonly ItemFieldInfo[]>;
   getFieldRows(field:string):Promise<readonly ItemFieldRow[]>;
   getItemFields(ids:readonly number[],fields:readonly string[]):
     Promise<readonly (Readonly<ItemFieldProjection>|null)[]>;
   findItemIdsByField(field:string,match:ItemFieldMatch):Promise<readonly number[]>;
+  /** Whole-catalog intersection without fetching full definitions or unrelated columns. */
+  findItemIdsByFields(filters:readonly ItemFieldFilter[]):Promise<readonly number[]>;
 }
 type AssetInfo=Readonly<{count:number;bytes:number;sha256:string}>;
 const FIELD=/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){0,16}$/;
@@ -41,6 +48,14 @@ function check(v:unknown,code:string):asserts v{
 function scalar(v:unknown):v is ItemFieldScalar{
   return v===null||typeof v==='string'||typeof v==='boolean'||
     typeof v==='number'&&Number.isFinite(v);
+}
+function validMatch(match:unknown):match is ItemFieldMatch{
+  return obj(match)&&(match.kind==='present'||
+    (match.kind==='equals'||match.kind==='contains')&&scalar(match.value));
+}
+function matches(value:ItemFieldValue,match:ItemFieldMatch):boolean{
+  return match.kind==='present'||(match.kind==='equals'?value===match.value:
+    Array.isArray(value)&&value.some(v=>v===match.value));
 }
 function valid(v:unknown,depth=0):v is ItemFieldValue{
   return depth<=24&&(scalar(v)||Array.isArray(v)&&v.every(x=>valid(x,depth+1))||
@@ -142,12 +157,27 @@ export function createItemFieldReader(
       return Object.freeze(ids.map(id=>output.get(id)??null));
     },
     async findItemIdsByField(field:string,match:ItemFieldMatch){
-      check(obj(match)&&(match.kind==='present'||
-        (match.kind==='equals'||match.kind==='contains')&&scalar(match.value)),'INVALID_MATCH');
-      const found=(await rows(field)).filter(([,value])=>match.kind==='present'||
-        (match.kind==='equals'?value===match.value:
-          Array.isArray(value)&&value.some(v=>v===match.value)));
+      check(validMatch(match),'INVALID_MATCH');
+      const found=(await rows(field)).filter(([,value])=>matches(value,match));
       return Object.freeze(found.map(([id])=>id));
+    },
+    async findItemIdsByFields(filters:readonly ItemFieldFilter[]){
+      check(Array.isArray(filters)&&filters.length>0&&filters.length<=32&&
+        filters.every(f=>obj(f)&&fieldName(f.field)&&Array.isArray(f.anyOf)&&
+          f.anyOf.length>0&&f.anyOf.length<=64&&f.anyOf.every(validMatch)),'INVALID_FILTERS');
+      // Validate every requested field even if an earlier intersection is empty.
+      // Starting with sparse columns avoids fetching blocks for unrelated IDs.
+      const planned=await Promise.all(filters.map(async (f:ItemFieldFilter)=>({
+        field:f.field,anyOf:[...f.anyOf],count:(await info(f.field)).count
+      })));
+      planned.sort((a,b)=>a.count-b.count);
+      let ids: Set<number>|undefined;
+      for(const f of planned){
+        if(ids?.size===0)break;
+        const values=await rows(f.field,ids);
+        ids=new Set(values.filter(([,value])=>f.anyOf.some(m=>matches(value,m))).map(([id])=>id));
+      }
+      return Object.freeze([...(ids??[])].sort((a,b)=>a-b));
     }
   });
 }
