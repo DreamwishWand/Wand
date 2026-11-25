@@ -3,7 +3,7 @@
  * These are configured source amounts, not live shop quotes or sale eligibility.
  */
 import {ITEM_MASTER_LOCALES,type PublicCompleteItemMaster,type ItemMasterLocale,type OriginalItemPriceFacts,
-  type ConfiguredItemPriceOverride} from './public-item-master.ts';
+  type ConfiguredItemPriceOverride,type OriginalItemSaleFlags} from './public-item-master.ts';
 
 export interface ItemPriceCurrency {
   readonly itemId:number;
@@ -27,6 +27,7 @@ export interface ItemPriceDetails {
   readonly sell:readonly Readonly<ItemConfiguredPrice>[];
   /** Retain currency-only, incomplete and non-audited overrides separately. */
   readonly configuredOverride:Readonly<ConfiguredItemPriceOverride>;
+  readonly saleFlags:Readonly<OriginalItemSaleFlags>;
   readonly runtimePriceVerified:false;
   readonly runtimeSaleEligibilityVerified:false;
 }
@@ -36,7 +37,7 @@ function check(ok:unknown,code:string):asserts ok{
 export async function readItemPriceDetails(db:PublicCompleteItemMaster,ids:readonly number[],locale:ItemMasterLocale):
   Promise<readonly (Readonly<ItemPriceDetails>|null)[]>{
   check(ITEM_MASTER_LOCALES.includes(locale),'LOCALE');
-  const [prices,overrides]=await Promise.all([db.getOriginalItemPrices(ids),db.getConfiguredPriceOverrides(ids)]);
+  const [prices,overrides,saleFlags]=await Promise.all([db.getOriginalItemPrices(ids),db.getConfiguredPriceOverrides(ids),db.getOriginalItemSaleFlags(ids)]);
   const currencies=new Set<number>();
   for(let i=0;i<prices.length;i++){
     const p=prices[i],o=overrides[i];
@@ -60,7 +61,7 @@ export async function readItemPriceDetails(db:PublicCompleteItemMaster,ids:reado
   }
   return Object.freeze(prices.map((p,i)=>{
     if(!p)return null;
-    const o=overrides[i];check(o&&o.itemId===p.itemId,'ITEM_JOIN');
+    const o=overrides[i],flags=saleFlags[i];check(o&&flags&&o.itemId===p.itemId&&flags.itemId===p.itemId,'ITEM_JOIN');
     const make=(currencyItemId:number,amount:number|null,amountFieldPresent:boolean,source:ItemConfiguredPrice['source'])=>
       Object.freeze({currencyItemId,currency:byId.get(currencyItemId)??null,amount,amountFieldPresent,source,
         liveTransactionVerified:false as const});
@@ -76,7 +77,7 @@ export async function readItemPriceDetails(db:PublicCompleteItemMaster,ids:reado
     if(n)buy.set(n.currencyItemId,make(n.currencyItemId,n.amount,true,'explicit_override'));
     return Object.freeze({itemId:p.itemId,gameVersion:db.release.target.gameVersion,
       originalPriceStatus:p.status,purchase:Object.freeze([...buy.values()].sort((a,b)=>a.currencyItemId-b.currencyItemId)),
-      sell:Object.freeze(sell.sort((a,b)=>a.currencyItemId-b.currencyItemId)),configuredOverride:o,
+      sell:Object.freeze(sell.sort((a,b)=>a.currencyItemId-b.currencyItemId)),configuredOverride:o,saleFlags:flags,
       runtimePriceVerified:false as const,runtimeSaleEligibilityVerified:false as const});
   }));
 }

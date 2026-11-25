@@ -105,7 +105,7 @@ export function stageWorldAlignment(map:SavedShapeMap,t:WorldEditTimeline,ordina
  const targets=alignmentTargets(effective,selected,mode);
  return targets?stageWorldTargets(map,t,targets,warning):null;
 }
-function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:readonly GroupTarget[],warning:string):WorldEditTimeline|null{
+export function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:readonly GroupTarget[],warning:string):WorldEditTimeline|null{
   if(targets.length<2||targets.length>WORLD_BATCH_LIMIT)return null;
   const ids=new Set(targets.map(o=>o.ordinal));if(ids.size!==targets.length)return null;
   const previous=currentWorldEdits(t),effectiveMap=projectWorldEdits(map,previous);

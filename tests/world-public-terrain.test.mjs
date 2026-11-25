@@ -293,3 +293,23 @@ test('copy real source-local furniture to independent world design with fresh lo
  assert.equal(currentDesign(second).length,2);assert.equal(second.cursor,2);
  assert.deepEqual(second.snapshots[1],currentDesign(first));
 });
+
+import {savedAdjacentNetwork} from '../src/lib/world/saved-adjacent-network.ts';
+test('same-style cardinal road cells select only their source grid and translate atomically',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
+ const rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]));
+ const r=rasters.get(g.key);for(let y=6;y<8;y++)for(let x=4;x<10;x++)r.nativeFloorValues[y*r.sizeX+x]=4;
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:'M0 0h2v2H0Z'};
+ const o={localOrdinal:1,localGridOrdinal:3,itemId:'40100068',x:4,y:6,orientation:'GridOrientation_Down',shapeKey:'40100068:8',orientationCode:8,name:'Path_MainStreet',layer:'ground',surfaceCapable:false};
+ const p={...o,localOrdinal:2,x:6};
+ const m={layoutId:g.layoutId,gridIdNative:g.gridIdNative,gridDataPath:g.gridDataPath,sourceGridFactor:g.factor,objects:[o,p],shapes:{[o.shapeKey]:shape},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
+ const wrap=object=>({area:g.key,object,shape,factor:g.factor,...mainlandMapAnchor(g,object.x,object.y)});
+ const a=wrap(o),b=wrap(p),foreign={...b,area:'elsewhere',object:{...p,localOrdinal:3,x:8}};
+ assert.deepEqual(savedAdjacentNetwork(a,[a,b,foreign]),[1,2]);
+ assert.deepEqual(savedAdjacentNetwork(a,[a,b,{...b,object:{...p,localOrdinal:4}}]),[]);
+ const result=mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,m]]),emptyWorldTimeline(),2,0);
+ assert.ok(result.next);
+ assert.deepEqual(currentWorldEdits(result.next).map(e=>e.plan.replacementX),[6,8]);
+ const occupied={...m,objects:[o,p,{...p,localOrdinal:4,x:8}]};
+ assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
+});

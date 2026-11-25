@@ -686,6 +686,10 @@ function buildReferenceColumns(rows){
         check(categories.get(value)==='Currency','MACHINE_COST_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='DutyAch'&&/^source\.StepDifficultyLayers\[\d+\]\.Rewards\[\d+\]\.Id$/.test(path)){
         check(categories.get(value)==='Currency','DUTY_REWARD_REFERENCE');emit(value,path);
+      }else if(row.sourceClass==='RecipeItemData'&&/^source\.Ingredients\[\d+\]\.(?:Any|TagsList\.List\[\d+\])$/.test(path)){
+        check(categories.get(value)==='Tag','RECIPE_INGREDIENT_TAG_REFERENCE');emit(value,path);
+      }else if(row.sourceClass==='RecipeItemData'&&/^source\.Ingredients\[\d+\]\.ValidItemsList\.List\[\d+\]$/.test(path)){
+        check(categories.get(value)==='ActivityItem','RECIPE_ALTERNATIVE_ITEM_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='ActivityData'&&/^source\.(?:Location|Locations\[\d+\])\.Scene$/.test(path)){
         check(categories.get(value)==='Scene','ACTIVITY_SCENE_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='ConditionalEvent'&&/^source\.SetDialogueFlag\.Flag$/.test(path)){
