@@ -8,6 +8,9 @@
   import {acquireCollectionEvidenceClient,type CollectionEvidenceHandle}
     from './source-evidence-client.ts';
 
+  import type {CollectionConcreteAcquisition} from './concrete-acquisition.ts';
+  import type {ItemMasterLocale} from '../items/public-item-master.ts';
+
   export let itemId:number;
   export let locale:string='ja';
   $: copy=collectionAcquisitionCopy(locale);
@@ -20,6 +23,28 @@
   let destroyed=false;
   let summary:CollectionAcquisitionWithDistribution|null=null;
   let client:CollectionEvidenceHandle|null=null;
+  let concrete:CollectionConcreteAcquisition|null=null;
+  let concreteKey:string|null=null;
+  let concreteTicket=0;
+  let concreteLoading=false;
+  let concreteFailed=false;
+  const supportedLocales:readonly ItemMasterLocale[]=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
+  function loadConcrete(id:number,language:string):void{
+    if(!Number.isSafeInteger(id)||id<=0)return;
+    const selected=supportedLocales.find(l=>l===language)??'ja';
+    concreteKey=id+'|'+language;concrete=null;concreteLoading=true;concreteFailed=false;
+    const ticket=++concreteTicket;
+    try{
+      client??=acquireCollectionEvidenceClient();
+      void client.loadConcreteAcquisition(id,base,selected).then(result=>{
+        if(destroyed||ticket!==concreteTicket||id!==itemId||language!==locale)return;
+        concrete=result;concreteLoading=false;
+      },()=>{
+        if(destroyed||ticket!==concreteTicket||id!==itemId||language!==locale)return;
+        concreteLoading=false;concreteFailed=true;
+      });
+    }catch{concreteLoading=false;concreteFailed=true;}
+  }
 
   function load(id:number):void{
     if(!Number.isSafeInteger(id)||id<=0)return;
@@ -50,6 +75,7 @@
     load(itemId);
   }
   $: if(expanded&&requestedItemId!==itemId)load(itemId);
+  $: if(expanded&&concreteKey!==itemId+'|'+locale)loadConcrete(itemId,locale);
   onDestroy(()=>{
     destroyed=true;
     client?.release();
@@ -98,8 +124,28 @@
         {/if}
         <p class="evidence-status">{summary.distribution.groups.length
           ?distributionCopy.caveat:copy.caveat}</p>
-      {:else}
+      {:else if !concreteLoading&&!concreteFailed&&!concrete?.configuredNames.length&&!concrete?.candidateNames.length}
         <p class="evidence-status">{copy.empty}</p>
+      {/if}
+    {/if}
+    {#if concreteLoading}
+      <p class="evidence-status" role="status">{copy.loading}</p>
+    {:else if concreteFailed}
+      <button type="button" class="retry" on:click={()=>loadConcrete(itemId,locale)}>{copy.retry}</button>
+    {:else if concrete&&concrete.itemId===itemId}
+      {#if concrete.configuredNames.length}
+        <ul class="concrete-sources" aria-label={copy.sourcesLabel}>
+          {#each concrete.configuredNames as name (name)}<li>{name}</li>{/each}
+        </ul>
+      {/if}
+      {#if concrete.candidateNames.length}
+        <p class="evidence-candidate-title">{copy.candidatesTitle}</p>
+        <ul class="concrete-sources" aria-label={copy.candidatesLabel}>
+          {#each concrete.candidateNames as name (name)}<li>{name}</li>{/each}
+        </ul>
+      {/if}
+      {#if (failed||!summary)&&concrete.candidateNames.length}
+        <p class="evidence-status">{copy.caveat}</p>
       {/if}
     {/if}
   {/if}
@@ -107,6 +153,8 @@
 
 <style>
   .collection-acquisition {margin:8px 0 12px}
+  .concrete-sources{list-style:none;margin:5px 0 8px;padding:0;display:flex;flex-wrap:wrap;gap:5px;font-size:12px}
+  .concrete-sources li{border:1px solid #ffffff30;border-radius:7px;padding:4px 7px}
   .evidence-kinds {display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;padding:0;list-style:none}
   .distribution-title{font-size:12px;font-weight:600;margin:10px 0 5px}
   .distribution-groups{list-style:none;display:grid;gap:5px;margin:0 0 8px;padding:0}
