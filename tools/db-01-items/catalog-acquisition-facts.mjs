@@ -125,5 +125,43 @@ export function buildCatalogFacts(source,rows){
       missionIds.size===75,'ORIGINAL_CENSUS_'+JSON.stringify({...totals,missions:missionIds.size}));
   }
   console.log('DB01_CATALOG_FACTS '+JSON.stringify({...totals,missions:missionIds.size}));
-  return {facts,dependents,purchaseCurrencies:buildPurchaseCurrencyFacts(source,rows)};
+  // Only the authenticated 1.26.2 native furniture type helper and
+  // IsNotBuyable's IIsHiddable and IAvailability branches are interpreted.
+  // The native metadata type table resolves both interface identities.
+  // Online tags or passing these gates are not proof of sale eligibility.
+  const storeScreens=new Map();
+  const pinned=source.target.platform==='Steam'&&source.target.gameVersion==='1.26.2'&&
+    source.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'&&
+    source.sourceFilesSha256.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196'&&
+    source.sourceFilesSha256.Clothing==='a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946';
+  if(pinned){
+    const counts={};
+    for(const row of rows){
+      if(!['Furniture','Clothing'].includes(row.nativeCategory))continue;
+      const furniture=row.nativeCategory==='Furniture';
+      const furnitureTypeGate=furniture?[0,3].includes(row.itemType.subtypeCode):null;
+      const expectedClass=furniture?'FurnitureItemData':'ClothingItemData';
+      let hidden=null,generatorExcluded=null;
+      if(row.sourceClass===expectedClass){
+        check(source.sourceFieldDeclarations[expectedClass].IsHidden===(furniture?24:29),'HIDDEN_FIELD');
+        check(source.sourceFieldDeclarations[expectedClass].IsUnavailableForGenerator===(furniture?50:33),'GENERATOR_FIELD');
+        const value=facts.get(row.itemId);
+        if(typeof value?.hidden==='boolean')hidden=value.hidden;
+        if(typeof value?.generatorExcluded==='boolean')generatorExcluded=value.generatorExcluded;
+      }
+      const status=furnitureTypeGate===false?'excluded_by_furniture_type':
+        hidden===true?'excluded_by_hidden':
+        generatorExcluded===true?'excluded_by_generator':
+        hidden===false&&generatorExcluded===false?'not_excluded_by_reviewed_gates':'unresolved';
+      counts[status]=(counts[status]??0)+1;
+      storeScreens.set(row.itemId,{status,furnitureTypeGate,hidden,generatorExcluded,
+        scope:'generated_furniture_clothing_display',
+        otherNativeConditionsVerified:false,storeMembershipVerified:false,currentAvailabilityVerified:false});
+    }
+    check(storeScreens.size===8787&&counts.excluded_by_furniture_type===1458&&
+      counts.excluded_by_hidden===1537&&counts.excluded_by_generator===3344&&
+      counts.not_excluded_by_reviewed_gates===2448&&
+      !counts.unresolved,'NATIVE_STORE_SCREEN_CENSUS_'+JSON.stringify(counts));
+  }
+  return {facts,dependents,storeScreens,purchaseCurrencies:buildPurchaseCurrencyFacts(source,rows)};
 }
