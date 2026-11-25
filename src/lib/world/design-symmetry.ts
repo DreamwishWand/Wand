@@ -2,7 +2,7 @@
  * evidence that a chiral object has a representable mirrored orientation. */
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {exclusiveAnchorClass} from './saved-map-transform.ts';
-import {currentDesign,canPasteDesign,pasteDesign,type DesignClipItem,type DesignTimeline,type DesignItemGeometry} from './design-layout.ts';
+import {currentDesign,canPasteDesign,pasteDesign,translateDesignTargets,type DesignClipItem,type DesignTimeline,type DesignItemGeometry} from './design-layout.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export type SymmetryMode='vertical'|'horizontal'|'point';
 /** Axis/center coordinate is represented in half cells: x2=2*x. */
@@ -46,4 +46,30 @@ export function symmetryPlan(t:DesignTimeline,items:readonly SymmetryItem[],defs
 }
 export function commitSymmetry(t:DesignTimeline,candidates:readonly SymmetryItem[],defs:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number){
  return pasteDesign(t,asDesignClip(candidates),defs,0,0,width,height);
+}
+
+/** Link existing exact reflected placements only for this operation.
+ * No persistent pair IDs, implicit duplicates, or guessing among overlaps. */
+export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,s:DesignSymmetry,dx:number,dy:number,eligible:ReadonlySet<number>):{id:number;x:number;y:number}[]|null{
+ if(!ids.length||![dx,dy].every(Number.isSafeInteger)||!dx&&!dy)return null;
+ const old=currentDesign(t),byId=new Map(old.map(p=>[p.id,p])),byPose=new Map<string,number[]>();
+ for(const p of old){const k=key(p),group=byPose.get(k)??[];group.push(p.id);byPose.set(k,group);}
+ const targets=new Map<number,{id:number;x:number;y:number}>();
+ function put(id:number,x:number,y:number){
+  if(!eligible.has(id)||![x,y].every(Number.isSafeInteger))return false;
+  const prev=targets.get(id);if(prev)return prev.x===x&&prev.y===y;
+  targets.set(id,{id,x,y});return true;
+ }
+ for(const id of new Set(ids)){
+  const p=byId.get(id),g=p?defs.get(p.itemId):null;if(!p||!g||!eligible.has(id)||nativeActionBlocked(g.editRestrictions,'move'))return null;
+  const mirror=reflectedDesignItem(p,g,s),next=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,s);
+  if(!mirror||!next)return null;
+  const matches=byPose.get(key(mirror));if(matches?.length!==1)return null;
+  if(!put(id,p.x+dx,p.y+dy)||!put(matches[0],next.x,next.y))return null;
+ }
+ return [...targets.values()];
+}
+export function symmetricMoveDesign(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,s:DesignSymmetry,dx:number,dy:number,eligible:ReadonlySet<number>,width:number,height:number){
+ const targets=symmetricMoveTargets(t,ids,defs,s,dx,dy,eligible);
+ return targets?translateDesignTargets(t,targets,defs,width,height):null;
 }

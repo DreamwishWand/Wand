@@ -163,6 +163,26 @@ export function removeDesignGroup(t:DesignTimeline,ids:readonly number[],defs:Re
  if(!chosen.length||chosen.length!==set.size||chosen.some(p=>!defs.has(p.itemId)||nativeActionBlocked(defs.get(p.itemId)?.editRestrictions,'remove')))return null;
  return commit(t,old.filter(p=>!set.has(p.id)));
 }
+/** Apply different integer translations to existing objects as one history entry.
+ * All selected and counterpart IDs must be eligible; no partial changes. */
+export function translateDesignTargets(t:DesignTimeline,targets:readonly {id:number;x:number;y:number}[],defs:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number):DesignTimeline|null{
+ const old=currentDesign(t),byId=new Map(old.map(p=>[p.id,p])),updates=new Map<number,DesignPlacement>();
+ if(!targets.length||targets.length>old.length)return null;
+ for(const target of targets){
+  const p=byId.get(target.id),g=p?defs.get(p.itemId):null;
+  if(!p||!g||updates.has(p.id)||!Number.isSafeInteger(target.x)||!Number.isSafeInteger(target.y)||nativeActionBlocked(g.editRestrictions,'select'))return null;
+  if((p.x!==target.x||p.y!==target.y)&&nativeActionBlocked(g.editRestrictions,'move'))return null;
+  updates.set(p.id,p.x===target.x&&p.y===target.y?p:{...p,x:target.x,y:target.y});
+ }
+ const rest=old.filter(p=>!updates.has(p.id)),applied:DesignPlacement[]=[];
+ if([...updates.values()].every(p=>byId.get(p.id)===p))return null;
+ for(const p of updates.values()){
+  const g=defs.get(p.itemId)!;
+  if(!designCandidateValid([...rest,...applied],p,g,width,height))return null;
+  applied.push(p);
+ }
+ return commit(t,old.map(p=>updates.get(p.id)??p));
+}
 export function transformDesignGroup(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,turns:number,width:number,height:number):DesignTimeline|null{
  const set=new Set(ids),old=currentDesign(t),chosen=old.filter(p=>set.has(p.id));
  if(!chosen.length||chosen.length!==set.size||![dx,dy,turns].every(Number.isSafeInteger))return null;

@@ -532,3 +532,27 @@ test('region fill stops at original terrain boundaries and existing paths; overs
  assert.equal(rotateDesignClipboard(clip,new Map([[itemId,{...g,editRestrictions:{rotate:'denied'}}]]),1),null);
  assert.equal(rotateDesignClipboard(clip,new Map(),1),null);
  });
+
+import {symmetricMoveTargets,symmetricMoveDesign} from '../src/lib/world/design-symmetry.ts';
+test('linked symmetry translation is atomic, preserves identity, rejects ambiguity and respects restrictions',()=>{
+ const itemId=40000001,shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{[itemId+':0']:shape,[itemId+':8']:shape}};
+ const defs=new Map([[itemId,g]]),axis={mode:'vertical',x2:20,y2:20};
+ let t=placeDesign(emptyDesign(),g,3,4,0,20,20);t=placeDesign(t,g,15,4,0,20,20);
+ const eligible=new Set([1,2]);
+ assert.deepEqual(symmetricMoveTargets(t,[1],defs,axis,2,1,eligible),[{id:1,x:5,y:5},{id:2,x:13,y:5}]);
+ const next=symmetricMoveDesign(t,[1],defs,axis,2,1,eligible,20,20);
+ assert.deepEqual(currentDesign(next).map(p=>[p.id,p.x,p.y]),[[1,5,5],[2,13,5]]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(t));assert.equal(next.nextId,t.nextId);
+ assert.equal(symmetricMoveDesign(t,[1,2],defs,axis,2,0,eligible,20,20),null);
+ assert.ok(symmetricMoveDesign(t,[1,2],defs,axis,0,1,eligible,20,20));
+ assert.equal(symmetricMoveDesign(t,[1],defs,axis,1,0,new Set([1]),20,20),null);
+ assert.equal(symmetricMoveDesign(t,[1],defs,axis,-4,0,eligible,20,20),null);
+ const ambiguous=placeDesign(t,g,15,4,0,20,20);
+ assert.equal(symmetricMoveTargets(ambiguous,[1],defs,axis,1,0,new Set([1,2,3])),null);
+ const center=placeDesign(emptyDesign(),g,9,4,0,20,20);
+ assert.ok(symmetricMoveDesign(center,[1],defs,axis,0,2,new Set([1]),20,20));
+ assert.equal(symmetricMoveDesign(center,[1],defs,axis,1,0,new Set([1]),20,20),null);
+ const point={mode:'point',x2:20,y2:20};let pt=placeDesign(emptyDesign(),g,3,4,0,20,20);pt=placeDesign(pt,g,15,15,2,20,20);
+ assert.deepEqual(symmetricMoveTargets(pt,[1],defs,point,2,-1,eligible),[{id:1,x:5,y:3},{id:2,x:13,y:16}]);
+});

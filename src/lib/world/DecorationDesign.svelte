@@ -23,8 +23,11 @@
  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
  import WorldSymmetryControls from './WorldSymmetryControls.svelte';
- import {symmetricDesignItems,symmetryPlan,commitSymmetry,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
+ import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
+ import DesignInspector from './DesignInspector.svelte';
+ import PlacedDesignSearch from './PlacedDesignSearch.svelte';
+ import {objectFocus,searchSavedObjects} from './world-object-search.ts';
  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
  import {alignDesign} from './design-layout.ts';
  import {sourceOrientationAngle} from './source-object-map.ts';
@@ -188,7 +191,22 @@
  function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch);if(!point){save(null);return;}roadDrag={id:e.pointerId,points:[point],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
  function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow||roadTool==='flood')return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch,roadDrag.points[0]),last=roadDrag.points[roadDrag.points.length-1];if(!point){roadDrag={...roadDrag,overflow:true};return;}if(last?.x===point.x&&last.y===point.y)return;const points=roadFreehand(roadTool)?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
  function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=networkStroke(drag.points,roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);}return true;}
- $: dragPlan=direct?.moved&&direct.kind==='move'?validatedMainlandPlan(worldFrame,timeline,transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height),definitions):null;
+ $: dragPlan=direct?.moved&&direct.kind==='move'?movePlan(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds,worldFrame,width,height):null;
+ $: dragTargets=direct?.moved&&direct.kind==='move'?moveTargets(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds):[];
+ function moveTargets(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>){
+  const ordinary=currentDesign(t).filter(p=>ids.includes(p.id)).map(p=>({id:p.id,x:p.x+dx,y:p.y+dy}));
+  return s?symmetricMoveTargets(t,ids,defs,s,dx,dy,eligible)??ordinary:ordinary;
+ }
+ function movePlan(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>,frame:MainlandDesignFrame|null,w:number,h:number){
+  if(ids.some(id=>!eligible.has(id)))return null;
+  return validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs);
+ }
+ function translateSelection(ids:readonly number[],dx:number,dy:number){
+  if(!dx&&!dy)return false;
+  const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height);
+  if(!plan&&symmetry){error=inspectionWords[3];return false;}
+  return save(plan);
+ }
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
  $: alignmentPreview=alignmentAction&&map?alignmentTargets(map,objects.filter(o=>selectedIds.has(o.localOrdinal)),alignmentAction):null;
@@ -198,6 +216,28 @@
  function commitAlignment(){if(alignmentPlan){save(alignmentPlan);alignmentAction=null;}}
  let groupIds:number[]=[],clipboard:DesignClipItem[]=[],pasting:DesignClipItem[]=[],pasteRequest=0,pastePending:DesignClipItem[]=[],lastPoint:{x:number;y:number}|null=null;
  $: selectedIds=new Set(groupIds.length?groupIds:selected===null?[]:[selected]);
+ let inspectorOpen=false,placedSearchOpen=false,placedQuery='',focusedId:number|null=null;
+ const inspectLabels={ja:['精密配置','配置済み家具を検索','対象を切り替える','対称側の家具を一意に移動できません。軸・配置・レイヤーを確認してください。'],en:['Precise placement','Find placed items','Cycle objects','Cannot move a unique symmetric counterpart. Check the axis, placement and layers.'],fr:['Placement précis','Rechercher les objets placés','Parcourir les objets','Impossible de déplacer le pendant symétrique. Vérifiez l’axe et les calques.'],it:['Posizionamento preciso','Cerca oggetti posizionati','Scorri gli oggetti','Impossibile spostare la controparte simmetrica. Verifica asse e livelli.'],de:['Präzise Platzierung','Platzierte Objekte suchen','Objekte durchgehen','Das symmetrische Gegenstück ist nicht eindeutig verschiebbar. Achse und Ebenen prüfen.'],'es-ES':['Colocación precisa','Buscar objetos colocados','Recorrer objetos','No se puede mover la contraparte simétrica. Comprueba el eje y las capas.'],'zh-CN':['精确放置','搜索已放置物品','切换物品','无法唯一移动对称物品，请检查轴线、位置及图层。'],'pt-BR':['Posicionamento preciso','Buscar objetos colocados','Percorrer objetos','Não foi possível mover o objeto simétrico. Verifique eixo e camadas.']} as const;
+ $: inspectionWords=inspectLabels[locale]??inspectLabels.en;
+ $: selectableObjects=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select'));
+ $: editableIds=new Set(selectableObjects.map(o=>o.localOrdinal));
+ $: placedResults=searchSavedObjects(selectableObjects,names,placedQuery,'all');
+ $: selectedPlacements=placements.filter(p=>selectedIds.has(p.id));
+ $: if(focusedId!==null&&!editableIds.has(focusedId))focusedId=null;
+ function focusPlaced(id:number,choose:boolean){
+  const o=selectableObjects.find(p=>p.localOrdinal===id);if(!o||!map)return;
+  focusedId=id;const c=objectFocus(map,o,extent,maxZoom);camera=worldFrame?{...c,y:1-c.y}:c;
+  if(choose){cancel();selected=id;groupIds=[];}
+ }
+ function cyclePlaced(delta:number){
+  if(!selectableObjects.length)return false;
+  const i=selectableObjects.findIndex(o=>o.localOrdinal===(focusedId??selected));
+  const next=selectableObjects[(i<0?(delta>0?0:selectableObjects.length-1):(i+delta+selectableObjects.length)%selectableObjects.length)];
+  focusPlaced(next.localOrdinal,false);return true;
+ }
+ function toggleInspector(){closeNetworkStyle();inspectorOpen=!inspectorOpen;if(inspectorOpen){placedSearchOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
+ function togglePlacedSearch(){closeNetworkStyle();placedSearchOpen=!placedSearchOpen;if(placedSearchOpen){inspectorOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
+
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
  let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>}|null=null;
  const labels={
@@ -258,7 +298,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
-   lastGrid=contextKey;layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -344,6 +384,8 @@
  $: ghostGeometry=placing??(moveMode?chosenGeometry:null);
  $: ghostOrientation=placing?orientation:chosen?.orientation??2;
  $: ghostShape=ghostGeometry?.shapes[ghostGeometry.itemId+':'+ghostOrientation*4];
+ $: hoverMovePlan=moveMode&&chosen&&hover?movePlan(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds,worldFrame,width,height):null;
+ $: hoverMoveTargets=moveMode&&chosen&&hover?moveTargets(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds):[];
  $: ghostValid=Boolean(hover&&ghostGeometry&&designCandidateValid(placements,
    {id:moveMode&&chosen?chosen.id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation},ghostGeometry,width,height)&&mainlandItemsValid(worldFrame,[{itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}],definitions));
  $: binding=grid&&raster?{raster,factor:grid.factor,verifiedGridOrdinals:[]} satisfies TerrainBinding:null;
@@ -375,7 +417,7 @@
    if(chosen&&chosenGeometry)save(transformDesign(timeline,chosen.id,chosenGeometry,chosen.x,chosen.y,(chosen.orientation+delta+4)%4,width,height));
  }
  function duplicate(){beginPaste(designClipboard(timeline,[...selectedIds]));}
- function remove(){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(next){save(next);selected=null;groupIds=[];cancel();}}
+ function remove(){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(next&&save(next)){selected=null;groupIds=[];cancel();}}
  function beginPaste(clip:DesignClipItem[]){
    if(!clip.length||!grid||busyImport)return;
    if(worldFrame&&clip.some(p=>exclusiveAnchorClass(String(p.itemId)))){save(null);return;}
@@ -445,15 +487,15 @@
    if(pasting.length){commitPaste(p.x,p.y);return;}
    if(placing){placeAt(p.x,p.y);return;}
    if(moveMode&&chosen&&chosenGeometry){
-     const next=transformDesign(timeline,chosen.id,chosenGeometry,p.x,p.y,chosen.orientation,width,height);
-     if(next&&save(next)){moveMode=false;hover=null;}else if(p.x!==chosen.x||p.y!==chosen.y)save(null);return;
+     if(translateSelection([chosen.id],p.x-chosen.x,p.y-chosen.y)){moveMode=false;hover=null;}return;
    }
    const hits=map?savedShapesAt(map,1,p.x,p.y):[];
    const ordered=mapPainterOrder(hits).reverse();
    const id=ordered.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer))?.localOrdinal??null;
+   focusedId=id;
    if((e.ctrlKey||e.metaKey||e.shiftKey)&&id!==null){
      const ids=new Set(selectedIds);if(ids.has(id))ids.delete(id);else ids.add(id);
-     groupIds=[...ids];selected=null;
+     const list=[...ids];groupIds=list.length>1?list:[];selected=list.length===1?list[0]:null;
    }else{groupIds=[];selected=id;}
  }
  function hitAt(p:Cell){
@@ -489,32 +531,35 @@
    if(!commit||!cell(e))return;
    if(drag.kind==='marquee'){
      const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
-     groupIds=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];selected=null;return;
+     const list=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];groupIds=list.length>1?list:[];selected=list.length===1?list[0]:null;return;
    }
    const dx=drag.end.x-drag.start.x,dy=drag.end.y-drag.start.y;
-   if(dx||dy){const next=transformDesignGroup(timeline,drag.ids,definitions,dx,dy,0,width,height);if(next&&save(next)){groupIds=drag.ids.length>1?drag.ids:[];selected=drag.ids.length===1?drag.ids[0]:null;}else save(null);}
+   if((dx||dy)&&translateSelection(drag.ids,dx,dy)){groupIds=drag.ids.length>1?drag.ids:[];selected=drag.ids.length===1?drag.ids[0]:null;}
  }
  function endSpace(e:KeyboardEvent){if(e.code==='Space')spacePan=false;}
 
  function keys(e:KeyboardEvent){
    if(!active||busyImport||!worldShortcutTarget(e,root))return;
-   if(e.code==='Space'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();spacePan=true;return;}
+   if(e.target instanceof HTMLElement&&e.target.closest('.design-plot')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    if(e.key==='['||e.key===']'){if(cyclePlaced(e.key==='['?-1:1))e.preventDefault();return;}
+    if(e.code==='Space'){e.preventDefault();if(focusedId!==null&&!placing&&!pasting.length&&!moveMode){focusPlaced(focusedId,true);}else spacePan=true;return;}
+   }
    const action=worldShortcut(e);if(!action)return;
    if(networkSeed!==null){if(action==='cancel'){e.preventDefault();closeNetworkStyle();return;}if(action==='confirm'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();confirmNetworkStyle();return;}if(action!=='undo'&&action!=='redo'&&action!=='zoom-in'&&action!=='zoom-out'&&action!=='fit')return;}
    if(action==='undo'||action==='redo'){e.preventDefault();travel(action==='undo'?-1:1);return;}
    if(action==='copy'||action==='cut'){
      if(!selectedIds.size)return;const clip=designClipboard(timeline,[...selectedIds]);if(!clip.length)return;
-     e.preventDefault();if(action==='cut'){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(!next)return;save(next);selected=null;groupIds=[];cancel();}clipboard=clip;return;
+     e.preventDefault();if(action==='cut'){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(!next||!save(next))return;selected=null;groupIds=[];cancel();}clipboard=clip;return;
    }
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
    if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
    if(action==='cancel'){e.preventDefault();if(roadDrag){roadDrag=null;return;}if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
-   if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}return;}
+   if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}else if(focusedId!==null&&!moveMode){e.preventDefault();focusPlaced(focusedId,true);}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
    if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing||pasting.length){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
    if(action==='delete'){if(selectedIds.size){e.preventDefault();remove();}return;}
-   const n=NUDGE[action];if(n&&selectedIds.size&&!placing&&!pasting.length){e.preventDefault();alignmentAction=null;save(transformDesignGroup(timeline,[...selectedIds],definitions,n[0],worldFrame?-n[1]:n[1],0,width,height));}
+   const n=NUDGE[action];if(n&&selectedIds.size&&!placing&&!pasting.length){e.preventDefault();alignmentAction=null;translateSelection([...selectedIds],n[0],worldFrame?-n[1]:n[1]);}
  }
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
@@ -539,8 +584,10 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
-    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){inspectorOpen=false;placedSearchOpen=false;symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
+    <button type="button" aria-label={inspectionWords[1]} title={inspectionWords[1]} aria-pressed={placedSearchOpen} disabled={busyImport} on:click={togglePlacedSearch}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg></button>
+    <button type="button" aria-label={inspectionWords[0]} title={inspectionWords[0]} aria-pressed={inspectorOpen} disabled={busyImport||!selectedIds.size} on:click={toggleInspector}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 17h18M7 3v18M17 3v18"/><circle cx="12" cy="12" r="2"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
@@ -551,8 +598,8 @@
     <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size&&!pasting.length} on:click={()=>rotate(1)}>⟲</button>
     <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size&&!pasting.length} on:click={()=>rotate(3)}>⟳</button>
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
-    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
-    <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
+    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
+    <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
     {#if chosenGeometry&&grid&&(roadPitch(chosenGeometry,grid.factor)||fencePitch(chosenGeometry,grid.factor))}
      <button type="button" title={locale==='ja'?'接続範囲を選択':'Select connected network'} aria-label={locale==='ja'?'接続範囲を選択':'Select connected network'} on:click={()=>selectNetwork()}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>
      <button type="button" title={locale==='ja'?'スタイル置換':'Replace style'} aria-label={locale==='ja'?'スタイル置換':'Replace style'} on:click={()=>selectNetwork(true)}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M3 7h17l-4-4M21 17H4l4 4M20 7l-4 4M4 17l4-4"/></svg></button>
@@ -568,6 +615,8 @@
    {:else if recoveryState?.warning}<p role="alert">{recoveryState.warning==='conflict'?rw[6]:rw[4]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
+   {#if inspectorOpen&&selectedPlacements.length}<div class="design-inspector-panel"><DesignInspector {locale} placements={selectedPlacements} {definitions} originX={worldFrame?.minX??0} originY={worldFrame?.minZ??0} world={Boolean(worldFrame)} disabled={busyImport} onMove={(dx,dy)=>translateSelection([...selectedIds],dx,dy)} onClose={()=>inspectorOpen=false}/></div>{/if}
+   {#if placedSearchOpen}<div class="design-inspector-panel"><PlacedDesignSearch {locale} query={placedQuery} results={placedResults} {names} {images} onQuery={q=>placedQuery=q} onPick={id=>{focusPlaced(id,true);placedSearchOpen=false;}} onClose={()=>placedSearchOpen=false}/></div>{/if}
    {#if networkSeed!==null}<div class="network-style-panel"><NetworkStyleControls {locale} count={networkIds.length} options={networkOptions} value={networkTarget} loading={networkLoading} valid={Boolean(networkPlan)} onChange={changeNetworkTarget} onConfirm={confirmNetworkStyle} onCancel={closeNetworkStyle}/></div>{/if}
    {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} fence={fenceDrawing} tool={roadTool} valid={!(fenceDrawing&&legacyFence)&&(!roadDrag||Boolean(roadPlan))} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
@@ -587,7 +636,7 @@
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}
        <g class="design-object" data-design-id={o.localOrdinal} data-item-id={o.itemId} transform={'translate('+o.x+' '+o.y+')'}>
-        <path class="design-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <path class="design-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={focusedId===o.localOrdinal?'#f5cf70':selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width={focusedId===o.localOrdinal?2:1} vector-effect="non-scaling-stroke"/>
         {#if showWorldArtwork(o,shape,cellPixels)&&images.has(Number(o.itemId))}<WorldObjectArtwork href={images.get(Number(o.itemId))!} width={shape.width} height={shape.height} flipY={Boolean(worldFrame)}/>{/if}
         {#if o.orientationCode!==null&&cellPixels>=5&&o.layer!=='ground'&&o.layer!=='fence'}<path class="design-orientation" d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff" stroke="#28333c" stroke-width=".035" pointer-events="none"/>{/if}
        </g>
@@ -618,14 +667,16 @@
      {#if direct?.moved&&direct.kind==='marquee'}
       <rect class="design-marquee" x={Math.min(direct.start.x,direct.end.x)} y={Math.min(direct.start.y,direct.end.y)} width={Math.abs(direct.end.x-direct.start.x)+1} height={Math.abs(direct.end.y-direct.start.y)+1} fill="#4bddcd" fill-opacity=".16" stroke="#4bddcd" vector-effect="non-scaling-stroke"/>
      {:else if direct?.moved&&direct.kind==='move'}
-      {#each objects.filter(o=>direct?.ids.includes(o.localOrdinal)) as o (o.localOrdinal)}
-       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
-       {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+(o.x+direct.end.x-direct.start.x)+' '+(o.y+direct.end.y-direct.start.y)+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
+      {#each dragTargets as target (target.id)}
+       {@const p=placements.find(o=>o.id===target.id)}
+       {@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}
+       {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
       {/each}
      {/if}
      {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
      {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&!roadErase(roadTool)?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
-     {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+     {#if moveMode&&symmetry}{#each hoverMoveTargets.filter(p=>p.id!==selected) as target (target.id)}{@const p=placements.find(o=>o.id===target.id)}{@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}{#if shape}<path class="symmetry-move-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={hoverMovePlan?'#4bddcd':'#ef5350'} fill-opacity=".6" stroke="#f5cf70" stroke-dasharray="4 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
+     {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(moveMode?Boolean(hoverMovePlan):symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
       {#if ghostGeometry&&showWorldArtwork({layer:ghostGeometry.layer,shapeKey:null},ghostShape,cellPixels)&&images.has(ghostGeometry.itemId)}<WorldObjectArtwork href={images.get(ghostGeometry.itemId)!} x={hover.x} y={hover.y} width={ghostShape.width} height={ghostShape.height} opacity={.55} flipY={Boolean(worldFrame)}/>{/if}
       {#if cellPixels>=5}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate('+(hover.x+.5)+' '+(hover.y+.5)+') rotate('+sourceOrientationAngle(ghostOrientation*4)+')'} fill="#fff" pointer-events="none"/>{/if}
      {/if}
@@ -683,6 +734,7 @@
  .design-status{bottom:6px;left:6px;max-width:calc(100% - 65px)}.design-status small{white-space:nowrap}
  .design-messages{position:absolute;z-index:7;top:104px;right:6px;max-width:calc(100% - 12px);background:var(--wand-card);border-radius:5px}.design-messages:empty{display:none}.design-messages p{margin:0;padding:6px;font-size:12px}
  .draft-offer{padding:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}.draft-offer p{flex-basis:100%}
+ .design-inspector-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(320px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:8px;box-shadow:0 3px 14px #0004}
  .design-counts{position:absolute;z-index:5;top:104px;right:6px;width:min(300px,70%);max-height:55%;padding:4px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);box-shadow:0 2px 8px #0003}
  @media(max-width:700px){aside{top:auto;bottom:38px;left:6px;width:calc(100% - 65px);height:min(31%,220px)}.design-controls button{min-height:36px}}
 </style>
