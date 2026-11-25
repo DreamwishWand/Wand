@@ -853,7 +853,7 @@ function nativeAcquisitionRole(category,path){
   if(category==='ConditionalEvent'&&/^source\.GiveItem\.Items\[\d+\]\.ItemID$/.test(path))return 'conditional_grant';
   if(category==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path))return 'quest_currency_reward';
   if(category==='Mission'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(path))return 'quest_additional_loot_candidate';
-  if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Item)\.ItemID$/.test(path))return 'loot_table_candidate';
+  if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Items\[\d+\])\.ItemID$/.test(path))return 'loot_table_candidate';
   return null;
 }
 // Earlier source-presence evidence: the audited 1.26.1 -> 1.26.2
