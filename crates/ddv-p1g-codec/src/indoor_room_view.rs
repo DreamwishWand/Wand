@@ -51,7 +51,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
      if g.get("ID").and_then(id)==Some(n){
       if let Some(objects)=g.get("Objects").and_then(Value::as_object){
        state="full";
-       factor=g.get("TessellationFactor").and_then(Value::as_u64).filter(|n|matches!(*n,1|2));
+       if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)==Some(1262){factor=g.get("TessellationFactor").and_then(Value::as_u64).filter(|n|matches!(*n,1|2));}
        total=total.checked_add(objects.len()).ok_or(CodecError::Bounds)?;
        if total>100000{return Err(CodecError::Bounds);}
        for(key,obj)in objects{
