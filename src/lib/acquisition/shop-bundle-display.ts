@@ -4,7 +4,7 @@
  * Do not infer a localized dedicated title from the Item name or offer ID.
  * No new database, code availability claim, or unverified artwork activation.
  */
-import {hasPinnedPublicNativeShopEvidence,type PinnedPublicNativeShopIndex} from './public-native-shop.ts';
+import {hasPinnedShopCatalogEvidence,type ShopCatalogSource} from './public-native-shop.ts';
 import type {ItemMasterLocale,PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import type {PublicItemMediaReader} from '../items/public-item-media.ts';
 
@@ -15,11 +15,11 @@ type NameReader=Pick<PublicCompleteItemMaster,'getItemFields'>;
 type MediaReader=Pick<PublicItemMediaReader,'getItemImages'>;
 
 export async function createShopBundleDisplay(
-  snapshots:readonly PinnedPublicNativeShopIndex[],items:NameReader,locale:ItemMasterLocale,media:MediaReader
+  snapshots:readonly ShopCatalogSource[],items:NameReader,locale:ItemMasterLocale,media:MediaReader
 ){
-  if(!snapshots.length||!snapshots.every(hasPinnedPublicNativeShopEvidence)||
+  if(!snapshots.length||!snapshots.every(hasPinnedShopCatalogEvidence)||
     new Set(snapshots.map(s=>s.snapshotKey)).size!==snapshots.length)throw new TypeError('SHOP_SOURCE_REQUIRED');
-  const appearances=snapshots.flatMap(s=>s.offers.filter(o=>isShopDiscoveryCategory(o.sourceCategory))
+  const appearances=snapshots.flatMap(s=>s.offers
     .map(offer=>({snapshotKey:s.snapshotKey,offer})));
   const ids=[...new Set(appearances.flatMap(a=>a.offer.components.map(p=>Number(p.itemId))))];
   const field='names.'+locale;
@@ -42,7 +42,7 @@ export async function createShopBundleDisplay(
       :first?.name?Object.freeze({text:first.name,locale,source:'native_item_display_name',requestedLocaleVerified:true})
       :missing();
     return Object.freeze({snapshotKey,nativeOfferId:offer.nativeOfferId,sourceCategory:offer.sourceCategory,
-      name,components,observedWindow:offer.observedWindow,
+      name,components,presetDiscoveryCandidate:isShopDiscoveryCategory(offer.sourceCategory),
       artworkStatus:'not_verified' as const,codeAvailabilityVerified:false as const});
   });
   type Row=(typeof records)[number];
@@ -58,9 +58,22 @@ export async function createShopBundleDisplay(
   }
   for(const group of [...byId.values(),...byItem.values()])Object.freeze(group);
   return Object.freeze({
-    locale,records:Object.freeze(records),historicalCoverageComplete:false as const,
+    locale,records:Object.freeze(records),
+    presetRecords:Object.freeze(records.filter(r=>r.presetDiscoveryCandidate)),
+    historicalCoverageComplete:false as const,
     getOfferAppearances(id:string):readonly Row[]{return byId.get(id)??[];},
     getItemBundles(id:number):readonly Row[]{return byItem.get(id)??[];},
+    getPresetItemBundles(id:number):readonly Row[]{return Object.freeze((byItem.get(id)??[]).filter(r=>r.presetDiscoveryCandidate));},
+    /** Match DB-01's verified release Item IDs, not sale windows or cache dates.
+     * Return the complete bundle plus the subset of newly introduced items.
+     * Keep distinct source appearances until artwork and contents identity is resolved. */
+    getBundlesForAddedItems(ids:readonly number[]){
+      const requested=new Set(ids.filter(id=>Number.isSafeInteger(id)&&id>0));
+      const found=new Set<Row>();
+      for(const id of requested)for(const row of byItem.get(id)??[])found.add(row);
+      return Object.freeze(records.filter(row=>found.has(row)).map(bundle=>Object.freeze({bundle,
+        addedItemIds:Object.freeze([...new Set(bundle.components.filter(p=>requested.has(p.itemId)).map(p=>p.itemId))])})));
+    },
     /** Load images only for a selected appearance; not a new item image store. */
     async getComponentImages(snapshotKey:string,offerId:string){
       const row=exact.get(snapshotKey+':'+offerId);

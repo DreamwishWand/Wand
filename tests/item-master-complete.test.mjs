@@ -593,3 +593,20 @@ test('canonical source image reference census preserves alternate artwork and me
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
   console.log('DB01_SOURCE_IMAGE_CENSUS',JSON.stringify({itemIds:expected.size,uniqueGuids:all.size,fieldCounts:counts}));
 });
+
+test('Shop bundle fallback names and components resolve from current Item DB',async()=>{
+  const {loadPinnedShopBundleSources}=await import('../src/lib/acquisition/public-native-shop.ts');
+  const {createShopBundleDisplay}=await import('../src/lib/acquisition/shop-bundle-display.ts');
+  const {fetcher:dbFetch}=site();
+  const sources=await loadPinnedShopBundleSources('/Wand',async url=>new Response(await readFile(join(process.cwd(),'static',url.slice('/Wand/'.length)))));
+  const master=await openPublicItemMaster('/Wand',dbFetch,{scope:'complete'});
+  const media=createPublicItemMediaReader(master);
+  const view=await createShopBundleDisplay(sources,master,'ja',media);
+  const hero=view.getOfferAppearances('HeroItem_CandyHouse')[0];
+  assert(hero);
+  const expected=(await master.getItemFields([hero.components[0].itemId],['names.ja']))[0]?.values['names.ja'];
+  assert.equal(hero.name.text,expected??null);
+  assert.equal(hero.name.source,expected?'native_item_display_name':'missing');
+  assert.equal(view.records.length,111);
+  assert.equal(view.historicalCoverageComplete,false);
+});
