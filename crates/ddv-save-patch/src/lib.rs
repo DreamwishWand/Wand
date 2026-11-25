@@ -979,6 +979,73 @@ mod cardinal_road_tests{
   assert!(preview_cardinal_road_cells(SOURCE,&destination(),&[(12,4)],true).is_err());
  }
 }
+/// Insert an isolated new homogeneous fence component, never normalize
+/// an existing native network. Current-source geometry must be validated by
+/// the caller, separately from this native structure and identity gate.
+pub fn preview_isolated_fence(source:&str,d:&PlainGridDestination,base:u32,diagonal:bool,nodes:&[fence_topology::Point],edges:&[(fence_topology::Point,fence_topology::Point)])->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::Value;
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains(".."){return Err(PatchError::InvalidTarget);}
+ let parts=fence_topology::compile_fence(base,d.tessellation,diagonal,nodes,edges)?;
+ // Ensure the supplied explicit graph equals the saved native topology.
+ // In particular an accidental adjacent pair of endpoint posts must not
+ // silently create an edge the user did not request.
+ let (_,decoded)=fence_topology::decompile_fence(base,d.tessellation,diagonal,&parts)?;
+ let canon=|a,b|if a<b{(a,b)}else{(b,a)};
+ if decoded.into_iter().map(|(a,b)|canon(a,b)).collect::<HashSet<_>>()!=edges.iter().map(|&(a,b)|canon(a,b)).collect(){return Err(PatchError::InvalidTarget);}
+ let q=d.tessellation as i32;let w=(d.size.0*d.tessellation) as i32;let h=(d.size.1*d.tessellation) as i32;
+ if nodes.iter().any(|&(x,y)|x+q>w||y+q>h)||parts.iter().any(|p|{
+   let k=if p.item==base{1}else{p.item-base-if diagonal{6}else{0}} as i32;
+   let (dx,dy)=if diagonal{(k*q,k*q)}else if p.left{(q,k*q)}else{(k*q,q)};
+   p.x+dx>w||p.y+dy>h
+ }){return Err(PatchError::InvalidTarget);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
+ let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
+    grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+    collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
+ let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(PatchError::InvalidTarget)?;
+ let following=next.checked_add(parts.len() as u32).ok_or(PatchError::InvalidTarget)?;
+ if map.len()+parts.len()>100_000||map.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n==0||n>=next||n.to_string()!=*k||v.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(PatchError::AmbiguousTarget);}
+ // Conservative isolation for the experimental first writer. Existing
+ // components and their native representation posts remain untouched.
+ for v in map.values(){
+  let item=v.get("ItemID").and_then(Value::as_u64).ok_or(PatchError::InvalidTarget)?;
+  if item/100_000!=407{continue;}
+  let x=v.get("X").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
+  let y=v.get("Y").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
+  if nodes.iter().any(|&(a,b)|i64::from(x).abs_diff(i64::from(a))<=u64::from(d.tessellation)*8&&i64::from(y).abs_diff(i64::from(b))<=u64::from(d.tessellation)*8){return Err(PatchError::AmbiguousTarget);}
+ }
+ let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id:u64::from(base)};
+ let mut locator=JsonLocator::grid_axis(source,&selector,"X")?;locator.signed_path=None;locator.item_path=None;
+ let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&d.grid_id)];
+ let mut parent=prefix.clone();parent.push(k("Objects"));let mut counter=prefix;counter.push(k("NextGridObjectID"));
+ locator.capture.insert(parent.clone(),None);locator.capture.insert(counter.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let cr=locator.capture.get(&counter).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ if source[cr.clone()].parse::<u32>().ok()!=Some(next){return Err(PatchError::InvalidTarget);}
+ let mut records=Vec::new();let mut additions=Vec::new();
+ for (i,p) in parts.iter().enumerate(){
+  let id=next+i as u32;let state=if p.diagonal{serde_json::json!({"FenceMode":{"Diagonal":true}})}else{Value::Null};
+  let v=serde_json::json!({"ID":id,"ItemID":p.item,"X":p.x,"Y":p.y,"Orientation":if p.left{"GridOrientation_Left"}else{"GridOrientation_Down"},"State":state});
+  records.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));
+ }
+ let append=format!("{}{}",if map.is_empty(){""}else{","},records.join(","));
+ let mut edits=vec![(mr.end-1..mr.end-1,append),(cr,following.to_string())];edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut candidate=String::new();let mut last=0;for (r,v) in edits{candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
+ if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+ let target=root.get_mut("World").and_then(|v|v.get_mut("GridCollection")).and_then(|v|v.get_mut("Grids")).and_then(|v|v.get_mut(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
+ let objects=target.get_mut("Objects").and_then(Value::as_object_mut).ok_or(PatchError::MissingTarget)?;
+ for (id,v) in additions{objects.insert(id,v);}
+ target.as_object_mut().ok_or(PatchError::MissingTarget)?.insert("NextGridObjectID".into(),Value::from(following));
+ if serde_json::from_str::<Value>(&candidate).map_err(|_|PatchError::InvalidDocument)?!=root{return Err(PatchError::InvalidDocument);}
+ validate_json_without_edit(&candidate)?;
+ Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
 /// Ordinary, non-variation furniture stock adjustment. The caller must
 /// separately establish canonical item identity and default/no-state placement
 /// semantics from the game catalog; this intentionally remains a rehearsal.
