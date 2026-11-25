@@ -36,7 +36,7 @@ def read_offers(paths):
                         rows.append({'snapshot':key,'offerId':oid,'storeId':store,'refs':refs})
     return rows
 
-def resolve(root,targets):
+def resolve(root,targets,resource_classes=('UnityEngine.Sprite','UnityEngine.Texture2D')):
     raw={f:(root/f).read_bytes() for f in FILES}; d=json.loads(raw[FILES[0]])
     k,b,e=(raw[f] for f in FILES[1:4]); ids=raw[FILES[4]].decode('utf-8-sig').splitlines()
     n=struct.unpack_from('<i',e)[0]; count=struct.unpack_from('<i',b)[0]
@@ -63,7 +63,7 @@ def resolve(root,targets):
         candidates=[]
         for i in hits.get(g,()):
             a=entry(i);cls=d['m_resourceTypes'][a[6]]['m_ClassName']
-            if cls not in ('UnityEngine.Sprite','UnityEngine.Texture2D'):continue
+            if cls not in resource_classes:continue
             if a[2]!=-1 and not 0<=a[2]<len(buckets):raise ValueError('invalid dependency index')
             deps=[ids[entry(j)[0]] for j in buckets[a[2]]] if a[2]>=0 else []
             candidates.append({'class':cls.split('.')[-1],'internalId':ids[a[0]],'dependencies':deps})
