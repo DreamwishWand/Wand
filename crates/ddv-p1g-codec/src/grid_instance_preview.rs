@@ -983,9 +983,150 @@ fn saved_db04_source_projection(
     })).map_err(|_|CodecError::Json)
 }
 
+/// All group ordinals resolve against the same immutable original. Only
+/// ordinary leaf furniture with exact poses and existing stock routes can
+/// be removed. A failed member discards the entire candidate.
+pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
+    use zeroize::{Zeroize,Zeroizing};
+    if plan.len()>16384{return Err(CodecError::Bounds);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
+    let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    let rows=rows.as_array().filter(|a|a.len()>=2&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    let mut selections=Vec::with_capacity(rows.len());
+    for v in rows{
+        let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
+        let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
+        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
+        selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
+    }
+    let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let mut by_grid=HashMap::<String,Vec<String>>::new();
+    for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
+    for (grid,ids) in by_grid{
+        if grid_identity_dependencies_for_ids(profile,&grid,&ids)?.blocking()>0{return Err(CodecError::Json);}
+    }
+    let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let mut stock=HashMap::<u64,u32>::new();
+    for t in &targets{
+        if stock.contains_key(&t.item_id){continue;}
+        let amount=inventory.get(&t.item_id.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
+        stock.insert(t.item_id,amount);
+    }
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
+    for (target,selection) in targets.iter().zip(&selections){
+        let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
+        let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(CodecError::Bounds)?;
+        let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Pickup{target,expected:selection.2}).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{
+            draft.patched_json.zeroize();return Err(CodecError::Patch);
+        }
+        working.zeroize();*working=draft.patched_json;*amount=next;
+    }
+    Ok(std::mem::take(&mut *working))
+}
+
+/// Place a clipboard group atomically. All destinations, new identities and
+/// stock requirements resolve on the immutable source before staging.
+pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
+    use zeroize::{Zeroize,Zeroizing};
+    let bad=CodecError::Json;
+    if plan.len()>32768{return Err(CodecError::Bounds);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+    let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+    let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
+    let mut destinations=HashMap::<String,PlainGridDestination>::new();
+    let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
+    for row in rows{
+        let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
+        if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
+        let d=destinations.get(&key).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+        let (x,y)=(int("x")?,int("y")?);
+        let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+        if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
+        let grid=grids.get(&d.grid_id).ok_or(bad)?;
+        let objects=grid.get("Objects").and_then(Value::as_object).ok_or(bad)?;
+        // Ground paths may remain under furniture. Do not silently stack new
+        // ordinary furniture on another non-ground anchor.
+        if objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(bad);}
+        *count_by_grid.entry(d.grid_id.clone()).or_default()+=1;
+        let stock=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+        let c=counts.entry(item).or_insert((stock,0));c.1+=1;if c.1>c.0{return Err(bad);}
+        poses.push((key,item,(x,y),orientation.to_owned()));
+    }
+    for (grid,count) in count_by_grid{
+        let next=grids.get(&grid).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
+        let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+        let refs=grid_identity_dependencies_for_ids(profile,&grid,&ids)?;
+        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    }
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+    for (key,item,xy,orientation) in poses{
+        let amount=&mut counts.get_mut(&item).ok_or(bad)?.0;
+        let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:destinations.get(&key).ok_or(bad)?,item_id:item,xy,orientation:&orientation}).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        working.zeroize();*working=draft.patched_json;*amount-=1;
+    }
+    Ok(std::mem::take(&mut *working))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn group_pickup_resolves_once_and_returns_all_stock_or_nothing(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Unknown":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+        let mut rows=serde_json::json!([
+         {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"},
+         {"localOrdinal":2,"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}
+        ]);
+        let d=group_pickup_candidate(raw,&rows.to_string()).unwrap();
+        let result:Value=serde_json::from_str(&d).unwrap();
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],4);
+        assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],3);
+        assert!(d.contains("\"Unknown\":1e2"));
+        rows[1]["expectedX"]=Value::from(3);
+        assert!(group_pickup_candidate(raw,&rows.to_string()).is_err());
+        rows[1]["expectedX"]=Value::from(2);
+        let mut invalid:Value=serde_json::from_slice(raw).unwrap();
+        invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":5});
+        assert!(group_pickup_candidate(&serde_json::to_vec(&invalid).unwrap(),&rows.to_string()).is_err());
+    }
+
+    #[test]
+    fn group_paste_checks_stock_and_all_allocator_addresses_before_staging(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}}}}}}"#;
+        let dest=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!([
+          {"itemId":"40000001","destination":dest,"x":1,"y":2,"orientation":"GridOrientation_Down"},
+          {"itemId":"40000001","destination":dest,"x":4,"y":2,"orientation":"GridOrientation_Left"}
+        ]);
+        let d=group_paste_candidate(raw,&plan.to_string()).unwrap();
+        let j:Value=serde_json::from_str(&d).unwrap();
+        assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],5);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["Orientation"],"GridOrientation_Left");
+        assert!(d.contains("\"Marker\":1e2"));
+        plan[1]["x"]=Value::from(1);assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
+        plan[1]["x"]=Value::from(4);let mut stale:Value=serde_json::from_slice(raw).unwrap();
+        stale["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"]=Value::from(1);
+        assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+        stale["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"]=Value::from(2);
+        stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":4}]);
+        assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+    }
 
     fn project(input:&[u8])->Value{
         serde_json::from_str(&saved_grid_instances_json(input).unwrap()).unwrap()
