@@ -25,7 +25,7 @@
  let moving=false,placing=false,stockOpen=false,stockId=0,stockOrientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down',placeDraft:IndoorPlace|null=null,hoverCell:{x:number;y:number}|null=null,catalogRequest=0,stockQuery='',catalog:{itemId:number;name:string}[]=[];
  let cutSource:CutClipboard|null=null;
  let transferDraft:(Omit<IndoorPlace,'expectedStock'>&{localOrdinal:number;expectedX:number;expectedY:number;expectedOrientation:string})|null=null;
- $: availableCut=$worldFurnitureCut?.file===file&&$worldFurnitureCut.rows.length===1&&face?.kind==='floor'&&face.terrain?$worldFurnitureCut:null;
+ $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length===1&&face?.kind==='floor'&&face.terrain?$worldFurnitureCut:null;
  $: itw=indoorTerrainWords[locale];
  $: options=catalog.filter(i=>i.name.normalize('NFKC').toLocaleLowerCase().includes(stockQuery.normalize('NFKC').toLocaleLowerCase().trim())).slice(0,200);
  $: stockShape=shapes[stockId+':'+CARDINAL_ORIENTATIONS.indexOf(stockOrientation)*4];
@@ -82,7 +82,7 @@
   const hits=supportHitIndices(tree,shapes,p.x,p.y).filter(i=>!swap||partners.includes(i));if(hits.length)chooseObject(hits[(hits.indexOf(selectedObject)+1)%hits.length]);
  }
  function runFurniture(){
-  if(!editAllowed||!file||!room||!face||(!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!transferDraft)||cutSource&&(cutSource!==$worldFurnitureCut||cutSource.file!==file))return;
+  if(!editAllowed||!file||!room||!face||(!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft)||cutSource&&(cutSource!==$worldFurnitureCut||cutSource.file!==file))return;
   const source=file,edits=editDraft,pickup=pickupDraft,place=placeDraft,transfer=transferDraft,worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});editWorker=worker;editError=false;
   const done=(d:any)=>{worker.terminate();if(editWorker!==worker||file!==source||editDraft!==edits||pickupDraft!==pickup||placeDraft!==place||transferDraft!==transfer){d?.bytes?.fill(0);return;}editWorker=null;try{if(d?.kind!=='indoor-furniture-copy')throw Error('copy');editCopy=experimentalCopyDownload(d,source);}catch{editError=true;}};
   worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
@@ -114,7 +114,7 @@
  let records=new Map<number,ItemMasterRecord|CompleteItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>(),resolved=new Set<number>(),itemLoadFailed=false;
  let db:ReturnType<typeof openCurrentItemDatabase>|null=null,closeButton:HTMLButtonElement,root:HTMLDivElement;
  onMount(()=>{const previous=document.activeElement;closeButton?.focus();return ()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};});
- function keys(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ function keys(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -153,7 +153,7 @@
     {#if positionOpen&&tree&&testExport}<div class="indoor-edit"><strong>{iw[0]}</strong><small>{face.terrain?itw[5]:iw[2]}</small>
      <select aria-label={iw[1]} value={selectedObject} disabled={!!editDraft||!!pickupDraft||!!editCopy||!!editWorker||moving||placing||!!placeDraft||!!transferDraft||stockOpen} on:change={e=>chooseObject(Number(e.currentTarget.value))}><option value={-1} disabled>{iw[1]}</option>{#each tree.objects as o,i}<option value={i} disabled={swap&&!partners.includes(i)}>{name(o.itemId,records,locale,w[12])} · {o.x}, {o.y}</option>{/each}</select>
      {#if selectedObject>=0&&!editDraft&&!pickupDraft&&!editCopy&&!moving&&!placing&&!placeDraft&&!transferDraft&&!stockOpen}<button type="button" disabled={!editAllowed||!left||swap} on:click={()=>editDraft=left}>{ew[0]}</button><button type="button" disabled={!editAllowed||!right||swap} on:click={()=>editDraft=right}>{ew[1]}</button><button type="button" disabled={!editAllowed||!partners.length||swap} on:click={()=>swap=true}>{ew[2]}</button><button type="button" disabled={!editAllowed||!pickup||swap} on:click={()=>pickupDraft=pickup}>{iw[3]}</button>{#if face.terrain}<button type="button" disabled={!editAllowed||!moveShape||!editable.has(tree.objects[selectedObject].itemId)||swap} on:click={()=>{moving=true;editError=false;}}>{itw[1]}</button>{/if}{/if}
-     {#if face.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap}<button type="button" disabled={!editAllowed||!catalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{itw[2]}</button>{/if}
+     {#if face.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!cutSource}<button type="button" disabled={!editAllowed||!catalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{itw[2]}</button>{/if}
      {#if stockOpen}<input type="search" bind:value={stockQuery} placeholder={itw[4]} aria-label={itw[4]}/><select aria-label={itw[2]} value={0} on:change={e=>chooseStock(Number(e.currentTarget.value))}><option value={0} disabled>{itw[2]}</option>{#each options as o}<option value={o.itemId}>{o.name} · {stock.get(o.itemId)}</option>{/each}</select>{/if}
      {#if availableCut&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<button type="button" disabled={!editAllowed} on:click={beginTransfer}>{indoorTransferWords[locale]}</button>{/if}
      {#if moving||placing}<small>{itw[3]}</small>{/if}{#if placing}<button type="button" on:click={()=>turnStock(-1)}>{ew[0]}</button><button type="button" on:click={()=>turnStock(1)}>{ew[1]}</button>{/if}
