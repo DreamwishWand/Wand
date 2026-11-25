@@ -142,6 +142,58 @@ pub(super) fn finish_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::G
 /// Resolve a unique explicit room surface and exact existing plain objects.
 /// With no source room raster, only identical-footprint rotation/swap (UI
 /// geometry witness) and stock pickup are enabled. No arbitrary new cells.
+/// Resolve a cut witness from an exact owned floor, independently of UI state.
+fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected:(i32,i32),old:&str)->Result<ddv_save_patch::GridCoordinateTarget,CodecError>{
+ use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
+ let bad=CodecError::Json;
+ let w=row.as_object().filter(|r|r.len()==2&&r.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"index"))).ok_or(bad)?;
+ let ordinal=w.get("roomOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
+ let index=w.get("index").and_then(Value::as_u64).filter(|n|*n<5000).ok_or(bad)? as usize;
+ let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
+ let face=report.get("rooms").and_then(|v|v.get(ordinal-1)).and_then(|v|v.get("surfaces")).and_then(|v|v.get(0)).ok_or(bad)?;
+ if face.get("gridStatus").and_then(Value::as_str)!=Some("full")||face.get("missingPositions").and_then(Value::as_u64)!=Some(0)||face.get("terrain").is_none()||face.get("factor").and_then(Value::as_u64).is_none(){return Err(bad);}
+ let world=root.get("World").ok_or(bad)?;
+ let mut rooms=Vec::new();
+ for house in world.get("PlayerHouses").and_then(Value::as_array).ok_or(bad)?{
+  if let Some(floors)=house.get("Floors"){for floor in floors.as_array().ok_or(bad)?{
+   if let Some(m)=floor.get("Rooms"){rooms.extend(m.as_object().ok_or(bad)?.values());}
+  }}
+ }
+ let gid=rooms.get(ordinal-1).and_then(|r|r.get("FloorGridID")).and_then(id).filter(|n|*n>0).ok_or(bad)?.to_string();
+ let collection=world.get("GridCollection").ok_or(bad)?;
+ let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+ for scope in [Some(grids),collection.get("DiffGrids").and_then(Value::as_object)].into_iter().flatten(){
+  for grid in scope.values(){for field in ["Objects","ModifiedObjects"]{if let Some(rows)=grid.get(field).and_then(Value::as_object){if rows.values().any(|o|o.get("State").and_then(|s|s.get("SubGrid")).and_then(|s|s.get("GridID")).and_then(id).is_some_and(|n|n.to_string()==gid)){return Err(bad);}}}}
+ }
+ let objects=grids.get(&gid).and_then(|g|g.get("Objects")).and_then(Value::as_object).filter(|o|o.len()<=5000).ok_or(bad)?;
+ let (key,obj)=objects.iter().nth(index).ok_or(bad)?;
+ let at=|v:&Value|v.get("X").and_then(Value::as_i64)==Some(i64::from(expected.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(expected.1));
+ if item/100_000!=400||obj.get("ID").and_then(id).filter(|n|*n>0).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||!at(obj)||obj.get("Orientation").and_then(Value::as_str)!=Some(old)||
+ !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||obj.get("State").is_some_and(|s|!s.is_null())||
+ obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||objects.values().filter(|o|at(o)).count()!=1{return Err(bad);}
+ let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:item};
+ let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
+ if refs.blocking()>0||refs.historical>0{return Err(bad);}
+ Ok(target)
+}
+pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,CodecError>{
+ let bad=CodecError::Json;
+ let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let o=row.as_object().filter(|r|r.len()==9&&r.keys().all(|k|matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+ let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+ let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+ let expected=(int("expectedX")?,int("expectedY")?);
+ let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?)?;
+ let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,o.get("destination").ok_or(bad)?)?;
+ let xy=(int("x")?,int("y")?);
+ let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+ let dest=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+ if dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
+ let draft=ddv_save_patch::preview_indoor_to_outdoor_transfer(std::str::from_utf8(source).map_err(|_|bad)?,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+ if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(CodecError::Patch);}
+ Ok(draft.patched_json)
+}
 pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit,FurnitureStockAction};
  let bad=CodecError::Json;
@@ -205,13 +257,17 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  };
  let json=std::str::from_utf8(source).map_err(|_|bad)?;
  if let Some(row)=p.get("transfer"){
-  if surface!=1||row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
-  let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+  if surface!=1||row.as_object().is_none_or(|r|r.len()!=8||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
+  let room_source=row.get("roomSource");
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-  let target=crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?;
-  if crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.blocking()>0{return Err(bad);}
+  let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old)?}else{
+   let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+   crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?
+  };
+  let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
+  if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let from=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
   if from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);
@@ -223,7 +279,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let refs=crate::grid_instance_preview::grid_identity_dependencies_for_ids(source,&gid,&[next.to_string()])?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:grid.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?.to_owned(),tessellation:factor,size:(sx,sy)};
-  return ddv_save_patch::preview_outdoor_to_indoor_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch);
+  return (if room_source.is_some(){ddv_save_patch::preview_indoor_to_indoor_transfer(json,&target,expected,&d,xy,orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_transfer(json,&target,expected,&d,xy,orientation)}).map_err(|_|CodecError::Patch);
  }
  if let Some(row)=p.get("place"){
   if row.as_object().is_none_or(|r|r.len()!=5||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"))){return Err(bad);}
