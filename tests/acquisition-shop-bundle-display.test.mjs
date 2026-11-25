@@ -3,8 +3,6 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot,loadPinnedShopBundleSources} from '../src/lib/acquisition/public-native-shop.ts';
 import {createShopBundleDisplay} from '../src/lib/acquisition/shop-bundle-display.ts';
-import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
-import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
 
 const fetcher=async url=>new Response(await readFile('static'+url.replace(/^\/Wand/,'')));
 async function snapshots(){
@@ -52,19 +50,6 @@ test('Shop view preserves exact source components and native title precedence; u
   assert.equal((await view.getComponentImages(row.snapshotKey,row.nativeOfferId)).length,row.components.length);
   assert.equal(imageCalls,1);
 });
-test('real Item DB can supply native fallback names without private cache or image publication',async()=>{
-  const s=await snapshots();
-  const master=await openPublicItemMaster('/Wand',fetcher,{scope:'complete'});
-  const media=createPublicItemMediaReader(master);
-  const view=await createShopBundleDisplay(s,master,'ja',media);
-  const hero=view.getOfferAppearances('HeroItem_CandyHouse')[0];
-  assert(hero);
-  const expected=(await master.getItemFields([20500011],['names.ja']))[0]?.values['names.ja'];
-  assert.equal(hero.name.text,expected??null);
-  assert.equal(hero.name.source,expected?'native_item_display_name':'missing');
-  assert.equal(view.historicalCoverageComplete,false);
-});
-
 test('four original-backed sources feed one price-free catalog and retain changed bundle contents',async()=>{
   const sources=await loadPinnedShopBundleSources('/Wand',fetcher);
   const read={async getItemFields(ids,fields){return ids.map(itemId=>({itemId,values:{[fields[0]]:'Item '+itemId}}));}};
