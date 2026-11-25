@@ -31,16 +31,20 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
 export function supportParentEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
  return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move');
 }
-export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number){
- if(!supportParentEligible(p)||!p.shape||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
- const g=grids.find(g=>g.key===p.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==p.factor)return null;
+export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={}){
+ if(!supportParentEligible(p)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ const original=grids.find(g=>g.key===p.area),hits=mainlandTerrainHits(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
+ if(!original||!g||!r||g.factor!==p.factor||original.factor!==p.factor)return null;
+ const cross=original.key!==g.key,turned=orientation!==p.object.orientation;
+ if(cross&&nativeActionBlocked(p.object.editRestrictions,'switchGrid')||turned&&nativeActionBlocked(p.object.editRestrictions,'rotate'))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
- const shape=p.shape;
- if(x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||x===p.object.x&&y===p.object.y||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)return null;
+ const shape=turned?shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]:p.shape;
+ if(!shape||shape.cellCount>65536||x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||!cross&&!turned&&x===p.object.x&&y===p.object.y||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)return null;
  for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
   const a=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,a.x,a.y);if(hits.length!==1||hits[0].key!==g.key)return null;
  }
- return {...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}}};
+ const witness=(g:MainlandGrid)=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY});
+ return {...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{})}};
 }
 export type SupportParentCandidate=NonNullable<ReturnType<typeof supportParentCandidate>>;
 export const supportWords={

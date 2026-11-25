@@ -699,6 +699,10 @@ pub fn preview_plain_grid_structure(
     source:&str,target:&GridCoordinateTarget,expected:(i32,i32),
     action:PlainGridStructureAction
 )->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_structure(source,target,expected,action,false)
+}
+fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),action:PlainGridStructureAction,support_parent:bool)->Result<GridCoordinateDraft,PatchError>{
+    if support_parent&&!matches!(&action,PlainGridStructureAction::Remove){return Err(PatchError::InvalidTarget);}
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
        target.kind!=GridObjectKind::Full||!plain_furniture_id(target.item_id){
         return Err(PatchError::InvalidTarget);
@@ -722,7 +726,8 @@ pub fn preview_plain_grid_structure(
     let old:serde_json::Value=serde_json::from_str(&source[object_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     let obj=old.as_object().ok_or(PatchError::InvalidTarget)?;
     let id=target.object_id.parse::<u32>().map_err(|_|PatchError::InvalidTarget)?;
-    if id==0||!(obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null()))||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+    let state_ok=if support_parent{obj.len()==6&&old.get("State").and_then(|v|v.as_object()).is_some_and(|s|s.len()==1&&s.get("SubGrid").and_then(|v|v.get("GridID")).and_then(|v|v.as_u64()).is_some_and(|n|n>0))}else{obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null())};
+    if id==0||!state_ok||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        old.get("ID").and_then(|v|v.as_u64())!=Some(id as u64)||
        old.get("ItemID").and_then(|v|v.as_u64())!=Some(target.item_id){
         return Err(PatchError::InvalidTarget);
@@ -814,6 +819,13 @@ pub fn preview_plain_grid_transfer(
     destination:&PlainGridDestination,replacement:(i32,i32),
     orientation:&str,
 )->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false)
+}
+/// Only for an exact owned support hierarchy resolved by the codec.
+pub fn preview_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true)
+}
+fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
        target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
        destination.grid_id.starts_with('0')||
@@ -849,14 +861,27 @@ pub fn preview_plain_grid_transfer(
     }
     // The existing removal contract proves the source is a plain, exact
     // five-field record, and the byte locator rejects duplicate JSON keys.
-    let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
-    let intermediate=removed.patched_json;
-    insert_plain_grid_record(&intermediate,destination,target.item_id,replacement,orientation)
+    // Preserve the exact lexical State of the parent, not a reserialized or synthesized child reference.
+    let state=if support_parent{
+        if target.item_id/100_000!=400||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation)){return Err(PatchError::InvalidTarget);}
+        let mut locator=JsonLocator::grid_axis(source,target,"X")?;
+        locator.signed_path=None;locator.item_path=None;
+        let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+        locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+        let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+        Some(&source[range])
+    }else{None};
+    if support_parent&&to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::AmbiguousTarget);}
+    let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,support_parent)?;
+    insert_grid_record(&removed.patched_json,destination,target.item_id,replacement,orientation,state)
 }
 
 /// Private common allocator, including an empty Objects map.
 /// It is called only after the destination witness has been validated.
 fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    insert_grid_record(intermediate,destination,item_id,replacement,orientation,None)
+}
+fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str,state:Option<&str>)->Result<GridCoordinateDraft,PatchError>{
     let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:destination.grid_id.clone(),object_id:"1".into(),item_id};
     let mut locator=JsonLocator::grid_axis(intermediate,&selector,"X")?;
     locator.signed_path=None;locator.item_path=None;
@@ -872,8 +897,9 @@ fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,
         return Err(PatchError::AmbiguousTarget);
     }
     let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
-    let member=format!("{}\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"}}",
-        if map.is_empty(){""}else{","},next,next,item_id,replacement.0,replacement.1,orientation);
+    let suffix=state.map(|s|format!(",\"State\":{}",s)).unwrap_or_default();
+    let member=format!("{}\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"{}}}",
+        if map.is_empty(){""}else{","},next,next,item_id,replacement.0,replacement.1,orientation,suffix);
     let mut replacements=[(mr.end-1..mr.end-1,member),(cr,following.to_string())];
     replacements.sort_unstable_by_key(|(r,_)|r.start);
     let mut candidate=String::new();let mut last=0;
