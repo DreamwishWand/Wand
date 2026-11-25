@@ -9,13 +9,15 @@ import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {writable} from 'svelte/store';
 import {reflectedDesignItem,type SymmetryMode} from './design-symmetry.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
+import {supportParentEligible} from './subgrid-local.ts';
 /** Half-cell coordinates and canonical item IDs only. No native Save IDs,
  * bytes, state, or system clipboard. Remains in this tab across world views. */
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
-export function captureFurnitureGroup(items:readonly MainlandSavedObject[]):DesignClipItem[]|null{
+function cutEligible(p:MainlandSavedObject,allowSupport:boolean){return stockSourceEligible(p)||allowSupport&&supportParentEligible(p)&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
+export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
-  if(!stockSourceEligible(p)||nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  if(!cutEligible(p,allowSupport)||nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const orientation=CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal);
   if(orientation<0)return null;
   return {itemId:Number(p.object.itemId),dx:p.x*2,dy:-p.y*2,orientation};
@@ -26,16 +28,16 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[]):Desi
 }
 export const ROOM_CUT_LIMIT=32;
 export type RoomCutSource={roomOrdinal:number;index:number};
-type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string};
+type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string;supportFactor?:1|2};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
 export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitness[]|null{
- if(!captureFurnitureGroup(items))return null;
- return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as Cardinal,area:p.area}));
+ if(!captureFurnitureGroup(items,true)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
+ return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as Cardinal,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{})}));
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[]):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&stockSourceEligible(p)&&!nativeActionBlocked(p.object.editRestrictions,'move')));
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&cutEligible(p,!!r.supportFactor)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move')));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust
@@ -43,6 +45,7 @@ export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly Ma
 export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[]):boolean{
  if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
  if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
+ if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope)return false;
  if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects);
  return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));
 }
@@ -150,7 +153,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
  if(cut.length!==candidate.rows.length)return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
- return rows.every((r,i)=>r.itemId===cut[i].itemId)?rows:null;
+ return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
 }
 export const groupCutWords={
  ja:['切り取り','切り取り済み（貼り付けまで元の家具は残ります）','家具を移動','移動元を確認できません。'],
