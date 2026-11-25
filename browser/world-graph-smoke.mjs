@@ -1446,6 +1446,30 @@ try{
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
   await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
 
+  // Committed edits survive reload, bound to the exact original bytes.
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:30000});
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').first().click();
+  await publicPlot.getByLabel('移動先X').fill('6');
+  await publicPlot.getByRole('button',{name:'配置変更を追加',exact:true}).click();
+  await publicPlot.locator('.staged-edit').first().waitFor();
+  const recoveryKey='save:json:'+await page.evaluate(async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join(''),JSON.stringify(worldSave));
+  await page.waitForFunction(async key=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('wand-world-design-recovery',1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    try{const row=await new Promise((resolve,reject)=>{const q=db.transaction('drafts','readonly').objectStore('drafts').get(key);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});return row?.draft?.timeline?.snapshots?.[row.draft.timeline.cursor]?.edits?.length===1;}finally{db.close();}
+  },recoveryKey,{timeout:30000});
+  await page.reload();
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-renamed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  await publicWorld.locator('.save-recovery').getByRole('button',{name:'作業を再開',exact:true}).click({timeout:30000});
+  await publicPlot.locator('.staged-edit').first().waitFor({timeout:30000});
+  assert.equal(await publicPlot.locator('.staged-edit').count(),1);
+  await publicWorld.getByRole('button',{name:'本島全体マップ',exact:true}).click();
+  await publicWorld.locator('.world-export .export-trigger').click();
+  await publicWorld.locator('.world-export').getByRole('button',{name:'一括変更を検証',exact:true}).click();
+  await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).waitFor({timeout:30000});
+  await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).click();
+  await publicWorld.locator('.world-export').getByRole('link',{name:'編集済みコピーを保存',exact:true}).waitFor({timeout:30000});
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();
