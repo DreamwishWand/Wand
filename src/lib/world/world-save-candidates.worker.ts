@@ -1,3 +1,4 @@
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 /**
  * DB-04 one-shot, browser-local Save-coordinate comparison Worker.
  * Raw private Save bytes and decoded JSON never leave this isolated Worker.
@@ -32,9 +33,8 @@ scope.onmessage=async(event:MessageEvent<unknown>):Promise<void>=>{
        typeof message.filename!=='string'||message.filename.length>200)
       throw new TypeError('DB04_SAVED_SOURCE_BAD_REQUEST');
     const query=validateSourceGridQuery(message.query);
-    const json=message.filename.toLowerCase().endsWith('.json');
-    const inputFormat=json?'json':'p1g';
     bytes=new Uint8Array(await message.file.arrayBuffer());
+    const inputFormat=detectLocalSaveFormat(bytes);
     if(bytes.length!==message.file.size)
       throw new TypeError('DB04_SAVED_SOURCE_INCOMPLETE_FILE');
     await init(wasmUrl);

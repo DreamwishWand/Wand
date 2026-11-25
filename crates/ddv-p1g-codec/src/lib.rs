@@ -1715,7 +1715,7 @@ mod browser_amount_preview {
             let xy=nodes.iter().map(point).collect::<Result<Vec<_>,_>>()?;
             let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
-            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(1262){return Err(invalid());}
+            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
             let mut result=ddv_save_patch::fence_erase::preview_fence_erase(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy).map_err(|_|invalid())?;
             for (id,item) in result.removed.iter().chain(result.allocated.iter()){
@@ -1741,7 +1741,7 @@ mod browser_amount_preview {
             }
             let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
-            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(1262){return Err(invalid());}
+            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
             let edges=ddv_save_patch::fence_topology::cardinal_fence_graph(&xy,dest.tessellation).map_err(|_|invalid())?;
             let parts=ddv_save_patch::fence_topology::compile_fence(base,dest.tessellation,false,&xy,&edges).map_err(|_|invalid())?;
@@ -1770,7 +1770,7 @@ mod browser_amount_preview {
             }
             let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
-            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(1262){return Err(invalid());}
+            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
             let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&dest.grid_id)).ok_or_else(invalid)?;
             let next=grid.get("NextGridObjectID").and_then(|v|v.as_u64()).ok_or_else(invalid)?;

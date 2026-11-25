@@ -1,3 +1,4 @@
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 import init,{WasmAmountPreview} from '../save/wasm/p1g-pkg/ddv_p1g_codec.js';
 import wasmUrl from '../save/wasm/p1g-pkg/ddv_p1g_codec_bg.wasm?url';
 import {testSaveExportEnabled} from './test-save-export.ts';
@@ -8,7 +9,7 @@ scope.onmessage=async({data})=>{
  try{
   if(!['cardinal-road-copy','cardinal-fence-copy','cardinal-fence-erase'].includes(data?.command)||data.allowExperimentalCopy!==true||!testSaveExportEnabled(self.location)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024)throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
-  wasm=new WasmAmountPreview(data.file.name.toLowerCase().endsWith('.json')?'json':'p1g');
+  wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   const copy=readExperimentalCopy(data.command==='cardinal-fence-erase'?wasm.prepare_fence_erase_experimental_copy(JSON.stringify(data.plan),true):data.command==='cardinal-fence-copy'?wasm.prepare_isolated_fence_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_cardinal_road_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));

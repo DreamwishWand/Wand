@@ -894,7 +894,7 @@ try{
 
   // Source/GridData path match with a generated local Save remains a
   // SEPARATE numeric plot; it is never painted as original terrain occupancy.
-  const syntheticSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
+  const syntheticSave={GameInfo:{Version:643},Player:{},World:{GridCollection:{Grids:{
     "777":{ID:777,GridDefaultLayoutPath:LAYOUT,
       GridDataPath:'GridData/Village04/Beach.json',
       Objects:{
@@ -975,7 +975,7 @@ try{
   await saveChooser.setInputFiles({
     name:'replacement-save.json',mimeType:'application/json',
     buffer:Buffer.from(JSON.stringify({
-      GameInfo:{Version:1262},Player:{},
+      GameInfo:{Version:643},Player:{},
       World:{GridCollection:{Grids:{},DiffGrids:{}}}
     })),
   });
@@ -1289,7 +1289,7 @@ try{
   assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(12 10)');
   await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
-  const worldSave={GameInfo:{Version:1262},Player:{ListInventories:{'0':{ID:0,CompatibleItemType:'ItemType_Furniture',CompatibleFurnitureTypes:{List:['FurnitureItemType_Default','FurnitureItemType_Fence']},Inventory:{'40005160':{Amount:3,Marker:'ItemMarker_Favorite'}}}}},World:{GridCollection:{Grids:{
+  const worldSave={GameInfo:{Version:643},Player:{ListInventories:{'0':{ID:0,CompatibleItemType:'ItemType_Furniture',CompatibleFurnitureTypes:{List:['FurnitureItemType_Default','FurnitureItemType_Fence']},Inventory:{'40005160':{Amount:3,Marker:'ItemMarker_Favorite'}}}}},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
       GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',NextGridObjectID:10,
       Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'},
