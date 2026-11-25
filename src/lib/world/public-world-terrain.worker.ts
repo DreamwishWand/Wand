@@ -112,7 +112,7 @@ scope.onmessage=async({data})=>{
       }
       let terrain:TerrainRaster|null=null;
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
-      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable],removable:[...removable],terrain}:{})});return;
+      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
     const grid=region?.grids.find(g=>g.key===data.key);
