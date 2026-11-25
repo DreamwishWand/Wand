@@ -72,3 +72,35 @@ test('all 171 original seeds preserve duration presence, yield, self-references 
   const [a,missing,b]=await reader.getForSeeds([30400010,99999999,30400010]);
   assert.equal(missing,null);assert.deepEqual(a,b);
 });
+
+test('original blocker default reward and BeeHouse production remain distinct canonical source roles',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const facts=JSON.parse(await readFile('data/ddv/item-master/original-furniture-production-steam-1.26.2.json','utf8'));
+  const original=new Map(facts.blockerDefaultRewards);
+  const classes=new Map(await db.getFieldRows('sourceClass'));
+  const rewards=(await db.getFieldRows('source.DefaultRewardItemID')).filter(([i,v])=>classes.get(i)==='FurnitureBlockerItemData'&&v>0);
+  assert.deepEqual(rewards,[...original]);
+  assert.equal(rewards.length,63);
+  const resultIds=[...new Set(rewards.map(r=>r[1]))].sort((a,b)=>a-b);
+  assert.equal(resultIds.length,52);
+  const incoming=await db.getNativeAcquisitionCandidates(resultIds);
+  const reverse=incoming.flatMap((entries,i)=>entries.filter(r=>r[1]==='blocker_default_reward').map(r=>{
+    assert.equal(r[2],'source.DefaultRewardItemID');
+    return [r[0],resultIds[i]];
+  })).sort((a,b)=>a[0]-b[0]);
+  assert.deepEqual(reverse,rewards);
+  const [honey]=await createProductionSourceReader(db).getForItems([31100251]);
+  assert.equal(honey.machineStatus,'indexed');
+  const bee=honey.sources.find(r=>r.kind==='bee_house_production');
+  assert(bee);assert.equal(bee.machineItemId,40800027);assert.equal(bee.resultItemId,31100251);
+  assert.equal(bee.effectZoneSizeX,5);assert.equal(bee.effectZoneSizeY,5);
+  assert.equal(bee.minimumProductionDuration.configuredSeconds,600);
+  assert.equal(bee.maximumProductionDuration.configuredSeconds,1200);
+  assert.equal(bee.maximumProduced,6);
+  assert.equal(honey.currentAvailabilityVerified,false);
+  const [native]=await db.getNativeAcquisitionCandidates([31100251]);
+  assert(native.some(r=>r[0]===40800027&&r[1]==='machine_produced_item'&&r[2]==='source.BeeHouse.ProducedItemID'));
+  const [raw]=await db.getItemFields([40800027],['source.BeeHouse']);
+  assert.deepEqual(raw.values['source.BeeHouse'],{EffectZoneSizeX:5,EffectZoneSizeY:5,ProducedItemID:31100251,
+    MinProductionDuration:{Seconds:600},MaxProductionDuration:{Seconds:1200},MaxProduced:6});
+});
