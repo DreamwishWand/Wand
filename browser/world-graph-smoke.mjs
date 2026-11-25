@@ -1360,6 +1360,18 @@ try{
   assert.equal(worldSave.Player.ListInventories['0'].Inventory['40005160'].Amount,3);
 
   assert.equal(await wholeSave.locator('.mainland-save-object').count(),oldTransforms.length);
+  await palette.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  const checkpoint=publicWorld.locator('.checkpoint-controls');
+  await checkpoint.waitFor({timeout:30000});
+  await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length-1,{timeout:30000});
+  await palette.locator('.stock-item[data-item-id="40005160"]').waitFor({timeout:30000});
+  assert.match(await palette.locator('.stock-item[data-item-id="40005160"]').innerText(),/在庫 4/);
+  await checkpoint.getByRole('button',{name:'元に戻す',exact:true}).click();
+  await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length,{timeout:30000});
+  await checkpoint.getByRole('button',{name:'やり直す',exact:true}).click();
+  await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length-1,{timeout:30000});
+  await checkpoint.getByRole('button',{name:'元に戻す',exact:true}).click();
+  await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length,{timeout:30000});
   await palette.getByRole('button',{name:'閉じる',exact:true}).click();
   await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();
   // Choose a source-backed furniture record through the normal picker and
@@ -1486,6 +1498,7 @@ try{
   const mixed=structuredClone(worldSave);
   mixed.World.GridCollection.Grids['103']={...structuredClone(mixed.World.GridCollection.Grids['101']),ID:103,TessellationFactor:2,
     Objects:{'3':{ID:3,ItemID:40005160,X:10,Y:12,Orientation:'GridOrientation_Down'}}};
+  page.once('dialog',dialog=>dialog.accept());
   await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
     name:'synthetic-mixed-factor.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(mixed))});
   await publicWorld.locator('.mainland-overview').getByRole('button',{name:'閉じる',exact:true}).click({timeout:30000});
