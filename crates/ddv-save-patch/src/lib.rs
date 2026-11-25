@@ -1046,6 +1046,23 @@ pub fn preview_isolated_fence(source:&str,d:&PlainGridDestination,base:u32,diago
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+#[cfg(test)]
+mod isolated_fence_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":1262},"Player":{"ListInventories":{"0":{"Inventory":{"40700246":{"Amount":17,"Marker":"Favorite"}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2}}}}}}}"#;
+ fn destination()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(40,40)}}
+ #[test]fn fence_writer_compiles_exact_parts_and_preserves_original_state(){
+  let nodes=vec![(20,20),(20,22),(20,24)];let edges=fence_topology::cardinal_fence_graph(&nodes,2).unwrap();
+  let draft=preview_isolated_fence(SOURCE,&destination(),40700246,false,&nodes,&edges).unwrap();
+  let old:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let actual:serde_json::Value=serde_json::from_str(&draft.patched_json).unwrap();
+  assert_eq!(old["Player"],actual["Player"]);assert!(draft.patched_json.contains("\"Unknown\":1e2"));assert!(!draft.export_authorized);
+  let grid=&actual["World"]["GridCollection"]["Grids"]["7"];assert_eq!(grid["NextGridObjectID"],5);let p=&grid["Objects"]["3"];assert_eq!(p["ItemID"],40700247);assert_eq!(p["Orientation"],"GridOrientation_Left");assert_eq!(p["Y"],22);
+  assert!(preview_isolated_fence(&draft.patched_json,&destination(),40700246,false,&nodes,&edges).is_err());
+  let far=vec![(60,60),(62,60)];let far_edges=fence_topology::cardinal_fence_graph(&far,2).unwrap();
+  assert!(preview_isolated_fence(&draft.patched_json,&destination(),40700246,false,&far,&far_edges).is_ok());
+  assert!(preview_isolated_fence(SOURCE,&destination(),40700246,false,&far,&[]).is_err());
+ }
+}
 /// Ordinary, non-variation furniture stock adjustment. The caller must
 /// separately establish canonical item identity and default/no-state placement
 /// semantics from the game catalog; this intentionally remains a rehearsal.
