@@ -543,3 +543,53 @@ test('catalog purchase predicates and generator exclusions are independently sou
   assert.equal(absent,null);
   assert(!requests.some(u=>u.includes('/acquisition/public/')));
 });
+
+test('canonical source image reference census preserves alternate artwork and memory-mask GUID identity',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openCurrentItemDatabase('/Wand',fetcher);
+  const catalog=new Set((await db.getFieldCatalog()).map(x=>x.field));
+  const expected=new Map();
+  const paths=[
+    ...['iconGuid','imageGuid','maskGuid','maskDataGuid','blurredIconGuid','alternativeIconGuid'].map(k=>'artwork.'+k),
+    ...['IconAddress','MaleIconAddress','ImageAddress','MaskDataAddress','AlternativeIconAddress',
+      'BlurredIconAddress','AvatarIconAddress','DefaultSkinIconAddress','SignatureOverrideIcon',
+      'SpriteSquareAddress','SpritePortraitAddress','SpriteLandscapeAddress','SpriteAddress',
+      'MachineIconAddress','PortraitAddress'].map(k=>'source.'+k)
+  ];
+  const counts={};
+  for(const path of paths.filter(p=>catalog.has(p))){
+    for(const [id,value] of await db.getFieldRows(path)){
+      if(typeof value!=='string')continue;
+      const m=/^(?:guid:)?([0-9a-f]{32})$/.exec(value);
+      if(!m)continue;
+      const list=expected.get(id)??[];
+      list.push([path,m[1]]);expected.set(id,list);
+      counts[path]=(counts[path]??0)+1;
+    }
+  }
+  const references=new Map(await db.getFieldRows('media.sourceImageReferences'));
+  const guids=new Map(await db.getFieldRows('media.sourceImageGuids'));
+  assert.equal(references.size,expected.size);
+  assert.equal(guids.size,expected.size);
+  const all=new Set();
+  for(const [id,list] of expected){
+    list.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+    assert.deepEqual(references.get(id),list);
+    const unique=[...new Set(list.map(x=>x[1]))].sort();
+    assert.deepEqual(guids.get(id),unique);
+    unique.forEach(g=>all.add(g));
+  }
+  const primary=await db.getFieldRows('iconGuid');
+  for(const [id,guid] of primary)if(guid!==null){
+    assert(guids.get(id)?.includes(guid));
+    assert(references.get(id)?.some(x=>x[0]==='artwork.iconGuid'&&x[1]===guid));
+  }
+  assert(counts['source.MaleIconAddress']>0);
+  const male='e3509f066e496c64f8a846856c181020';
+  assert(references.get(50000212).some(x=>x[0]==='source.MaleIconAddress'&&x[1]===male));
+  const reverse=await db.findItemIdsByField('media.sourceImageGuids',{kind:'contains',value:male});
+  assert(reverse.includes(50000212));
+  assert.deepEqual(reverse,[...guids].filter(([,g])=>g.includes(male)).map(([id])=>id));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+  console.log('DB01_SOURCE_IMAGE_CENSUS',JSON.stringify({itemIds:expected.size,uniqueGuids:all.size,fieldCounts:counts}));
+});
