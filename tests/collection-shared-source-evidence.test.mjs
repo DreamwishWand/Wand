@@ -137,3 +137,24 @@ test('last inspector unmount cancels in-flight work without caching stale source
   f.workers[1].emit({...f.workers[1].sent[0],ok:true,summary:quests(40005160)});
   await current;next.release();
 });
+
+test('concrete source requests reuse the worker but isolate item and locale cache keys',async()=>{
+  const f=fixture(),h=f.pool.acquire();
+  const ja=h.loadConcreteAcquisition(30200009,'/Wand','ja');
+  const en=h.loadConcreteAcquisition(30200009,'/Wand','en');
+  assert.equal(f.workers.length,1);
+  assert.equal(ja,h.loadConcreteAcquisition(30200009,'/Wand','ja'));
+  const [jaReq,enReq]=f.workers[0].sent;
+  assert.deepEqual([jaReq.locale,enReq.locale],['ja','en']);
+  const reply=(locale,name)=>({itemId:30200009,locale,configuredNames:[],candidateNames:[name]});
+  f.workers[0].emit({...enReq,ok:true,summary:reply('en','Stall')});
+  f.workers[0].emit({...jaReq,ok:true,summary:reply('en','Wrong locale')});
+  assert.deepEqual(await en,reply('en','Stall'));
+  await assert.rejects(ja,/EVIDENCE_MISMATCH/);
+  const retry=h.loadConcreteAcquisition(30200009,'/Wand','ja');
+  f.workers[0].emit({...f.workers[0].sent.at(-1),ok:true,summary:reply('ja','売店')});
+  assert.deepEqual(await retry,reply('ja','売店'));
+  await assert.rejects(h.loadConcreteAcquisition(30200009,'/Wand','invalid'),/REQUEST_INVALID/);
+  assert.equal(f.workers[0].sent.length,3);
+  h.release();
+});
