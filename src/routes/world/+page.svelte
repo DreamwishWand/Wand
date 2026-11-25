@@ -6,9 +6,9 @@
   import {base} from '$app/paths';
   import WorldCheckpointControls from '$lib/world/WorldCheckpointControls.svelte';
   import {checkpointWords} from '$lib/world/world-checkpoint-words.ts';
-  import {localSaveSession,registerLocalSaveChangeGuard} from '$lib/ui/local-save-session';
+  import {localSaveSession,registerLocalSaveChangeGuard,restoreWorldCheckpoint,type WorldCheckpointHistory} from '$lib/ui/local-save-session';
   import WorldSaveExport from '$lib/world/WorldSaveExport.svelte';
-  import {saveDraftIdentity,makeSaveSessionDraft,parseSaveSessionDraft,readSaveDraft,writeSaveDraft,discardSaveDraft,type SaveDraftIdentity,type SaveSessionDraft} from '$lib/world/save-session-draft.ts';
+  import {saveDraftIdentity,makeSaveSessionDraft,parseSaveSessionDraft,readSaveDraft,writeSaveDraft,discardSaveDraft,isCheckpointSaveDraft,parseCheckpointSaveDraft,makeCheckpointSaveDraft,rememberOriginalSaveIdentity,originalSaveIdentity,type SaveDraftIdentity,type SaveSessionDraft} from '$lib/world/save-session-draft.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {bindMainland} from '$lib/world/mainland-world-coordinates.ts';
   import type {MainlandDesignFrame} from '$lib/world/mainland-design-frame.ts';
@@ -79,9 +79,12 @@
   let loading=true,comparing=false,error='',compareError='',locale:WandLanguage='ja';
   let cell:{x:number;y:number;value:number}|null=null;
   let seenRevision=-1;
-  type SaveRecovery={phase:'idle'|'loading'|'offer'|'ready';identity:SaveDraftIdentity|null;revision:string|null;draft?:SaveSessionDraft;warning?:'invalid'|'unavailable'|'conflict';writable:boolean};
+  import {replayWorldCheckpoints} from '$lib/world/replay-world-checkpoints.ts';
+  import type {CheckpointJournal} from '$lib/world/checkpoint-journal.ts';
+  type SaveRecovery={phase:'idle'|'loading'|'offer'|'ready';identity:SaveDraftIdentity|null;revision:string|null;draft?:SaveSessionDraft;checkpoint?:{journal:CheckpointJournal;draft:unknown};warning?:'invalid'|'unavailable'|'conflict';writable:boolean};
   let recovery:SaveRecovery={phase:'idle',identity:null,revision:null,writable:false};
   let baseline:WorldEditTimeline=timeline,recoveryEpoch=0,pendingWrites=0,writeFailed=false,writeTail=Promise.resolve();
+  let baselineHistory:WorldCheckpointHistory|undefined,replayAbort:AbortController|null=null,replayProgress='',restoredDraft:SaveSessionDraft|null=null,checkpointContext='';
   const recoveryWords={
    ja:['セーブ編集の下書きがあります','作業を再開','下書きを破棄','下書きを確認中…','自動保存できません。変更を出力してから原本を切り替えてください。','現在の原本・データで下書きを復元できません。','別のタブで下書きが変更されました。','自動保存せずに続ける','保存されていない編集があります。原本を切り替えますか？','保存した編集下書きを破棄しますか？'],
    en:['A Save edit draft is available','Resume draft','Discard draft','Checking draft…','Autosave unavailable. Export changes before switching the original.','The draft is incompatible with the current original or data.','Another tab changed the draft.','Continue without autosave','There are unsaved edits. Switch the original?','Discard the saved editing draft?'],
@@ -94,8 +97,9 @@
   } as const;
   $: recoveryText=recoveryWords[locale]??recoveryWords.en;
   $: recoveryBlocked=Boolean(sourceFile)&&recovery.phase!=='ready';
-  $: persistCommitted(timeline,recovery,sourceFile,key,overviewOpen);
+  $: persistCommitted(timeline,recovery,sourceFile,key,overviewOpen,$localSaveSession.worldCheckpoint,$localSaveSession.file,indoorOpen);
   function resetRecovery(file:File|null,keepIndoor=false){
+   replayAbort?.abort();replayAbort=null;replayProgress='';restoredDraft=null;baselineHistory=undefined;checkpointContext='';
    if(!keepIndoor)indoorOpen=false;
    capturedLayout=null;
    recoveryEpoch++;baseline=timeline=emptyWorldTimeline();pendingWrites=0;writeFailed=false;writeChain={revision:null,blocked:false};
@@ -107,9 +111,11 @@
     await writeTail;
     const stored=await readSaveDraft(identity);
     if(epoch!==recoveryEpoch||file!==sourceFile)return;
+    rememberOriginalSaveIdentity(file,identity);
     if(!stored){writeChain={revision:null,blocked:false};recovery={phase:'ready',identity,revision:null,writable:true};return;}
     const revision=typeof stored.revision==='string'?stored.revision:null;
     try{
+     if(isCheckpointSaveDraft(stored.draft)){const checkpoint=parseCheckpointSaveDraft(stored.draft,identity);recovery={phase:'offer',identity,revision,checkpoint,writable:false};return;}
      const draft=parseSaveSessionDraft(stored.draft,identity,all);
      if(!draft.timeline.snapshots.some(s=>s.edits.length)){writeChain={revision,blocked:false};recovery={phase:'ready',identity,revision,writable:true};}
      else recovery={phase:'offer',identity,revision,draft,writable:false};
@@ -117,12 +123,60 @@
     catch{recovery={phase:'offer',identity,revision,warning:'invalid',writable:false};}
    }catch{if(epoch===recoveryEpoch&&file===sourceFile)recovery={phase:'ready',identity,revision:null,warning:'unavailable',writable:false};}
   }
-  function resumeSaveDraft(){
-   const state=recovery;if(state.phase!=='offer'||!state.draft)return;
+  async function resumeSaveDraft(){
+   const state=recovery;if(state.phase!=='offer')return;
+   if(state.checkpoint){await resumeCheckpointDraft(state);return;}
+   if(!state.draft)return;
    const draft=state.draft,grid=grids.find(g=>g.key===draft.context.area);
    baseline=timeline=draft.timeline;writeChain={revision:state.revision,blocked:false};
    if(grid){openGrid(grid);overviewOpen=draft.context.overview&&Boolean(bindMainland(grids.filter(g=>g.scope===grid.scope)));}
    recovery={phase:'ready',identity:state.identity,revision:state.revision,writable:true};
+  }
+  /** Reopen the selected recovered checkpoint with the current source
+   * witnesses before publishing even one File into the shared session. */
+  function inspectReplayFile(file:File,signal:AbortSignal):Promise<TerrainScopeReceipt[]>{
+   const own=new Worker(new URL('../../lib/world/world-terrain-session.worker.ts',import.meta.url),{type:'module'});
+   const req=++request;
+   return new Promise((resolve,reject)=>{
+    let settled=false;const end=(error:unknown,all?:TerrainScopeReceipt[])=>{if(settled)return;settled=true;clearTimeout(timer);signal.removeEventListener('abort',abort);own.terminate();if(all)resolve(all);else reject(error);};
+    const abort=()=>end(Error('REPLAY_ABORTED'));const timer=setTimeout(()=>end(Error('REPLAY_TIMEOUT')),120000);
+    signal.addEventListener('abort',abort,{once:true});
+    own.onmessage=e=>{const d=e.data;if(d?.kind==='terrain-session'&&d.requestId===req&&Array.isArray(d.results))end(null,d.results);else end(Error('REPLAY_PROJECTION'));};
+    own.onerror=()=>end(Error('REPLAY_PROJECTION'));own.onmessageerror=()=>end(Error('REPLAY_PROJECTION'));
+    if(signal.aborted){abort();return;}
+    own.postMessage({command:'terrain-session',requestId:req,file,filename:file.name,scopes:grids.map(grid=>({viewKey:grid.key,nativeGridId:grid.gridIdNative,sourceRefs:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,nativeGridId:grid.gridIdNative,nativeSizeX:grid.sizeX,nativeSizeY:grid.sizeY,tessellationFactor:grid.factor}]}))});
+   });
+  }
+  async function resumeCheckpointDraft(state:SaveRecovery){
+   const original=sourceFile,epoch=recoveryEpoch,id=state.identity;
+   if(!original||!state.checkpoint||!id||$localSaveSession.file!==original||$localSaveSession.worldCheckpoint)return;
+   const own=new AbortController();replayAbort=own;recovery={...state,phase:'loading'};replayProgress='0 / '+state.checkpoint.journal.steps.length;
+   try{
+    const history=await replayWorldCheckpoints(original,state.checkpoint.journal,own.signal,(done,total)=>{if(replayAbort===own)replayProgress=done+' / '+total;});
+    const all=await inspectReplayFile(history.files[history.cursor],own.signal);
+    const draft=parseSaveSessionDraft(state.checkpoint.draft,id,all);
+    if(own.signal.aborted||epoch!==recoveryEpoch||sourceFile!==original||$localSaveSession.file!==original)return;
+    restoredDraft=draft;writeChain={revision:state.revision,blocked:false};
+    recovery={phase:'ready',identity:id,revision:state.revision,writable:true};
+    if(!restoreWorldCheckpoint(original,history)){restoredDraft=null;throw Error('REPLAY_STALE');}
+   }catch{if(epoch===recoveryEpoch&&!own.signal.aborted)recovery={...state,phase:'offer',warning:'invalid',writable:false};}
+   finally{if(replayAbort===own){replayAbort=null;replayProgress='';}}
+  }
+  function cancelCheckpointRecovery(){if(!replayAbort)return;replayAbort.abort();replayAbort=null;replayProgress='';recovery={...recovery,phase:'offer'};}
+  async function inspectLiveCheckpoint(history:WorldCheckpointHistory,all:TerrainScopeReceipt[],file:File){
+   const epoch=recoveryEpoch,id=originalSaveIdentity(history.original);
+   if(!id||!history.journal){recovery={phase:'ready',identity:id??null,revision:null,writable:false,warning:'unavailable'};return;}
+   try{
+    await writeTail;const stored=await readSaveDraft(id);
+    if(epoch!==recoveryEpoch||sourceFile!==file)return;
+    if(!stored)throw Error('DRAFT_CONFLICT');
+    const envelope=parseCheckpointSaveDraft(stored.draft,id);
+    if(JSON.stringify(envelope.journal)!==JSON.stringify(history.journal))throw Error('DRAFT_CONFLICT');
+    const draft=parseSaveSessionDraft(envelope.draft,id,all),revision=stored.revision;
+    baseline=timeline=draft.timeline;baselineHistory=history;writeChain={revision,blocked:false};
+    const grid=grids.find(g=>g.key===draft.context.area);if(grid){openGrid(grid);overviewOpen=draft.context.overview&&Boolean(bindMainland(grids.filter(g=>g.scope===grid.scope)));}
+    recovery={phase:'ready',identity:id,revision,writable:true};
+   }catch(e){if(epoch===recoveryEpoch&&sourceFile===file)recovery={phase:'ready',identity:id,revision:null,writable:false,warning:e instanceof Error&&e.message==='DRAFT_CONFLICT'?'conflict':'unavailable'};}
   }
   async function discardRecovery(){
    const state=recovery,epoch=recoveryEpoch;if(state.phase!=='offer'||!state.identity||!window.confirm(recoveryText[9]))return;
@@ -131,11 +185,13 @@
    catch{if(epoch===recoveryEpoch)recovery={...state,warning:'conflict'};}
   }
   function continueWithoutSaveRecovery(){recovery={...recovery,phase:'ready',writable:false,warning:recovery.warning==='conflict'?'conflict':'unavailable'};}
-  function persistCommitted(next:WorldEditTimeline,state:SaveRecovery,file:File|null,area:string,overview:boolean){
-   if(next===baseline||!file||state.phase!=='ready')return;
-   baseline=next;
-   if(!state.identity||!state.writable){writeFailed=true;return;}
-   const id=state.identity,epoch=recoveryEpoch,draft=makeSaveSessionDraft(id,next,{area,overview});
+  function persistCommitted(next:WorldEditTimeline,state:SaveRecovery,file:File|null,area:string,overview:boolean,history:WorldCheckpointHistory|undefined,active:File|null,indoor:boolean){
+   const context=area+':'+overview+':'+indoor;
+   if(!file||file!==active||state.phase!=='ready'||!area||next===baseline&&history===baselineHistory&&(!history||context===checkpointContext))return;
+   baseline=next;baselineHistory=history;checkpointContext=context;
+   if(!state.identity||!state.writable||history&&!history.journal){writeFailed=true;if(state.writable)recovery={...state,writable:false,warning:'unavailable'};return;}
+   const id=state.identity,epoch=recoveryEpoch,plain=makeSaveSessionDraft(id,next,{area,overview});
+   const draft=history?.journal?makeCheckpointSaveDraft(plain,history.journal):plain;
    pendingWrites++;
    // Capture the original session so a queued write survives a route/file
    // change. Revisions for this epoch are carried by the queued chain.
@@ -149,7 +205,7 @@
   let writeChain:{revision:string|null;blocked:boolean}={revision:null,blocked:false};
   function guardExternalSaveChange(){return (!$localSaveSession.worldCheckpoint||window.confirm(checkpointWords[locale][5]))&&guardSaveChange();}
   function guardSaveChange(){
-   return !timeline.snapshots.some(s=>s.edits.length)||!writeFailed&&!pendingWrites&&recovery.writable||window.confirm(recoveryText[8]);
+   return !replayAbort&&(!$localSaveSession.worldCheckpoint&&!timeline.snapshots.some(s=>s.edits.length)||!writeFailed&&!pendingWrites&&recovery.writable)||window.confirm(recoveryText[8]);
   }
   beforeNavigate(({willUnload,cancel})=>{if(!willUnload&&!guardSaveChange())cancel();});
   function guardUnload(e:BeforeUnloadEvent){if($localSaveSession.worldCheckpoint||timeline.snapshots.some(s=>s.edits.length)&&(pendingWrites||writeFailed||!recovery.writable)){e.preventDefault();e.returnValue='';}}
@@ -157,7 +213,15 @@
   $: selected=grids.find(g=>g.key===key)??null;
   $: if($localSaveSession.revision!==seenRevision){
     seenRevision=$localSaveSession.revision;
-    resetRecovery($localSaveSession.file,Boolean($localSaveSession.worldCheckpoint));if($localSaveSession.worldCheckpoint)recovery={phase:'ready',identity:null,revision:null,writable:false};openSaveSession($localSaveSession.file,grids);if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)));
+    const h=$localSaveSession.worldCheckpoint,original=h?originalSaveIdentity(h.original):undefined;
+    const resume=restoredDraft;
+    if(h&&original&&recovery.identity?.fingerprint===original.fingerprint&&recovery.phase==='ready'){
+     baseline=timeline=resume?.timeline??emptyWorldTimeline();restoredDraft=null;capturedLayout=null;
+     if(resume){baselineHistory=h;const grid=grids.find(g=>g.key===resume.context.area);if(grid)openGrid(grid);}
+    }else resetRecovery($localSaveSession.file,Boolean(h));
+    openSaveSession($localSaveSession.file,grids);
+    if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)))&&(resume?resume.context.overview:true);
+
   }
   const english:Record<string,string>={Beach:'Dazzle Beach',Cliff:'Frosted Heights',DarkMountains:'Forgotten Lands',Forest:'Forest of Valor',Meadow:'Peaceful Meadow',Savannah:'Sunlit Plateau',Urban:'Plaza',Wetland:'Glade of Trust'};
   // English display names are UI labels; original path identity is separate.
@@ -193,7 +257,7 @@
       if(e.data?.kind!=='terrain-session'||e.data.requestId!==req||!Array.isArray(e.data.results)){
         comparing=false;compareError='セーブの配置を取得できませんでした。';if(recovery.phase==='loading')continueWithoutSaveRecovery();return;}
       sessions=e.data.results;selectSaveGrid(grids.find(g=>g.key===key)??null);
-      if(recovery.phase==='loading'&&!recovery.identity){const identity=saveDraftIdentity(e.data.fingerprint,e.data.format);if(identity)void inspectRecovery(identity,sessions,file);else continueWithoutSaveRecovery();}
+      if(recovery.phase==='loading'&&!recovery.identity){const history=$localSaveSession.worldCheckpoint;if(history)void inspectLiveCheckpoint(history,sessions,file);else {const identity=saveDraftIdentity(e.data.fingerprint,e.data.format);if(identity)void inspectRecovery(identity,sessions,file);else continueWithoutSaveRecovery();}}
     };
     own.onerror=()=>{if(compare===own){clearCompare();compareError='セーブを読み込めませんでした。';if(recovery.phase==='loading')continueWithoutSaveRecovery();}};
     own.postMessage({command:'terrain-session',requestId:req,file,filename:file.name,scopes:all.map(grid=>({viewKey:grid.key,nativeGridId:grid.gridIdNative,
@@ -232,7 +296,7 @@
     indexRequest=++request;worker.postMessage({command:'open',requestId:indexRequest,base});
     return ()=>{unwatch();unguard();window.removeEventListener('beforeunload',guardUnload);};
   });
-  onDestroy(()=>{worker?.terminate();compare?.terminate();worker=null;compare=null;});
+  onDestroy(()=>{replayAbort?.abort();replayAbort=null;worker?.terminate();compare?.terminate();worker=null;compare=null;});
   function selectCell(x:number,y:number){
     if(raster)cell={x,y,value:raster.nativeFloorValues[y*raster.sizeX+x]};
   }
@@ -253,7 +317,7 @@
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
   <WorldShortcutHelp {locale} {designMode} worldOverview={overviewOpen}/>
-  {#if !designMode&&recoveryBlocked}<div class="save-recovery" role="status">{#if recovery.phase==='offer'}<strong>{recovery.warning==='invalid'?recoveryText[5]:recovery.warning==='conflict'?recoveryText[6]:recoveryText[0]}</strong><div>{#if recovery.draft}<button type="button" on:click={resumeSaveDraft}>{recoveryText[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{recoveryText[2]}</button>{#if recovery.warning}<button type="button" on:click={continueWithoutSaveRecovery}>{recoveryText[7]}</button>{/if}</div>{:else}{recoveryText[3]}{/if}</div>{:else if !designMode&&sourceFile&&recovery.warning}<p class="save-recovery" role="alert">{recovery.warning==='conflict'?recoveryText[6]:recoveryText[4]}</p>{/if}
+  {#if !designMode&&recoveryBlocked}<div class="save-recovery" role="status">{#if recovery.phase==='offer'}<strong>{recovery.warning==='invalid'?recoveryText[5]:recovery.warning==='conflict'?recoveryText[6]:recoveryText[0]}</strong><div>{#if recovery.draft||recovery.checkpoint&&!recovery.warning}<button type="button" on:click={resumeSaveDraft}>{recoveryText[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{recoveryText[2]}</button>{#if recovery.warning}<button type="button" on:click={continueWithoutSaveRecovery}>{recoveryText[7]}</button>{/if}</div>{:else}{recoveryText[3]}{#if replayProgress}<span> · {replayProgress}</span><button type="button" on:click={cancelCheckpointRecovery}>{locale==='ja'?'取消':'Cancel'}</button>{/if}{/if}</div>{:else if !designMode&&sourceFile&&recovery.warning}<p class="save-recovery" role="alert">{recovery.warning==='conflict'?recoveryText[6]:recoveryText[4]}</p>{/if}
   {#if !designMode&&sourceFile&&$localSaveSession.worldCheckpoint}<div class="world-checkpoints"><WorldCheckpointControls file={sourceFile} history={$localSaveSession.worldCheckpoint} {locale} blocked={comparing||recoveryBlocked||currentWorldEdits(timeline).length>0}/></div>{/if}
   {#if !designMode&&(overviewOpen||!shapeMap)&&!recoveryBlocked&&sourceFile&&currentWorldEdits(timeline).length}<div class="world-export"><WorldSaveExport file={sourceFile} {timeline} {locale}/></div>{/if}
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
