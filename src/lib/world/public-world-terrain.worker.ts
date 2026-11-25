@@ -2,7 +2,8 @@ import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {createSourceGeometryCache} from './source-object-map.ts';
 import {fenceFamily,fenceFamilyCandidates} from './fence-family-catalog.ts';
-import {fenceBaseDefinition} from './fence-design.ts';
+import {fenceBaseDefinition,fencePitch} from './fence-design.ts';
+import {roadPitch} from './road-design.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
 import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
 import {DESIGN_LIMIT,type DesignCatalogItem,type DesignItemGeometry} from './design-layout.ts';
@@ -138,6 +139,22 @@ scope.onmessage=async({data})=>{
       const values=decode_public_terrain(bytes,Uint32Array.from(full.palette),Uint32Array.from(full.counts),grid.sizeX,grid.sizeY,full.sha256);
       scope.postMessage({kind:'terrain',requestId:id,key:grid.key,sizeX:grid.sizeX,sizeY:grid.sizeY,nativeFloorValues:values},[values.buffer]);
       return;
+    }
+    if(data.command==='network-catalog'){
+      const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
+      const names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const items=[];
+      for(const [key,def] of definitions){
+        const itemId=Number(key);
+        if(def.nativeType!=='Furniture'||Math.floor(itemId/100000)!==401&&!fenceBaseDefinition(itemId,def))continue;
+        const obj=cache.resolve(itemId,8),shape=obj.shapeKey?cache.shapes[obj.shapeKey]:null;
+        if(!shape||shape.acceptedFloorTypesFlag===undefined||nativeActionBlocked(obj.editRestrictions,'select'))continue;
+        const geo={itemId,name:obj.name,layer:obj.layer,surfaceCapable:obj.surfaceCapable,editRestrictions:obj.editRestrictions,shapes:{[itemId+':8']:shape}};
+        const kind=roadPitch(geo,grid.factor)!==null?'road':fenceBaseDefinition(itemId,def)&&fencePitch(geo,grid.factor)!==null?'fence':null;
+        if(kind)items.push({styleOnly:true,area:grid.key,factor:grid.factor,itemId,name:names.get(itemId)??obj.name??String(itemId),kind,shape});
+      }
+      items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
+      scope.postMessage({kind:'network-catalog',requestId:id,key:grid.key,items});return;
     }
     if(data.command==='road-family'){
       const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor),q=2*grid.factor;

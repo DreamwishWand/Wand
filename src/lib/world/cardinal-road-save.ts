@@ -1,6 +1,7 @@
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
+import type {SourceObjectShape} from './source-object-map.ts';
 import {terrainWarnings} from './terrain-binding.ts';
 import {fenceFamily} from './fence-family-catalog.ts';
 import {fencePitch} from './fence-design.ts';
@@ -8,23 +9,29 @@ import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
 export const ROAD_COPY_LIMIT=256;
 export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect'|'diagonal-fill'|'replace-road'|'brush'|'erase-brush'|'connect-brush';
-export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
+export interface NetworkStyle{readonly styleOnly:true;readonly area:string;readonly factor:1|2;readonly itemId:number;readonly name:string;readonly kind:'road'|'fence';readonly shape:SourceObjectShape}
+export type NetworkSource=MainlandSavedObject|NetworkStyle;
+export const isNetworkStyle=(p:NetworkSource|null):p is NetworkStyle=>!!p&&'styleOnly' in p;
+export const networkItemId=(p:NetworkSource|null)=>p?(isNetworkStyle(p)?p.itemId:Number(p.object.itemId)):0;
+export function roadSeedEligible(p:NetworkSource|null):boolean{
+ if(isNetworkStyle(p))return p.kind==='road';
  if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
  return roadPitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
 export interface CardinalRoadCandidate{
- plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed:[number,number];diagonal?:true;replacement?:number};
+ plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed?:[number,number];diagonal?:true;replacement?:number};
  ghosts:readonly {x:number;y:number;size:number}[];
 }
-export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,replacement?:number,trail?:readonly RoadPoint[]):CardinalRoadCandidate|null{
+export function cardinalRoadCandidate(seed:NetworkSource,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,replacement?:number,trail?:readonly RoadPoint[]):CardinalRoadCandidate|null{
  if(!roadSeedEligible(seed)||!seed.shape)return null;
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
- const pitch=2*g.factor,shape=seed.shape;
+ const pitch=2*g.factor,shape=seed.shape,style=isNetworkStyle(seed),itemId=networkItemId(seed);
+ if(style&&!['brush','line','outline','fill','diagonal-line','diagonal-fill'].includes(tool))return null;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
  if(['connect-line','connect-outline','diagonal-connect','connect-brush'].includes(tool))return null;
  const diagonal=tool.startsWith('diagonal-'),replace=tool==='replace-road';
- if(replace&&(!Number.isSafeInteger(replacement)||Math.floor(replacement!/100000)!==401||replacement===Number(seed.object.itemId)))return null;
+ if(replace&&(!Number.isSafeInteger(replacement)||Math.floor(replacement!/100000)!==401||replacement===itemId))return null;
  const start=snap(a),end=snap(b);
  let stroke:RoadPoint[]|null;
  if(tool==='diagonal-line'||tool==='diagonal-erase'){
@@ -41,16 +48,18 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
   if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   const existing=roadByCell.get(p.x+':'+p.y)??[];
-  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
-  if(replace&&existing.length&&existing[0].object.itemId!==seed.object.itemId)continue;
-  if(!replace&&existing.some(o=>o.object.itemId!==seed.object.itemId))return null;
+  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||!style&&o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
+  if(style&&existing.length)return null;
+  if(replace&&existing.length&&Number(existing[0].object.itemId)!==itemId)continue;
+  if(!replace&&existing.some(o=>Number(o.object.itemId)!==itemId))return null;
   if(erase||replace?!existing.length:existing.length>0)continue;
   cells.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:pitch/g.factor});
  }
- return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase,itemId:Number(seed.object.itemId),seed:[seed.object.x,seed.object.y],...(diagonal?{diagonal:true as const}:{}),...(replace?{replacement}:{})},ghosts}:null;
+ return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase,itemId,...(style?{}:{seed:[seed.object.x,seed.object.y] as [number,number]}),...(diagonal?{diagonal:true as const}:{}),...(replace?{replacement}:{})},ghosts}:null;
 }
 export const FENCE_COPY_LIMIT=128;
-export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
+export function fenceSeedEligible(p:NetworkSource|null):boolean{
+ if(isNetworkStyle(p))return p.kind==='fence';
  if(!p?.shape||!fenceFamily(Number(p.object.itemId))||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
  return fencePitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
@@ -59,11 +68,12 @@ export interface CardinalFenceCandidate{
  plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number;erase?:boolean;seed?:[number,number];replacement?:number;diagonal?:true};
  ghosts:CardinalRoadCandidate['ghosts'];
 }
-export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,trail?:readonly RoadPoint[]):CardinalFenceCandidate|null{
+export function cardinalFenceCandidate(seed:NetworkSource,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,trail?:readonly RoadPoint[]):CardinalFenceCandidate|null{
  if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline','diagonal-line','diagonal-connect','diagonal-erase','diagonal-erase-rect','brush','erase-brush','connect-brush'].includes(tool))return null;
  const diagonal=tool.startsWith('diagonal-'),erase=tool.startsWith('erase')||tool==='diagonal-erase'||tool==='diagonal-erase-rect',connect=tool.startsWith('connect')||tool==='diagonal-connect';
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
- const pitch=g.factor,shape=seed.shape;
+ const pitch=g.factor,shape=seed.shape,style=isNetworkStyle(seed);
+ if(style&&(erase||connect))return null;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
  const first=snap(a),last=snap(b);
  let stroke:RoadPoint[]|null;
@@ -75,7 +85,7 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
  else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'erase-line'|'erase-rect',pitch);
  if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
  const fences=objects.filter(p=>p.area===g.key&&p.object.layer==='fence');
- if(fences.some(p=>!p.shape||p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
+ if(fences.some(p=>!p.shape||!style&&p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
  const nodes:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  // Each generated diagonal Ext has a square bounding box of at most
  // four logical cells. Conservatively validate the whole span envelope,
@@ -108,7 +118,7 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
   if(!erase&&!connect&&fences.some(f=>{const dx=p.x-f.object.x,dy=p.y-f.object.y;return Math.abs(dx)<=8*pitch&&Math.abs(dy)<=8*pitch||dx>=-pitch&&dx<=f.shape!.width&&dy>=-pitch&&dy<=f.shape!.height;}))return null;
   nodes.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:1});
  }
- return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId),...(erase||connect?{erase,seed:[seed.object.x,seed.object.y] as [number,number]}:{}),...(diagonal?{diagonal:true as const}:{})},ghosts};
+ return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:networkItemId(seed),...(!style&&(erase||connect)?{erase,seed:[seed.object.x,seed.object.y] as [number,number]}:{}),...(diagonal?{diagonal:true as const}:{})},ghosts};
 }
 export function fenceReplacementCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],replacement:number):CardinalFenceCandidate|null{
  if(!fenceSeedEligible(seed)||replacement===Number(seed.object.itemId)||!fenceFamily(replacement))return null;
@@ -189,4 +199,15 @@ export const savedBrushWords={
  'es-ES':['Dibujo libre','Borrado libre','Conexión libre','Arrastra en el mapa'],
  'zh-CN':['自由绘制','自由擦除','自由连接','在地图上拖动'],
  'pt-BR':['Desenho livre','Apagar à mão livre','Conexão livre','Arraste no mapa']
+} as const;
+
+export const networkPaletteWords={
+ ja:['道・フェンスを新規設置','エリア','道','フェンス','スタイルを検索','スタイルを選択','原本の形状を確認中…','既存の道・フェンスがなくても配置できます。'],
+ en:['Draw new paths or fences','Area','Paths','Fences','Find style','Choose style','Checking source geometry…','Place without an existing path or fence.'],
+ fr:['Tracer chemins et clôtures','Zone','Chemins','Clôtures','Rechercher','Choisir le style','Vérification des formes…','Placement sans chemin ni clôture existante.'],
+ it:['Disegna sentieri e recinzioni','Area','Sentieri','Recinzioni','Cerca stile','Scegli stile','Verifica forme…','Posiziona senza elementi preesistenti.'],
+ de:['Wege und Zäune neu zeichnen','Gebiet','Wege','Zäune','Stil suchen','Stil wählen','Originalformen werden geprüft…','Platzierung ohne vorhandene Wege oder Zäune.'],
+ 'es-ES':['Dibujar caminos y vallas','Zona','Caminos','Vallas','Buscar estilo','Elegir estilo','Comprobando formas…','Coloca sin caminos ni vallas existentes.'],
+ 'zh-CN':['新建道路和围栏','区域','道路','围栏','搜索样式','选择样式','正在验证原始形状…','无需已有道路或围栏即可放置。'],
+ 'pt-BR':['Desenhar caminhos e cercas','Área','Caminhos','Cercas','Buscar estilo','Escolher estilo','Verificando formas…','Coloque sem caminho ou cerca existente.']
 } as const;
