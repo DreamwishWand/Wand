@@ -1562,6 +1562,12 @@ try{
   await indoor.getByRole('button',{name:/Fixture room/}).waitFor({timeout:30000});
   assert.equal(await indoor.locator('.room-item').count(),1);
   assert.match(await indoor.locator('.room-item').innerText(),/×2/);
+  await indoor.locator('.room-item').click();
+  assert.equal(await indoor.locator('.position-map svg circle.highlighted').count(),2);
+  await indoor.locator('.finish-card').nth(1).click();
+  assert.equal(await indoor.locator('.position-map svg circle').count(),0);
+  await indoor.locator('.finish-card').nth(0).click();
+
   assert.equal(await indoor.locator('.finish-card').count(),4);
   await indoor.locator('.finish-card').nth(1).click();
   assert.equal(await indoor.locator('.room-item').count(),0);
