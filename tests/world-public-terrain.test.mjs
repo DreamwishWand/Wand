@@ -141,7 +141,7 @@ test('actual mainland terrain resolves two distinct native areas in one local de
  assert.equal(resolveMainlandDesign(modified,a.x,a.y,boundaryShape),null);
 });
 
-import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate} from '../src/lib/world/mainland-saved-objects.ts';
+import {projectMainlandSaved,mainlandSavedAt,mainlandSavedInRect,visibleMainlandSaved,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate} from '../src/lib/world/mainland-saved-objects.ts';
 test('mainland saved objects preserve exact grid identity, staged coordinates and shape holes',()=>{
  const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
  const p={localOrdinal:1,localGridOrdinal:3,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',subgrid:null};
@@ -153,6 +153,16 @@ test('mainland saved objects preserve exact grid identity, staged coordinates an
  const v=a.objects[0];assert.deepEqual({x:v.x,y:v.y},mainlandMapAnchor(g,p.x,p.y));
  assert.equal(mainlandSavedAt(a.objects,v.x+.25,v.y-.25).length,1);
  assert.equal(mainlandSavedAt(a.objects,v.x+.25,v.y-1.25).length,0);
+ const select=(x1,y1,x2,y2)=>mainlandSavedInRect(a.objects,{x:v.x+x1,y:v.y+y1},{x:v.x+x2,y:v.y+y2});
+ assert.equal(select(.1,-1.1,.9,-1.9).length,0); // shape hole
+ assert.deepEqual(select(1.9,-1.9,1.1,-1.1),[v]); // reversed drag
+ assert.equal(select(2,-1.9,3,-1.1).length,0); // touching edge only
+ assert.equal(select(0,-1,0,-2).length,0); // zero-width gesture
+ assert.equal(select(NaN,0,1,-1).length,0);
+ const half={...v,factor:2};
+ assert.deepEqual(mainlandSavedInRect([half],{x:v.x+.55,y:v.y-.55},{x:v.x+.95,y:v.y-.95}),[half]);
+ assert.equal(mainlandSavedInRect([half],{x:v.x+.05,y:v.y-.55},{x:v.x+.45,y:v.y-.95}).length,0);
+ assert.deepEqual(mainlandSavedInRect([{...v,shape:null}],{x:v.x+.1,y:v.y-.1},{x:v.x+.9,y:v.y-.9}).map(p=>p.object.localOrdinal),[v.object.localOrdinal]);
  assert.equal(visibleMainlandSaved(a.objects,{x:v.x-2,y:v.y-2,w:4,h:4}).length,1);
  const edit={plan:{localOrdinal:1,itemId:p.itemId,expectedX:4,expectedY:6,expectedOrientation:p.orientation,replacementX:8,replacementY:9,replacementOrientation:null},gridOrdinal:3,name:'Fixture',warning:''};
  assert.deepEqual(projectMainlandSaved(grids,sessions,maps,[edit]).objects.map(p=>({x:p.x,y:p.y})),[mainlandMapAnchor(g,8,9)]);

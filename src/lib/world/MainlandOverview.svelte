@@ -18,7 +18,7 @@
  import {cardinalRoadCandidate,roadSeedEligible,cardinalRoadWords,cardinalFenceCandidate,fenceSeedEligible,isolatedFenceWords,fenceReplacementCandidate,fenceMutationWords,diagonalFenceWords,diagonalMutationWords,roadMutationWords,savedNetworkFreehand,appendSavedStroke,savedBrushWords,networkPaletteWords,isNetworkStyle,networkItemId,type NetworkSource,type NetworkStyle,ROAD_COPY_LIMIT,FENCE_COPY_LIMIT,type CardinalRoadTool,type CardinalRoadCandidate,type CardinalFenceCandidate} from './cardinal-road-save.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {localSaveSession,commitWorldCheckpoint,travelWorldCheckpoint} from '../ui/local-save-session';
- import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {projectMainlandSaved,mainlandSavedAt,mainlandSavedInRect,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
  import {currentWorldEdits,emptyWorldTimeline,travelWorldTimeline,WORLD_BATCH_LIMIT,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -254,7 +254,7 @@
     const members=groupSet.has(hit.object.localOrdinal)?group:[hit];
     objectDrag={pointer:e.pointerId,target:hit,members,baseline:timeline,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false};return;
    }
-   if(p&&!hit&&multiMode){range={pointer:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,moved:false};return;}
+   if(p&&!hit){range={pointer:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,moved:false};return;}
   }
   gesture.begin(e,camera.zoom>1&&(!moving&&!furniturePlacing||e.button===1||e.shiftKey||spacePan||e.pointerType==='touch'));
  }
@@ -269,7 +269,7 @@
  function finishPointer(e:PointerEvent,commit:boolean){
   gesture.end(e);
   if(roadPointer===e.pointerId){if(commit){const p=pointerPoint(e);if(p)sampleRoadStroke(p);}else{roadDraft=null;roadError=false;}roadPointer=null;roadTrail=[];roadTrailInvalid=false;suppressClick=true;return;}
-  if(range?.pointer===e.pointerId){const r=range;range=null;if(r.moved){suppressClick=true;if(commit){const end=pointerPoint(e)??r.end;const left=Math.min(r.start.x,end.x),right=Math.max(r.start.x,end.x),top=Math.min(r.start.y,end.y),bottom=Math.max(r.start.y,end.y);setGroup(allObjects.filter(p=>layerSelectable(layerState,p.object)&&p.x<right&&p.x+(p.shape?.width??1)/p.factor>left&&p.y>top&&p.y-(p.shape?.height??1)/p.factor<bottom).map(p=>p.object.localOrdinal));}}return;}
+  if(range?.pointer===e.pointerId){const r=range;range=null;if(r.moved){suppressClick=true;if(commit){const end=pointerPoint(e)??r.end;setGroup(mainlandSavedInRect(allObjects,r.start,end).filter(p=>layerSelectable(layerState,p.object)).map(p=>p.object.localOrdinal));}}return;}
   if(objectDrag?.pointer!==e.pointerId)return;
   if(commit)updateObjectDrag(e);
   const d=objectDrag;objectDrag=null;
