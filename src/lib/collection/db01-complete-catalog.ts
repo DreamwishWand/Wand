@@ -10,6 +10,7 @@ export interface CollectionCompleteCatalog {
   index:CollectionDb01Index;
   rows:CollectionCatalogRow[];
   release:string;
+  master:PublicCompleteItemMaster;
 }
 const facets=new Set<string>(COLLECTION_DB01_FACETS);
 const menus=new Set<number>(COLLECTION_DB01_SUBMENUS.map(x=>x.code));
@@ -123,6 +124,7 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
     categoriesByItem,itemsByCategory,activityTypesByItem,itemsByActivityType,activityTypeNames,
     nativeSubtypeByItem,itemsByNativeSubtype,nativeSubtypeNames,universesByItem,itemsByUniverse,
     universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem,
+    universeLabelsById:new Map(source.universeTags.map(row=>[row.tagId,row.names])),
     worldLabelsByKey:new Map(source.worldTags.map(row=>[row.key,row.names])),
     sourceSetByItem:new Map(source.sourceSetItems.filter(([id])=>known(id)))};
 }
@@ -170,6 +172,21 @@ async function loadParentEntities(master:PublicCompleteItemMaster,index:Collecti
   }
   return parents;
 }
+/** Reviewed browse associations never replace the original source evidence. */
+async function loadBrowseUniverses(master:PublicCompleteItemMaster,index:CollectionDb01Index){
+  const browseUniverseIdsByItem=new Map(index.universeTagIdsByItem);
+  const fields=new Set((await master.getFieldCatalog()).map(row=>row.field));
+  if(fields.has('browse.universeTagIds')){
+    for(const [id,value] of await master.getFieldRows('browse.universeTagIds')){
+      if(!index.rootsByItem?.has(id)||!Array.isArray(value))continue;
+      const ids=value.filter((v):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0);
+      if(ids.length)browseUniverseIdsByItem.set(id,ids);
+    }
+  }
+  const itemsByBrowseUniverseId=new Map<number,number[]>();
+  for(const [id,ids] of browseUniverseIdsByItem)for(const tag of new Set(ids))add(itemsByBrowseUniverseId,tag,id);
+  return {browseUniverseIdsByItem,itemsByBrowseUniverseId};
+}
 const cached=new Map<string,Promise<CollectionCompleteCatalog>>();
 export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):Promise<CollectionCompleteCatalog>{
   const useCache=fetcher===fetch;
@@ -181,7 +198,8 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
       loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
     ]);
     const projected=projectCompleteCollection(source,supplement);
-    const index={...projected,furnitureKindLabels,parentEntityByItem:await loadParentEntities(master,projected)};
+    const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
+    const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
     const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){
@@ -199,7 +217,7 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
           ['clothing','appearance'].includes(root)?'OWNERSHIP_AND_DISCOVERY':'UNLOCKED_LOCKED',
         sourceRefs:['db01-complete-source'],releaseIds:[],relations:[]});
     }
-    return {index,rows,release:master.release.version};
+    return {index,rows,release:master.release.version,master};
   })();
   if(useCache){cached.set(base,task);void task.catch(()=>{if(cached.get(base)===task)cached.delete(base);});}
   return task;

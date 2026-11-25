@@ -11,13 +11,13 @@ export function collectionUniverseIds(index:CollectionDb01Index,key:string):read
   if(key===COLLECTION_UNIVERSE_UNTAGGED||key===COLLECTION_UNIVERSE_UNRESOLVED){
     if(index.universeSourceStatusByItem){
       const state=key===COLLECTION_UNIVERSE_UNTAGGED?'no_universe_in_verified_tag_fields':'unresolved_source';
-      return [...index.universeSourceStatusByItem].filter(([,v])=>v===state).map(([id])=>id);
+      return [...index.universeSourceStatusByItem].filter(([id,v])=>v===state&&!(index.browseUniverseIdsByItem?.get(id)?.length)).map(([id])=>id);
     }
     if(key===COLLECTION_UNIVERSE_UNRESOLVED)return [];
     return [...index.nativeSubtypeByItem.keys()].filter(id=>!(index.universeTagIdsByItem.size
       ?index.universeTagIdsByItem.has(id):index.universesByItem.has(id)));
   }
-  return index.itemsByUniverseTagId.get(Number(key))??index.itemsByUniverse.get(key)??[];
+  return (index.itemsByBrowseUniverseId??index.itemsByUniverseTagId).get(Number(key))??index.itemsByUniverse.get(key)??[];
 }
 export interface CollectionUniverseBrowseOption{
   readonly id:string;
@@ -66,9 +66,9 @@ export function sortedCollectionUniverseOptions(
 ):readonly CollectionUniverseBrowseOption[]{
   const canonical=(index.itemsByUniverseTagId?.size??0)>0;
   const options=canonical
-    ?COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
-      id:String(row.id),label:display(String(row.id)),
-      total:index.itemsByUniverseTagId.get(row.id)?.length??0
+    ?[...new Set([...COLLECTION_UNIVERSE_TAG_NAMES.map(row=>row.id),...(index.universeLabelsById?.keys()??[])])].map(id=>({
+      id:String(id),label:display(String(id)),
+      total:(index.itemsByBrowseUniverseId??index.itemsByUniverseTagId).get(id)?.length??0
     }))
     :[...index.itemsByUniverse].map(([id,ids])=>({
       id,label:display(id),total:ids.length
