@@ -6,6 +6,7 @@ export type CodeEntry=Readonly<{
  code:string;title:string;sourceUrl:string|null;sourceKind:'official'|'community';
  start:string|null;end:string|null;state:CodeWindowState;
  rewards:readonly Readonly<{name:string;itemId:string|null;quantity:number|null}>[];
+ report?:Readonly<{id:string;rewards:readonly Readonly<{name:string;itemId:string;quantity:number|null}>[]}>;
 }>;
 /** Date-only boundaries are civil dates, not invented midnight instants.
  * A whole day on either side of UTC covers all local offsets. */
@@ -37,10 +38,16 @@ export function campaignCodeEntries(official:readonly OfficialCampaign[],communi
  // Keep official facts distinct; a community record may supplement, but cannot
  // silently overwrite a published expiry. No case folding of code tokens.
  for(const c of community){
-  const code=c.code?.trim();if(c.kind!=='code'||!code||seen.has(code))continue;
+  const code=c.code?.trim();if(c.kind!=='code'||!code)continue;
+  const report={id:c.id,rewards:c.rewards.map(x=>({name:x.name,itemId:x.itemId,quantity:x.quantity??null}))};
+  if(seen.has(code)){
+   const i=rows.findIndex(x=>x.code===code);
+   if(i>=0&&!rows[i].report)rows[i]={...rows[i],report};
+   continue;
+  }
   let sourceUrl:string|null=null;
   try{const u=new URL(c.sourceUrl??'');if(u.protocol==='https:'&&!u.username&&!u.password)sourceUrl=u.href;}catch{}
-  rows.push({code,title:c.title,sourceUrl,sourceKind:'community',start:c.schedule.start?.value??null,end:c.schedule.end?.value??null,state:codeWindowState(c.schedule.start?.value??null,c.schedule.end?.value??null,now),rewards:c.rewards.map(x=>({name:x.name,itemId:x.itemId,quantity:x.quantity??null}))});
+  rows.push({code,title:c.title,sourceUrl,sourceKind:'community',start:c.schedule.start?.value??null,end:c.schedule.end?.value??null,state:codeWindowState(c.schedule.start?.value??null,c.schedule.end?.value??null,now),rewards:c.rewards.map(x=>({name:x.name,itemId:x.itemId,quantity:x.quantity??null})),report});
   seen.add(code);
  }
  const order:Record<CodeWindowState,number>={'no-expiry-published':0,'within-published-window':1,unknown:2,scheduled:3,ended:4};
