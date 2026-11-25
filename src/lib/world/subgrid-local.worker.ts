@@ -16,7 +16,7 @@ scope.onmessage=async({data})=>{
   wasm.finish_open();
   if(exporting){
    const copy=readExperimentalCopy(data.command==='support-child-copy'?wasm.prepare_support_child_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_support_parent_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));
-   scope.postMessage({kind:data.command,...copy},[copy.bytes.buffer]);
+   scope.postMessage({kind:data.command,replay:{command:data.command,plan:data.plan},...copy},[copy.bytes.buffer]);
   }else{
    const p=data.parent;
    if(!p||!Number.isSafeInteger(p.localOrdinal)||p.localOrdinal<1||p.localOrdinal>20000||!Number.isSafeInteger(p.itemId)||p.itemId<1||p.itemId>0xffffffff||![p.x,p.y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647))throw Error('parent');
