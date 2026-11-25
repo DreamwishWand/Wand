@@ -311,6 +311,10 @@ export interface OriginalPriceProjection {
   readonly staticItems:number;
   readonly dynamicCacheItems:number;
   readonly currencyCount:number;
+  readonly sourceSaleFlags?:Readonly<{
+    activityItemSha256:string;projectionSha256:string;itemCount:number;
+    missionItemCount:number;unsellableCount:number;runtimeSaleEligibilityVerified:false;
+  }>;
 }
 export interface ItemMasterRelease {
   readonly originalPriceProjection?:Readonly<OriginalPriceProjection>;
@@ -492,8 +496,18 @@ export interface OriginalItemPriceFacts {
   readonly sellCosts:readonly OriginalItemPriceCost[];
   readonly runtimePriceVerified:false;
 }
+export interface OriginalItemSaleFlags {
+  readonly itemId:number;
+  readonly status:'source_flags'|'not_covered'|'not_indexed';
+  readonly isMissionItem:boolean|null;
+  readonly missionFieldPresent:boolean|null;
+  readonly unsellable:boolean|null;
+  readonly unsellableFieldPresent:boolean|null;
+  readonly runtimeSaleEligibilityVerified:false;
+}
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
+  getOriginalItemSaleFlags(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemSaleFlags>|null)[]>;
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
   getItemContentOrigins(itemIds:readonly number[]):Promise<readonly (Readonly<ItemContentOrigin>|null)[]>;
   /** Additional canonical filters are ANDed with the explicit origin filter. */
@@ -1157,6 +1171,28 @@ export async function openPublicItemMaster(
       return (await itemReferences([id],direction))[0];
     },
     getItemsReferences:itemReferences,
+    async getOriginalItemSaleFlags(ids:readonly number[]){
+      const field='price.sourceSaleFlags';
+      const meta=m.originalPriceProjection?.sourceSaleFlags;
+      const catalog=await fieldReader.getFieldCatalog();
+      const indexed=meta?.runtimeSaleEligibilityVerified===false&&
+        meta.activityItemSha256===m.sourceFilesSha256?.ActivityItem&&
+        SHA.test(meta.projectionSha256)&&catalog.some(f=>f.field===field&&f.count===meta.itemCount);
+      const rows=await fieldReader.getItemFields(ids,indexed?[field]:['itemId']);
+      return Object.freeze(rows.map(row=>{
+        if(!row)return null;
+        const raw=row.values[field];
+        if(raw===undefined)return Object.freeze({itemId:row.itemId,status:indexed?'not_covered' as const:'not_indexed' as const,
+          isMissionItem:null,missionFieldPresent:null,unsellable:null,unsellableFieldPresent:null,runtimeSaleEligibilityVerified:false as const});
+        assert(isObject(raw)&&typeof raw.isMissionItem==='boolean'&&typeof raw.missionFieldPresent==='boolean'&&
+          typeof raw.unsellable==='boolean'&&typeof raw.unsellableFieldPresent==='boolean'&&
+          (!raw.isMissionItem||raw.missionFieldPresent)&&(!raw.unsellable||raw.unsellableFieldPresent)&&
+          raw.runtimeSaleEligibilityVerified===false,'INVALID_SALE_FLAGS');
+        return Object.freeze({itemId:row.itemId,status:'source_flags' as const,isMissionItem:raw.isMissionItem,
+          missionFieldPresent:raw.missionFieldPresent,unsellable:raw.unsellable,unsellableFieldPresent:raw.unsellableFieldPresent,
+          runtimeSaleEligibilityVerified:false as const});
+      }));
+    },
     async getOriginalItemPrices(ids:readonly number[]){
       const metadata=m.originalPriceProjection;
       const fields=['price.sourceProviderKind','price.purchaseCosts','price.sellCosts'];

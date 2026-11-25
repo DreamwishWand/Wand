@@ -1,4 +1,6 @@
 import {writable} from 'svelte/store';
+import {readWandLanguage} from './preferences.ts';
+import {checkpointWords} from '../world/world-checkpoint-words.ts';
 
 /** A selected game save stays exclusively in this browser tab's memory. */
 export type LocalSaveReadStatus='selected'|'reading'|'parsed'|'invalid';
@@ -6,6 +8,30 @@ export interface LocalSaveSession{
   readonly file:File|null;
   readonly revision:number;
   readonly collectionStatus:LocalSaveReadStatus;
+  readonly worldCheckpoint?:WorldCheckpointHistory;
+}
+/** Explicitly applied, independently validated experimental copies. In-memory
+ * only: preserve the original File and use a fresh revision for every change. */
+export interface WorldCheckpointHistory{
+ readonly original:File;
+ readonly files:readonly File[];
+ readonly cursor:number;
+ readonly firstStep:number;
+}
+export const WORLD_CHECKPOINT_MAX_BYTES=128*1024*1024;
+export const WORLD_CHECKPOINT_MAX_STEPS=32;
+export function appendWorldCheckpoint(history:WorldCheckpointHistory|undefined,source:File,copy:File):WorldCheckpointHistory|null{
+ if(source===copy||copy.size<1||copy.size>32*1024*1024)return null;
+ const base=history??{original:source,files:[source],cursor:0,firstStep:0};
+ if(base.files[base.cursor]!==source)return null;
+ const files=[...base.files.slice(0,base.cursor+1),copy];
+ let firstStep=base.firstStep;
+ const total=()=>files.reduce((n,f)=>n+f.size,0)+(files.includes(base.original)?0:base.original.size);
+ // Evict oldest *undo* checkpoints, never the original or current copy.
+ // The reachable history has no artificial jump back to the original.
+ while(files.length>2&&(files.length>WORLD_CHECKPOINT_MAX_STEPS+1||total()>WORLD_CHECKPOINT_MAX_BYTES)){files.shift();firstStep++;}
+ if(total()>WORLD_CHECKPOINT_MAX_BYTES)return null;
+ return {original:base.original,files,cursor:files.length-1,firstStep};
 }
 let nextRevision=0;
 let completedRevision=0;
@@ -28,16 +54,24 @@ export function registerLocalSaveChangeGuard(
     if(changeGuard===guard)changeGuard=null;
   };
 }
+function guardCheckpointUnload(e:BeforeUnloadEvent){if(current.worldCheckpoint){e.preventDefault();e.returnValue='';}}
+function confirmExternalChange(next:File|null):boolean{
+ if(changeGuard)return changeGuard(current.file,next);
+ return !current.worldCheckpoint||typeof window!=='undefined'&&window.confirm(checkpointWords[readWandLanguage()][5]);
+}
+function clearCheckpointUnload(){if(typeof window!=='undefined')window.removeEventListener('beforeunload',guardCheckpointUnload);}
 export function selectLocalSaveFile(file:File):boolean{
   if(current.file===file)return true;
-  if(changeGuard&&!changeGuard(current.file,file))return false;
+  if(!confirmExternalChange(file))return false;
+  clearCheckpointUnload();
   current={file,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
   return true;
 }
 export function closeLocalSaveFile():boolean{
   if(current.file===null)return true;
-  if(changeGuard&&!changeGuard(current.file,null))return false;
+  if(!confirmExternalChange(null))return false;
+  clearCheckpointUnload();
   current={file:null,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
   return true;
@@ -55,4 +89,23 @@ export function updateCollectionRead(revision:number,status:Exclude<LocalSaveRea
 /** Reject responses from a file that has since been replaced or closed. */
 export function isCurrentLocalSaveSelection(revision:number,file:File):boolean{
   return current.revision===revision && current.file===file;
+}
+
+/** Only callers with a verified copy receipt may apply a new checkpoint.
+ * No external file-selection bypass: the exact active source is required.
+ * The World Editor checks outstanding transform drafts before invoking. */
+export function commitWorldCheckpoint(source:File,copy:File):boolean{
+ if(current.file!==source)return false;
+ const history=appendWorldCheckpoint(current.worldCheckpoint,source,copy);
+ if(!history)return false;
+ current={file:copy,revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:history};
+ if(typeof window!=='undefined')window.addEventListener('beforeunload',guardCheckpointUnload);
+ state.set(current);return true;
+}
+export function travelWorldCheckpoint(source:File,delta:-1|1):boolean{
+ if(current.file!==source||!current.worldCheckpoint)return false;
+ const h=current.worldCheckpoint,cursor=h.cursor+delta;
+ if(!Number.isInteger(cursor)||cursor<0||cursor>=h.files.length)return false;
+ current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{...h,cursor}};
+ state.set(current);return true;
 }

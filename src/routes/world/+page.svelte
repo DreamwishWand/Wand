@@ -4,6 +4,8 @@
   import {onMount,onDestroy} from 'svelte';
   import {beforeNavigate} from '$app/navigation';
   import {base} from '$app/paths';
+  import WorldCheckpointControls from '$lib/world/WorldCheckpointControls.svelte';
+  import {checkpointWords} from '$lib/world/world-checkpoint-words.ts';
   import {localSaveSession,registerLocalSaveChangeGuard} from '$lib/ui/local-save-session';
   import WorldSaveExport from '$lib/world/WorldSaveExport.svelte';
   import {saveDraftIdentity,makeSaveSessionDraft,parseSaveSessionDraft,readSaveDraft,writeSaveDraft,discardSaveDraft,type SaveDraftIdentity,type SaveSessionDraft} from '$lib/world/save-session-draft.ts';
@@ -93,8 +95,8 @@
   $: recoveryText=recoveryWords[locale]??recoveryWords.en;
   $: recoveryBlocked=Boolean(sourceFile)&&recovery.phase!=='ready';
   $: persistCommitted(timeline,recovery,sourceFile,key,overviewOpen);
-  function resetRecovery(file:File|null){
-   indoorOpen=false;
+  function resetRecovery(file:File|null,keepIndoor=false){
+   if(!keepIndoor)indoorOpen=false;
    capturedLayout=null;
    recoveryEpoch++;baseline=timeline=emptyWorldTimeline();pendingWrites=0;writeFailed=false;writeChain={revision:null,blocked:false};
    recovery={phase:file?'loading':'idle',identity:null,revision:null,writable:false};
@@ -145,16 +147,17 @@
    }).finally(()=>{if(epoch===recoveryEpoch)pendingWrites--;});
   }
   let writeChain:{revision:string|null;blocked:boolean}={revision:null,blocked:false};
+  function guardExternalSaveChange(){return (!$localSaveSession.worldCheckpoint||window.confirm(checkpointWords[locale][5]))&&guardSaveChange();}
   function guardSaveChange(){
    return !timeline.snapshots.some(s=>s.edits.length)||!writeFailed&&!pendingWrites&&recovery.writable||window.confirm(recoveryText[8]);
   }
   beforeNavigate(({willUnload,cancel})=>{if(!willUnload&&!guardSaveChange())cancel();});
-  function guardUnload(e:BeforeUnloadEvent){if(timeline.snapshots.some(s=>s.edits.length)&&(pendingWrites||writeFailed||!recovery.writable)){e.preventDefault();e.returnValue='';}}
+  function guardUnload(e:BeforeUnloadEvent){if($localSaveSession.worldCheckpoint||timeline.snapshots.some(s=>s.edits.length)&&(pendingWrites||writeFailed||!recovery.writable)){e.preventDefault();e.returnValue='';}}
 
   $: selected=grids.find(g=>g.key===key)??null;
   $: if($localSaveSession.revision!==seenRevision){
     seenRevision=$localSaveSession.revision;
-    resetRecovery($localSaveSession.file);openSaveSession($localSaveSession.file,grids);if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)));
+    resetRecovery($localSaveSession.file,Boolean($localSaveSession.worldCheckpoint));if($localSaveSession.worldCheckpoint)recovery={phase:'ready',identity:null,revision:null,writable:false};openSaveSession($localSaveSession.file,grids);if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)));
   }
   const english:Record<string,string>={Beach:'Dazzle Beach',Cliff:'Frosted Heights',DarkMountains:'Forgotten Lands',Forest:'Forest of Valor',Meadow:'Peaceful Meadow',Savannah:'Sunlit Plateau',Urban:'Plaza',Wetland:'Glade of Trust'};
   // English display names are UI labels; original path identity is separate.
@@ -204,7 +207,7 @@
   }
   onMount(()=>{
     const unwatch=watchWandLanguage(v=>locale=v);
-    const unguard=registerLocalSaveChangeGuard(guardSaveChange);window.addEventListener('beforeunload',guardUnload);
+    const unguard=registerLocalSaveChangeGuard(guardExternalSaveChange);window.addEventListener('beforeunload',guardUnload);
     worker=new Worker(new URL('../../lib/world/public-world-terrain.worker.ts',import.meta.url),{type:'module'});
     worker.onmessage=e=>{
       const value=e.data;
@@ -251,6 +254,7 @@
   </nav></div>
   <WorldShortcutHelp {locale} {designMode} worldOverview={overviewOpen}/>
   {#if !designMode&&recoveryBlocked}<div class="save-recovery" role="status">{#if recovery.phase==='offer'}<strong>{recovery.warning==='invalid'?recoveryText[5]:recovery.warning==='conflict'?recoveryText[6]:recoveryText[0]}</strong><div>{#if recovery.draft}<button type="button" on:click={resumeSaveDraft}>{recoveryText[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{recoveryText[2]}</button>{#if recovery.warning}<button type="button" on:click={continueWithoutSaveRecovery}>{recoveryText[7]}</button>{/if}</div>{:else}{recoveryText[3]}{/if}</div>{:else if !designMode&&sourceFile&&recovery.warning}<p class="save-recovery" role="alert">{recovery.warning==='conflict'?recoveryText[6]:recoveryText[4]}</p>{/if}
+  {#if !designMode&&sourceFile&&$localSaveSession.worldCheckpoint}<div class="world-checkpoints"><WorldCheckpointControls file={sourceFile} history={$localSaveSession.worldCheckpoint} {locale} blocked={comparing||recoveryBlocked||currentWorldEdits(timeline).length>0}/></div>{/if}
   {#if !designMode&&(overviewOpen||!shapeMap)&&!recoveryBlocked&&sourceFile&&currentWorldEdits(timeline).length}<div class="world-export"><WorldSaveExport file={sourceFile} {timeline} {locale}/></div>{/if}
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
   {#if error}<p class="workspace-message" role="alert">{error}</p>{/if}
@@ -293,7 +297,7 @@
  .navigation-toggle{display:grid;place-items:center;width:38px;height:38px;flex:none;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.navigation-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}.navigation-toggle:focus-visible{outline:2px solid var(--wand-focus)}
  nav{max-width:calc(100% - 43px);padding:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}nav[hidden]{display:none}
  .workspace-message{position:absolute;z-index:13;top:52px;left:8px;padding:6px;background:var(--wand-card);border-radius:5px}
- .save-recovery{position:absolute;z-index:16;top:54px;left:6px;right:6px;max-width:430px;padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;font-size:12px}.save-recovery div{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.save-recovery button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:6px}.world-export{position:absolute;z-index:17;right:6px;bottom:48px;max-width:calc(100% - 12px)}
+ .save-recovery{position:absolute;z-index:16;top:54px;left:6px;right:6px;max-width:430px;padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;font-size:12px}.save-recovery div{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.save-recovery button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:6px}.world-checkpoints{position:absolute;z-index:17;right:6px;top:48px;max-width:calc(100% - 12px);pointer-events:none}.world-export{position:absolute;z-index:17;right:6px;bottom:48px;max-width:calc(100% - 12px)}
  .workspace-grid,.terrain-side{position:absolute;inset:0;gap:0}.workspace-grid.overview-covered{display:none}.terrain-side>.note{position:absolute;z-index:4;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:5px 7px;border-radius:5px;background:var(--wand-card)}
  .save-side{position:absolute;z-index:5;left:6px;bottom:38px;max-width:calc(100% - 65px);padding:4px 7px;border-radius:5px;background:var(--wand-card)}
  .save-side.hasShape{z-index:1;inset:0;max-width:none;padding:0;border-radius:0;background:none}.inactiveMap,.save-side.hasShape.inactiveMap{display:none}

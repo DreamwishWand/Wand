@@ -168,3 +168,35 @@ test('one current manifest reuses unchanged objects across source versions',()=>
     assert.deepEqual(JSON.parse(readFileSync(join(root,'current/index.json'),'utf8')),current);
   }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test('price details opt in through the current pinned reader, localize currencies and honor explicit matching overrides',async()=>{
+  const {fetcher,requests}=fakeFetch();
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const ids=[30000031,40000047,99999999,30000031];
+  const unpriced=await db.getSelectedItems(ids,['nativeCategory']);
+  assert(!Object.hasOwn(unpriced[0],'priceDetails'));
+  const start=requests.length;
+  const selected=await db.getSelectedItems(ids,['names.ja'],{priceLocale:'ja'});
+  const [crop,shoe,unknown,duplicate]=selected;
+  assert.equal(unknown,null);
+  assert.deepEqual(crop,duplicate);
+  assert.equal(crop.priceDetails.purchase[0].amount,70);
+  assert.equal(crop.priceDetails.sell[0].amount,70);
+  assert.equal(crop.priceDetails.sell[0].source,'static');
+  assert.equal(crop.priceDetails.sell[0].currencyItemId,80000000);
+  assert.equal(crop.priceDetails.sell[0].currency.locale,'ja');
+  assert.equal(typeof crop.priceDetails.sell[0].currency.name,'string');
+  assert.equal(crop.priceDetails.runtimePriceVerified,false);
+  const override=shoe.priceDetails.purchase.find(c=>c.currencyItemId===80000000);
+  assert.equal(override.amount,16000);
+  assert.equal(override.source,'explicit_override');
+  assert.equal(override.liveTransactionVerified,false);
+  const direct=await db.getItemPriceDetails(ids,'ja');
+  assert.deepEqual(direct,selected.map(r=>r?.priceDetails??null));
+  const en=await db.getItemPriceDetails([30000031],'en');
+  assert.equal(en[0].sell[0].currency.locale,'en');
+  assert.equal(requests.filter(url=>url.endsWith('/item-master-releases.json')).length,1);
+  assert.equal(requests.filter(url=>url.endsWith('/item-master/current/index.json')).length,1);
+  assert(!requests.slice(start).some(url=>url.includes('/acquisition/public/')||url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+  await assert.rejects(db.getItemPriceDetails([30000031],'invalid'),/DB01_PRICE_DETAILS_LOCALE/);
+});

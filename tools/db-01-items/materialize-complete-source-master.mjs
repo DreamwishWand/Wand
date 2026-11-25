@@ -1159,6 +1159,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
     const sequences=storeLayout.sequenceLinks.get(row.itemId);
     if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
+    const saleFlags=originalPrices.saleFlags.get(row.itemId);
+    if(saleFlags){
+      add('price.sourceSaleFlags',row.itemId,saleFlags);
+      add('price.sourceUnsellable',row.itemId,saleFlags.unsellable);
+    }
     const originalPrice=originalPrices.items.get(row.itemId);
     if(originalPrice){
       add('price.sourceProviderKind',row.itemId,originalPrice.providerKind);

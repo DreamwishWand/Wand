@@ -293,8 +293,16 @@ test('lowest ingredient source selection uses actual fixed recipe, mission exclu
   assert.equal(fish.estimate.ingredients[0].priceSource,'native_default_if_lookup_fails');
   assert.equal(fish.nativeTieOrderVerified,false);
   const tag=await estimateSourceLowestMealSellPrice(db,30300132,2050000138);
-  assert.equal(tag.slots[0].status,'unresolved_selector');
-  assert.equal(tag.estimate,null);
+  assert.equal(tag.slots[0].status,'source_minimum');
+  assert.equal(tag.slots[0].candidateCount,8);
+  assert.deepEqual(tag.selectedIngredientIds,[30200015]);
+  assert.equal(tag.estimate.sourceSnapshotEstimate,26);
+  assert.equal(tag.estimate.tagMatchingBasis,'original_direct_tags_only');
+  const succotash=await estimateSourceLowestMealSellPrice(db,30300706,2050000663);
+  assert.equal(succotash.slots[2].candidateCount,24);
+  assert.deepEqual(succotash.selectedIngredientIds,[30200225,30200010,30200143]);
+  assert.equal(succotash.estimate.sourceSnapshotEstimate,260);
+  assert.equal(succotash.actualSellPrice,null);
   const puzzle=await estimateSourceLowestMealSellPrice(db,30300494,2050000467);
   assert(puzzle.slots.some(s=>s.status==='no_source_candidate'));
   assert.equal(puzzle.estimate,null);
@@ -305,4 +313,36 @@ test('lowest ingredient source selection uses actual fixed recipe, mission exclu
   assert.equal(ingredientIds.length,469);
   const mission=await db.getItemFields(ingredientIds,['source.IsMissionItem']);
   assert.equal(mission.filter(r=>r.values['source.IsMissionItem']===true).length,248);
+});
+
+test('source sale flags distinguish mission/unsellable from missing price on all fixed cooking ingredients',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const original=JSON.parse(await readFile('data/ddv/item-master/original-sale-flags-steam-1.26.2.json','utf8'));
+  const flags=await db.getOriginalItemSaleFlags(original.map(r=>r[0]));
+  assert.equal(flags.length,1087);
+  for(const [i,[itemId,mission,unsellable]] of original.entries()){
+    assert.deepEqual(flags[i],{itemId,status:'source_flags',isMissionItem:mission===1,missionFieldPresent:mission!==null,
+      unsellable:unsellable===1,unsellableFieldPresent:unsellable!==null,runtimeSaleEligibilityVerified:false});
+  }
+  const recipes=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'RecipeItemData'});
+  assert.equal(recipes.length,625);
+  const rows=await db.getItemFields(recipes,['source.Ingredients']);
+  const fixed=[...new Set(rows.flatMap(r=>r.values['source.Ingredients'].flatMap(s=>s.ItemID?[s.ItemID]:[])))].sort((a,b)=>a-b);
+  assert.equal(fixed.length,371);
+  const [prices,saleFlags]=await Promise.all([db.getOriginalItemPrices(fixed),db.getOriginalItemSaleFlags(fixed)]);
+  const missing=prices.map((p,i)=>({p,f:saleFlags[i]})).filter(({p})=>!p.sellCosts.some(c=>c.currencyItemId===80000000&&c.amountFieldPresent));
+  assert.equal(missing.length,160);
+  assert(missing.every(({f})=>f.isMissionItem===true));
+  assert.equal(missing.filter(({f})=>f.unsellable).length,106);
+  const priced=prices.map((p,i)=>({p,f:saleFlags[i]})).filter(({p})=>p.sellCosts.some(c=>c.currencyItemId===80000000&&c.amountFieldPresent));
+  assert.equal(priced.length,211);
+  assert(priced.every(({f})=>!f.isMissionItem&&!f.unsellable));
+  const [uncovered,unknown,duplicate]=await db.getOriginalItemSaleFlags([40000047,2147483647,original[0][0]]);
+  assert.equal(uncovered.status,'not_covered');assert.equal(unknown,null);assert.deepEqual(duplicate,flags[0]);
+  const puzzle=await db.findItemIdsByFields([
+    {field:'sourceClass',anyOf:[{kind:'equals',value:'IngredientItemData'}]},
+    {field:'source.CookingIngredientType',anyOf:[{kind:'equals',value:2001400020}]}
+  ]);
+  assert.equal(puzzle.length,54);
+  assert((await db.getOriginalItemSaleFlags(puzzle)).every(f=>f.isMissionItem));
 });
