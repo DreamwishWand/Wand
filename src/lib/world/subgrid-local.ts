@@ -162,3 +162,10 @@ export function supportHitIndices(tree:SupportTree,shapes:Readonly<Record<string
   return shape?.runs.some(run=>y===o.y+run.y&&x>=o.x+run.x&&x<o.x+run.x+run.width)?[i]:[];
  });
 }
+
+/** Retain the grabbed cell offset when moving a child on its native lattice. */
+export function supportDragDestination(o:Pick<SupportObject,'x'|'y'>,start:{x:number;y:number},end:{x:number;y:number}):{x:number;y:number}|null{
+ if(![o.x,o.y,start.x,start.y,end.x,end.y].every(Number.isSafeInteger))return null;
+ const x=o.x+end.x-start.x,y=o.y+end.y-start.y;
+ return [x,y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647)?{x,y}:null;
+}
