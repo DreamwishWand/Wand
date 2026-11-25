@@ -4,6 +4,8 @@
  import {announcementCopy} from './community-announcement-copy.ts';
  import {isPointAnnouncement,type AnnouncementProvider,type AnnouncementResult,type AnnouncementDate} from './community-announcements.ts';
  import AnnouncementComposer from './AnnouncementComposer.svelte';
+ import CampaignCodeList from './CampaignCodeList.svelte';
+ import type {AnnouncementKind} from './community-announcements.ts';
  import type {WandLanguage} from '$lib/ui/preferences.ts';
  export let provider:AnnouncementProvider|null;
  export let data:AnnouncementResult;
@@ -13,6 +15,9 @@
  export let toggleCalendar:(checked:boolean)=>void;
  export let refresh:()=>void;
  let composing=false;
+ let initialKind:AnnouncementKind='update';
+ function shareCode(){initialKind='code';composing=true;}
+ $: news=data.latest.filter(item=>item.kind!=='code');
  $: copy=announcementCopy(language);
  function date(value:AnnouncementDate,lang:WandLanguage){
    const parsed=new Date(value.precision==='day'?value.value+'T12:00:00Z':value.value);
@@ -26,18 +31,18 @@
   <div class="title"><WandIcon name="community" size={19}/><h2>{copy.heading}</h2></div>
   <div class="controls">
    {#if provider}<label><input type="checkbox" checked={showCalendar} on:change={e=>toggleCalendar(e.currentTarget.checked)}/>{copy.showCalendar}</label>{/if}
-   <button type="button" on:click={()=>composing=!composing} aria-expanded={composing}><WandIcon name="edit" size={17}/>{copy.share}</button>
+   <button type="button" on:click={()=>{initialKind='update';composing=!composing;}} aria-expanded={composing}><WandIcon name="edit" size={17}/>{copy.share}</button>
    {#if provider}<a href={provider.browseHref()}>{copy.all}<WandIcon name="arrow" size={15}/></a>{/if}
   </div>
  </header>
- {#if composing}<AnnouncementComposer {provider} {language} close={()=>composing=false} {published}/>{/if}
+ {#if composing}{#key initialKind}<AnnouncementComposer {provider} {language} {initialKind} close={()=>composing=false} {published}/>{/key}{/if}
  {#if state==='unavailable'}<p role="status">{copy.community} · {copy.unavailable}</p>
  {:else if state==='error'}<p role="status">{copy.error} <button type="button" on:click={refresh}>{copy.retry}</button></p>
  {:else if state==='loading'}<p role="status">{copy.loading}</p>
- {:else if !data.latest.length}<p role="status">{copy.empty}</p>
+ {:else if !news.length}<p role="status">{copy.empty}</p>
  {:else if provider}
  <div class="announcements-grid">
-  {#each data.latest as item (item.id)}
+  {#each news as item (item.id)}
    <a class="news-card" href={provider.threadHref(item.id)}>
     {#if item.imageUrl}<img src={item.imageUrl} alt="" loading="lazy"/>{/if}
     <div class="news-content"><small>{copy.kinds[item.kind]}</small><strong>{item.title}</strong>
@@ -47,6 +52,7 @@
   {/each}
  </div>
  {/if}
+ <CampaignCodeList {language} community={data.latest} share={shareCode}/>
 </section>
 <style>
  .guide-announcements{min-width:0;padding:12px;border:1px solid var(--wand-line);border-radius:12px;background:var(--wand-card);color:var(--wand-text)}
