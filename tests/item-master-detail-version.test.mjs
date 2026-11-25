@@ -19,19 +19,30 @@ const catalog=JSON.parse(await readFile(
   join(process.cwd(),'static/ddv/item-master-releases.json'),'utf8'
 ));
 
+const complete=JSON.parse(await readFile(
+  join(process.cwd(),'static/ddv/item-master/current/index.json'),'utf8'
+));
 function fakeFetch(current='1.26.2') {
   const requests=[];
   const next={...original,version:'steam-1.26.3-item-id-master-v1',
     target:{...original.target,gameVersion:'1.26.3'}};
+  const nextComplete={...complete,version:'steam-1.26.3-item-id-master-v3',
+    target:{...complete.target,gameVersion:'1.26.3'}};
+  delete nextComplete.acquisitionProjection;
+  const nextCompletePins={...catalog.releases.find(r=>r.gameVersion==='1.26.2').complete,
+    release:nextComplete.version};
+  delete nextCompletePins.acquisitionProjection;
   const versions={...catalog,current,releases:[
     ...catalog.releases,
     {gameVersion:'1.26.3',release:next.version,count:next.count,
-      archiveSha256:'a'.repeat(64)}
+      archiveSha256:'a'.repeat(64),complete:nextCompletePins}
   ]};
   const fetcher=async url=>{
     requests.push(url);
     if(url==='/Wand/ddv/item-master-releases.json')
       return new Response(JSON.stringify(versions),{status:200});
+    if(url==='/Wand/ddv/item-master/current/index.json'&&current==='1.26.3')
+      return new Response(JSON.stringify(nextComplete),{status:200});
     if(url==='/Wand/ddv/item-master/steam-1.26.3/index.json')
       return new Response(JSON.stringify(next),{status:200});
     assert(url.startsWith('/Wand/'));
@@ -57,6 +68,31 @@ test('joined Item details can select the compatible version and remain lazy',asy
   assert.equal(detailed.itemId,item.itemId);
   assert.equal(requests.filter(url=>url.includes('db01-item-acquisition')).length,1);
   assert.equal(requests.filter(url=>url.includes('db01-item-source-relations')).length,1);
+});
+
+test('current details pin the complete manifest and never reopen mutable release pointers',async()=>{
+  const {fetcher,requests}=fakeFetch();
+  const pinned=async url=>{
+    if(url.endsWith('/item-master-releases.json')||url.endsWith('/item-master/current/index.json')){
+      assert(!requests.includes(url),'current pointer was reopened');
+    }
+    assert(!url.includes('/item-master/steam-1.26.2/'),'legacy Item snapshot was opened');
+    return fetcher(url);
+  };
+  const db=await openCurrentItemDetails('/Wand',pinned);
+  assert.equal(db.release.scope,'complete');
+  assert.equal(db.release.count,complete.count);
+  assert.equal(db.release.archiveSha256,complete.archiveSha256);
+  const ids=[40005160,2130000001,99999999,40005160];
+  const result=await db.getSelectedItems(ids,['nativeCategory','names.en'],{acquisition:true,sourceRelations:true});
+  assert.equal(result[0].values['names.en'],'Glass Shoe');
+  assert.equal(result[1].values.nativeCategory,'Condition');
+  assert.equal(result[2],null);
+  assert.deepEqual(result[0],result[3]);
+  await db.getSelectedItems(ids,['nativeCategory']);
+  assert.equal(requests.filter(url=>url.endsWith('/item-master-releases.json')).length,1);
+  assert.equal(requests.filter(url=>url.endsWith('/item-master/current/index.json')).length,1);
+  assert(!requests.some(url=>url.includes('/acquisition/public/')));
 });
 
 test('unpublished newer DB-02 handoff cannot silently join historical acquisition data',async()=>{
