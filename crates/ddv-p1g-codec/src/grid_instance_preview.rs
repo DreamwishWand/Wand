@@ -1084,7 +1084,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
 /// output. Same-grid objects retain their native identities; cross-grid
 /// ordinary leaves require unreferenced old and newly allocated identities.
 pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_grid_transfer};
+    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_world_transfer};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
     if plan.len()>65536{return Err(CodecError::Bounds);}
@@ -1124,7 +1124,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let data=source.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
         let d=destinations.get(key).ok_or(bad)?;
         let scope=|s:&str|s.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).map(str::to_owned);
-        if scope(layout).is_none()||scope(layout)!=scope(&d.layout_path)||!data.starts_with("GridData/")||
+        if scope(layout).is_none()||scope(&d.layout_path).is_none()||!data.starts_with("GridData/")||
            source.get("ID").and_then(Value::as_u64)!=key_id(&target.grid_id)||
            collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)))||
            grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&g.get("GridDataPath").and_then(Value::as_str)==Some(data)).count()!=1{return Err(bad);}
@@ -1165,7 +1165,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         update(&mut working,draft)?;
     }
     for (target,expected,d,xy,orientation) in cross{
-        let draft=preview_plain_grid_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+        let draft=preview_plain_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
         update(&mut working,draft)?;
     }
     Ok(std::mem::take(&mut *working))
@@ -1217,6 +1217,24 @@ mod tests{
         stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
         plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn cut_between_outdoor_worlds_rechecks_both_addresses_and_preserves_inventory(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/VillageExpansion01/B.json","GridDataPath":"GridData/Villages/VillageExpansion01/VillageExpansion01-DesertArea01LevelGrid01-GridData.json","TessellationFactor":2,"NextGridObjectID":5,"Objects":{}}}}}}"#;
+        let dest=serde_json::json!({"layoutId":"SceneLayouts/VillageExpansion01/B.json","gridDataPath":"GridData/Villages/VillageExpansion01/VillageExpansion01-DesertArea01LevelGrid01-GridData.json","factor":2,"sizeX":16,"sizeY":16});
+        let plan=serde_json::json!([{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":dest,"x":5,"y":5,"orientation":"GridOrientation_Left"}]);
+        let d=group_cut_candidate(raw,&plan.to_string()).unwrap();let j:Value=serde_json::from_str(&d).unwrap();
+        assert!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["NextGridObjectID"],6);
+        assert!(d.contains("\"Marker\":1e2"));
+        let mut stale:Value=serde_json::from_slice(raw).unwrap();
+        stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+        assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+        let mut wrong:Value=serde_json::from_slice(raw).unwrap();
+        wrong["World"]["GridCollection"]["Grids"]["42"]["GridDataPath"]=Value::from("GridData/Room.json");
+        assert!(group_cut_candidate(&serde_json::to_vec(&wrong).unwrap(),&plan.to_string()).is_err());
     }
 
     #[test]
