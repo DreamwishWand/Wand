@@ -19,3 +19,21 @@ test('categories and world source tags combine with OR within and AND across axe
  assert.equal(matches(item('Furniture',0,['Table'],['c']),f),false);
  assert.equal(matches(item('Furniture',0,['Bed'],['b']),f),false);
 });
+
+test('current shared ordinary scope overrides legacy tag guesses and keeps ambiguous or special items visible',()=>{
+ const source=(i,scopeHint,roomFloorWallCandidate,terrainCandidate)=>({...i,sourcePlacement:{
+   ordinaryScope:{scopeHint,roomFloorWallCandidate,terrainCandidate},placementLegalityVerified:false
+ }});
+ const shared=source(item('Furniture',0,['Wall']),'both',true,true);
+ const indoor=source(item('Furniture',0,['Decor']),'indoor',true,false);
+ const outdoor=source(item('Building',1),'outdoor',false,true);
+ const special=source(item('Furniture',2),'unknown',null,null);
+ const invalid=source(item('Furniture',0,['Wall']),'indoor',null,false);
+ const unknown={...indoor,placementScope:'unknown'};
+ const verified={...shared,placementScope:'indoor'};
+ const rows=[shared,indoor,outdoor,special,invalid,unknown,verified];
+ assert.deepEqual(rows.map(i=>matchesScope(i,'outdoor')),[true,false,true,true,true,true,false]);
+ assert.deepEqual(rows.map(i=>matchesScope(i,'indoor')),[true,true,false,true,true,true,true]);
+ assert(rows.every(i=>matchesScope(i,'all')));
+ assert.deepEqual(categoriesOf(outdoor),['buildings']);
+});

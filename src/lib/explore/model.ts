@@ -11,6 +11,16 @@ export interface ExploreItem {
   worlds?:readonly string[];
   /** Optional validated shared placement projection. Unknown is not excluded. */
   placementScope?:'indoor'|'outdoor'|'both'|'unknown';
+  /** Source-only ordinary home / terrain evidence from the common Item DB.
+   * This is not a verified engine placement permission. */
+  sourcePlacement?:Readonly<{
+    ordinaryScope?:Readonly<{
+      scopeHint:'indoor'|'outdoor'|'both'|'unknown';
+      roomFloorWallCandidate:boolean|null;
+      terrainCandidate:boolean|null;
+    }>|null;
+    placementLegalityVerified:false;
+  }>;
   sourceSetItemId?:number|null;
   sourceSetNames?:Readonly<Record<string,string|null>>;
   prefabGuid?:string|null;

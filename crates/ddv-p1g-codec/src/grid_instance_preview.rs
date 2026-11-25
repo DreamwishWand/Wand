@@ -573,7 +573,8 @@ fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&st
    let nested=if obj.get("State").and_then(|s|s.get("SubGrid")).is_some(){visit(grids,diff,owners,&child,key,seen,count,depth+1)?}else{Value::Null};
    rows.push(serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":orientation,"child":nested}));
   }
-  Ok(serde_json::json!({"factor":factor,"objects":rows}))
+  let path=g.get("GridDataPath").and_then(Value::as_str).filter(|p|p.starts_with("GridData/Furniture/")&&p.ends_with(".json")&&p.len()<=512&&!p.contains("..")&&!p.contains('\\')&&!p.chars().any(char::is_control));
+  Ok(serde_json::json!({"factor":factor,"objects":rows,"sourcePath":path}))
  }
  let mut seen=HashSet::from([parent_grid.to_owned()]);let mut count=0;
  visit(grids,diff,&owners,parent_grid,parent_object,&mut seen,&mut count,0)
@@ -588,11 +589,147 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
  let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
  serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false})).map_err(|_|CodecError::Json)
 }
-/// Translation-only test operation. Parent's reference and every descendant
-/// remain byte-identical; only the two parent coordinates are replaced.
-pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+/// Existing child cells only; UI separately establishes identical source
+/// footprint and mask. Never infer bounds from occupied extent.
+pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
- if ordinal==0||item/100_000!=400||expected==replacement{return Err(bad);}
+ let o=plan.as_object().filter(|o|(6..=7).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"path"|"edits"|"terrainPath"|"stock"|"transfer"))&&["edits","stock","transfer"].iter().filter(|k|o.contains_key(**k)).count()==1).ok_or(bad)?;
+ let int=|v:&Value,k:&str|v.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+ let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+ let item=o.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
+ let expected=(int(plan,"expectedX")?,int(plan,"expectedY")?);
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+ if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected)||!scan.subgrid_parents.contains(&ordinal){return Err(bad);}
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+ subgrid_tree(c,&target.grid_id,&target.object_id)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+ let path=o.get("path").and_then(Value::as_array).filter(|a|a.len()<=8).ok_or(bad)?;
+ let mut gid=target.grid_id.clone();let mut oid=target.object_id.clone();
+ let child=|g:&str,o:&str|grids.get(g).and_then(|v|v.get("Objects")).and_then(|v|v.get(o)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).map(|v|v.to_string()).ok_or(bad);
+ for index in path{
+  gid=child(&gid,&oid)?;
+  let i=index.as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512).ok_or(bad)?;
+  oid=grids.get(&gid).and_then(|g|g.get("Objects")).and_then(Value::as_object).and_then(|m|m.keys().nth(i)).cloned().ok_or(bad)?;
+ }
+ gid=child(&gid,&oid)?;
+ let objects=grids.get(&gid).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+ if let Some(transfer)=o.get("transfer"){
+  if o.contains_key("terrainPath"){return Err(bad);}
+  let row=transfer.as_object().filter(|r|r.len()==9&&r.keys().all(|k|matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+  let index=row.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512).ok_or(bad)?;
+  let (key,v)=objects.iter().nth(index).ok_or(bad)?;
+  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let expected=(int(transfer,"expectedX")?,int(transfer,"expectedY")?);
+  let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
+  if v.get("ItemID").and_then(Value::as_u64)!=Some(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(expected)).count()!=1{return Err(bad);}
+  let dest=row.get("destination").and_then(Value::as_object).filter(|d|d.len()==5&&d.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"terrainPath"))).ok_or(bad)?;
+  let dord=dest.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0&&*n!=ordinal).ok_or(bad)?;
+  let ditem=dest.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
+  let dvalue=row.get("destination").ok_or(bad)?;
+  let (dt,dxy)=scan.private_targets.get(dord-1).ok_or(bad)?;
+  if dt.kind!=GridObjectKind::Full||dt.item_id!=ditem||*dxy!=Some((int(dvalue,"expectedX")?,int(dvalue,"expectedY")?))||!scan.subgrid_parents.contains(&dord){return Err(bad);}
+  subgrid_tree(c,&dt.grid_id,&dt.object_id)?;
+  let to=child(&dt.grid_id,&dt.object_id)?;
+  if gid==to{return Err(bad);}
+  let g=grids.get(&to).ok_or(bad)?;
+  let path=dest.get("terrainPath").and_then(Value::as_str).ok_or(bad)?;
+  if g.get("GridDataPath").and_then(Value::as_str)!=Some(path)||g.get("Objects").and_then(Value::as_object).is_none_or(|m|m.len()>=512){return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+  let entry=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  let cells=entry[4].as_array().filter(|a|a.len()==(sx*sy) as usize).ok_or(bad)?;
+  let (x,y)=(int(transfer,"x")?,int(transfer,"y")?);
+  if x<0||y<0||x as u32>=sx*factor||y as u32>=sy*factor||cells[((y as u32/factor)*sx+x as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
+  let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+  let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+  let source_refs=grid_identity_dependencies_for_ids(profile,&gid,&[key.clone()])?;
+  let dest_refs=grid_identity_dependencies_for_ids(profile,&to,&[next.to_string()])?;
+  if source_refs.blocking()>0||dest_refs.blocking()>0||dest_refs.historical>0{return Err(bad);}
+  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:id};
+  let d=ddv_save_patch::PlainGridDestination{grid_id:to,layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
+  return ddv_save_patch::preview_support_grid_transfer(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&d,(x,y),orientation).map_err(|_|CodecError::Patch);
+ }
+ if let Some(stock)=o.get("stock"){
+  let row=stock.as_object().ok_or(bad)?;
+  let action=row.get("action").and_then(Value::as_str).ok_or(bad)?;
+  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+  let source=std::str::from_utf8(profile).map_err(|_|bad)?;
+  if action=="pickup"{
+   if row.len()!=7||o.contains_key("terrainPath")||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"index"|"expectedX"|"expectedY"|"expectedOrientation")){return Err(bad);}
+   let i=row.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512).ok_or(bad)?;
+   let (key,v)=objects.iter().nth(i).ok_or(bad)?;
+   let expected=(int(stock,"expectedX")?,int(stock,"expectedY")?);
+   if v.get("ItemID").and_then(Value::as_u64)!=Some(id)||v.get("Orientation").and_then(Value::as_str)!=row.get("expectedOrientation").and_then(Value::as_str)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected){return Err(bad);}
+   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:id};
+   if grid_identity_dependencies_for_ids(profile,&gid,&[key.clone()])?.blocking()>0{return Err(bad);}
+   return ddv_save_patch::preview_furniture_stock_transaction(source,amount,ddv_save_patch::FurnitureStockAction::Pickup{target:&target,expected}).map_err(|_|CodecError::Patch);
+  }
+  if action!="place"||row.len()!=6||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))||amount==0{return Err(bad);}
+  let path=o.get("terrainPath").and_then(Value::as_str).ok_or(bad)?;
+  let g=grids.get(&gid).ok_or(bad)?;
+  if g.get("GridDataPath").and_then(Value::as_str)!=Some(path)||objects.len()>=512{return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+  let entry=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  let cells=entry[4].as_array().filter(|a|a.len()==(sx*sy) as usize).ok_or(bad)?;
+  let (x,y)=(int(stock,"x")?,int(stock,"y")?);
+  if x<0||y<0||x as u32>=sx*factor||y as u32>=sy*factor||cells[((y as u32/factor)*sx+x as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
+  let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+  let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+  let refs=grid_identity_dependencies_for_ids(profile,&gid,&[next.to_string()])?;
+  if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  let d=ddv_save_patch::PlainGridDestination{grid_id:gid,layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
+  return ddv_save_patch::preview_support_grid_stock_place(source,&d,id,(x,y),orientation,amount).map_err(|_|CodecError::Patch);
+ }
+ let edits=o.get("edits").and_then(Value::as_array).filter(|a|matches!(a.len(),1|2)).ok_or(bad)?;
+ let swap=edits.len()==2;
+ let mut terrain=None;
+ if let Some(path)=o.get("terrainPath"){
+  if swap{return Err(bad);}
+  let path=path.as_str().ok_or(bad)?;let g=grids.get(&gid).ok_or(bad)?;
+  if g.get("GridDataPath").and_then(Value::as_str)!=Some(path){return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as usize;
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+  let row=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=row[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;let sy=row[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;
+  let cells=row[4].as_array().filter(|a|a.len()==sx*sy).ok_or(bad)?.clone();terrain=Some((sx,sy,factor,cells));
+ }
+ let mut seen=HashSet::new();let mut result=Vec::new();let mut ids=Vec::new();
+ for e in edits{
+  let row=e.as_object().filter(|r|r.len()==8&&r.keys().all(|k|matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))).ok_or(bad)?;
+  let i=row.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512&&seen.insert(*n)).ok_or(bad)?;
+  let (id,v)=objects.iter().nth(i).ok_or(bad)?;let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let before=(int(e,"expectedX")?,int(e,"expectedY")?);let after=(int(e,"x")?,int(e,"y")?);
+  let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;let new=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+  if v.get("ItemID").and_then(Value::as_u64)!=Some(item)||v.get("ID").and_then(Value::as_u64)!=key_id(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(before)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||
+     v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+     !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&new)||
+     if swap{before==after||old!=new}else if terrain.is_some(){before==after&&old==new}else{before!=after||old==new}{return Err(bad);}
+  if let Some((sx,sy,factor,cells))=&terrain{
+   let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as usize)/ *factor<*sx&&(y as usize)/ *factor<*sy&&cells[(y as usize)/ *factor* *sx+(x as usize)/ *factor].as_u64().is_some_and(|n|n!=0);
+   if !valid(before)||!valid(after)||objects.iter().any(|(other,o)|other!=id&&o.as_object().and_then(observed_coordinates)==Some(after)){return Err(bad);}
+  }
+  if objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(before)).count()!=1{return Err(bad);}
+  ids.push(id.clone());
+  result.push(ddv_save_patch::GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:id.clone(),item_id:item},expected:before,position:(before!=after).then_some(after),orientation:(old!=new).then(||(old.to_owned(),new.to_owned()))});
+ }
+ if swap&&(result[0].position!=Some(result[1].expected)||result[1].position!=Some(result[0].expected)){return Err(bad);}
+ if grid_identity_dependencies_for_ids(profile,&gid,&ids)?.blocking()>0{return Err(bad);}
+ ddv_save_patch::preview_existing_grid_mixed_batch(std::str::from_utf8(profile).map_err(|_|bad)?,&result).map_err(|_|CodecError::Patch)
+}
+/// Test-only parent transform. Child grids and the exact State remain unchanged.
+pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let bad=CodecError::Json;
+ if ordinal==0||item/100_000!=400||expected==replacement&&turn.is_none()&&source_witness.is_none(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let (scan,_)=scan_grid_instances(profile)?;
@@ -601,16 +738,28 @@ pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64
  if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected)||!scan.subgrid_parents.contains(&ordinal){return Err(bad);}
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
  let dest=resolve_plain_grid_destination(profile,witness)?;
- if dest.grid_id!=target.grid_id{return Err(bad);}
- let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u32)<dest.size.0*dest.tessellation&&(y as u32)<dest.size.1*dest.tessellation;
- if !valid(expected)||!valid(replacement){return Err(bad);}
+ let cross=dest.grid_id!=target.grid_id;
+ let source=if cross{let src=resolve_plain_grid_destination(profile,source_witness.ok_or(bad)?)?;if src.grid_id!=target.grid_id||src.tessellation!=dest.tessellation{return Err(bad);}src}else{if source_witness.is_some(){return Err(bad);}dest.clone()};
+ let valid=|d:&ddv_save_patch::PlainGridDestination,(x,y):(i32,i32)|x>=0&&y>=0&&(x as u32)<d.size.0*d.tessellation&&(y as u32)<d.size.1*d.tessellation;
+ if !valid(&source,expected)||!valid(&dest,replacement){return Err(bad);}
  let obj=c.get("Grids").and_then(|g|g.get(&target.grid_id)).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).ok_or(bad)?;
  if obj.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id)||obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
     obj.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid"))||
     obj.get("Orientation").and_then(Value::as_str).is_none_or(|o|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o)){return Err(bad);}
- subgrid_tree(c,&target.grid_id,&target.object_id)?;
- if grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
- let draft=ddv_save_patch::preview_existing_grid_coordinates(std::str::from_utf8(profile).map_err(|_|bad)?,target.clone(),expected,replacement).map_err(|_|CodecError::Patch)?;
+ let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
+ let refs=grid_identity_dependencies(profile,target)?;
+ if refs.blocking()>0||cross&&refs.historical>0{return Err(bad);}
+ let old=obj.get("Orientation").and_then(Value::as_str).ok_or(bad)?;
+ let new=if let Some((before,after))=turn{if before!=old||before==after||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&after){return Err(bad);}after}else{old};
+ let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+ let draft=if cross{
+  let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+  let d=ddv_save_patch::preview_support_parent_grid_transfer(json,target,expected,&dest,replacement,new).map_err(|_|CodecError::Patch)?;
+  let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
+  let next_collection=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+  if subgrid_tree(next_collection,&dest.grid_id,&next)?!=tree{return Err(bad);}
+  d
+ }else{ddv_save_patch::preview_existing_grid_mixed_batch(json,&[ddv_save_patch::GridMixedEdit{target:target.clone(),expected,position:(expected!=replacement).then_some(replacement),orientation:turn.map(|(a,b)|(a.to_owned(),b.to_owned()))}]).map_err(|_|CodecError::Patch)?};
  if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{return Err(bad);}
  Ok(draft)
 }
@@ -1125,6 +1274,89 @@ mod terrain_session_tests{
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
     }
     #[test]
+    fn support_stock_place_and_pickup_are_atomic_and_preserve_other_records(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005161":{"Amount":2,"Marker":"ItemMarker_Favorite"}}}},"Other":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","stock":{"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"}});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let original:Value=serde_json::from_slice(save).unwrap();let mut expected=original.clone();
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(1);
+        expected["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"]=Value::from(3);
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40005161,"X":2,"Y":0,"Orientation":"GridOrientation_Left"});
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);assert!(draft.patched_json.contains("\"Other\":1e2"));
+        plan["stock"]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"]["y"]=Value::from(0);plan["stock"]["expectedStock"]=Value::from(1);assert!(support_child_candidate(save,&plan).is_err());
+        plan["stock"]["expectedStock"]=Value::from(2);plan["stock"]["x"]=Value::from(0);assert!(support_child_candidate(save,&plan).is_err());
+        plan.as_object_mut().unwrap().remove("terrainPath");
+        plan["stock"]=serde_json::json!({"action":"pickup","itemId":40005161,"expectedStock":1,"index":1,"expectedX":2,"expectedY":0,"expectedOrientation":"GridOrientation_Left"});
+        let picked=support_child_candidate(draft.patched_json.as_bytes(),&plan).unwrap();
+        let mut expected_after=original.clone();expected_after["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"]=Value::from(3);
+        assert_eq!(serde_json::from_str::<Value>(&picked.patched_json).unwrap(),expected_after);
+        let mut empty=original.clone();empty["World"]["GridCollection"]["Grids"]["8"]["Objects"]=serde_json::json!({});
+        plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json");
+        plan["stock"]=serde_json::json!({"action":"place","itemId":40005161,"expectedStock":2,"x":2,"y":0,"orientation":"GridOrientation_Left"});
+        assert!(support_child_candidate(&serde_json::to_vec(&empty).unwrap(),&plan).is_ok());
+    }
+    #[test]
+    fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","edits":[{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":2,"y":0,"orientation":"GridOrientation_Left"}]});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["X"]=Value::from(2);
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Left");
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["edits"][0]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(4);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(0);plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/Table01-GridData.json");assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
+    fn support_transfer_is_atomic_and_stock_independent(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005160,"X":8,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":9}}}}},
+          "8":{"ID":8,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}},
+          "9":{"ID":9,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":4,"Objects":{}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"transfer":{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","destination":{"localOrdinal":2,"itemId":40005160,"expectedX":8,"expectedY":6,"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json"},"x":2,"y":0,"orientation":"GridOrientation_Left"}});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]=serde_json::json!({});
+        expected["World"]["GridCollection"]["Grids"]["9"]["Objects"]=serde_json::json!({"4":{"ID":4,"ItemID":40005161,"X":2,"Y":0,"Orientation":"GridOrientation_Left"}});
+        expected["World"]["GridCollection"]["Grids"]["9"]["NextGridObjectID"]=Value::from(5);
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["transfer"]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["transfer"]["y"]=Value::from(0);plan["transfer"]["destination"]["expectedX"]=Value::from(9);assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
+    fn child_rotation_and_swap_change_only_selected_scalars(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":1,"Y":2,"Orientation":"GridOrientation_Left","State":null},"2":{"ID":2,"ItemID":40005162,"X":3,"Y":4,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"edits":[{"index":0,"itemId":40005161,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Left","x":1,"y":2,"orientation":"GridOrientation_Down"}]});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Down");
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["edits"][0]["x"]=Value::from(3);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"]=serde_json::json!([
+          {"index":0,"itemId":40005161,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Left","x":3,"y":4,"orientation":"GridOrientation_Left"},
+          {"index":1,"itemId":40005162,"expectedX":3,"expectedY":4,"expectedOrientation":"GridOrientation_Down","x":1,"y":2,"orientation":"GridOrientation_Down"}
+        ]);
+        let draft=support_child_candidate(save,&plan).unwrap();let mut expected:Value=serde_json::from_slice(save).unwrap();
+        for (id,x,y) in [("1",3,4),("2",1,2)]{expected["World"]["GridCollection"]["Grids"]["8"]["Objects"][id]["X"]=Value::from(x);expected["World"]["GridCollection"]["Grids"]["8"]["Objects"][id]["Y"]=Value::from(y);}
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        plan["edits"][1]["y"]=Value::from(7);assert!(support_child_candidate(save,&plan).is_err());
+        plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
     fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
@@ -1137,11 +1369,27 @@ mod terrain_session_tests{
         assert_eq!(view["tree"]["objects"][0]["child"]["objects"][0]["itemId"],40005162);
         assert_eq!(view["tree"]["objects"][0]["orientation"],"GridOrientation_Left");
         assert!(!view.to_string().contains("GridID"));assert!(!view.to_string().contains("Unknown"));
-        let draft=support_parent_move_candidate(save,1,40005160,(4,6),(10,12),&witness).unwrap();
+        let draft=support_parent_move_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None).unwrap();
         let mut expected:Value=serde_json::from_slice(save).unwrap();expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["X"]=Value::from(10);expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["Y"]=Value::from(12);
         assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
         assert!(draft.patched_json.contains("\"Unknown\":1e2"));assert!(draft.patched_json.contains("\"Other\":1e2"));
-        assert!(support_parent_move_candidate(save,1,40005160,(4,6),(40,12),&witness).is_err());
+        assert!(support_parent_move_candidate(save,1,40005160,(4,6),(40,12),&witness,None,None).is_err());
+        let rotation=support_parent_move_candidate(save,1,40005160,(4,6),(4,6),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None).unwrap();
+        let mut rotated:Value=serde_json::from_slice(save).unwrap();
+        rotated["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Left");
+        assert_eq!(serde_json::from_str::<Value>(&rotation.patched_json).unwrap(),rotated);
+        assert!(rotation.patched_json.contains("\"Unknown\":1e2"));
+        assert!(support_parent_move_candidate(save,1,40005160,(4,6),(4,6),&witness,Some(("GridOrientation_Up","GridOrientation_Left")),None).is_err());
+        let mut cross:Value=serde_json::from_slice(save).unwrap();
+        cross["World"]["GridCollection"]["Grids"]["10"]=serde_json::json!({"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/Other.json","GridDataPath":"GridData/Other.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{}});
+        let dest=serde_json::json!({"layoutId":"SceneLayouts/Village04/Other.json","gridDataPath":"GridData/Other.json","factor":2,"sizeX":20,"sizeY":20});
+        let bytes=serde_json::to_vec(&cross).unwrap();
+        let d=support_parent_move_candidate(&bytes,1,40005160,(4,6),(4,6),&dest,None,Some(&witness)).unwrap();
+        let mut moved=cross.clone();let mut parent=moved["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object_mut().unwrap().remove("1").unwrap();
+        parent["ID"]=Value::from(3);moved["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]=parent;
+        moved["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=Value::from(4);
+        assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),moved);
+        assert!(support_parent_move_candidate(&bytes,1,40005160,(4,6),(4,6),&dest,None,None).is_err());
         let mut alias:Value=serde_json::from_slice(save).unwrap();
         let mut duplicate=alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"].clone();duplicate["ID"]=Value::from(2);alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=duplicate;
         alias["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);

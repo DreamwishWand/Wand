@@ -16,6 +16,8 @@ import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
+import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
+import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
@@ -843,7 +845,9 @@ function loadLinkedLocalizations(project,e,version,source,byId,legacy){
 // Project only explicit result/reward occurrences, never generic condition,
 // ingredient, tag, exclusion or spawn references. Source roles are candidates
 // independent of DB-02's six acquisition categories and runtime availability.
-function nativeAcquisitionRole(category,path){
+function nativeAcquisitionRole(category,path,sourceClass){
+  if(sourceClass==='FurnitureBlockerItemData'&&path==='source.DefaultRewardItemID')return 'blocker_default_reward';
+  if(sourceClass==='FurnitureAncientMachineItemData'&&path==='source.BeeHouse.ProducedItemID')return 'machine_produced_item';
   if(category==='ActivityData'&&/^source\.(?:Result\.ItemID|ResultItemID)$/.test(path))return 'activity_result';
   if(category==='ActivityItem'&&path==='source.ProducedItemID')return 'produced_item';
   if(category==='Story'&&path==='source.Reward.ItemID')return 'story_reward';
@@ -852,7 +856,7 @@ function nativeAcquisitionRole(category,path){
   if(category==='ConditionalEvent'&&/^source\.GiveItem\.Items\[\d+\]\.ItemID$/.test(path))return 'conditional_grant';
   if(category==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path))return 'quest_currency_reward';
   if(category==='Mission'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(path))return 'quest_additional_loot_candidate';
-  if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Item)\.ItemID$/.test(path))return 'loot_table_candidate';
+  if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Items\[\d+\])\.ItemID$/.test(path))return 'loot_table_candidate';
   return null;
 }
 // Earlier source-presence evidence: the audited 1.26.1 -> 1.26.2
@@ -1119,6 +1123,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const context=placementContexts.get(row.itemId);
     if(context){
       add('placement.sourceContext',row.itemId,context);
+      if(context.ordinaryScope)add('placement.sourceOrdinaryScopeHint',row.itemId,context.ordinaryScope.scopeHint);
       if(context.floor){
         add('placement.sourceFloorClass',row.itemId,context.floor.kind);
         add('placement.sourceFloorTypeNames',row.itemId,context.floor.floorTypes);
@@ -1269,10 +1274,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     }
   }
   const refs=buildReferenceColumns(rows);
-  const sourceCategories=new Map(rows.map(row=>[row.itemId,row.nativeCategory]));
+  const sourceDefinitions=new Map(rows.map(row=>[row.itemId,row]));
   for(const row of rows){
     const candidates=(refs.incoming.get(row.itemId)??[]).flatMap(([sourceId,path])=>{
-      const role=nativeAcquisitionRole(sourceCategories.get(sourceId),path);
+      const source=sourceDefinitions.get(sourceId);
+      const role=nativeAcquisitionRole(source?.nativeCategory,path,source?.sourceClass);
       return role===null?[]:[[sourceId,role,path]];
     });
     if(candidates.length){
@@ -1408,6 +1414,8 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   // localized-text coverage; do not imply every newly exposed key is translated.
   const localizations=loadLocalizations(project,e,version,source,byId);
   const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
+  attachOriginalSceneFacts(project,source,byId);
+  attachOriginalFurnitureProduction(project,source,byId,knownSourceFieldsAgree);
   const linkedLocalizations=loadLinkedLocalizations(project,e,version,source,byId,localizations);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -1506,6 +1514,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
           acceptedFloorMask:placementContexts.get(i).floor?.mask??null,
           surface:placementContexts.get(i).floor?.surface??null,
           scene:placementContexts.get(i).scene,
+          ordinaryScope:placementContexts.get(i).ordinaryScope,
           placementLegalityVerified:false}}:{}),
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},

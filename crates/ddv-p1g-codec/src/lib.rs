@@ -1415,6 +1415,13 @@ mod browser_amount_preview {
             }
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
+        pub fn prepare_indoor_furniture_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_INDOOR_FURNITURE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let draft=indoor_room_view::furniture_candidate(source,plan).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
             let source=match self.kind{
@@ -1703,16 +1710,25 @@ mod browser_amount_preview {
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_SUBGRID_NOT_OPEN"))?.profile.as_slice()};
             grid_instance_preview::inspect_subgrid_json(source,ordinal as usize,u64::from(item),(x,y)).map_err(|_|fail("DB05_SUBGRID_UNRESOLVED"))
         }
+        pub fn prepare_support_child_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_SUPPORT_CHILD_EDIT_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
+            let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let draft=grid_instance_preview::support_child_candidate(source,&v).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn prepare_support_parent_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_SUPPORT_PARENT_MOVE_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|o.len()==7&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(7..=10).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"|"expectedOrientation"|"orientation"|"source"))).ok_or_else(invalid)?;
             let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|n|usize::try_from(n).ok()).ok_or_else(invalid)?;
             let item=o.get("itemId").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
             let int=|k:&str|o.get(k).and_then(|v|v.as_i64()).and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid);
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
-            let draft=grid_instance_preview::support_parent_move_candidate(source,ordinal,item,(int("expectedX")?,int("expectedY")?),(int("x")?,int("y")?),o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
+            let turn=match (o.get("expectedOrientation"),o.get("orientation")){(None,None)=>None,(Some(a),Some(b))=>Some((a.as_str().ok_or_else(invalid)?,b.as_str().ok_or_else(invalid)?)),_=>return Err(invalid())};
+            let draft=grid_instance_preview::support_parent_move_candidate(source,ordinal,item,(int("expectedX")?,int("expectedY")?),(int("x")?,int("y")?),o.get("destination").ok_or_else(invalid)?,turn,o.get("source")).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
         pub fn prepare_fence_erase_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{

@@ -4,7 +4,7 @@ import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-export interface SupportTree{factor:1|2;objects:SupportObject[]}
+export interface SupportTree{factor:1|2;objects:SupportObject[];sourcePath:string|null}
 export interface SupportObject{itemId:number;x:number;y:number;orientation:string;child:SupportTree|null}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export function parseSupportTree(value:unknown):SupportTree{
@@ -15,13 +15,13 @@ export function parseSupportTree(value:unknown):SupportTree{
   const objects=v.objects.map((row:unknown)=>{
    if(++count>512||!record(row)||typeof row.itemId!=='number'||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||typeof row.x!=='number'||typeof row.y!=='number'||!Number.isInteger(row.x)||!Number.isInteger(row.y)||row.x< -2147483648||row.x>2147483647||row.y< -2147483648||row.y>2147483647||typeof row.orientation!=='string'||! /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(row.orientation))throw Error('subgrid object');
    return {itemId:row.itemId,x:row.x,y:row.y,orientation:row.orientation,child:row.child===null?null:visit(row.child,depth+1)};
-  });return {factor:v.factor,objects};
+  });const sourcePath=typeof v.sourcePath==='string'&&/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(v.sourcePath)&&!v.sourcePath.includes('..')&&v.sourcePath.length<=512?v.sourcePath:null;return {factor:v.factor,objects,sourcePath};
  }
  return visit(value.tree,0);
 }
 export function supportShapeKey(o:SupportObject){return isCardinal(o.orientation)?o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation)*4:null;}
 export function supportItems(tree:SupportTree){
- return tree.objects.flatMap(o=>{const key=supportShapeKey(o);return key?[{itemId:o.itemId,orientationCode:Number(key.split(':')[1])}]:[]});
+ return tree.objects.flatMap(o=>{return isCardinal(o.orientation)?[0,4,8,12].map(orientationCode=>({itemId:o.itemId,orientationCode})):[]});
 }
 export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>){
  let left=0,top=0,right=1,bottom=1;
@@ -31,16 +31,20 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
 export function supportParentEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
  return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move');
 }
-export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number){
- if(!supportParentEligible(p)||!p.shape||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
- const g=grids.find(g=>g.key===p.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==p.factor)return null;
+export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={}){
+ if(!supportParentEligible(p)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ const original=grids.find(g=>g.key===p.area),hits=mainlandTerrainHits(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
+ if(!original||!g||!r||g.factor!==p.factor||original.factor!==p.factor)return null;
+ const cross=original.key!==g.key,turned=orientation!==p.object.orientation;
+ if(cross&&nativeActionBlocked(p.object.editRestrictions,'switchGrid')||turned&&nativeActionBlocked(p.object.editRestrictions,'rotate'))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
- const shape=p.shape;
- if(x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||x===p.object.x&&y===p.object.y||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)return null;
+ const shape=turned?shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]:p.shape;
+ if(!shape||shape.cellCount>65536||x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||!cross&&!turned&&x===p.object.x&&y===p.object.y||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)return null;
  for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
   const a=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,a.x,a.y);if(hits.length!==1||hits[0].key!==g.key)return null;
  }
- return {...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}}};
+ const witness=(g:MainlandGrid)=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY});
+ return {...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{})}};
 }
 export type SupportParentCandidate=NonNullable<ReturnType<typeof supportParentCandidate>>;
 export const supportWords={
@@ -53,3 +57,108 @@ export const supportWords={
  'zh-CN':['家具上的物品','支撑面内布局','移动家具及其物品','点击目的地','创建保留层级的测试副本','应用到工作存档','下载副本','关闭','子网格不可用。','无物品','本地坐标布局。','返回','加载中'],
  'pt-BR':['Objetos sobre móveis','Layout local','Mover móvel com conteúdo','Clique no destino','Criar cópia de teste','Aplicar ao save de trabalho','Baixar cópia','Fechar','Grade filha indisponível.','Vazio','Coordenadas locais.','Voltar','Carregando']
 } as const;
+
+export interface SupportChildEdit{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;x:number;y:number;orientation:string}
+function sameFootprint(a:SourceObjectShape|undefined,b:SourceObjectShape|undefined){
+ return !!a&&!!b&&a.width===b.width&&a.height===b.height&&a.acceptedFloorTypesFlag!==undefined&&a.acceptedFloorTypesFlag===b.acceptedFloorTypesFlag&&a.cellCount===b.cellCount&&a.runs.length===b.runs.length&&a.runs.every((r,i)=>r.x===b.runs[i].x&&r.y===b.runs[i].y&&r.width===b.runs[i].width);
+}
+export function supportChildEdits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,first:number,second:number|null,turn:-1|1):SupportChildEdit[]|null{
+ const a=tree.objects[first],b=second===null?null:tree.objects[second];
+ const eligible=(o:SupportObject|undefined)=>!!o&&!o.child&&Math.floor(o.itemId/100000)===400&&editable.has(o.itemId)&&isCardinal(o.orientation);
+ if(!eligible(a))return null;
+ const shape=(o:SupportObject)=>shapes[supportShapeKey(o)??''];
+ const edit=(o:SupportObject,index:number,x:number,y:number,orientation:string):SupportChildEdit=>({index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,x,y,orientation});
+ if(second!==null){
+  if(!b||!eligible(b)||second===first||a.x===b.x&&a.y===b.y||!sameFootprint(shape(a),shape(b)))return null;
+  return [edit(a,first,b.x,b.y,a.orientation),edit(b,second,a.x,a.y,b.orientation)];
+ }
+ const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(a.orientation as typeof CARDINAL_ORIENTATIONS[number])+turn+4)%4];
+ if(!sameFootprint(shape(a),shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]))return null;
+ return [edit(a,first,a.x,a.y,orientation)];
+}
+export const childEditWords={
+ ja:['左回転','右回転','位置を交換','交換相手を選択','占有セルが変わらない操作のみ','編集を確認','小物を選択'],
+ en:['Rotate left','Rotate right','Swap positions','Select swap partner','Only unchanged occupied cells','Review edit','Select object'],
+ fr:['Tourner à gauche','Tourner à droite','Échanger les positions','Choisir un objet','Cellules occupées inchangées','Vérifier','Choisir un objet'],
+ it:['Ruota a sinistra','Ruota a destra','Scambia posizioni','Scegli oggetto','Celle occupate invariate','Verifica','Seleziona oggetto'],
+ de:['Links drehen','Rechts drehen','Positionen tauschen','Tauschobjekt wählen','Unveränderte belegte Zellen','Prüfen','Objekt wählen'],
+ 'es-ES':['Girar a la izquierda','Girar a la derecha','Intercambiar posiciones','Elegir objeto','Celdas ocupadas sin cambios','Revisar','Seleccionar objeto'],
+ 'zh-CN':['向左旋转','向右旋转','交换位置','选择交换对象','仅限占用格不变的操作','确认编辑','选择物品'],
+ 'pt-BR':['Girar à esquerda','Girar à direita','Trocar posições','Escolher objeto','Células ocupadas inalteradas','Revisar','Selecionar objeto']
+} as const;
+
+export function supportTerrainRow(value:unknown,path:string):TerrainRaster|null{
+ if(!record(value)||value.contract!=='wand.world.support-terrain@1'||value.gameVersion!=='1.26.2'||value.platform!=='Steam'||!Array.isArray(value.grids))return null;
+ const rows=value.grids.filter(r=>Array.isArray(r)&&r[0]===path);if(rows.length!==1)return null;
+ const r=rows[0];if(r.length!==5||!Number.isSafeInteger(r[1])||!Number.isSafeInteger(r[2])||r[1]<1||r[2]<1||r[1]>256||r[2]>256||typeof r[3]!=='string'||!/^[a-f0-9]{64}$/.test(r[3])||!Array.isArray(r[4])||r[4].length!==r[1]*r[2]||!r[4].every((v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff))return null;
+ return {sizeX:r[1],sizeY:r[2],nativeFloorValues:Uint32Array.from(r[4])};
+}
+export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,raster:TerrainRaster,index:number,x:number,y:number,orientation:string):SupportChildEdit[]|null{
+ const a=tree.objects[index];if(!a||a.child||Math.floor(a.itemId/100000)!==400||!editable.has(a.itemId)||!isCardinal(a.orientation)||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x===a.x&&y===a.y&&orientation===a.orientation)return null;
+ const oldKey=supportShapeKey(a),before=oldKey?shapes[oldKey]:null,shape=shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ if(!shape||!before||shape.acceptedFloorTypesFlag===undefined||before.acceptedFloorTypesFlag===undefined||shape.cellCount>65536||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},before,a.x,a.y).length||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ for(let i=0;i<tree.objects.length;i++){if(i===index)continue;const o=tree.objects[i],k=supportShapeKey(o),other=k?shapes[k]:null;if(!other)return null;
+  if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
+  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return null;
+ }
+ return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
+}
+export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
+export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string):boolean{
+ if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
+ const shape=shapes[itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ if(!shape||!shape.cellCount||shape.cellCount>65536||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return false;
+ for(const o of tree.objects){const key=supportShapeKey(o),other=key?shapes[key]:null;if(!other)return false;
+  if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
+  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return false;
+ }
+ return true;
+}
+export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string):SupportStockPlan|null{
+ if(!Number.isInteger(count)||count<1||count>2147483647||!supportPlacementFits(tree,shapes,raster,itemId,x,y,orientation))return null;
+ return {action:'place',itemId,expectedStock:count,x,y,orientation};
+}
+export const supportTransferWords={
+ ja:['別の家具へ移動','移動先の家具を選択','移動先の支持面を確認できません。'],
+ en:['Move to another support','Choose destination furniture','Destination support unavailable.'],
+ fr:['Déplacer vers un autre meuble','Choisir le meuble de destination','Support de destination indisponible.'],
+ it:['Sposta su un altro mobile','Scegli il mobile di destinazione','Supporto di destinazione non disponibile.'],
+ de:['Auf anderes Möbel verschieben','Zielmöbel auswählen','Zielauflage nicht verfügbar.'],
+ 'es-ES':['Mover a otro mueble','Elegir mueble de destino','Soporte de destino no disponible.'],
+ 'zh-CN':['移动到其他家具','选择目标家具','目标支撑面不可用。'],
+ 'pt-BR':['Mover para outro móvel','Escolher móvel de destino','Suporte de destino indisponível.']
+} as const;
+export function supportStockPickup(tree:SupportTree,index:number,counts:ReadonlyMap<number,number>,removable:ReadonlySet<number>):SupportStockPlan|null{
+ const o=tree.objects[index];if(!o||o.child||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!isCardinal(o.orientation))return null;
+ const count=counts.get(o.itemId);if(count===undefined||count>=2147483647)return null;
+ return {action:'pickup',itemId:o.itemId,expectedStock:count,index,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation};
+}
+export const supportStockWords={
+ ja:['小物を配置','在庫から選択','片付ける','複製','配置先をクリック','在庫なし','在庫を検索'],
+ en:['Place object','Choose from stock','Put away','Duplicate','Click destination','No stock','Search stock'],
+ fr:['Placer un objet','Choisir dans le stock','Ranger','Dupliquer','Cliquez la destination','Stock vide','Rechercher'],
+ it:['Posiziona oggetto','Scegli dalle scorte','Riponi','Duplica','Seleziona destinazione','Nessuna scorta','Cerca'],
+ de:['Objekt platzieren','Aus Bestand wählen','Einlagern','Duplizieren','Ziel anklicken','Kein Bestand','Suchen'],
+ 'es-ES':['Colocar objeto','Elegir del inventario','Guardar','Duplicar','Pulsa destino','Sin existencias','Buscar'],
+ 'zh-CN':['放置物品','从库存选择','收起','复制','点击目的地','无库存','搜索库存'],
+ 'pt-BR':['Colocar objeto','Escolher do estoque','Guardar','Duplicar','Clique no destino','Sem estoque','Buscar']
+} as const;
+export const supportFreeWords={
+ ja:['支持面内を移動','配置先をクリック','配置可能面','対応原本がないため自由移動は無効'],
+ en:['Move within support','Click destination','Support surface','Free movement unavailable without source data'],
+ fr:['Déplacer sur le support','Cliquez la destination','Surface de support','Déplacement libre indisponible'],
+ it:['Sposta sul supporto','Seleziona destinazione','Superficie','Spostamento libero non disponibile'],
+ de:['Auf der Fläche verschieben','Ziel anklicken','Auflagefläche','Freie Bewegung nicht verfügbar'],
+ 'es-ES':['Mover sobre soporte','Pulsa destino','Superficie','Movimiento libre no disponible'],
+ 'zh-CN':['在支撑面内移动','点击目的地','支撑面','缺少原始数据，无法自由移动'],
+ 'pt-BR':['Mover no suporte','Clique no destino','Superfície','Movimento livre indisponível']
+} as const;
+
+/** Hit only verified occupied runs; transparent holes and unknown shapes are not furniture. */
+export function supportHitIndices(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,x:number,y:number):number[]{
+ if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))return [];
+ return tree.objects.flatMap((o,i)=>{
+  const key=supportShapeKey(o),shape=key?shapes[key]:null;
+  return shape?.runs.some(run=>y===o.y+run.y&&x>=o.x+run.x&&x<o.x+run.x+run.width)?[i]:[];
+ });
+}

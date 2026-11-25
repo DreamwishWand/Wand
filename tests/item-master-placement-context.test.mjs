@@ -52,7 +52,7 @@ test('native floor-context filter reconciles the entire original Furniture and B
     const c=known.get(row.itemId);
     assert.deepEqual(row.sourcePlacement,c?{floorClass:c.floor?.kind??null,
       acceptedFloorMask:c.floor?.mask??null,surface:c.floor?.surface??null,scene:c.scene,
-      placementLegalityVerified:false}:undefined);
+      ordinaryScope:c.ordinaryScope,placementLegalityVerified:false}:undefined);
     assert.equal(row.placementScope,undefined);
   }
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
