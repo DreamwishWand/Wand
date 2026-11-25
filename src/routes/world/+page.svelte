@@ -2,6 +2,7 @@
   import {defaultWorldLayers} from '$lib/world/world-layer-state.ts';
   import WorldShortcutHelp from '$lib/world/WorldShortcutHelp.svelte';
   import {onMount,onDestroy} from 'svelte';
+  import {beforeNavigate} from '$app/navigation';
   import {base} from '$app/paths';
   import {localSaveSession,registerLocalSaveChangeGuard} from '$lib/ui/local-save-session';
   import WorldSaveExport from '$lib/world/WorldSaveExport.svelte';
@@ -96,7 +97,11 @@
     if(epoch!==recoveryEpoch||file!==sourceFile)return;
     if(!stored){writeChain={revision:null,blocked:false};recovery={phase:'ready',identity,revision:null,writable:true};return;}
     const revision=typeof stored.revision==='string'?stored.revision:null;
-    try{const draft=parseSaveSessionDraft(stored.draft,identity,all);recovery={phase:'offer',identity,revision,draft,writable:false};}
+    try{
+     const draft=parseSaveSessionDraft(stored.draft,identity,all);
+     if(!draft.timeline.snapshots.some(s=>s.edits.length)){writeChain={revision,blocked:false};recovery={phase:'ready',identity,revision,writable:true};}
+     else recovery={phase:'offer',identity,revision,draft,writable:false};
+    }
     catch{recovery={phase:'offer',identity,revision,warning:'invalid',writable:false};}
    }catch{if(epoch===recoveryEpoch&&file===sourceFile)recovery={phase:'ready',identity,revision:null,warning:'unavailable',writable:false};}
   }
@@ -133,6 +138,7 @@
   function guardSaveChange(){
    return !timeline.snapshots.some(s=>s.edits.length)||!writeFailed&&!pendingWrites&&recovery.writable||window.confirm(recoveryText[8]);
   }
+  beforeNavigate(({willUnload,cancel})=>{if(!willUnload&&!guardSaveChange())cancel();});
   function guardUnload(e:BeforeUnloadEvent){if(timeline.snapshots.some(s=>s.edits.length)&&(pendingWrites||writeFailed||!recovery.writable)){e.preventDefault();e.returnValue='';}}
 
   $: selected=grids.find(g=>g.key===key)??null;
@@ -234,7 +240,7 @@
   </nav></div>
   <WorldShortcutHelp {locale} {designMode} worldOverview={overviewOpen}/>
   {#if !designMode&&recoveryBlocked}<div class="save-recovery" role="status">{#if recovery.phase==='offer'}<strong>{recovery.warning==='invalid'?recoveryText[5]:recovery.warning==='conflict'?recoveryText[6]:recoveryText[0]}</strong><div>{#if recovery.draft}<button type="button" on:click={resumeSaveDraft}>{recoveryText[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{recoveryText[2]}</button>{#if recovery.warning}<button type="button" on:click={continueWithoutSaveRecovery}>{recoveryText[7]}</button>{/if}</div>{:else}{recoveryText[3]}{/if}</div>{:else if !designMode&&sourceFile&&recovery.warning}<p class="save-recovery" role="alert">{recovery.warning==='conflict'?recoveryText[6]:recoveryText[4]}</p>{/if}
-  {#if !designMode&&overviewOpen&&!recoveryBlocked&&sourceFile&&currentWorldEdits(timeline).length}<div class="world-export"><WorldSaveExport file={sourceFile} {timeline} {locale}/></div>{/if}
+  {#if !designMode&&(overviewOpen||!shapeMap)&&!recoveryBlocked&&sourceFile&&currentWorldEdits(timeline).length}<div class="world-export"><WorldSaveExport file={sourceFile} {timeline} {locale}/></div>{/if}
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
   {#if error}<p class="workspace-message" role="alert">{error}</p>{/if}
   {#if selected&&raster&&!designMode&&!recoveryBlocked}
