@@ -1,5 +1,6 @@
 import {writable} from 'svelte/store';
 import {readWandLanguage} from './preferences.ts';
+import {appendReplayStep,travelReplayStep,type CheckpointJournal} from '../world/checkpoint-journal.ts';
 import {checkpointWords} from '../world/world-checkpoint-words.ts';
 
 /** A selected game save stays exclusively in this browser tab's memory. */
@@ -17,6 +18,7 @@ export interface WorldCheckpointHistory{
  readonly files:readonly File[];
  readonly cursor:number;
  readonly firstStep:number;
+ readonly journal?:CheckpointJournal;
 }
 export const WORLD_CHECKPOINT_MAX_BYTES=128*1024*1024;
 export const WORLD_CHECKPOINT_MAX_STEPS=32;
@@ -31,7 +33,7 @@ export function appendWorldCheckpoint(history:WorldCheckpointHistory|undefined,s
  // The reachable history has no artificial jump back to the original.
  while(files.length>2&&(files.length>WORLD_CHECKPOINT_MAX_STEPS+1||total()>WORLD_CHECKPOINT_MAX_BYTES)){files.shift();firstStep++;}
  if(total()>WORLD_CHECKPOINT_MAX_BYTES)return null;
- return {original:base.original,files,cursor:files.length-1,firstStep};
+ return {original:base.original,files,cursor:files.length-1,firstStep,journal:appendReplayStep(history?.journal,base.firstStep+base.cursor,copy,firstStep)};
 }
 let nextRevision=0;
 let completedRevision=0;
@@ -106,6 +108,19 @@ export function travelWorldCheckpoint(source:File,delta:-1|1):boolean{
  if(current.file!==source||!current.worldCheckpoint)return false;
  const h=current.worldCheckpoint,cursor=h.cursor+delta;
  if(!Number.isInteger(cursor)||cursor<0||cursor>=h.files.length)return false;
- current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{...h,cursor}};
+ current={file:h.files[cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:{...h,cursor,journal:travelReplayStep(h.journal,h.firstStep+cursor)}};
+ state.set(current);return true;
+}
+
+/** Publish the fully rebuilt history only after all semantic replay steps
+ * have passed the original Rust copy writers. No intermediate checkpoint
+ * is exposed to Collection, other services, or the current Save session. */
+export function restoreWorldCheckpoint(original:File,history:WorldCheckpointHistory):boolean{
+ if(current.file!==original||current.worldCheckpoint||history.original!==original||!history.journal||
+ history.firstStep!==history.journal.firstStep||history.firstStep+history.cursor!==history.journal.cursor||
+ history.firstStep+history.files.length-1!==history.journal.steps.length||history.cursor<0||history.cursor>=history.files.length||
+ history.files.length>WORLD_CHECKPOINT_MAX_STEPS+1||history.files.reduce((n,f)=>n+f.size,history.files.includes(original)?0:original.size)>WORLD_CHECKPOINT_MAX_BYTES)return false;
+ current={file:history.files[history.cursor],revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:history};
+ if(typeof window!=='undefined')window.addEventListener('beforeunload',guardCheckpointUnload);
  state.set(current);return true;
 }
