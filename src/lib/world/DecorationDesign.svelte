@@ -1,4 +1,7 @@
 <script lang="ts">
+ import {localSaveSession} from '../ui/local-save-session';
+ import {parseFurnitureStock,furnitureStockWords} from './furniture-stock-view.ts';
+ import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
  import {snapWorldRoad,worldRoadStroke,worldRoadPlan,worldRoadComponent,replaceWorldRoad} from './world-road-lattice.ts';
  import NetworkStyleControls from './NetworkStyleControls.svelte';
@@ -38,6 +41,10 @@
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
+ export let capturedLayout:SaveDesignCapture|null=null;
+ export let onDismissCapture:()=>void=()=>{};
+ $: captureText=captureWords[locale]??captureWords.en;
+ $: visibleCapture=capturedLayout&&worldFrame?.scope===capturedLayout.scope?capturedLayout:null;
  export let layerState:WorldLayerState=defaultWorldLayers();
  let layersOpen=false;
  let seenLayers=layerState;
@@ -149,6 +156,18 @@
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
  let paletteOpen=true,root:HTMLDivElement;
+ let stockFile:File|null=null,stockWorker:Worker|null=null,stockCounts:Map<number,number>|null=null,stockStatus:'idle'|'loading'|'ready'|'error'='idle',stockOnly=false;
+ $: stockWords=furnitureStockWords[locale]??furnitureStockWords.en;
+ $: if($localSaveSession.file!==stockFile)resetStock($localSaveSession.file);
+ $: if(active&&(paletteOpen||showCounts)&&stockFile&&stockStatus==='idle')loadStock(stockFile);
+ function resetStock(file:File|null){stockWorker?.terminate();stockWorker=null;stockCounts=null;stockStatus='idle';stockOnly=false;stockFile=file;}
+ function loadStock(file:File){
+  if(typeof window==='undefined')return;stockStatus='loading';
+  const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=own;
+  function finish(result:unknown){own.terminate();if(stockWorker!==own||stockFile!==file)return;stockWorker=null;try{stockCounts=parseFurnitureStock(result);stockStatus='ready';}catch{stockCounts=null;stockStatus='error';stockOnly=false;}}
+  own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file});
+ }
+ onDestroy(()=>stockWorker?.terminate());
  type Cell={x:number;y:number};
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
  let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false,spaceUsed=false;
@@ -241,7 +260,7 @@
  function togglePlacedSearch(){closeNetworkStyle();placedSearchOpen=!placedSearchOpen;if(placedSearchOpen){inspectorOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
 
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
- let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>}|null=null;
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
   en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
@@ -281,9 +300,20 @@
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
  }
+ function addCapturedLayout(){
+  const capture=visibleCapture;if(!capture||!grid||!worldFrame||!worker||busyImport)return;
+  error='';
+  try{
+   const sourceAreas=new Map<number,string>(),incoming=parseMainlandDesign(capture.text,worldFrame,sourceAreas);
+   if(incoming.length!==capture.count)throw Error('capture count');
+   cancel();const id=nextRequest();
+   pendingImport={id,key:grid.key,placements:incoming,timeline,sourceAreas,capture};
+   worker.postMessage({command:'design-shapes',requestId:id,key:grid.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
+  }catch{pendingImport=null;error=words[3];}
+ }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
- $: filtered=catalog.filter(o=>(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
+ $: filtered=catalog.filter(o=>(!stockOnly||(stockCounts?.get(o.itemId)??0)>0)&&(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
  $: visibleCatalog=filtered.slice(0,limit);
  $: if(active&&paletteOpen)loadImages(visibleCatalog);
  async function loadImages(items:readonly {itemId:number}[]){
@@ -332,11 +362,13 @@
      if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
      const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(worldFrame&&(!pending.sourceAreas||!mainlandImportMatches(worldFrame,pending.placements,incoming,pending.sourceAreas))){error=words[3];return;}
-     const next=restoreDesign(timeline,pending.placements,incoming,width,height);
+     if(pending.capture&&pending.capture!==capturedLayout)return;
+     const merged=new Map([...definitions,...incoming]);
+     const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;groupIds=[];cancel();layouts={...layouts,[contextKey]:next};persistRecovery(next);error='';return;
+     selected=null;groupIds=[];cancel();if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -574,12 +606,13 @@
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
     {#each (worldFrame?['all','furniture','landscape','ground','fence']:['all','furniture','surface','landscape','ground','fence']) as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
+   {#if stockFile}<div class="stock-filter" title={stockWords[4]}>{#if stockStatus==='ready'}<label><input type="checkbox" bind:checked={stockOnly} on:change={()=>limit=80}/> {stockWords[1]}</label>{:else if stockStatus==='loading'}<small role="status">{stockWords[2]}</small>{:else if stockStatus==='error'}<small>{stockWords[3]}</small>{/if}</div>{/if}
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
    <div class="design-catalog" on:scroll={more}>
     {#each visibleCatalog as item (item.itemId)}
      <button type="button" class="design-item" data-item-id={item.itemId} aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
       {#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}
-      <span>{item.name}</span>
+      <span>{item.name}</span>{#if stockCounts?.has(item.itemId)}<small class="furniture-stock-count" title={stockWords[0]}>{stockWords[0]} {stockCounts.get(item.itemId)}</small>{/if}
      </button>
     {/each}
     {#if !catalogLoading&&!filtered.length}<p>該当する家具なし</p>{/if}
@@ -612,6 +645,7 @@
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
+   {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
    {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
    {:else if recoveryBlocked}<p role="status">{rw[3]}</p>
@@ -698,7 +732,7 @@
    {#if showCounts}
     <div class="design-counts" aria-label={words[2]}>
      {#each [...counts.entries()].sort((a,b)=>(names.get(a[0])??'').localeCompare(names.get(b[0])??'',locale)) as [itemId,count] (itemId)}
-      <div class="count-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>
+      <div class="count-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong>{#if stockCounts?.has(itemId)}<small title={stockWords[4]}>{stockWords[0]} {stockCounts.get(itemId)}</small>{/if}</div>
      {/each}
     </div>
    {/if}
@@ -707,6 +741,8 @@
  </div>
 {/if}
 <style>
+ .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
+ .stock-filter{font-size:12px;color:var(--wand-muted)}.stock-filter label{display:flex;align-items:center;gap:4px}.furniture-stock-count{font-size:10px;color:var(--wand-muted)}
  .file-input{display:none}
  .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
  .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}

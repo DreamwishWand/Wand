@@ -11,6 +11,9 @@
   import {bindMainland} from '$lib/world/mainland-world-coordinates.ts';
   import type {MainlandDesignFrame} from '$lib/world/mainland-design-frame.ts';
   import MainlandOverview from '$lib/world/MainlandOverview.svelte';
+  import type {SaveDesignCapture} from '$lib/world/save-design-capture.ts';
+  let capturedLayout:SaveDesignCapture|null=null;
+  function captureLayout(capture:SaveDesignCapture){if(capture.scope!==worldScope)return;capturedLayout=capture;setDesignMode(true);}
   import DecorationDesign from '$lib/world/DecorationDesign.svelte';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
@@ -86,6 +89,7 @@
   $: recoveryBlocked=Boolean(sourceFile)&&recovery.phase!=='ready';
   $: persistCommitted(timeline,recovery,sourceFile,key,overviewOpen);
   function resetRecovery(file:File|null){
+   capturedLayout=null;
    recoveryEpoch++;baseline=timeline=emptyWorldTimeline();pendingWrites=0;writeFailed=false;writeChain={revision:null,blocked:false};
    recovery={phase:file?'loading':'idle',identity:null,revision:null,writable:false};
   }
@@ -257,9 +261,9 @@
     </div>
   {/if}
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'ワールドの地形を読み込めませんでした。':'Unable to load world terrain.'):(locale==='ja'?'ワールドの地形読み込み中…':'Loading world terrain…')}</p>{/if}
-  <DecorationDesign bind:layerState active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
+  <DecorationDesign bind:layerState {capturedLayout} onDismissCapture={()=>capturedLayout=null} active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
+  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
 </section>
 <style>
   .world-workspace{height:calc(100dvh - var(--shell-height,60px));min-height:0;min-width:0;padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--wand-bg);color:var(--wand-text);overflow:hidden}

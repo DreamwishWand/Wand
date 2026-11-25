@@ -1324,6 +1324,16 @@ try{
   assert.equal(await groupForm.getByRole('button',{name:'一括移動',exact:true}).isDisabled(),true);
   await groupForm.getByRole('button',{name:'選択解除',exact:true}).click();
   await wholeSave.getByRole('button',{name:'複数選択',exact:true}).click();
+  if(!(await wholeSave.locator('.overview-results').isVisible()))await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
+  await wholeSave.locator('.overview-results button').first().click();
+  await wholeSave.getByRole('button',{name:'家具パレット',exact:true}).click();
+  const palette=wholeSave.locator('.save-furniture-palette');
+  await palette.locator('.stock-item[data-item-id="40005160"]').waitFor({timeout:30000});
+  await palette.getByRole('button',{name:'回収を検証',exact:true}).click();
+  await palette.locator('.stock-preview-result').waitFor({timeout:20000});
+  assert.match(await palette.locator('.stock-preview-result').innerText(),/在庫 3 → 4/);
+  assert.equal(await wholeSave.locator('.mainland-save-object').count(),oldTransforms.length);
+  await palette.getByRole('button',{name:'閉じる',exact:true}).click();
   await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();
   // Choose a source-backed furniture record through the normal picker and
   // compute the full terrain-origin raster with the real WASM Worker.
@@ -1491,6 +1501,35 @@ try{
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).waitFor({timeout:30000});
   await publicWorld.locator('.world-export').getByRole('button',{name:'編集コピーを作成',exact:true}).click();
   await publicWorld.locator('.world-export').getByRole('link',{name:'編集済みコピーを保存',exact:true}).waitFor({timeout:30000});
+  // The earlier transform/recovery fixture deliberately uses coordinates
+  // outside the public terrain. Capture must NOT copy those placements.
+  // Use a distinct synthetic Save with real source-ground cells for capture.
+  const captureSave=structuredClone(worldSave);
+  captureSave.World.GridCollection.Grids['101'].Objects['1'].X=60;
+  captureSave.World.GridCollection.Grids['101'].Objects['1'].Y=35;
+  captureSave.World.GridCollection.Grids['101'].Objects['4'].X=70;
+  captureSave.World.GridCollection.Grids['101'].Objects['4'].Y=40;
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'capture-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(captureSave))});
+  const captureMap=publicWorld.locator('.mainland-overview');
+  await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(1).waitFor({timeout:30000});
+  await captureMap.getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
+  const capturePanel=publicWorld.locator('.design-capture');
+  await capturePanel.waitFor({timeout:30000}).catch(async error=>{throw Error('Capture did not open: '+(await publicWorld.innerText()).slice(0,2000),{cause:error});});
+  // A previous design may be offered by the local recovery store.
+  const resumeDesign=publicWorld.locator('.design-workspace').getByRole('button',{name:'作業を再開',exact:true});
+  const addCapture=capturePanel.getByRole('button',{name:'装飾設計に追加',exact:true});
+  // Do not race the asynchronous IndexedDB draft offer.
+  await page.waitForFunction(()=>Boolean(document.querySelector('.design-workspace .draft-offer'))||[...document.querySelectorAll('.design-capture button')].some(b=>b.textContent==='装飾設計に追加'&&!b.disabled),{},{timeout:30000});
+  if(await resumeDesign.isVisible())await resumeDesign.click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('.design-capture button')].some(b=>b.textContent==='装飾設計に追加'&&!b.disabled),{},{timeout:30000});
+  const beforeCapture=await publicWorld.locator('.design-coordinate-space .design-object').count();
+  await addCapture.click({timeout:30000});
+  await capturePanel.waitFor({state:'detached',timeout:30000});
+  await publicWorld.locator('.design-coordinate-space .design-object').first().waitFor({timeout:30000});
+  assert.ok(await publicWorld.locator('.design-coordinate-space .design-object').count()>=beforeCapture);
+  await publicWorld.locator('.design-workspace').getByLabel('設計を取り消す').click();
+  assert.equal(await publicWorld.locator('.design-coordinate-space .design-object').count(),beforeCapture);
+  await publicWorld.locator('.design-workspace').getByLabel('設計をやり直す').click();
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();
