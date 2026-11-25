@@ -6,21 +6,27 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutWitnessMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,type GroupPasteCandidate,type CutWitness} from './group-paste.ts';
+ import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutWitnessMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,type WorldGroupPose,type WorldSymmetryAxis,type GroupPasteCandidate,type CutWitness} from './group-paste.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {DESIGN_FILE_LIMIT,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
  import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
+ import WorldSymmetryControls from './WorldSymmetryControls.svelte';
+ import type {DesignSymmetry} from './design-symmetry.ts';
+ import {mainlandExtent} from './mainland-world-coordinates.ts';
  import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
- export let items:readonly MainlandSavedObject[]=[],file:File|null=null,worker:Worker|null=null,grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map(),objects:readonly MainlandSavedObject[]=[],omitted=0,locale:WandLanguage='ja',blocked=false,nextRequest:()=>number,onBegin:()=>void=()=>{},active=false,ghost:GroupPasteCandidate|null=null;
+ export let items:readonly MainlandSavedObject[]=[],file:File|null=null,worker:Worker|null=null,grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map(),objects:readonly MainlandSavedObject[]=[],omitted=0,locale:WandLanguage='ja',blocked=false,nextRequest:()=>number,onBegin:()=>void=()=>{},active=false,ghost:GroupPasteCandidate|null=null,axis:WorldSymmetryAxis|null=null;
  const allowed=browser&&testSaveExportEnabled(window.location);
  let clip:readonly DesignClipItem[]=[],defs=new Map<number,Map<number,DesignItemGeometry>>(),pending=new Map<number,{key:string;factor:1|2}>(),counts:Map<number,number>|null=null;
  let read:Worker|null=null,writing:Worker|null=null,subscribed:Worker|null=null,source:File|null=null,point:{x:number;y:number}|null=null,candidate:GroupPasteCandidate|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,error=false,copied=false;
  let images=new Map<number,string>(),cutRows:CutWitness[]|null=null;
+ let symmetry:DesignSymmetry|null=null,symmetryOpen=false,symmetryPicking=false,mirrorOnly:WorldGroupPose[]|null=null;
+ $: frame=mainlandExtent(grids);
+ $: axis=symmetry?{mode:symmetry.mode,x:frame.x+symmetry.x2/2,y:frame.y+frame.h-symmetry.y2/2}:null;
  let sceneInput:HTMLInputElement,scene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='corner',sceneReading=false,sceneEpoch=0,sceneError='',sceneNames=new Map<number,string>();
  $: w=groupPasteWords[locale];$: st=sceneWords[locale];$: gs=groupSceneWords[locale];$: cutText=groupCutWords[locale];
  $: if($worldFurnitureCut&&$worldFurnitureCut.file!==file){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);copied=false;}
@@ -30,9 +36,35 @@
  $: if(active&&(source!==file||blocked))cancel();
  $: required=sceneItemCounts(clip);
  $: geometryReady=active&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!cutRows||cutWitnessMatches(cutRows,objects));
- $: ready=geometryReady&&!!counts&&groupStockAvailable(clip,counts);
+ $: baseReady=geometryReady&&!!counts&&groupStockAvailable(clip,counts);
  $: anchorPoint=point&&scene?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor):point;
- $: ghost=candidate??(geometryReady&&anchorPoint&&(scene||ready)?groupPasteCandidate(clip,grids,rasters,defs,scene?required:counts!,remainingObjects,omitted,anchorPoint.x,anchorPoint.y):null);
+ $: preview=geometryReady?previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene):null;
+ $: ghost=candidate??preview;
+ $: actualRequired=ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
+ $: ready=geometryReady&&!!counts&&(axis||mirrorOnly?!!ghost&&[...actualRequired].every(([id,n])=>(counts!.get(id)??0)>=n):baseReady);
+ function previewGroup(clip:readonly DesignClipItem[],point:{x:number;y:number}|null,axis:WorldSymmetryAxis|null,mirror:WorldGroupPose[]|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:Map<number,Map<number,DesignItemGeometry>>,objects:readonly MainlandSavedObject[],omitted:number,required:Map<number,number>,counts:Map<number,number>|null,baseReady:boolean,scene:boolean){
+  // Stock is evaluated independently from shape preview. All final rows must
+  // pass actual stock checks before the worker is called.
+  const capacity=new Map([...required].map(([id,n])=>[id,n*2]));
+  if(mirror)return axis?symmetricWorldCandidate(mirror,axis,false,grids,rasters,defs,capacity,objects,omitted):null;
+  if(!point||!scene&&!axis&&!baseReady)return null;
+  const base=groupPasteCandidate(clip,grids,rasters,defs,scene||axis?required:counts!,objects,omitted,point.x,point.y);
+  return base&&axis?symmetricWorldCandidate(groupCandidatePoses(base),axis,true,grids,rasters,defs,capacity,objects,omitted):base;
+ }
+ function changeSymmetry(value:DesignSymmetry|null){
+  if(writing||copy||cutRows)return;
+  symmetry=value;symmetryPicking=false;candidate=null;error=false;
+ }
+ function chooseMirror(){if(!preview||writing||copy||symmetryPicking)return;candidate=preview;error=false;}
+ export function beginMirror(){
+  const poses=savedWorldGroupPoses(items);
+  if(!poses||!begin(true))return false;
+  mirrorOnly=poses;symmetryOpen=true;
+  const x=(Math.min(...poses.map(p=>p.x))+Math.max(...poses.map(p=>p.x)))/2;
+  const y=(Math.min(...poses.map(p=>p.y))+Math.max(...poses.map(p=>p.y)))/2;
+  symmetry={mode:'vertical',x2:Math.round((x-frame.x)*2),y2:Math.round((frame.y+frame.h-y)*2)};
+  symmetryPicking=true;return true;
+ }
  export function saveScene(){
   if(!selection||blocked)return;
   try{
@@ -64,7 +96,7 @@
   cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;scene=sceneDoc;sceneAnchor=sceneDoc?.anchor??'corner';
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
-  const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
+  const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
   const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>();
   for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId});}
@@ -77,26 +109,35 @@
   if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable||!g.shapes)){error=true;return;}
   const next=new Map(defs);for(const g of d.result as DesignItemGeometry[]){if(g.name)sceneNames=new Map(sceneNames).set(g.itemId,g.name);const factors=new Map(next.get(g.itemId));factors.set(req.factor,g);next.set(g.itemId,factors);}defs=next;
  }
- export function hover(p:{x:number;y:number}|null){if(active&&!candidate&&!writing&&!copy)point=p;}
- export function pick(p:{x:number;y:number}){if(!geometryReady||(!ready&&!scene)||writing||copy)return;const at=scene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;if(!at){error=true;return;}const q=groupPasteCandidate(clip,grids,rasters,defs,scene?required:counts!,remainingObjects,omitted,at.x,at.y);if(!q){error=true;return;}candidate=q;point=p;error=false;}
- export function turn(delta:number){if(!geometryReady||writing||copy)return;const q=rotateFurnitureGroup(clip,defs,delta);if(!q){error=true;return;}clip=q;candidate=null;error=false;}
+ export function hover(p:{x:number;y:number}|null){if(active&&!candidate&&!writing&&!copy&&!symmetryPicking&&!mirrorOnly)point=p;}
+ export function pick(p:{x:number;y:number}){
+  if(writing||copy)return;
+  if(symmetryPicking&&symmetry){changeSymmetry({...symmetry,x2:Math.round((p.x-frame.x)*2),y2:Math.round((frame.y+frame.h-p.y)*2)});return;}
+  if(!geometryReady)return;
+  if(mirrorOnly){chooseMirror();return;}
+  const at=scene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;
+  const q=previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene);
+  if(!q){error=true;return;}candidate=q;point=p;error=false;
+ }
+ export function turn(delta:number){if(!geometryReady||writing||copy||mirrorOnly)return;const q=rotateFurnitureGroup(clip,defs,delta);if(!q){error=true;return;}clip=q;candidate=null;error=false;}
  export function validate(){
   if(!active||!allowed||blocked||!ready||!file||source!==file||!candidate||writing||copy)return;
   const f=file,q=candidate,plan=cutRows?groupCutPlan(cutRows,q):q.rows;
-  if(!plan||cutRows&&!cutWitnessMatches(cutRows,objects)){error=true;return;}
+  if(!plan||!counts||!cutRows&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||cutRows&&!cutWitnessMatches(cutRows,objects)){error=true;return;}
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writing=own;error=false;
   const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:cutRows?'group-cut-export':'group-paste-export',file:f,plan,allowExperimentalCopy:true});
  }
  function apply(){if(!allowed||blocked||!copy||!file||source!==file)return;if(cutRows&&!cutWitnessMatches(cutRows,objects)){error=true;return;}if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}if(cutRows){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}cancel();}
- export function cancel(){read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;scene=null;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
+ export function cancel(){read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
 </script>
 <input class="scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
  {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
- {#if scene}<small>{gs[0]}</small><div class="scene-required">{#each [...required] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}
- {#if !copy}<div><button type="button" disabled={!geometryReady||!!writing} on:click={()=>turn(-1)} aria-label={w[9]}>⟲</button><button type="button" disabled={!geometryReady||!!writing} on:click={()=>turn(1)} aria-label={w[10]}>⟳</button>{#if candidate}<button type="button" disabled={!ready||!!writing} on:click={validate}>{w[7]}</button>{/if}</div>{/if}
+ {#if !cutRows&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={locale==='ja'?'対称編集':'Symmetry'}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
+ {#if scene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}
+ {#if !copy}<div><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(-1)} aria-label={w[9]}>⟲</button><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(1)} aria-label={w[10]}>⟳</button>{#if candidate}<button type="button" disabled={!ready||!!writing} on:click={validate}>{w[7]}</button>{/if}</div>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}{#if error}<small role="alert">{w[5]}</small>{/if}<button type="button" on:click={cancel}>{w[8]}</button></aside>
  {:else if sceneError}<span class="copied" role="alert">{sceneError}</span>{:else if copied||$worldFurnitureCut}<span class="copied" role="status">{$worldFurnitureCut?cutText[1]:w[3]} · {$worldFurnitureClipboard.length}</span>{:else if error}<span class="copied" role="alert">{cutText[3]}</span>{/if}
 {/if}
