@@ -6,7 +6,7 @@ import {projectTerrainSession} from './terrain-binding.ts';
 const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMessage:(value:unknown)=>void};
 scope.onmessage=async({data})=>{
  const requestId=data?.requestId;
- let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
+ let bytes:Uint8Array<ArrayBuffer>|null=null,wasm:WasmAmountPreview|null=null;
  try{
   if(data?.command!=='terrain-session'||!Number.isSafeInteger(requestId)||requestId<1||
     !(data.file instanceof Blob)||data.file.size<1||data.file.size>32*1024*1024||
