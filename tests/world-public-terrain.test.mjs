@@ -141,7 +141,7 @@ test('actual mainland terrain resolves two distinct native areas in one local de
  assert.equal(resolveMainlandDesign(modified,a.x,a.y,boundaryShape),null);
 });
 
-import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor} from '../src/lib/world/mainland-saved-objects.ts';
+import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate} from '../src/lib/world/mainland-saved-objects.ts';
 test('mainland saved objects preserve exact grid identity, staged coordinates and shape holes',()=>{
  const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
  const p={localOrdinal:1,localGridOrdinal:3,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',subgrid:null};
@@ -198,6 +198,11 @@ test('mainland save move drafts remain native same-grid and reject overlaps or o
  const outside=mainlandMapAnchor(g,50.5,50.5);assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,outside.x,outside.y,o.orientation)?.valid,false);
  const other=grids.find(g=>g.key==='Forest'),far=mainlandMapAnchor(other,4.5,6.5);
  assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,far.x,far.y,o.orientation)?.valid,false);
+ rasters.get(other.key).nativeFloorValues[6*other.sizeX+4]=4;
+ const transfer=mainlandTransferCandidate(a,grids,rasters,timeline,far.x,far.y);
+ assert.equal(transfer?.area,other.key);assert.equal(transfer?.plan.x,4);assert.equal(transfer?.plan.y,6);assert.equal(transfer?.plan.expectedX,4);
+ assert.equal(mainlandTransferCandidate(a,grids,rasters,draft.next,far.x,far.y),null);
+ assert.equal(mainlandTransferCandidate({...a,object:{...o,editRestrictions:{switchGrid:'denied'}}},grids,rasters,timeline,far.x,far.y),null);
 });
 
 import {mainlandNetworkScope,mergeMainlandAreaDrafts} from '../src/lib/world/mainland-design-frame.ts';

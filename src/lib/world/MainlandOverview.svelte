@@ -1,7 +1,8 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
- import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {localSaveSession} from '../ui/local-save-session';
+ import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
  import {currentWorldEdits,emptyWorldTimeline,travelWorldTimeline,WORLD_BATCH_LIMIT,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -30,6 +31,11 @@
  export let label:(key:string)=>string;
  export let onChoose:(key:string,ordinal?:number)=>void;
  export let saveMode=false;
+ export let worldOptions:readonly {key:string;label:string}[]=[];
+ export let worldKey='';
+ export let onWorldChange:(key:string)=>void=()=>{};
+ export let onDesign:()=>void=()=>{};
+ const designWords={ja:'装飾設計',en:'Decoration design',fr:'Décoration',it:'Progettazione',de:'Dekoration','es-ES':'Decoración','zh-CN':'装饰设计','pt-BR':'Decoração'} as const;
  export let sessions:readonly TerrainScopeReceipt[]=[];
  export let saveMaps:ReadonlyMap<string,SavedShapeMap>=new Map();
  export let saveLoading=false,saveFailed=false;
@@ -51,6 +57,26 @@
  $: visibleObjects=visibleMainlandSaved(allObjects,viewport);
  let mapWidth=0,mapHeight=0,selected:number|null=null,query='',searchOpen=false,limit=60,layersOpen=false;
  let moving=false,hover:{x:number;y:number}|null=null;
+ let transfer:MainlandTransferPlan|null=null,transferWorker:Worker|null=null,transferStatus:'idle'|'working'|'valid'|'error'|'dependency'='idle',transferSource:File|null=null,transferBaseline:WorldEditTimeline|null=null,transferOrdinal:number|null=null;
+ const transferWords={ja:['別エリアへの移動候補','構造を検証','構造検証中…','構造検証に成功しました。ゲーム内の参照は未確認のため反映・出力はできません。','移動先のセーブ構造または家具の状態が未対応です。','取消','ワールド'],en:['Transfer candidate','Validate structure','Checking structure…','Structure validated. Runtime references are unverified; no changes or export.','Unsupported destination structure or furniture state.','Cancel','World'],fr:['Déplacement vers une autre zone','Vérifier la structure','Vérification…','Structure validée. Références en jeu non vérifiées ; aucune modification ni export.','Destination ou état non pris en charge.','Annuler','Monde'],it:['Spostamento in altra zona','Verifica struttura','Verifica…','Struttura valida. Riferimenti di gioco non verificati; nessuna modifica o esportazione.','Destinazione o stato non supportato.','Annulla','Mondo'],de:['Transfer in anderes Gebiet','Struktur prüfen','Prüfung…','Struktur gültig. Spielreferenzen ungeprüft; keine Änderung oder Ausgabe.','Ziel oder Objektzustand nicht unterstützt.','Abbrechen','Welt'],'es-ES':['Traslado a otra zona','Verificar estructura','Verificando…','Estructura válida. Referencias del juego sin verificar; sin cambios ni exportación.','Destino o estado no compatible.','Cancelar','Mundo'],'zh-CN':['跨区域移动候选','验证结构','正在验证…','结构验证成功。游戏引用尚未验证，不能应用或导出。','目标结构或家具状态不支持。','取消','世界'],'pt-BR':['Transferência para outra área','Validar estrutura','Verificando…','Estrutura validada. Referências do jogo não verificadas; sem alteração ou exportação.','Destino ou estado não suportado.','Cancelar','Mundo']} as const;
+ $: tw=transferWords[locale]??transferWords.en;
+ const dependencyWords={ja:'ゲーム内の他のデータがこの家具を参照しているため、移動できません。',en:'Other game data refers to this furniture; the transfer is blocked.',fr:'D’autres données du jeu référencent ce meuble ; déplacement bloqué.',it:'Altri dati del gioco fanno riferimento al mobile; spostamento bloccato.',de:'Andere Spieldaten verweisen auf dieses Möbel; Transfer blockiert.','es-ES':'Otros datos del juego hacen referencia a este mueble; traslado bloqueado.','zh-CN':'其他游戏数据引用此家具，无法移动。','pt-BR':'Outros dados do jogo referenciam este móvel; transferência bloqueada.'} as const;
+ $: if(transfer&&($localSaveSession.file!==transferSource||timeline!==transferBaseline||selected!==transferOrdinal||!saveMode))clearTransfer();
+ function clearTransfer(){transferWorker?.terminate();transferWorker=null;transfer=null;transferStatus='idle';transferSource=null;transferBaseline=null;transferOrdinal=null;}
+ function offerTransfer(p:MainlandSavedObject,x:number,y:number){
+  if(!bound||!$localSaveSession.file)return false;
+  const candidate=mainlandTransferCandidate(p,bound,rasters,timeline,x,y);if(!candidate)return false;
+  clearTransfer();moving=false;hover=null;moveError=false;objectDrag=null;preciseOpen=false;transfer=candidate;transferSource=$localSaveSession.file;transferBaseline=timeline;transferOrdinal=p.object.localOrdinal;selected=p.object.localOrdinal;return true;
+ }
+ function validateTransfer(){
+  if(!transfer||!transferSource||transferStatus==='working'||transferSource!==$localSaveSession.file||timeline!==transferBaseline||selected!==transferOrdinal)return;
+  const candidate=transfer,source=transferSource;transferStatus='working';
+  const own=new Worker(new URL('./structure-preview.worker.ts',import.meta.url),{type:'module'});transferWorker=own;
+  const finish=(ok:boolean,blocked=false)=>{own.terminate();if(transferWorker!==own||transfer!==candidate||source!==$localSaveSession.file)return;transferWorker=null;transferStatus=ok?'valid':blocked?'dependency':'error';};
+  own.onmessage=e=>finish(e.data?.kind==='transfer-preview'&&e.data.validated===true,e.data?.dependencyBlocked===true);own.onerror=()=>finish(false);own.onmessageerror=()=>finish(false);
+  own.postMessage({command:'transfer-preview',file:source,plan:candidate.plan});
+ }
+
  let groupIds:number[]=[],groupX:number|undefined=0,groupZ:number|undefined=0,groupOpen=false;
  let range:{pointer:number;start:{x:number;y:number};end:{x:number;y:number};clientX:number;clientY:number;moved:boolean}|null=null;
  $: groupSet=new Set(groupIds);
@@ -89,13 +115,13 @@
  function applyCell(x:number,z:number){
   if(!canMove||!chosen||!bound)return false;
   const q=mainlandSavedDraftAtCell(chosen,bound,rasters,saveMaps,timeline,x,z,chosen.object.orientation);
-  if(!q?.next){moveError=true;return false;}
+  if(!q?.next){if(offerTransfer(chosen,(x+.5)/chosen.factor,-(z+.5)/chosen.factor))return false;moveError=true;return false;}
   timeline=q.next;stopMove();return true;
  }
  function applyPrecise(){if(preciseChanged&&typeof preciseX==='number'&&typeof preciseZ==='number')applyCell(preciseX,preciseZ);}
  function pointerPoint(e:MouseEvent){const matrix=svg?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
  function startPointer(e:PointerEvent){
-  suppressClick=false;
+  suppressClick=false;clearTransfer();
   if(saveMode&&!moving&&!spacePan&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.button===0&&e.pointerType!=='touch'&&!pending.size&&!failed&&!saveLoading&&!saveFailed){
    const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
    if(p&&hit&&cell&&mainlandSavedMoveEligible(hit)){
@@ -125,7 +151,7 @@
   if(!commit||d.baseline!==timeline||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
   if(d.members.length>1){if(d.members.some(p=>!layerSelectable(layerState,p.object)))return;const f=mainlandGroupFactor(d.members);const q=mainlandSavedGroupDraft(d.members,bound,rasters,saveMaps,timeline,(d.end.x-d.cell.x)*f/d.target.factor,(d.end.z-d.cell.z)*f/d.target.factor);if(q.next){timeline=q.next;groupX=0;groupZ=0;stopMove();}else moveError=true;return;}
   const q=mainlandSavedDraftAtCell(d.target,bound,rasters,saveMaps,timeline,d.end.x,d.end.z,d.target.object.orientation);
-  if(q?.next){timeline=q.next;stopMove();}else moveError=true;
+  if(q?.next){timeline=q.next;stopMove();}else if(!offerTransfer(d.target,(d.end.x+.5)/d.target.factor,-(d.end.z+.5)/d.target.factor))moveError=true;
  }
  function keys(e:KeyboardEvent){
   if(!worldShortcutTarget(e,root))return;
@@ -141,13 +167,13 @@
   if(!saveMode)return;
   if(action==='select-all'){e.preventDefault();setGroup(matches.map(p=>p.object.localOrdinal));return;}
   if(action==='undo'||action==='redo'){e.preventDefault();travel(action==='undo'?-1:1);return;}
-  if(action==='cancel'){e.preventDefault();if(objectDrag||range){objectDrag=null;range=null;return;}if(alignment){alignment=null;return;}if(groupIds.length){clearGroup();return;}if(moving||preciseOpen){stopMove();preciseOpen=false;return;}selected=null;return;}
+  if(action==='cancel'){e.preventDefault();if(transfer){clearTransfer();return;}if(objectDrag||range){objectDrag=null;range=null;return;}if(alignment){alignment=null;return;}if(groupIds.length){clearGroup();return;}if(moving||preciseOpen){stopMove();preciseOpen=false;return;}selected=null;return;}
   if(action==='confirm'&&mapFocused&&moving&&draft?.next){e.preventDefault();timeline=draft.next;stopMove();return;}
   if(action==='rotate-left'||action==='rotate-right'){if(groupIds.length){e.preventDefault();applyAdvanced(action==='rotate-left'?1:-1);return;}if(chosen){e.preventDefault();rotate(action==='rotate-left'?-1:1);}return;}
   const n=NUDGE[action];if(groupIds.length){if(n){e.preventDefault();applyGroup(n[0],-n[1]);}return;}if(n&&nativeCell&&chosen){e.preventDefault();applyCell(nativeCell.x+n[0],nativeCell.z-n[1]);}
  }
  $: draft=moving&&hover&&chosen&&bound&&!pending.size&&!failed?mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,hover.x,hover.y,chosen.object.orientation):null;
- function stopMove(){moving=false;hover=null;moveError=false;objectDrag=null;}
+ function stopMove(){clearTransfer();moving=false;hover=null;moveError=false;objectDrag=null;}
  function rotate(delta:number){if(!chosen||!bound||!isCardinal(chosen.object.orientation)||!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||pending.size||failed||saveLoading||saveFailed)return;const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(chosen.object.orientation)+delta+4)%4];const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,chosen.x+.25/chosen.factor,chosen.y-.25/chosen.factor,orientation);if(q?.next){timeline=q.next;stopMove();}}
  function travel(delta:-1|1){alignment=null;stopMove();timeline=travelWorldTimeline(timeline,delta);}
  function follow(e:PointerEvent){if(range?.pointer===e.pointerId){const p=pointerPoint(e);if(p&&(range.moved||Math.hypot(e.clientX-range.clientX,e.clientY-range.clientY)>=5)){if(!range.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{}}range={...range,end:p,moved:true};e.preventDefault();}return;}if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
@@ -214,16 +240,16 @@
   if(gesture.consumeClick()||e.detail===0||!bound||pending.size||failed)return;
   const m=svg.getScreenCTM();if(!m)return;
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
-  if(saveMode&&moving&&chosen&&canMove){const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else hover={x:p.x,y:p.y};return;}
-  if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){if(multiMode||e.ctrlKey||e.metaKey||e.shiftKey)toggleGroup(hit.object.localOrdinal);else{clearGroup();selected=hit.object.localOrdinal;}overlaps=[];return;}clearGroup();selected=null;overlaps=[];return;}
+  if(saveMode&&moving&&chosen&&canMove){const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else if(!offerTransfer(chosen,p.x,p.y))hover={x:p.x,y:p.y};return;}
+  if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){clearTransfer();if(multiMode||e.ctrlKey||e.metaKey||e.shiftKey)toggleGroup(hit.object.localOrdinal);else{clearGroup();selected=hit.object.localOrdinal;}overlaps=[];return;}clearGroup();selected=null;overlaps=[];return;}
   const hits=mainlandTerrainHits(bound,rasters,p.x,p.y);
   overlaps=hits.length>1?hits:[];if(hits.length===1)onChoose(hits[0].key);
  }
- onDestroy(()=>{nameEpoch++;subscribed?.removeEventListener('message',receive);});
+ onDestroy(()=>{clearTransfer();nameEpoch++;subscribed?.removeEventListener('message',receive);});
 </script>
 <svelte:window on:keydown={keys} on:keyup={e=>{if(e.code==='Space')spacePan=false;}} on:blur={()=>{spacePan=false;objectDrag=null;range=null;}}/>
 <section class="mainland-overview" bind:this={root} aria-label={title||words[0]}>
- <div class="overview-tools"><strong>{title||words[0]}</strong>{#if saveMode}<button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+ <div class="overview-tools">{#if worldOptions.length>1}<select aria-label={tw[6]} value={worldKey} on:change={e=>onWorldChange(e.currentTarget.value)}>{#each worldOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}</select>{:else}<strong>{title||words[0]}</strong>{/if}{#if saveMode}<button type="button" aria-label={designWords[locale]} title={designWords[locale]} on:click={onDesign}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 12-12 4 4L7 21H3zM12 8l4 4M3 21h18"/></svg></button><button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={startPointer} on:pointermove={follow}
@@ -245,6 +271,7 @@
    {/each}
    {#if range?.moved}<rect x={Math.min(range.start.x,range.end.x)} y={Math.min(range.start.y,range.end.y)} width={Math.abs(range.end.x-range.start.x)} height={Math.abs(range.end.y-range.start.y)} fill="#b9c7d6" fill-opacity=".15" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#each (dragGroup??alignmentPlan??groupPlan)?.ghosts??[] as g (g.object.object.localOrdinal)}{#if g.object.shape}<path class="mainland-group-ghost" d={g.draft?.shape.path??g.object.shape.path} transform={'translate('+g.x+' '+g.y+') scale('+1/g.object.factor+' '+(-1/g.object.factor)+')'} fill={(dragGroup??alignmentPlan??groupPlan)?.next?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}
+   {#if transfer}<path class="mainland-transfer-ghost" d={transfer.shape.path} transform={'translate('+transfer.x+' '+transfer.y+') scale('+1/transfer.factor+' '+(-1/transfer.factor)+')'} fill="#e1b56b" fill-opacity=".7" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#if draggedDraft&&objectDrag}<path class="mainland-save-ghost" d={draggedDraft.shape.path} transform={'translate('+draggedDraft.x+' '+draggedDraft.y+') scale('+1/objectDrag.target.factor+' '+(-1/objectDrag.target.factor)+')'} fill={draggedDraft.valid?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#if draft&&chosen}<path class="mainland-save-ghost" d={draft.shape.path} transform={'translate('+draft.x+' '+draft.y+') scale('+1/chosen.factor+' '+(-1/chosen.factor)+')'} fill={draft.valid?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
   </svg>
@@ -254,6 +281,7 @@
  {#if saveMode&&searchOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}
  {#if saveMode&&layersOpen}<div class="overview-layers"><WorldLayerControls {locale} state={layerState} disabled={false} onChange={s=>{layerState=s;selected=null;clearGroup();stopMove();}}/></div>{/if}
  {#if saveMode&&selectionLimit}<p class="save-status" role="alert">{gw[5]}: {WORLD_BATCH_LIMIT} max</p>{/if}
+ {#if transfer}<aside class="overview-transfer" aria-label={tw[0]}><strong>{tw[0]} · {label(transfer.area)}</strong><div><button type="button" disabled={transferStatus==='working'} on:click={validateTransfer}>{tw[1]}</button><button type="button" on:click={clearTransfer}>{tw[5]}</button></div>{#if transferStatus==='working'}<small role="status">{tw[2]}</small>{:else if transferStatus==='valid'}<small role="status">{tw[3]}</small>{:else if transferStatus==='dependency'}<small role="alert">{dependencyWords[locale]}</small>{:else if transferStatus==='error'}<small role="alert">{tw[4]}</small>{/if}</aside>{/if}
  {#if saveMode&&groupOpen&&group.length>1}<form class="overview-precise" on:submit|preventDefault={()=>{if(typeof groupX==='number'&&typeof groupZ==='number')applyGroup(groupX,groupZ);}}><strong>{gw[5]}: {group.length} · {gw[4]}</strong><label>ΔX<input type="number" step="1" bind:value={groupX} disabled={!groupReady} on:input={()=>alignment=null}/></label><label>ΔZ<input type="number" step="1" bind:value={groupZ} disabled={!groupReady} on:input={()=>alignment=null}/></label><button type="submit" disabled={!groupPlan?.next}>{gw[1]}</button><button type="button" on:click={clearGroup}>{gw[2]}</button>{#if moveError||!groupReady||groupPlan&&groupPlan.ghosts.length&&!groupPlan.next}<small role="alert">{gw[6]}</small>{/if}<div class="group-advanced"><div class="group-rotation"><button type="button" title={ew[1]} aria-label={ew[1]} disabled={!uniformGroup} on:click={()=>applyAdvanced(1)}>⟲</button><button type="button" title={ew[2]} aria-label={ew[2]} disabled={!uniformGroup} on:click={()=>applyAdvanced(-1)}>⟳</button></div><WorldAlignmentControls {locale} count={group.length} selected={alignment} valid={!!alignmentPlan?.next} busy={!uniformGroup} onPick={mode=>{alignment=mode;groupX=0;groupZ=0;moveError=false;}} onCommit={()=>{if(alignment)applyAdvanced(alignment);}} onCancel={()=>alignment=null}/></div></form>{/if}
  {#if saveMode&&chosen}<div class="overview-selection"><strong>{name(chosen,names)}</strong><button type="button" aria-pressed={moving} disabled={!canMove} on:click={()=>{moving=!moving;hover=null;}}>{moving?ew[3]:ew[0]}</button><button type="button" aria-label={ew[1]} title={ew[1]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(-1)}>⟲</button><button type="button" aria-label={ew[2]} title={ew[2]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(1)}>⟳</button><button type="button" disabled={!layerSelectable(layerState,chosen.object)} on:click={()=>onChoose(chosen!.area,chosen!.object.localOrdinal)}>{sw[2]}</button><button type="button" aria-label={pw[0]} aria-pressed={preciseOpen} disabled={!canMove} on:click={()=>{preciseOpen=!preciseOpen;stopMove();}}>{pw[0]}</button>{#if moving||moveError}<small role={moveError?'alert':undefined}>{ew[6]}</small>{/if}</div>{/if}
  {#if saveMode&&chosen&&preciseOpen&&nativeCell}<form class="overview-precise" on:submit|preventDefault={applyPrecise}><strong>{pw[2]}</strong><label>X<input type="number" step="1" bind:value={preciseX} disabled={!canMove}/></label><label>Z<input type="number" step="1" bind:value={preciseZ} disabled={!canMove}/></label><button type="submit" disabled={!canMove||!preciseChanged}>{pw[1]}</button><button type="button" aria-label={words[1]} on:click={()=>preciseOpen=false}>×</button></form>{/if}
@@ -263,6 +291,7 @@
 <style>
  .mainland-overview{position:absolute;inset:0;z-index:14;background:var(--wand-bg);color:var(--wand-text);overflow:hidden;isolation:isolate}.mainland-map{position:absolute;inset:0;width:100%;height:100%;background:#27313a;border:0;padding:0;touch-action:none}.mainland-map svg{display:block;width:100%;height:100%}
  .overview-tools,.overlap-choices,.mainland-overview p{position:absolute;z-index:4;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:5px 8px}.overview-tools{top:6px;left:6px;display:flex;gap:8px;align-items:center}.overview-tools button{display:grid;place-items:center;width:34px;height:34px}.overview-tools svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7}.mainland-overview p{top:52px;left:6px;margin:0}.overlap-choices{left:8px;bottom:8px;display:grid;gap:4px;max-width:calc(100% - 70px)}button:not(.mainland-map){background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:5px;cursor:pointer;padding:5px 8px}
+ .overview-tools select{font:inherit;max-width:40vw;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:5px;padding:6px}.overview-transfer{position:absolute;z-index:7;right:6px;top:52px;width:min(300px,calc(100% - 12px));display:grid;gap:6px;padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.overview-transfer div{display:flex;gap:4px}.overview-transfer small{color:var(--wand-muted)}
  .overview-precise{position:absolute;z-index:6;right:6px;top:52px;display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:end;width:min(280px,calc(100% - 12px));padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.overview-precise strong{grid-column:1/-1;font-size:12px}.overview-precise label{display:grid;gap:3px;font-size:12px;min-width:0}.overview-precise input{box-sizing:border-box;width:100%;padding:6px;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:5px}.overview-precise button:disabled{opacity:.45}
  .group-advanced{grid-column:1/-1;display:grid;gap:6px}.group-rotation{display:flex;gap:4px}
  .overview-search,.overview-layers,.overview-selection{position:absolute;z-index:5;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;padding:6px}
