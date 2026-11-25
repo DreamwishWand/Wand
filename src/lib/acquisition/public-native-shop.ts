@@ -337,3 +337,62 @@ export function loadPinnedHistoricalNativeShopSnapshot(
 ):Promise<PinnedPublicNativeShopIndex>{
   return loadShopSnapshot(ARCHIVED,basePath,fetcher);
 }
+
+/** Additional source-only bundle catalog projections. No sale dates or prices.
+ * Existing pinned legacy sources remain accepted during migration; these new
+ * snapshots do not populate the legacy sale-price or availability APIs. */
+export interface ShopCatalogSource {
+  readonly snapshotKey:string;
+  readonly offers:readonly Readonly<{
+    nativeOfferId:string;sourceCategory:string;title:string|null;
+    components:readonly Readonly<{itemId:string;quantity:number}>[];
+  }>[];
+}
+const CATALOG_SOURCE_PINS=[{"snapshotKey":"Shop20260923","sourceSha256":"d8e3d2bfe2707e8f00562adb19c98fb87efa21e9a6ac7d07370894712043b238","bytes":3905,"sha256":"41bf1546cdffa5ad6d88b71d4083e65bb50d934e5bb9ba62097beef7722961c4","count":28},{"snapshotKey":"Shop20260930","sourceSha256":"efed915841a02dcc5fa181a74b2064d2c8e1666014e495b4727182c04303162a","bytes":3950,"sha256":"6cf4b69888039fe13eb912dfa531548418bf4606bd6dfa1f563fdcfb9085ea9b","count":27}] as const;
+const CATALOG_SOURCE_EVIDENCE=new WeakSet<object>();
+export function hasPinnedShopCatalogEvidence(x:unknown):x is ShopCatalogSource {
+  return hasPinnedPublicNativeShopEvidence(x)||(typeof x==='object'&&x!==null&&CATALOG_SOURCE_EVIDENCE.has(x));
+}
+export async function loadPinnedAdditionalShopCatalogSources(basePath='',fetcher:typeof fetch=fetch):Promise<readonly ShopCatalogSource[]>{
+  assert(basePath===''||BASE.test(basePath),'INVALID_BASE_PATH');
+  return Object.freeze(await Promise.all(CATALOG_SOURCE_PINS.map(async pin=>{
+    const url=basePath+'/acquisition/public/shop-bundles-'+pin.snapshotKey+'.json';
+    const response=await fetcher(url);
+    assert(response.ok,'CATALOG_DOWNLOAD_FAILED');
+    const bytes=await response.arrayBuffer();
+    assert(bytes.byteLength===pin.bytes,'CATALOG_SIZE');
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');
+    assert(hash===pin.sha256,'CATALOG_SHA');
+    const d:unknown=JSON.parse(new TextDecoder().decode(bytes));
+    assert(obj(d)&&d.schema==='wand.shop.bundle-catalog-source@1'&&d.snapshotKey===pin.snapshotKey&&
+      d.sourceSha256===pin.sourceSha256&&d.sourceLocale==='en-US'&&Array.isArray(d.offers)&&d.offers.length===pin.count,'CATALOG_SOURCE');
+    const seen=new Set<string>();
+    const offers=d.offers.map((row:unknown)=>{
+      assert(Array.isArray(row)&&row.length===4,'CATALOG_TUPLE');
+      const [offerId,category,title,parts]=row;
+      assert(typeof offerId==='string'&&NATIVE_ID.test(offerId)&&!seen.has(offerId)&&
+        typeof category==='string'&&category.length>0&&category.length<=100&&
+        (title===null||typeof title==='string'&&title.length>0&&title.length<=160)&&
+        Array.isArray(parts)&&parts.length>0&&parts.length<=100,'CATALOG_OFFER');
+      seen.add(offerId);
+      const components=parts.map((part:unknown)=>{
+        assert(Array.isArray(part)&&part.length===2&&positive(part[0])&&positive(part[1]),'CATALOG_COMPONENT');
+        return Object.freeze({itemId:String(part[0]),quantity:part[1]});
+      });
+      return Object.freeze({nativeOfferId:offerId,sourceCategory:category,title,components:Object.freeze(components)});
+    });
+    const catalog:ShopCatalogSource=Object.freeze({snapshotKey:pin.snapshotKey,offers:Object.freeze(offers)});
+    CATALOG_SOURCE_EVIDENCE.add(catalog);
+    return catalog;
+  })));
+}
+/** Shared catalog loader; all existing original-backed projections, without
+ * forcing consumer code to use the legacy price or sale-period properties. */
+export async function loadPinnedShopBundleSources(basePath='',fetcher:typeof fetch=fetch):Promise<readonly ShopCatalogSource[]>{
+  const [current,historical,additional]=await Promise.all([
+    loadPinnedPublicNativeShopSnapshot(basePath,fetcher),
+    loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher),
+    loadPinnedAdditionalShopCatalogSources(basePath,fetcher)
+  ]);
+  return Object.freeze([historical,...additional,current]);
+}

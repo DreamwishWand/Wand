@@ -30,6 +30,18 @@ WINDOWS = (
     ('explicit_list',0x3e29977,58,'40b032857d2bcbbccc36181b9f6fae826ea1a00f960a35f096e245149aef7ca7'),
     ('all_tags_call',0x3e29903,116,'ffe8a57c4ba05e880cabd5725ed865a0b1cf8d34c4bab835e38f81e36a0b7147'),
     ('all_tags_loop',0x4108b0d,67,'678740354617ae413951d8ef7aa14cb65cfefd83d02c77b12d7c8099c34bff71'),
+    ('lowest_price_wrapper',0x3e1db71,31,'5c21c41c5ddb94a6528acad57a36aa5c15d2fa7a246ea26979bc3f6774b67af7'),
+    ('recipe_slot_iteration',0x34aa7ff,51,'4ec7835b2b06544a72652d7ab2218f00c0102eed3c780f0592934aceae0496e0'),
+    ('lowest_selector_dispatch',0x34aa9ac,58,'1b67c6d76a0e7e63dd38d107211c4a3ed1d3a3013eae0d2985d754088b8ba89c'),
+    ('any_cache_lookup',0x34aab50,85,'4b19bb08276ff2964afacc93cfc349937971e6cfcef10e38b5bdce4ae8730c03'),
+    ('any_cache_write',0x34aac0e,126,'bc5abb8199b20c83c589694b5e1e1e03c66324519c0fa3d94f4a1a7db53dafb1'),
+    ('fixed_tuple',0x34aacd8,59,'374800bde9c90e3119e11172152922129f92ec0dbe0121e9b3a041fa04e5c8aa'),
+    ('typed_mission_filter',0x1d6dfce,128,'87eea690a5a859d472d598fa6969263de3d340ed60ee2272534bce0014c0ed8c'),
+    ('quest_exception_constant',0x412ba3c,62,'cf63b55dd5238aeff897294b7f284914413c1a9b3f23cd4a549361ff47bdd40e'),
+    ('alternative_item_filter',0x1d6e0bc,178,'f8bbe566714a314016982b40c177f4cb55c3034918fba7f2f7c83e6025c1f093'),
+    ('all_tags_filter',0x1d6e4ea,64,'583366eba26cc299aa41559db9df8e1e0a6afd6d7ccdc491d776a961d5ec1466'),
+    ('enumerate_then_filter',0x1d6d46b,54,'fe2b920f5dae6336ad3c2fd5636950b749ec69114cfad6615220b56fefc3d964'),
+    ('minimum_then_first',0x1d6d6a1,75,'22dd52bbce54530e518299d0280767df1e5800fdeb34c429a6b4a5dfd77e2a4e'),
     ('known_class_ingredient_gate_true',0x680390,3,'e18aacce29affcdddaa5f641ac1ec12552e0fe9d066e6408941b1792818b8619'),
 )
 def require(ok, why):
@@ -60,7 +72,9 @@ def audit(dll, dump, proto):
     require(stars==[(1,120),(2,130),(3,140),(4,150),(5,160)],'STAR_SETTINGS')
     return {'nativeSteam1262WindowsVerified':len(WINDOWS),'sellPercentages':stars,
             'fixedFirst':True,'consumeFirstMatchingSlot':True,'matchedOnlyAdjusted':True,
-            'allTagsRequired':True,'negativeTagFallbackResolved':False,'runtimePriceVerified':False}
+            'allTagsRequired':True,'negativeTagFallbackResolved':False,
+            'lowestSelectorIterationVerified':True,'anySelectorMissionExclusionExceptQuestType':2001400015,
+            'lowestCandidateTieOrderVerified':False,'runtimePriceVerified':False}
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('dll','dump','protodb'): p.add_argument('--'+name,type=Path,required=True)

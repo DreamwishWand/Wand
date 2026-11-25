@@ -13,6 +13,9 @@ export interface ShopArtworkAsset {
 }
 export interface PublishedShopArtwork {
   readonly publicationVerified:true;
+  /** Native runtime geometry and composed appearance independently verified. */
+  readonly renderingVerified:true;
+  readonly nativeGroupWidth:number;
   readonly layout:string;
   readonly bindings:Readonly<Partial<Record<ShopArtworkBinding,ShopArtworkAsset>>>;
   readonly background?:ShopArtworkAsset;
@@ -33,8 +36,8 @@ function layer(origin:string,a:ShopArtworkAsset|undefined,detail:boolean){
   return {url:publicImageUrl(origin,detail?'original':'thumbnail',image.sha256),fill:a.fill,margins};
 }
 export function resolveShopArtwork(origin:string,source:PublishedShopArtwork|null,detail=false){
-  if(!source||source.publicationVerified!==true)return null;
-  const template=shopArtworkTemplate(source.layout);
+  if(!source||source.publicationVerified!==true||source.renderingVerified!==true)return null;
+  const template=shopArtworkTemplate(source.layout,source.nativeGroupWidth);
   if(!template)return null;
   const slots=template.slots.map(s=>({...s,image:layer(origin,source.bindings[s.binding],detail)}));
   const background=layer(origin,source.background,detail);

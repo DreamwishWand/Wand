@@ -275,3 +275,34 @@ test('actual original fixed cooking recipe joins recorded material occurrences a
   assert.equal(result.runtimePriceVerified,false);
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+test('lowest ingredient source selection uses actual fixed recipe, mission exclusion and exact ties',async()=>{
+  const {estimateSourceLowestMealSellPrice,getSourceMealRecipeIds}=await import('../src/lib/acquisition/source-meal-sell-price.ts');
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  assert((await getSourceMealRecipeIds(db,30300005)).includes(2050000004));
+  const fixed=await estimateSourceLowestMealSellPrice(db,30300005,2050000004);
+  assert.deepEqual(fixed.selectedIngredientIds,[31100053,31100001,30200045,30200090]);
+  assert.equal(fixed.estimate.sourceSnapshotEstimate,673);
+  assert.equal(fixed.estimate.starRating,4);
+  assert.equal(fixed.actualSellPrice,null);
+  const fish=await estimateSourceLowestMealSellPrice(db,30300010,2050000009);
+  assert.equal(fish.slots[0].candidateCount,52);
+  assert.deepEqual(fish.slots[0].tiedItemIds,[31000053,31000054,31000055,31000056]);
+  assert.equal(fish.slots[0].minimumUnitAmount,1);
+  assert.equal(fish.estimate.sourceSnapshotEstimate,412);
+  assert.equal(fish.estimate.ingredients[0].priceSource,'native_default_if_lookup_fails');
+  assert.equal(fish.nativeTieOrderVerified,false);
+  const tag=await estimateSourceLowestMealSellPrice(db,30300132,2050000138);
+  assert.equal(tag.slots[0].status,'unresolved_selector');
+  assert.equal(tag.estimate,null);
+  const puzzle=await estimateSourceLowestMealSellPrice(db,30300494,2050000467);
+  assert(puzzle.slots.some(s=>s.status==='no_source_candidate'));
+  assert.equal(puzzle.estimate,null);
+  const ingredientIds=await db.findItemIdsByFields([
+    {field:'sourceClass',anyOf:['CropItemData','FishItemData','IngredientItemData'].map(value=>({kind:'equals',value}))},
+    {field:'source.CookingIngredientType',anyOf:[{kind:'present'}]}
+  ]);
+  assert.equal(ingredientIds.length,469);
+  const mission=await db.getItemFields(ingredientIds,['source.IsMissionItem']);
+  assert.equal(mission.filter(r=>r.values['source.IsMissionItem']===true).length,248);
+});
