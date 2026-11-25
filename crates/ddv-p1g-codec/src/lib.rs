@@ -1859,7 +1859,7 @@ mod browser_amount_preview {
                     "duplicate"=>{
                         let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                         let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
-                        if dest.grid_id!=target.grid_id{return Err(invalid());}
+                        // Copy creates a new ordinary object at the independently resolved destination. The source identity remains unchanged.
                         let orientation=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(target.grid_id.as_str())).and_then(|v|v.get("Objects")).and_then(|v|v.get(target.object_id.as_str())).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str()).ok_or_else(invalid)?;
                         preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
                     },
