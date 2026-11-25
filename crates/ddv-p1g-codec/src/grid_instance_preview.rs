@@ -767,6 +767,12 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
 }
 /// Test-only parent transform. Child grids and the exact State remain unchanged.
 pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,false)
+}
+pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true)
+}
+fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
  if ordinal==0||item/100_000!=400||expected==replacement&&turn.is_none()&&source_witness.is_none(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
@@ -791,7 +797,20 @@ pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64
  let old=obj.get("Orientation").and_then(Value::as_str).ok_or(bad)?;
  let new=if let Some((before,after))=turn{if before!=old||before==after||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&after){return Err(bad);}after}else{old};
  let json=std::str::from_utf8(profile).map_err(|_|bad)?;
- let draft=if cross{
+ let draft=if duplicate{
+  // The source tree must already exist in the same outdoor world. New
+  // IDs are derived only from the local Save allocator, never Scene input.
+  let scope=|s:&str|s.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).map(str::to_owned);
+  if scope(&source.layout_path).is_none()||scope(&source.layout_path)!=scope(&dest.layout_path){return Err(bad);}
+  let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+  let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
+  if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  let d=ddv_save_patch::support_clone::preview_support_tree_duplicate(json,target,expected,&dest,replacement,new).map_err(|_|CodecError::Patch)?;
+  let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
+  let next_collection=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+  if subgrid_tree(next_collection,&dest.grid_id,&next)?!=tree||subgrid_tree(next_collection,&target.grid_id,&target.object_id)?!=tree{return Err(bad);}
+  d
+ }else if cross{
   let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
   let d=ddv_save_patch::preview_support_parent_grid_transfer(json,target,expected,&dest,replacement,new).map_err(|_|CodecError::Patch)?;
   let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
@@ -1746,6 +1765,36 @@ mod terrain_session_tests{
         assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
         plan["edits"][1]["y"]=Value::from(7);assert!(support_child_candidate(save,&plan).is_err());
         plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
+    fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1},"40005162":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+          "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
+            "1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8,"DesignID":null}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Left","State":{"SubGrid":{"GridID":9}}}}},
+          "9":{"ID":9,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005162,"X":0,"Y":0,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40005162,"X":2,"Y":0,"Orientation":"GridOrientation_Down"}}}
+        }}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":20,"sizeY":20});
+        let draft=support_parent_duplicate_candidate(save,1,40005160,(4,6),(10,12),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None).unwrap();
+        let original:Value=serde_json::from_slice(save).unwrap();
+        let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        let c=&result["World"]["GridCollection"];let g=&c["Grids"];
+        assert_eq!(c["NextGridID"],22);
+        assert_eq!(g["7"]["NextGridObjectID"],3);
+        assert_eq!(g["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
+        assert_eq!(g["7"]["Objects"]["2"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(g["20"]["Objects"]["1"]["State"]["SubGrid"]["GridID"],21);
+        assert_eq!(g["21"]["Objects"],g["9"]["Objects"]);
+        for id in ["8","9"]{assert_eq!(g[id],original["World"]["GridCollection"]["Grids"][id]);}
+        assert_eq!(g["7"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]);
+        for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+        assert!(draft.patched_json.contains("\"Other\":1e2"));
+        let run=|v:&Value|support_parent_duplicate_candidate(&serde_json::to_vec(v).unwrap(),1,40005160,(4,6),(10,12),&witness,None,None);
+        let mut bad=original.clone();bad["World"]["GridCollection"]["NextGridID"]=Value::from(9);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["FutureGridID"]=Value::from(21);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=Value::from(1);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["Unknown"]=Value::from(1);assert!(run(&bad).is_err());
+        let mut bad=original.clone();bad["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["State"]["SubGrid"]["DesignID"]=Value::from(1);assert!(run(&bad).is_err());
     }
     #[test]
     fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){

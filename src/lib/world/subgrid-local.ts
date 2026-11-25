@@ -169,3 +169,25 @@ export function supportDragDestination(o:Pick<SupportObject,'x'|'y'>,start:{x:nu
  const x=o.x+end.x-start.x,y=o.y+end.y-start.y;
  return [x,y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647)?{x,y}:null;
 }
+
+/** Stock required to duplicate the root plus its existing descendant tree. */
+export function supportDuplicateCounts(owner:number,tree:SupportTree|null):Map<number,number>|null{
+ if(!tree||!Number.isSafeInteger(owner)||Math.floor(owner/100000)!==400)return null;
+ const out=new Map<number,number>([[owner,1]]);let total=1;
+ function visit(t:SupportTree,depth:number):boolean{
+  if(depth>8||!t.sourcePath)return false;
+  for(const o of t.objects){if(++total>32||Math.floor(o.itemId/100000)!==400||!isCardinal(o.orientation))return false;out.set(o.itemId,(out.get(o.itemId)??0)+1);if(o.child&&!visit(o.child,depth+1))return false;}
+  return true;
+ }
+ return visit(tree,0)?out:null;
+}
+export const supportDuplicateWords={
+ ja:['支持家具と小物を複製','複製に必要な在庫が不足しているか、対応外の構造です。','必要数'],
+ en:['Duplicate support with contents','Insufficient stock or unsupported hierarchy.','Required'],
+ fr:['Dupliquer avec le contenu','Stock insuffisant ou structure incompatible.','Requis'],
+ it:['Duplica con contenuto','Scorte insufficienti o struttura incompatibile.','Richiesto'],
+ de:['Mit Inhalt duplizieren','Bestand zu gering oder Struktur inkompatibel.','Benötigt'],
+ 'es-ES':['Duplicar con contenido','Inventario insuficiente o estructura incompatible.','Necesarios'],
+ 'zh-CN':['复制支撑家具及其物品','库存不足或结构不受支持。','所需'],
+ 'pt-BR':['Duplicar com conteúdo','Estoque insuficiente ou estrutura incompatível.','Necessários']
+} as const;
