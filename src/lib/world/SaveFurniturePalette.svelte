@@ -2,6 +2,8 @@
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
+ import {commitWorldCheckpoint} from '../ui/local-save-session';
+ import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
@@ -23,9 +25,11 @@
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
  let artwork=new Map<number,string>(),asked=new Set<number>();
  const testExport=browser&&testSaveExportEnabled(window.location);
- let copyUrl='',copyName='';
+ let copyUrl='',copyName='',copyFile:File|null=null;
+ $: cw=checkpointWords[locale];
+ function applyCopy(){if(!testExport||!file||!copyFile||blocked||!canStart||status!=='valid')return;if(!commitWorldCheckpoint(file,copyFile)){status='error';return;}cancel();}
  $: tw=testSaveWords[locale]??testSaveWords.en;
- function clearCopy(){if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';copyName='';}
+ function clearCopy(){if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';copyName='';copyFile=null;}
  $: w=stockToolWords[locale]??stockToolWords.en;
  $: ow=stockFootprintWords[locale]??stockFootprintWords.en;
  $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
@@ -78,7 +82,7 @@
    if(exporting){
     const r=d?.receipt,b=d?.bytes;
     if(d?.kind==='furniture-stock-copy'&&b instanceof Uint8Array&&b.byteLength>0&&b.byteLength<=32*1024*1024&&r?.contract==='wand.db05.experimental-copy@1'&&r.copyBytes===b.byteLength&&r.originalUnchanged===true&&r.independentReopenVerified===true&&r.experimentalCopyOnly===true&&r.productionWriterAuthorized===false){
-     try{copyUrl=URL.createObjectURL(new Blob([b.slice().buffer as ArrayBuffer],{type:'application/octet-stream'}));const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
+     try{const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';copyFile=new File([b.slice().buffer as ArrayBuffer],f.name,{type:f.type||'application/octet-stream'});copyUrl=URL.createObjectURL(copyFile);status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
     }
     b?.fill(0);status='error';return;
    }
@@ -104,7 +108,7 @@
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
-   {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
+   {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
    {#if stockState==='loading'||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if stockState==='error'||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
     <div class="stock-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-100)limit=Math.min(items.length,limit+80);}}>
