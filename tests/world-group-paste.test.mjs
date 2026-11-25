@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -32,4 +32,37 @@ test('cut witness must match every original furniture pose and keeps each source
  const plan=groupCutPlan(cut,candidate);
  assert.deepEqual(plan.map(p=>[p.localOrdinal,p.expectedX,p.x]),[[2,4,8],[3,6,10]]);
  assert.equal(groupCutPlan(cut.slice(0,1),candidate),null);
+});
+
+import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor} from '../src/lib/world/scene-preset.ts';
+test('Save and decoration design Scene files share exact physical offsets',()=>{
+ const clip=captureFurnitureGroup([saved(2,4,-3),saved(3,6,-3)]);
+ const half=sceneFromClip(clip,2),unit=convertSceneFactor(half,1);
+ assert.deepEqual(unit.items.map(p=>[p.dx,p.dy]),[[0,0],[2,0]]);
+ assert.deepEqual(convertSceneFactor(parseSceneAnyFactor(JSON.stringify(unit)),2),half);
+ const odd=sceneFromClip([{itemId:item,dx:0,dy:0,orientation:2},{itemId:item,dx:1,dy:0,orientation:2}],2);
+ assert.equal(convertSceneFactor(odd,1),null);
+ const center=groupSceneOrigin(clip,defs,[grid],rasters,{x:9.1,y:-2.1},'center');
+ const candidate=groupPasteCandidate(clip,[grid],rasters,defs,new Map([[item,2]]),[],0,center.x,center.y);
+ assert.deepEqual(candidate.rows.map(p=>[p.x,p.y]),[[8,2],[10,2]]);
+});
+
+test('mirror selection across actual map axis, with existing originals retained and stock checked',()=>{
+ const source=[saved(2,4,-3),saved(3,6,-3)],poses=savedWorldGroupPoses(source);
+ const axis={mode:'vertical',x:10,y:-3},stock=new Map([[item,2]]);
+ const result=symmetricWorldCandidate(poses,axis,false,[grid],rasters,defs,stock,source,0);
+ assert.deepEqual(result.rows.map(p=>[p.x,p.y,p.orientation]),[[15,3,'GridOrientation_Down'],[13,3,'GridOrientation_Down']]);
+ assert.equal(symmetricWorldCandidate(poses,axis,false,[grid],rasters,defs,new Map([[item,1]]),source,0),null);
+ assert.equal(symmetricWorldCandidate(poses,axis,false,[grid],rasters,defs,stock,[...source,saved(4,15,-3)],0).rows.length,1);
+ const both=symmetricWorldCandidate(poses,axis,true,[grid],rasters,defs,new Map([[item,4]]),[],0);
+ assert.equal(both.rows.length,4);
+ assert.equal(groupCandidatePoses(both).length,4);
+});
+test('point and horizontal reflection are native orientation transforms; unrepresentable axis rejected',()=>{
+ const poses=savedWorldGroupPoses([saved(2,4,-3)]),stock=new Map([[item,1]]);
+ const point=symmetricWorldCandidate(poses,{mode:'point',x:10,y:-10},false,[grid],rasters,defs,stock,[],0);
+ assert.deepEqual(point.rows.map(p=>[p.x,p.y,p.orientation]),[[15,16,'GridOrientation_Up']]);
+ const horizontal=symmetricWorldCandidate(poses,{mode:'horizontal',x:10,y:-10},false,[grid],rasters,defs,stock,[],0);
+ assert.deepEqual(horizontal.rows.map(p=>[p.x,p.y,p.orientation]),[[4,16,'GridOrientation_Up']]);
+ assert.equal(symmetricWorldCandidate(poses,{mode:'vertical',x:10.25,y:-3},false,[grid],rasters,defs,stock,[],0),null);
 });
