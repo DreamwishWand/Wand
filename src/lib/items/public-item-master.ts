@@ -9,6 +9,7 @@
  * visible game-screen membership or availability.
  */
 import {createItemFieldReader,type ItemFieldReader,type ItemFieldFilter,type ItemFieldValue} from './item-field-reader.ts';
+import {DB02_SOURCE_KINDS,DB02_SOURCE_ROLES,type Db01SourceKind,type Db01SourceRole} from '../acquisition/db01-item-source-relations.ts';
 export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch,ItemFieldFilter} from './item-field-reader.ts';
 
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
@@ -441,6 +442,25 @@ export interface ItemContentQueryResult {
   readonly status:'indexed'|'not_indexed';
   readonly itemIds:readonly number[];
 }
+/** Canonical source families are deliberately distinct: original source-index
+ * occurrences, additional ProtoDb facts and native definition candidates.
+ * Matching never asserts a granted item or current availability. */
+export const ADDITIONAL_ACQUISITION_SOURCE_KINDS=[
+  'character_friendship_reward','pet_friendship_reward','configured_store_display',
+  'pre_dlc_store_list_member','design_challenge_catalog_unlock'
+] as const;
+export type AdditionalAcquisitionSourceKind=typeof ADDITIONAL_ACQUISITION_SOURCE_KINDS[number];
+export type ItemAcquisitionSourceQuery=
+  |{readonly family:'indexed';readonly kind:Db01SourceKind;readonly sourceId:string;readonly role?:Db01SourceRole}
+  |{readonly family:'additional';readonly kind:'character_friendship_reward'|'pet_friendship_reward';readonly sourceId:number}
+  |{readonly family:'additional';readonly kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock';readonly sourceId:string}
+  |{readonly family:'native';readonly sourceItemId:number;readonly role?:NativeAcquisitionRole};
+export interface ItemAcquisitionSourceQueryResult {
+  readonly status:'indexed'|'not_indexed';
+  readonly itemIds:readonly number[];
+  readonly coverageComplete:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
   getItemContentOrigins(itemIds:readonly number[]):Promise<readonly (Readonly<ItemContentOrigin>|null)[]>;
@@ -461,6 +481,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   /** Ordered batch lookup, preserving duplicates, unknown IDs and empty edge lists. */
   getItemsReferences(itemIds:readonly number[],direction:ItemReferenceDirection):Promise<readonly (readonly ItemReferenceOccurrence[]|null)[]>;
   getNativeAcquisitionCandidates(itemIds:readonly number[]):Promise<readonly (readonly NativeAcquisitionCandidate[]|null)[]>;
+  /** Canonical ItemIDs only, from this release, with exact kind/ID/role pairing. */
+  findItemIdsByAcquisitionSource(query:ItemAcquisitionSourceQuery,additionalFilters?:readonly ItemFieldFilter[]):Promise<Readonly<ItemAcquisitionSourceQueryResult>>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -1144,6 +1166,38 @@ export async function openPublicItemMaster(
           currentRepurchasePriceVerified:false as const,currentSellPriceVerified:false as const
         });
       }));
+    },
+    async findItemIdsByAcquisitionSource(query:ItemAcquisitionSourceQuery,additionalFilters:readonly ItemFieldFilter[]=[]){
+      assert(isObject(query)&&Array.isArray(additionalFilters),'INVALID_ACQUISITION_SOURCE_QUERY');
+      const validSourceId=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length<=128;
+      let key:readonly (string|number)[];
+      let role=false;
+      switch(query.family){
+        case 'indexed':
+          assert(DB02_SOURCE_KINDS.includes(query.kind)&&validSourceId(query.sourceId)&&
+            (query.role===undefined||DB02_SOURCE_ROLES.includes(query.role)),'INVALID_ACQUISITION_INDEXED_SOURCE');
+          key=query.role===undefined?[query.kind,query.sourceId]:[query.kind,query.sourceId,query.role];
+          role=query.role!==undefined;break;
+        case 'additional':
+          assert(ADDITIONAL_ACQUISITION_SOURCE_KINDS.includes(query.kind)&&
+            (query.kind==='character_friendship_reward'||query.kind==='pet_friendship_reward'
+              ?ID(query.sourceId):validSourceId(query.sourceId)),'INVALID_ACQUISITION_ADDITIONAL_SOURCE');
+          key=[query.kind,query.sourceId];break;
+        case 'native':
+          assert(ID(query.sourceItemId)&&(query.role===undefined||NATIVE_ACQUISITION_ROLES.includes(query.role)),
+            'INVALID_ACQUISITION_NATIVE_SOURCE');
+          key=query.role===undefined?['item_definition',query.sourceItemId]:['item_definition',query.sourceItemId,query.role];
+          role=query.role!==undefined;break;
+        default:throw Error('ITEM_MASTER_INVALID_ACQUISITION_SOURCE_QUERY');
+      }
+      const field='acquisition.'+query.family+'Source'+(role?'Role':'')+'Keys';
+      const catalog=await fieldReader.getFieldCatalog();
+      const available=catalog.some(f=>f.field===field);
+      const itemIds=available?await fieldReader.findItemIdsByFields([
+        {field,anyOf:[{kind:'contains',value:JSON.stringify(key)}]},...additionalFilters
+      ]):Object.freeze([] as number[]);
+      return Object.freeze({status:available?'indexed' as const:'not_indexed' as const,itemIds,
+        coverageComplete:false as const,currentAvailabilityVerified:false as const});
     },
     async getNativeAcquisitionCandidates(ids:readonly number[]){
       const field='acquisition.nativeCandidates';
