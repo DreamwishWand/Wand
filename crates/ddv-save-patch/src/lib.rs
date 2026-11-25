@@ -1811,6 +1811,21 @@ mod structural_tests{
   assert!(preview_furniture_stock_transaction(&original.replace(r#""Amount":1"#,r#""Amount":2147483648"#),1,place()).is_err());
   assert!(preview_furniture_stock_transaction(&original.replace(r#""40000001""#,r#""40000002""#),1,place()).is_err());
  }
+
+ #[test]
+ fn independent_destination_stock_placement_preserves_source_object_and_counter(){
+  let raw=r#"{"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"ItemMarker_Favorite"}}}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":8,"Objects":{"7":{"ID":7,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}}},"20":{"ID":20,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{}}}}}}"#;
+  let dest=PlainGridDestination{grid_id:"20".into(),layout_path:"SceneLayouts/Village04/B.json".into(),data_path:"GridData/B.json".into(),tessellation:2,size:(20,20)};
+  let draft=preview_furniture_stock_transaction(raw,2,FurnitureStockAction::Place{destination:&dest,item_id:40000001,xy:(31,25),orientation:"GridOrientation_Down"}).unwrap();
+  let before:serde_json::Value=serde_json::from_str(raw).unwrap();
+  let after:serde_json::Value=serde_json::from_str(&draft.patched_json).unwrap();
+  let grids=|v:&serde_json::Value|v["World"]["GridCollection"]["Grids"].clone();
+  assert_eq!(grids(&after)["10"],grids(&before)["10"]);
+  assert_eq!(grids(&after)["20"]["NextGridObjectID"],4);
+  assert_eq!(grids(&after)["20"]["Objects"]["3"],serde_json::json!({"ID":3,"ItemID":40000001,"X":31,"Y":25,"Orientation":"GridOrientation_Down"}));
+  assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+  assert!(draft.untouched_bytes_preserved&&!draft.writer_authorized&&!draft.export_authorized);
+ }
  #[test]
  fn structural_drafts_reject_stale_counter_state_and_non_cardinal(){
   let action=PlainGridStructureAction::Duplicate{x:5,y:6};

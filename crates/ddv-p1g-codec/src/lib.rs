@@ -1822,7 +1822,7 @@ mod browser_amount_preview {
         /// Local stock and placement candidate. The candidate is independently
         /// reopened and zeroized without setting the export/copy buffer.
         /// Source structural guards are shared with the existing preview.
-        pub fn preview_furniture_stock_structure(&self,plan:&str,destination:&str)->Result<String,JsValue>{
+        fn furniture_stock_candidate(&self,plan:&str,destination:&str)->Result<(ddv_save_patch::GridCoordinateDraft,u32,u32),JsValue>{
             use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
             if !self.ready||self.closed||self.copy_prepared||plan.len()>4096||destination.len()>4096{
                 return Err(fail("DB05_FURNITURE_STOCK_SESSION_INVALID"));
@@ -1859,13 +1859,29 @@ mod browser_amount_preview {
                     "duplicate"=>{
                         let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                         let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
-                        if dest.grid_id!=target.grid_id{return Err(invalid());}
+                        // Copy creates a new ordinary object at the independently resolved destination. The source identity remains unchanged.
                         let orientation=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(target.grid_id.as_str())).and_then(|v|v.get("Objects")).and_then(|v|v.get(target.object_id.as_str())).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str()).ok_or_else(invalid)?;
                         preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
                     },
                     _=>return Err(invalid())
                 }
             }.map_err(|_|fail("DB05_FURNITURE_STOCK_REJECTED"))?;
+            let remaining=if action=="remove"{stock.checked_add(1)}else{stock.checked_sub(1)};
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized||remaining.is_none(){
+                draft.patched_json.zeroize();return Err(invalid());
+            }
+            Ok((draft,stock,remaining.unwrap()))
+        }
+
+        pub fn prepare_furniture_stock_experimental_copy(&mut self,plan:&str,destination:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            if !allow_experimental_copy{return Err(fail("DB05_EXPERIMENTAL_COPY_NOT_ALLOWED"));}
+            let (draft,_,_)=self.furniture_stock_candidate(plan,destination)?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
+        pub fn preview_furniture_stock_structure(&self,plan:&str,destination:&str)->Result<String,JsValue>{
+            let (mut draft,stock,remaining)=self.furniture_stock_candidate(plan,destination)?;
+            let invalid=||fail("DB05_FURNITURE_STOCK_PLAN_INVALID");
             let result=(||->Result<String,JsValue>{
                 if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(invalid());}
                 validate_profile(draft.patched_json.as_bytes()).map_err(|_|invalid())?;
@@ -1878,7 +1894,6 @@ mod browser_amount_preview {
                     encrypted.zeroize();
                     if !verified{return Err(fail("DB05_FURNITURE_STOCK_REOPEN"));}
                 }
-                let remaining=if action=="remove"{stock.checked_add(1)}else{stock.checked_sub(1)}.ok_or_else(invalid)?;
                 Ok(serde_json::json!({"contract":"wand.db05.furniture-stock-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"reopenVerified":true,"stockBefore":stock,"stockAfter":remaining,"exportAuthorized":false,"runtimeReferencesVerified":false}).to_string())
             })();
             draft.patched_json.zeroize();result

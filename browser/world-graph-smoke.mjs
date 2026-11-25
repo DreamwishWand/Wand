@@ -1351,6 +1351,14 @@ try{
   await palette.getByRole('button',{name:'回収を検証',exact:true}).click();
   await palette.locator('.stock-preview-result').waitFor({timeout:20000});
   assert.match(await palette.locator('.stock-preview-result').innerText(),/在庫 3 → 4/);
+  await palette.getByRole('button',{name:'テスト用セーブコピーを作成',exact:true}).click();
+  const stockCopy=palette.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await stockCopy.waitFor({timeout:30000});
+  const copied=await stockCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.equal(copied.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  assert.equal(Object.values(copied.World.GridCollection.Grids).reduce((n,g)=>n+Object.keys(g.Objects??{}).length,0),Object.values(worldSave.World.GridCollection.Grids).reduce((n,g)=>n+Object.keys(g.Objects??{}).length,0)-1);
+  assert.equal(worldSave.Player.ListInventories['0'].Inventory['40005160'].Amount,3);
+
   assert.equal(await wholeSave.locator('.mainland-save-object').count(),oldTransforms.length);
   await palette.getByRole('button',{name:'閉じる',exact:true}).click();
   await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();

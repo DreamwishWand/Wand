@@ -434,6 +434,14 @@ pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Resu
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(id))){
        return Err(CodecError::Json);
     }
+    // A monotonic counter can still point to an address referenced outside
+    // this Objects map, for example by an old collection/event record.
+    // Insertion must not resurrect any observed address, even historical.
+    let next=grid.get("NextGridObjectID").and_then(Value::as_u64)
+        .filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(CodecError::Json)?;
+    let new_target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:id.clone(),object_id:next.to_string(),item_id:0};
+    let refs=grid_identity_dependencies(profile,&new_target)?;
+    if refs.blocking()>0||refs.historical>0{return Err(CodecError::Json);}
     Ok(ddv_save_patch::PlainGridDestination{grid_id:id.clone(),layout_path:layout.to_owned(),data_path:data.to_owned(),tessellation:factor,size:(sx,sy)})
 }
 
@@ -1017,6 +1025,13 @@ mod terrain_session_tests{
         assert_eq!(d.grid_id,"20");assert_eq!(d.tessellation,1);
         let mut wrong=witness.clone();wrong["factor"]=serde_json::json!(2);
         assert!(resolve_plain_grid_destination(save,&wrong).is_err());
+        for key in ["SpawnedObjects","GridObjectsCollected","LastUsedLinkedEnvironmentEnter","Unknown"]{
+            let mut referenced:Value=serde_json::from_slice(save).unwrap();
+            referenced["Player"]=serde_json::json!({(key):[{"GridID":20,"GridObjectID":3}]});
+            assert!(resolve_plain_grid_destination(&serde_json::to_vec(&referenced).unwrap(),&witness).is_err());
+            referenced["Player"][key][0]["GridID"]=serde_json::json!(21);
+            assert!(resolve_plain_grid_destination(&serde_json::to_vec(&referenced).unwrap(),&witness).is_ok());
+        }
         let mut root:Value=serde_json::from_slice(save).unwrap();
         let other=root["World"]["GridCollection"]["Grids"]["20"].clone();
         root["World"]["GridCollection"]["Grids"]["21"]=other;

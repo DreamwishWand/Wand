@@ -36,3 +36,14 @@ test('stock feedback detects real occupied runs at both resolutions, not rectang
  assert.deepEqual(stockFootprintFeedback(q,[],1),{overlaps:0,unknown:true});
  assert.deepEqual(stockFootprintFeedback(q,[p(1,-1,1,'other')],2),{overlaps:1,unknown:true});
 });
+
+test('ordinary duplication can target a distinct original grid with an independent resolution',()=>{
+ const b={...g,key:'B',layoutId:'SceneLayouts/Village04/B.json',gridDataPath:'GridData/B.json',origin:{position:[2,0,0]},bounds:{x:4,y:-4,w:4,h:4},factor:2};
+ const bShape={...shape,width:4,height:2,cellCount:8,runs:[{x:0,y:0,width:4},{x:0,y:1,width:4}]};
+ const defs=new Map([...geometry,[2,{...def,shapes:{'40005160:8':bShape}}]]);
+ const both=new Map([...rasters,['B',{sizeX:4,sizeY:4,nativeFloorValues:new Uint32Array(16).fill(4)}]]);
+ const p={area:'A',factor:1,shape,...mainlandMapAnchor(g,0,0),object:{localOrdinal:1,itemId:'40005160',x:0,y:0,orientation:'GridOrientation_Down',layer:'furniture',surfaceCapable:false}};
+ const q=stockPlacement([g,b],both,defs,40005160,'GridOrientation_Down',4.25,-.25,p);
+ assert.equal(q?.area,'B');assert.equal(q?.factor,2);assert.equal(q?.plan.action,'duplicate');assert.equal(q?.plan.localOrdinal,1);assert.equal(q?.destination.layoutId,b.layoutId);assert.equal(q?.plan.x,0);assert.equal(q?.plan.y,0);
+ assert.equal(stockPlacement([g,b],both,geometry,40005160,'GridOrientation_Down',4.25,-.25,p),null);
+});
