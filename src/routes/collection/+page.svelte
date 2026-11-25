@@ -3,6 +3,7 @@
   import { base } from '$app/paths';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
     loadCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
@@ -1702,6 +1703,7 @@
             {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
+                <CurrentItemFacts itemId={selectedItem.itemId} {locale}/>
               {/key}
             {/if}
             {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
