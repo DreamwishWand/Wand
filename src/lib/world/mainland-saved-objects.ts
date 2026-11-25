@@ -10,6 +10,7 @@ import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {terrainWarnings,type TerrainRaster,type TerrainScopeReceipt} from './terrain-binding.ts';
 import {mapPainterOrder} from './source-map-layers.ts';
+import {nativeActionBlocked} from './native-edit-restrictions.ts';
 export interface MainlandSavedObject{
  readonly area:string;readonly object:SavedShapeObject;readonly shape:SourceObjectShape|null;
  readonly x:number;readonly y:number;readonly factor:1|2;
@@ -173,4 +174,28 @@ export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],
  if(!valid||!changed)return {ghosts,next:null};
  const snapshots=[...timeline.snapshots.slice(0,timeline.cursor+1),working.snapshots[working.cursor]].slice(-(WORLD_HISTORY_LIMIT+1));
  return {ghosts,next:{snapshots,cursor:snapshots.length-1}};
+}
+
+/** Local-only structural rehearsal plan. This is not an edit timeline
+ * entry or a write authorization; a valid terrain hit is not a native
+ * collision or runtime reference proof. */
+export interface MainlandTransferPlan{
+ readonly area:string;readonly x:number;readonly y:number;readonly factor:1|2;readonly shape:SourceObjectShape;
+ readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string};
+}
+export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,timeline:WorldEditTimeline,worldX:number,worldY:number):MainlandTransferPlan|null{
+ if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p)||p.object.layer!=='furniture'||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove')||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ const hit=mainlandTerrainHits(grids,rasters,worldX,worldY);
+ if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
+ const g=hit[0],r=rasters.get(g.key),shape=p.shape;
+ const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
+ if(!r||x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||shape.cellCount>65536)return null;
+ if(terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
+  const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5);
+  const owners=mainlandTerrainHits(grids,rasters,q.x,q.y);
+  if(owners.length!==1||owners[0].key!==g.key)return null;
+ }
+ const anchor=mainlandMapAnchor(g,x,y);
+ return {area:g.key,...anchor,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},x,y,orientation:p.object.orientation}};
 }
