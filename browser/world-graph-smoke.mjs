@@ -1370,6 +1370,22 @@ try{
   await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length,{timeout:30000});
   await checkpoint.getByRole('button',{name:'やり直す',exact:true}).click();
   await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length-1,{timeout:30000});
+  // Committed structural history must survive a real reload; replay from
+  // the exact original restores the picked-up item count and both undo states.
+  const journalKey='save:json:'+await page.evaluate(async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join(''),JSON.stringify(worldSave));
+  await page.waitForFunction(async key=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('wand-world-design-recovery',1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    try{const row=await new Promise((resolve,reject)=>{const q=db.transaction('drafts','readonly').objectStore('drafts').get(key);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});return row?.draft?.schema==='wand.local-save-world-checkpoints@1'&&row.draft.journal.cursor===1&&row.draft.journal.steps.length===1;}finally{db.close();}
+  },journalKey,{timeout:30000});
+  const acceptReload=dialog=>dialog.accept();page.on('dialog',acceptReload);
+  try{await page.reload();}finally{page.off('dialog',acceptReload);}
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-checkpoint-renamed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  await publicWorld.locator('.save-recovery').getByRole('button',{name:'作業を再開',exact:true}).click({timeout:30000});
+  await checkpoint.waitFor({timeout:60000});
+  await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length-1,{timeout:30000});
+  await wholeSave.getByRole('button',{name:'家具パレット',exact:true}).click();
+  await palette.locator('.stock-item[data-item-id="40005160"]').waitFor({timeout:30000});
+  assert.match(await palette.locator('.stock-item[data-item-id="40005160"]').innerText(),/在庫 4/);
   await checkpoint.getByRole('button',{name:'元に戻す',exact:true}).click();
   await page.waitForFunction(n=>document.querySelectorAll('.mainland-save-object').length===n,oldTransforms.length,{timeout:30000});
   await palette.getByRole('button',{name:'閉じる',exact:true}).click();
@@ -1517,7 +1533,10 @@ try{
   await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
 
   // Committed edits survive reload, bound to the exact original bytes.
-  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  // A distinct original tests transform-only recovery independently of the
+  // structural journal already persisted for worldSave (including its redo).
+  const recoverySave={...structuredClone(worldSave),SyntheticRecoveryFixture:1};
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-original.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(recoverySave))});
   await publicWorld.locator('.mainland-overview').getByRole('button',{name:'閉じる',exact:true}).click({timeout:30000});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:30000});
   await publicPlot.getByLabel('配置済み家具を検索').focus();
@@ -1525,13 +1544,13 @@ try{
   await publicPlot.getByLabel('移動先X').fill('6');
   await publicPlot.getByRole('button',{name:'配置変更を追加',exact:true}).click();
   await publicPlot.locator('.staged-edit').first().waitFor();
-  const recoveryKey='save:json:'+await page.evaluate(async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join(''),JSON.stringify(worldSave));
+  const recoveryKey='save:json:'+await page.evaluate(async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),v=>v.toString(16).padStart(2,'0')).join(''),JSON.stringify(recoverySave));
   await page.waitForFunction(async key=>{
     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('wand-world-design-recovery',1);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
     try{const row=await new Promise((resolve,reject)=>{const q=db.transaction('drafts','readonly').objectStore('drafts').get(key);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});return row?.draft?.timeline?.snapshots?.[row.draft.timeline.cursor]?.edits?.length===1;}finally{db.close();}
   },recoveryKey,{timeout:30000});
   await page.reload();
-  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-renamed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'recovery-renamed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(recoverySave))});
   await publicWorld.locator('.save-recovery').getByRole('button',{name:'作業を再開',exact:true}).click({timeout:30000});
   await publicPlot.locator('.staged-edit').first().waitFor({timeout:30000});
   assert.equal(await publicPlot.locator('.staged-edit').count(),1);
