@@ -1197,6 +1197,29 @@ mod tests{
     }
 
     #[test]
+    fn group_cut_preserves_stock_and_same_grid_ids_and_checks_cross_grid_refs(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
+        let a=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
+        let b=serde_json::json!({"layoutId":"SceneLayouts/Village04/B.json","gridDataPath":"GridData/B.json","factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!([
+          {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":a,"x":4,"y":4,"orientation":"GridOrientation_Left"},
+          {"localOrdinal":2,"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":b,"x":5,"y":5,"orientation":"GridOrientation_Down"}
+        ]);
+        let d=group_cut_candidate(raw,&plan.to_string()).unwrap();
+        let j:Value=serde_json::from_str(&d).unwrap();
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["ID"],1);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"],4);
+        assert!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("2").is_none());
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["ItemID"],40000001);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["NextGridObjectID"],6);
+        assert!(d.contains("\"Marker\":1e2"));
+        let mut stale:Value=serde_json::from_slice(raw).unwrap();
+        stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
+        assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+        plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+    }
+
+    #[test]
     fn group_paste_checks_stock_and_all_allocator_addresses_before_staging(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}}}}}}"#;
         let dest=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
