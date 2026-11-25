@@ -1,4 +1,4 @@
-import raw from './fence-family-candidates.json';
+import raw from './fence-family-candidates.json' with {type:'json'};
 type FenceFamily={name:string;base:number;ext:readonly number[];diagExt:readonly number[]};
 export const fenceFamilyCandidates:readonly FenceFamily[]=raw.map(row=>{
  const [name,base,ext,diagExt]=row as [string,number,number[],number[]];
