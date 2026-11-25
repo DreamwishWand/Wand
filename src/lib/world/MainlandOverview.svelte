@@ -50,27 +50,27 @@
  let mapWidth=0,mapHeight=0,selected:number|null=null,query='',searchOpen=false,limit=60,layersOpen=false;
  let moving=false,hover:{x:number;y:number}|null=null;
  let groupIds:number[]=[],groupX:number|undefined=0,groupZ:number|undefined=0,groupOpen=false;
- let range:{pointer:number;start:{x:number;y:number};end:{x:number;y:number};add:boolean;clientX:number;clientY:number;moved:boolean}|null=null;
+ let range:{pointer:number;start:{x:number;y:number};end:{x:number;y:number};clientX:number;clientY:number;moved:boolean}|null=null;
  $: groupSet=new Set(groupIds);
  $: group=allObjects.filter(p=>groupSet.has(p.object.localOrdinal)&&layerSelectable(layerState,p.object));
- $: if(group.length!==groupIds.length)groupIds=group.map(p=>p.object.localOrdinal);
- $: groupFactor=mainlandGroupFactor(group);
+ $: pruneGroup(group,groupIds);
+ function pruneGroup(items:readonly MainlandSavedObject[],ids:readonly number[]){if(items.length!==ids.length){groupIds=items.map(p=>p.object.localOrdinal);if(items.length<2){selected=items[0]?.object.localOrdinal??null;groupIds=[];groupOpen=false;}}}
  $: groupReady=group.length>1&&group.every(mainlandSavedMoveEligible)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
  $: groupPlan=groupReady&&bound&&typeof groupX==='number'&&typeof groupZ==='number'?mainlandSavedGroupDraft(group,bound,rasters,saveMaps,timeline,groupX,groupZ):null;
- function clearGroup(){groupIds=[];groupOpen=false;groupX=0;groupZ=0;range=null;}
- function setGroup(ids:number[]){const unique=[...new Set(ids)];if(unique.length>WORLD_BATCH_LIMIT){moveError=true;return;}stopMove();preciseOpen=false;selected=unique.length===1?unique[0]:null;groupIds=unique.length>1?unique:[];groupOpen=unique.length>1;groupX=0;groupZ=0;}
+ function clearGroup(){selectionLimit=false;groupIds=[];groupOpen=false;groupX=0;groupZ=0;range=null;}
+ function setGroup(ids:number[]){const unique=[...new Set(ids)];if(unique.length>WORLD_BATCH_LIMIT){moveError=true;selectionLimit=true;return;}selectionLimit=false;stopMove();preciseOpen=false;selected=unique.length===1?unique[0]:null;groupIds=unique.length>1?unique:[];groupOpen=unique.length>1;groupX=0;groupZ=0;}
  function toggleGroup(id:number){const ids=new Set(groupIds.length?groupIds:selected===null?[]:[selected]);if(ids.has(id))ids.delete(id);else ids.add(id);setGroup([...ids]);}
  function applyGroup(dx:number,dz:number){if(!groupReady||!bound)return;const q=mainlandSavedGroupDraft(group,bound,rasters,saveMaps,timeline,dx,dz);if(!q.next){moveError=true;return;}timeline=q.next;groupX=0;groupZ=0;stopMove();}
 
  let root:HTMLElement,preciseOpen=false,preciseX:number|undefined,preciseZ:number|undefined,preciseSeen='',moveError=false;
  let spacePan=false,suppressClick=false;
- type ObjectDrag={pointer:number;target:MainlandSavedObject;members:readonly MainlandSavedObject[];start:{x:number;y:number};cell:{x:number;z:number};clientX:number;clientY:number;end:{x:number;z:number};moved:boolean};
+ type ObjectDrag={pointer:number;target:MainlandSavedObject;members:readonly MainlandSavedObject[];baseline:WorldEditTimeline;start:{x:number;y:number};cell:{x:number;z:number};clientX:number;clientY:number;end:{x:number;z:number};moved:boolean};
  let objectDrag:ObjectDrag|null=null;
  const editWords={ja:['移動','左回転','右回転','取消','元に戻す','やり直す','同じエリア内に移動してください'],en:['Move','Rotate left','Rotate right','Cancel','Undo','Redo','Move within the same area'],fr:['Déplacer','Rotation gauche','Rotation droite','Annuler','Annuler','Rétablir','Déplacez dans la même zone'],it:['Sposta','Ruota a sinistra','Ruota a destra','Annulla','Annulla','Ripeti','Sposta nella stessa zona'],de:['Verschieben','Links drehen','Rechts drehen','Abbrechen','Rückgängig','Wiederholen','Im selben Bereich verschieben'],'es-ES':['Mover','Girar a la izquierda','Girar a la derecha','Cancelar','Deshacer','Rehacer','Mueve dentro de la misma zona'],'zh-CN':['移动','向左旋转','向右旋转','取消','撤销','重做','请在同一区域内移动'],'pt-BR':['Mover','Girar à esquerda','Girar à direita','Cancelar','Desfazer','Refazer','Mova na mesma área']} as const;
  $: ew=editWords[locale]??editWords.en;
  const groupWords={ja:['複数選択','一括移動','選択解除','選択可能な家具を全選択','移動量（共通マス単位）','選択数','選択中に移動できない家具があるか、移動先が範囲外です。'],en:['Multi-select','Move group','Clear selection','Select all selectable objects','Offset (common cell units)','Selected','A selected object cannot be moved or a destination is outside its area.'],fr:['Sélection multiple','Déplacer le groupe','Désélectionner','Tout sélectionner','Décalage (cases communes)','Sélection','Un objet ne peut pas être déplacé ou sort de sa zone.'],it:['Selezione multipla','Sposta gruppo','Deseleziona','Seleziona tutto','Spostamento (celle comuni)','Selezionati','Un oggetto non è spostabile o esce dalla zona.'],de:['Mehrfachauswahl','Gruppe verschieben','Auswahl löschen','Alle auswählen','Versatz (gemeinsame Zellen)','Ausgewählt','Ein Objekt ist nicht verschiebbar oder außerhalb seines Bereichs.'],'es-ES':['Selección múltiple','Mover grupo','Deseleccionar','Seleccionar todo','Desplazamiento (celdas comunes)','Seleccionados','Un objeto no se puede mover o sale de su zona.'],'zh-CN':['多选','批量移动','取消选择','全选可选物品','移动量（公共格单位）','已选','选中物品不可移动或超出区域。'],'pt-BR':['Seleção múltipla','Mover grupo','Limpar seleção','Selecionar todos','Deslocamento (células comuns)','Selecionados','Um objeto não pode ser movido ou está fora da área.']} as const;
  $: gw=groupWords[locale]??groupWords.en;
- let multiMode=false;
+ let multiMode=false,selectionLimit=false;
  const preciseWords={ja:['精密配置','適用','ワールド座標（対象の1マス単位）'],en:['Precise placement','Apply','World coordinates (object cell units)'],fr:['Placement précis','Appliquer','Coordonnées du monde (cases de l’objet)'],it:['Posizionamento preciso','Applica','Coordinate del mondo (celle dell’oggetto)'],de:['Präzise Platzierung','Anwenden','Weltkoordinaten (Objektzellen)'],'es-ES':['Colocación precisa','Aplicar','Coordenadas del mundo (celdas del objeto)'],'zh-CN':['精确放置','应用','世界坐标（物品格单位）'],'pt-BR':['Posicionamento preciso','Aplicar','Coordenadas do mundo (células do objeto)']} as const;
  $: pw=preciseWords[locale]??preciseWords.en;
  $: nativeCell=chosen?mainlandSavedCell(chosen):null;
@@ -94,9 +94,9 @@
    const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
    if(p&&hit&&cell&&mainlandSavedMoveEligible(hit)){
     const members=groupSet.has(hit.object.localOrdinal)?group:[hit];
-    objectDrag={pointer:e.pointerId,target:hit,members,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false};return;
+    objectDrag={pointer:e.pointerId,target:hit,members,baseline:timeline,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false};return;
    }
-   if(p&&!hit&&multiMode){range={pointer:e.pointerId,start:p,end:p,add:false,clientX:e.clientX,clientY:e.clientY,moved:false};return;}
+   if(p&&!hit&&multiMode){range={pointer:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,moved:false};return;}
   }
   gesture.begin(e,camera.zoom>1&&(!moving||e.button===1||e.shiftKey||spacePan||e.pointerType==='touch'));
  }
@@ -116,7 +116,7 @@
   const d=objectDrag;objectDrag=null;
   if(!d?.moved)return;
   suppressClick=true;
-  if(!commit||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
+  if(!commit||d.baseline!==timeline||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
   if(d.members.length>1){if(d.members.some(p=>!layerSelectable(layerState,p.object)))return;const f=mainlandGroupFactor(d.members);const q=mainlandSavedGroupDraft(d.members,bound,rasters,saveMaps,timeline,(d.end.x-d.cell.x)*f/d.target.factor,(d.end.z-d.cell.z)*f/d.target.factor);if(q.next){timeline=q.next;groupX=0;groupZ=0;stopMove();}else moveError=true;return;}
   const q=mainlandSavedDraftAtCell(d.target,bound,rasters,saveMaps,timeline,d.end.x,d.end.z,d.target.object.orientation);
   if(q?.next){timeline=q.next;stopMove();}else moveError=true;
@@ -247,6 +247,7 @@
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
  {#if saveMode&&searchOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}
  {#if saveMode&&layersOpen}<div class="overview-layers"><WorldLayerControls {locale} state={layerState} disabled={false} onChange={s=>{layerState=s;selected=null;clearGroup();stopMove();}}/></div>{/if}
+ {#if saveMode&&selectionLimit}<p class="save-status" role="alert">{gw[5]}: {WORLD_BATCH_LIMIT} max</p>{/if}
  {#if saveMode&&groupOpen&&group.length>1}<form class="overview-precise" on:submit|preventDefault={()=>{if(typeof groupX==='number'&&typeof groupZ==='number')applyGroup(groupX,groupZ);}}><strong>{gw[5]}: {group.length} · {gw[4]}</strong><label>ΔX<input type="number" step="1" bind:value={groupX} disabled={!groupReady}/></label><label>ΔZ<input type="number" step="1" bind:value={groupZ} disabled={!groupReady}/></label><button type="submit" disabled={!groupPlan?.next}>{gw[1]}</button><button type="button" on:click={clearGroup}>{gw[2]}</button>{#if moveError||!groupReady||groupPlan&&groupPlan.ghosts.length&&!groupPlan.next}<small role="alert">{gw[6]}</small>{/if}</form>{/if}
  {#if saveMode&&chosen}<div class="overview-selection"><strong>{name(chosen,names)}</strong><button type="button" aria-pressed={moving} disabled={!canMove} on:click={()=>{moving=!moving;hover=null;}}>{moving?ew[3]:ew[0]}</button><button type="button" aria-label={ew[1]} title={ew[1]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(-1)}>⟲</button><button type="button" aria-label={ew[2]} title={ew[2]} disabled={!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||saveLoading||saveFailed||failed||!!pending.size} on:click={()=>rotate(1)}>⟳</button><button type="button" disabled={!layerSelectable(layerState,chosen.object)} on:click={()=>onChoose(chosen!.area,chosen!.object.localOrdinal)}>{sw[2]}</button><button type="button" aria-label={pw[0]} aria-pressed={preciseOpen} disabled={!canMove} on:click={()=>{preciseOpen=!preciseOpen;stopMove();}}>{pw[0]}</button>{#if moving||moveError}<small role={moveError?'alert':undefined}>{ew[6]}</small>{/if}</div>{/if}
  {#if saveMode&&chosen&&preciseOpen&&nativeCell}<form class="overview-precise" on:submit|preventDefault={applyPrecise}><strong>{pw[2]}</strong><label>X<input type="number" step="1" bind:value={preciseX} disabled={!canMove}/></label><label>Z<input type="number" step="1" bind:value={preciseZ} disabled={!canMove}/></label><button type="submit" disabled={!canMove||!preciseChanged}>{pw[1]}</button><button type="button" aria-label={words[1]} on:click={()=>preciseOpen=false}>×</button></form>{/if}
