@@ -227,9 +227,11 @@
  }
  function keys(e:KeyboardEvent){
   if(!worldShortcutTarget(e,root))return;
+  // Support map keys and normal panel button activation must not edit the world beneath it.
+  if(e.target instanceof HTMLElement&&e.target.closest('.support-panel'))return;
   const mapFocused=e.target instanceof HTMLElement&&!!e.target.closest('.mainland-map');
   if(mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.code==='Space'){spacePan=true;e.preventDefault();return;}
-  if(saveMode&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
+  if(saveMode&&!supportOpen&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
    const list=allObjects.filter(p=>layerSelectable(layerState,p.object));if(!list.length)return;
    const i=list.findIndex(p=>p.object.localOrdinal===selected),delta=e.key==='['?-1:1;
    focus(list[i<0?(delta>0?0:list.length-1):(i+delta+list.length)%list.length]);e.preventDefault();return;
@@ -237,7 +239,7 @@
   const action=worldShortcut(e);if(!action)return;
   if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
   if(!saveMode)return;
-  if(supportOpen&&(supportPlacing||supportGhost)){if(action==='cancel'){e.preventDefault();supportInspector?.cancel();}return;}
+  if(supportOpen){if(action==='cancel'){e.preventDefault();if(supportPlacing||supportGhost)supportInspector?.cancel();else closeSupport();}return;}
   if(roadSeed){if(action==='cancel'){e.preventDefault();closeRoad();}return;}
   if(furnitureOpen&&(furniturePlacing||furnitureGhost)){if(action==='cancel'){e.preventDefault();furnitureTools?.cancel();return;}if(action==='rotate-left'||action==='rotate-right'){e.preventDefault();furnitureTools?.turn(action==='rotate-left'?-1:1);return;}if(action==='confirm'&&mapFocused){e.preventDefault();furnitureTools?.validate();return;}if(action==='undo'||action==='redo'){furnitureTools?.cancel();}else return;}
   if(action==='select-all'){e.preventDefault();setGroup(matches.map(p=>p.object.localOrdinal));return;}
