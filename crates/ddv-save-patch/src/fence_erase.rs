@@ -19,12 +19,18 @@ fn part(v:&Value,base:u32)->Result<FencePart,PatchError>{
 fn near(a:Point,b:Point,r:u64)->bool{i64::from(a.0).abs_diff(i64::from(b.0))<=r&&i64::from(a.1).abs_diff(i64::from(b.1))<=r}
 fn canon(a:Point,b:Point)->(Point,Point){if a<b{(a,b)}else{(b,a)}}
 pub fn preview_fence_erase(source:&str,d:&PlainGridDestination,base:u32,seed:Point,erase:&[Point])->Result<FenceEraseDraft,PatchError>{
+ preview_fence_mutation(source,d,base,seed,erase,FenceMutation::Erase)
+}
+#[derive(Clone,Copy,PartialEq,Eq)]
+pub enum FenceMutation{Erase,Connect,Replace(u32)}
+pub fn preview_fence_mutation(source:&str,d:&PlainGridDestination,base:u32,seed:Point,stroke:&[Point],action:FenceMutation)->Result<FenceEraseDraft,PatchError>{
  let bad=PatchError::InvalidTarget;
- if source.is_empty()||source.len()>MAX_PROFILE_BYTES||!fence_topology::supported_family(base)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none()||erase.is_empty()||erase.len()>MAX_FENCE_NODES{return Err(bad);}
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||!fence_topology::supported_family(base)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none()||stroke.is_empty()||stroke.len()>MAX_FENCE_NODES{return Err(bad);}
  let q=d.tessellation as i32;let w=(d.size.0*d.tessellation) as i32;let h=(d.size.1*d.tessellation) as i32;
  let valid=|(x,y):Point|x>=0&&y>=0&&x<=w-q&&y<=h-q&&x%q==0&&y%q==0;
- let requested:BTreeSet<_>=erase.iter().copied().collect();
- if !valid(seed)||requested.len()!=erase.len()||requested.iter().any(|&p|!valid(p)){return Err(bad);}
+ let requested:BTreeSet<_>=stroke.iter().copied().collect();
+ if let FenceMutation::Replace(target)=action{if target==base||!fence_topology::supported_family(target)||stroke!=[seed]{return Err(bad);}}
+ if !valid(seed)||requested.len()!=stroke.len()||requested.iter().any(|&p|!valid(p)){return Err(bad);}
  let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
@@ -43,7 +49,7 @@ pub fn preview_fence_erase(source:&str,d:&PlainGridDestination,base:u32,seed:Poi
   let item=v.get("ItemID").and_then(Value::as_u64).ok_or(bad)?;
   if item/100_000==407{records.push((id,v,(number(v,"X")?,number(v,"Y")?)));}
  }
- let mut cluster=Vec::new();let mut seen=HashSet::new();let mut queue=vec![seed];let mut cursor=0;
+ let mut cluster=Vec::new();let mut seen=HashSet::new();let mut queue=vec![seed];if action==FenceMutation::Connect{queue.extend(stroke.iter().copied());}let mut cursor=0;
  while cursor<queue.len(){
   let p=queue[cursor];cursor+=1;
   for (i,(_,_,xy)) in records.iter().enumerate(){
@@ -61,20 +67,46 @@ pub fn preview_fence_erase(source:&str,d:&PlainGridDestination,base:u32,seed:Poi
  let mut adjacent=HashMap::<Point,Vec<Point>>::new();for &(a,b) in &edges{adjacent.entry(a).or_default().push(b);adjacent.entry(b).or_default().push(a);}
  let mut selected=BTreeSet::from([seed]);let mut walk=vec![seed];let mut i=0;
  while i<walk.len(){let p=walk[i];i+=1;for &n in adjacent.get(&p).into_iter().flatten(){if selected.insert(n){walk.push(n);}}}
- let removed_nodes:BTreeSet<_>=requested.intersection(&selected).copied().collect();
- if removed_nodes.is_empty()||requested.iter().any(|p|!selected.contains(p)&&nodes.contains(p)){return Err(bad);}
- let survivors:Vec<_>=selected.difference(&removed_nodes).copied().collect();
- let remaining_edges:Vec<_>=edges.iter().copied().filter(|(a,b)|selected.contains(a)&&selected.contains(b)&&!removed_nodes.contains(a)&&!removed_nodes.contains(b)).collect();
+ let original_nodes:BTreeSet<_>=nodes.iter().copied().collect();
+ let original_edges:BTreeSet<_>=edges.iter().copied().map(|(a,b)|canon(a,b)).collect();
+ let mut expected_nodes=original_nodes.clone();let mut expected_edges=original_edges.clone();
+ let replacement=match action{FenceMutation::Replace(id)=>Some(id),_=>None};
+ if action==FenceMutation::Connect{
+  // Drawn logical cells may join multiple existing components, but the
+  // resulting component must include the selected seed. Only edges
+  // incident to the stroke are added, never unrelated proximity edges.
+  expected_nodes.extend(requested.iter().copied());
+  for &(x,y) in &requested{for n in [(x-q,y),(x+q,y),(x,y-q),(x,y+q)]{if expected_nodes.contains(&n){expected_edges.insert(canon((x,y),n));}}}
+  if expected_nodes==original_nodes&&expected_edges==original_edges{return Err(bad);}
+  let mut adj=HashMap::<Point,Vec<Point>>::new();for &(a,b) in &expected_edges{adj.entry(a).or_default().push(b);adj.entry(b).or_default().push(a);}
+  let mut walk=vec![seed];let mut i=0;selected.clear();selected.insert(seed);
+  while i<walk.len(){let p=walk[i];i+=1;for &n in adj.get(&p).into_iter().flatten(){if selected.insert(n){walk.push(n);}}}
+  if !requested.is_subset(&selected)||selected.len()>MAX_FENCE_NODES{return Err(bad);}
+ }else if action==FenceMutation::Erase{
+  let removed_nodes:BTreeSet<_>=requested.intersection(&selected).copied().collect();
+  if removed_nodes.is_empty()||requested.iter().any(|p|!selected.contains(p)&&original_nodes.contains(p)){return Err(bad);}
+  expected_nodes.retain(|p|!removed_nodes.contains(p));
+  expected_edges.retain(|(a,b)|!removed_nodes.contains(a)&&!removed_nodes.contains(b));
+ }
  let old_component:BTreeSet<_>=native.iter().copied().filter(|p|selected.contains(&(p.x,p.y))).collect();
- let pinned:BTreeSet<_>=old_component.iter().filter(|p|p.item==base&&!removed_nodes.contains(&(p.x,p.y))).map(|p|(p.x,p.y)).collect();
- let new_component:BTreeSet<_>=if survivors.is_empty(){BTreeSet::new()}else{fence_topology::compile_fence_with_posts(base,d.tessellation,false,&survivors,&remaining_edges,&pinned)?.into_iter().collect()};
- // Roundtrip the entire local neighborhood so no unexpected edge is
- // created to a different component or across a removed logical unit.
- let merged:Vec<_>=native.iter().copied().filter(|p|!old_component.contains(p)).chain(new_component.iter().copied()).collect();
- let expected_nodes:BTreeSet<_>=nodes.iter().copied().filter(|p|!removed_nodes.contains(p)).collect();
- let expected_edges:BTreeSet<_>=edges.iter().copied().filter(|(a,b)|!removed_nodes.contains(a)&&!removed_nodes.contains(b)).map(|(a,b)|canon(a,b)).collect();
- let (got_nodes,got_edges)=if merged.is_empty(){(vec![],vec![])}else{fence_topology::decompile_fence(base,d.tessellation,false,&merged)?};
- if got_nodes.into_iter().collect::<BTreeSet<_>>()!=expected_nodes||got_edges.into_iter().map(|(a,b)|canon(a,b)).collect::<BTreeSet<_>>()!=expected_edges{return Err(bad);}
+ let survivors:Vec<_>=selected.intersection(&expected_nodes).copied().collect();
+ let remaining_edges:Vec<_>=expected_edges.iter().copied().filter(|(a,b)|selected.contains(a)&&selected.contains(b)).collect();
+ let pinned:BTreeSet<_>=old_component.iter().filter(|p|p.item==base&&expected_nodes.contains(&(p.x,p.y))).map(|p|(p.x,p.y)).collect();
+ let new_component:BTreeSet<_>=if let Some(target)=replacement{
+  // Preserve the exact native layout, including non-semantic posts.
+  old_component.iter().map(|p|FencePart{item:target+(p.item-base),..*p}).collect()
+ }else if survivors.is_empty(){BTreeSet::new()}else{fence_topology::compile_fence_with_posts(base,d.tessellation,false,&survivors,&remaining_edges,&pinned)?.into_iter().collect()};
+ let outside:Vec<_>=native.iter().copied().filter(|p|!old_component.contains(p)).collect();
+ let (got_nodes,mut got_edges)=if replacement.is_some(){
+  let (a,b)=if outside.is_empty(){(vec![],vec![])}else{fence_topology::decompile_fence(base,d.tessellation,false,&outside)?};
+  let (c,d)=fence_topology::decompile_fence(replacement.unwrap(),d.tessellation,false,&new_component.iter().copied().collect::<Vec<_>>())?;
+  (a.into_iter().chain(c).collect::<Vec<_>>(),b.into_iter().chain(d).collect::<Vec<_>>())
+ }else{
+  let merged:Vec<_>=outside.into_iter().chain(new_component.iter().copied()).collect();
+  if merged.is_empty(){(vec![],vec![])}else{fence_topology::decompile_fence(base,d.tessellation,false,&merged)?}
+ };
+ let unique_nodes:BTreeSet<_>=got_nodes.iter().copied().collect();
+ if unique_nodes.len()!=got_nodes.len()||unique_nodes!=expected_nodes||got_edges.drain(..).map(|(a,b)|canon(a,b)).collect::<BTreeSet<_>>()!=expected_edges{return Err(bad);}
  let removed:Vec<_>=old_component.difference(&new_component).map(|p|(parts[p].clone(),u64::from(p.item))).collect();
  let added:Vec<_>=new_component.difference(&old_component).copied().collect();
  let following=next.checked_add(added.len() as u32).ok_or(bad)?;
