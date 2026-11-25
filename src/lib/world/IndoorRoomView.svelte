@@ -11,7 +11,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorEditWords,indoorMove,indoorPlace,indoorTerrainWords,indoorTransferPlace,indoorTransferWords,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
- import {worldFurnitureCut,worldFurnitureClipboard,type CutClipboard} from './group-paste.ts';
+ import {worldFurnitureCut,worldFurnitureClipboard,groupCutWords,type CutClipboard,type RoomCutSource} from './group-paste.ts';
  import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
  import {childEditWords,supportHitIndices,type SupportChildEdit} from './subgrid-local.ts';
  import type {SourceObjectShape} from './source-object-map.ts';
@@ -24,9 +24,17 @@
  let roomSvg:SVGSVGElement;
  let moving=false,placing=false,stockOpen=false,stockId=0,stockOrientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down',placeDraft:IndoorPlace|null=null,hoverCell:{x:number;y:number}|null=null,catalogRequest=0,stockQuery='',catalog:{itemId:number;name:string}[]=[];
  let cutSource:CutClipboard|null=null;
- let transferDraft:(Omit<IndoorPlace,'expectedStock'>&{localOrdinal:number;expectedX:number;expectedY:number;expectedOrientation:string})|null=null;
- $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length===1&&face?.kind==='floor'&&face.terrain?$worldFurnitureCut:null;
+ let transferDraft:(Omit<IndoorPlace,'expectedStock'>&{expectedX:number;expectedY:number;expectedOrientation:string}&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never}))|null=null;
+ $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length===1&&face?.kind==='floor'&&face.terrain&&(!$worldFurnitureCut.rows[0].roomSource||$worldFurnitureCut.rows[0].roomSource.roomOrdinal!==room?.ordinal)?$worldFurnitureCut:null;
  $: itw=indoorTerrainWords[locale];
+ $: cutWords=groupCutWords[locale];
+ $: canCut=editAllowed&&!!file&&!!room&&face?.kind==='floor'&&!!face.terrain&&!!tree&&selectedObject>=0&&!!moveShape&&editable.has(tree.objects[selectedObject]?.itemId)&&removable.has(tree.objects[selectedObject]?.itemId)&&isCardinal(tree.objects[selectedObject]?.orientation)&&!moving&&!placing&&!swap&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!stockOpen;
+ function captureRoomCut(){
+  if(!canCut||!room||!tree||!file)return false;
+  const o=tree.objects[selectedObject];if(!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400)return false;
+  worldFurnitureCut.set({file,scope:'indoor',rows:[{roomSource:{roomOrdinal:room.ordinal,index:selectedObject},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation}]});
+  worldFurnitureClipboard.set([{itemId:o.itemId,dx:0,dy:0,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)}]);return true;
+ }
  $: options=catalog.filter(i=>i.name.normalize('NFKC').toLocaleLowerCase().includes(stockQuery.normalize('NFKC').toLocaleLowerCase().trim())).slice(0,200);
  $: stockShape=shapes[stockId+':'+CARDINAL_ORIENTATIONS.indexOf(stockOrientation)*4];
  $: moveShape=tree&&selectedObject>=0&&tree.objects[selectedObject]&&isCardinal(tree.objects[selectedObject].orientation)?shapes[tree.objects[selectedObject].itemId+':'+CARDINAL_ORIENTATIONS.indexOf(tree.objects[selectedObject].orientation as typeof CARDINAL_ORIENTATIONS[number])*4]:null;
@@ -75,7 +83,7 @@
   if(placing&&cutSource){
    if(cutSource!==$worldFurnitureCut||cutSource.file!==file){editError=true;return;}
    const row=cutSource.rows[0],draft=indoorTransferPlace(face,shapes,removable,stockId,p.x,p.y,stockOrientation);
-   if(draft){transferDraft={...draft,localOrdinal:row.localOrdinal,expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};placing=false;hoverCell=null;editError=false;}else editError=true;return;
+   if(draft){transferDraft={...draft,...(row.roomSource?{roomSource:row.roomSource}:{localOrdinal:row.localOrdinal}),expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
   if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(moving){const draft=indoorMove(face,shapes,editable,selectedObject,p.x,p.y);if(draft){editDraft=draft;moving=false;hoverCell=null;editError=false;}else editError=true;return;}
@@ -114,7 +122,7 @@
  let records=new Map<number,ItemMasterRecord|CompleteItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>(),resolved=new Set<number>(),itemLoadFailed=false;
  let db:ReturnType<typeof openCurrentItemDatabase>|null=null,closeButton:HTMLButtonElement,root:HTMLDivElement;
  onMount(()=>{const previous=document.activeElement;closeButton?.focus();return ()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};});
- function keys(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ function keys(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='x'&&canCut&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){if(captureRoomCut()){e.preventDefault();e.stopPropagation();}return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -155,6 +163,8 @@
      {#if selectedObject>=0&&!editDraft&&!pickupDraft&&!editCopy&&!moving&&!placing&&!placeDraft&&!transferDraft&&!stockOpen}<button type="button" disabled={!editAllowed||!left||swap} on:click={()=>editDraft=left}>{ew[0]}</button><button type="button" disabled={!editAllowed||!right||swap} on:click={()=>editDraft=right}>{ew[1]}</button><button type="button" disabled={!editAllowed||!partners.length||swap} on:click={()=>swap=true}>{ew[2]}</button><button type="button" disabled={!editAllowed||!pickup||swap} on:click={()=>pickupDraft=pickup}>{iw[3]}</button>{#if face.terrain}<button type="button" disabled={!editAllowed||!moveShape||!editable.has(tree.objects[selectedObject].itemId)||swap} on:click={()=>{moving=true;editError=false;}}>{itw[1]}</button>{/if}{/if}
      {#if face.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!cutSource}<button type="button" disabled={!editAllowed||!catalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{itw[2]}</button>{/if}
      {#if stockOpen}<input type="search" bind:value={stockQuery} placeholder={itw[4]} aria-label={itw[4]}/><select aria-label={itw[2]} value={0} on:change={e=>chooseStock(Number(e.currentTarget.value))}><option value={0} disabled>{itw[2]}</option>{#each options as o}<option value={o.itemId}>{o.name} · {stock.get(o.itemId)}</option>{/each}</select>{/if}
+     {#if canCut}<button type="button" on:click={captureRoomCut}>{cutWords[0]}</button>{/if}
+     {#if $worldFurnitureCut?.file===file&&$worldFurnitureCut?.scope==='indoor'&&!cutSource}<small role="status">{cutWords[1]}</small>{/if}
      {#if availableCut&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<button type="button" disabled={!editAllowed} on:click={beginTransfer}>{indoorTransferWords[locale]}</button>{/if}
      {#if moving||placing}<small>{itw[3]}</small>{/if}{#if placing}<button type="button" on:click={()=>turnStock(-1)}>{ew[0]}</button><button type="button" on:click={()=>turnStock(1)}>{ew[1]}</button>{/if}
      {#if placeDraft}<small>{placeDraft.expectedStock} → {placeDraft.expectedStock-1}</small>{/if}
