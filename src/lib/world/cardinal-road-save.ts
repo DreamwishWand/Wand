@@ -7,7 +7,7 @@ import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
 export const ROAD_COPY_LIMIT=256;
-export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect'|'diagonal-fill'|'replace-road';
+export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect'|'diagonal-fill'|'replace-road'|'brush'|'erase-brush'|'connect-brush';
 export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
  if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
@@ -17,12 +17,12 @@ export interface CardinalRoadCandidate{
  plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed:[number,number];diagonal?:true;replacement?:number};
  ghosts:readonly {x:number;y:number;size:number}[];
 }
-export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,replacement?:number):CardinalRoadCandidate|null{
+export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,replacement?:number,trail?:readonly RoadPoint[]):CardinalRoadCandidate|null{
  if(!roadSeedEligible(seed)||!seed.shape)return null;
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=2*g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
- if(['connect-line','connect-outline','diagonal-connect'].includes(tool))return null;
+ if(['connect-line','connect-outline','diagonal-connect','connect-brush'].includes(tool))return null;
  const diagonal=tool.startsWith('diagonal-'),replace=tool==='replace-road';
  if(replace&&(!Number.isSafeInteger(replacement)||Math.floor(replacement!/100000)!==401||replacement===Number(seed.object.itemId)))return null;
  const start=snap(a),end=snap(b);
@@ -31,7 +31,8 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
   const dx=end.x-start.x,dy=end.y-start.y,n=Math.abs(dx)/pitch;
   if(Math.abs(dx)!==Math.abs(dy)||n>=ROAD_COPY_LIMIT)return null;
   stroke=Array.from({length:n+1},(_,i)=>({x:start.x+Math.sign(dx)*i*pitch,y:start.y+Math.sign(dy)*i*pitch}));
- }else stroke=roadStroke([start,end],tool==='diagonal-fill'||replace?'fill':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'fill'|'erase-line'|'erase-rect',pitch);
+ }else if(savedNetworkFreehand(tool)){if(!trail?.length)return null;stroke=roadStroke(trail.map(snap),tool==='erase-brush'?'erase':'brush',pitch);}
+ else stroke=roadStroke([start,end],tool==='diagonal-fill'||replace?'fill':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'fill'|'erase-line'|'erase-rect',pitch);
  if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
  const erase=tool.startsWith('erase')||tool==='diagonal-erase'||tool==='diagonal-erase-rect',cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  const roadByCell=new Map<string,MainlandSavedObject[]>();
@@ -58,8 +59,8 @@ export interface CardinalFenceCandidate{
  plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number;erase?:boolean;seed?:[number,number];replacement?:number;diagonal?:true};
  ghosts:CardinalRoadCandidate['ghosts'];
 }
-export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalFenceCandidate|null{
- if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline','diagonal-line','diagonal-connect','diagonal-erase','diagonal-erase-rect'].includes(tool))return null;
+export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,trail?:readonly RoadPoint[]):CardinalFenceCandidate|null{
+ if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline','diagonal-line','diagonal-connect','diagonal-erase','diagonal-erase-rect','brush','erase-brush','connect-brush'].includes(tool))return null;
  const diagonal=tool.startsWith('diagonal-'),erase=tool.startsWith('erase')||tool==='diagonal-erase'||tool==='diagonal-erase-rect',connect=tool.startsWith('connect')||tool==='diagonal-connect';
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=g.factor,shape=seed.shape;
@@ -70,7 +71,8 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
   const dx=last.x-first.x,dy=last.y-first.y,steps=Math.abs(dx)/pitch;
   if((!steps&&!erase)||Math.abs(dx)!==Math.abs(dy)||steps>=FENCE_COPY_LIMIT)return null;
   stroke=Array.from({length:steps+1},(_,i)=>({x:first.x+Math.sign(dx)*i*pitch,y:first.y+Math.sign(dy)*i*pitch}));if(dx<0)stroke.reverse();
- }else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'erase-line'|'erase-rect',pitch);
+ }else if(savedNetworkFreehand(tool)){if(!trail?.length)return null;stroke=roadStroke(trail.map(snap),tool==='erase-brush'?'erase':'brush',pitch);}
+ else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'erase-line'|'erase-rect',pitch);
  if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
  const fences=objects.filter(p=>p.area===g.key&&p.object.layer==='fence');
  if(fences.some(p=>!p.shape||p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
@@ -164,4 +166,27 @@ export const cardinalRoadWords={
  'es-ES':['Editar camino','Línea','Contorno','Rellenar','Borrar línea','Borrar área','Pulsa inicio y fin','Celdas','Verificar y crear copia','Zona o partida no compatible.','Cerrar','Inventario y colección intactos.'],
  'zh-CN':['编辑直角道路','直线','轮廓','填充','删除直线','删除区域','点击起点和终点','格子','验证并创建副本','区域或存档结构不支持。','关闭','不改变库存和收藏。'],
  'pt-BR':['Editar caminho','Linha','Contorno','Preencher','Apagar linha','Apagar área','Clique no início e fim','Células','Verificar e criar cópia','Área ou Save incompatível.','Fechar','Inventário e Coleção intactos.']
+} as const;
+
+export function savedNetworkFreehand(tool:CardinalRoadTool):boolean{return tool==='brush'||tool==='erase-brush'||tool==='connect-brush';}
+/** Store one sample per visited native logical cell. An oversize stroke is
+ * refused in its entirety, not silently truncated. */
+export function appendSavedStroke(points:readonly RoadPoint[],point:RoadPoint,grid:MainlandGrid,pitch:number,limit:number):RoadPoint[]|null{
+ if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||!Number.isSafeInteger(limit)||limit<1||!Number.isSafeInteger(pitch)||pitch<1)return null;
+ const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*grid.origin.position[0])*grid.factor/pitch)*pitch,y:Math.floor((-p.y-2*grid.origin.position[2])*grid.factor/pitch)*pitch});
+ const local=snap(point),last=points[points.length-1];
+ if(local.x<0||local.y<0||local.x+pitch>grid.sizeX*grid.factor||local.y+pitch>grid.sizeY*grid.factor)return null;
+ if(last){const before=snap(last);if(before.x===local.x&&before.y===local.y)return [...points];}
+ if(points.length>=limit)return null;
+ return [...points,point];
+}
+export const savedBrushWords={
+ ja:['自由描画','自由消去','自由接続','マップ上をドラッグ'],
+ en:['Freehand draw','Freehand erase','Freehand connect','Drag on the map'],
+ fr:['Dessin libre','Effacement libre','Connexion libre','Glissez sur la carte'],
+ it:['Disegno libero','Cancella a mano libera','Collega a mano libera','Trascina sulla mappa'],
+ de:['Freihand zeichnen','Freihand löschen','Freihand verbinden','Auf der Karte ziehen'],
+ 'es-ES':['Dibujo libre','Borrado libre','Conexión libre','Arrastra en el mapa'],
+ 'zh-CN':['自由绘制','自由擦除','自由连接','在地图上拖动'],
+ 'pt-BR':['Desenho livre','Apagar à mão livre','Conexão livre','Arraste no mapa']
 } as const;
