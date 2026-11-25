@@ -1125,6 +1125,31 @@ mod terrain_session_tests{
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
     }
     #[test]
+    fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
+            "1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":1,"Y":2,"Orientation":"GridOrientation_Left","State":{"SubGrid":{"GridID":9}}}}},
+          "9":{"ID":9,"Objects":{"1":{"ID":1,"ItemID":40005162,"X":0,"Y":1,"Orientation":"GridOrientation_Down","Unknown":1e2}}}
+        }}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":20,"sizeY":20});
+        let view:Value=serde_json::from_str(&inspect_subgrid_json(save,1,40005160,(4,6)).unwrap()).unwrap();
+        assert_eq!(view["tree"]["objects"][0]["child"]["objects"][0]["itemId"],40005162);
+        assert_eq!(view["tree"]["objects"][0]["orientation"],"GridOrientation_Left");
+        assert!(!view.to_string().contains("GridID"));assert!(!view.to_string().contains("Unknown"));
+        let draft=support_parent_move_candidate(save,1,40005160,(4,6),(10,12),&witness).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["X"]=Value::from(10);expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["Y"]=Value::from(12);
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Unknown\":1e2"));assert!(draft.patched_json.contains("\"Other\":1e2"));
+        assert!(support_parent_move_candidate(save,1,40005160,(4,6),(40,12),&witness).is_err());
+        let mut alias:Value=serde_json::from_slice(save).unwrap();
+        let mut duplicate=alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"].clone();duplicate["ID"]=Value::from(2);alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=duplicate;
+        alias["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
+        assert!(inspect_subgrid_json(&serde_json::to_vec(&alias).unwrap(),1,40005160,(4,6)).is_err());
+        let mut cycle:Value=serde_json::from_slice(save).unwrap();cycle["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":7}});
+        assert!(inspect_subgrid_json(&serde_json::to_vec(&cycle).unwrap(),1,40005160,(4,6)).is_err());
+    }
+    #[test]
     fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
         let save=br#"{"World":{"GridCollection":{"Grids":{
           "1":{"GridDefaultLayoutPath":"SceneLayouts/Test.json","GridDataPath":"GridData/Test.json","Objects":{
