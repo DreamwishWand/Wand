@@ -4,7 +4,7 @@ export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
 import type {SourceObjectShape} from "./source-object-map.ts";
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
-import {supportChildEdits,supportHitIndices,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
+import {supportChildEdits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
@@ -90,18 +90,29 @@ export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
  if(!face||face.gridStatus!=='full'||!face.factor||face.missingPositions||face.positions.length>5000)return null;
  return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':CARDINAL_ORIENTATIONS[p.orientationCode/4],child:null}))};
 }
+function indoorShape(o:SupportTree['objects'][number],shapes:Readonly<Record<string,SourceObjectShape>>){
+ return shapes[o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4];
+}
+function indoorClear(t:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,index:number):boolean{
+ const a=t.objects[index],s=a&&indoorShape(a,shapes);if(!a||!s||s.cellCount>65536)return false;
+ for(let i=0;i<t.objects.length;i++){
+  if(i===index)continue;const b=t.objects[i],q=indoorShape(b,shapes);if(!q||a.x===b.x&&a.y===b.y)return false;
+  if(a.x+s.width<=b.x||b.x+q.width<=a.x||a.y+s.height<=b.y||b.y+q.height<=a.y)continue;
+  // Compare horizontal runs directly, never enumerate every occupied cell.
+  const byY=new Map<number,typeof q.runs[number][]>();
+  for(const run of q.runs){const y=b.y+run.y;const rows=byY.get(y)??[];rows.push(run);byY.set(y,rows);}
+  for(const run of s.runs)if((byY.get(a.y+run.y)??[]).some(other=>a.x+run.x<b.x+other.x+other.width&&b.x+other.x<a.x+run.x+run.width))return false;
+ }
+ return true;
+}
 export function indoorFurnitureEdits(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number,second:number|null,turn:-1|1):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face);if(!tree)return null;
- const edits=supportChildEdits(tree,shapes,allowed,first,second,turn);if(!edits)return null;
- // Reject ambiguous or unknown anchors. Each affected cell must already
- // belong to the exact old footprint, without overlapping another object.
- for(const e of edits){
-  const o=tree.objects[e.index],s=shapes[o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4];
-  if(!s||s.cellCount>65536||tree.objects.filter(p=>p.x===o.x&&p.y===o.y).length!==1)return null;
-  for(const other of tree.objects){if(other===o)continue;if(!shapes[other.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(other.orientation as typeof CARDINAL_ORIENTATIONS[number])*4])return null;}
-  for(const run of s.runs)for(let dx=0;dx<run.width;dx++)if(supportHitIndices(tree,shapes,o.x+run.x+dx,o.y+run.y).some(i=>i!==e.index))return null;
- }
- return edits;
+ const edits=supportChildEdits(tree,shapes,allowed,first,second,turn);
+ return edits&&edits.every(e=>indoorClear(tree,shapes,e.index))?edits:null;
+}
+export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number):number[]{
+ const t=indoorEditableTree(face);if(!t||!t.objects[first]||!indoorClear(t,shapes,first))return [];
+ return t.objects.flatMap((_,i)=>supportChildEdits(t,shapes,allowed,first,i,1)&&indoorClear(t,shapes,i)?[i]:[]);
 }
 export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup|null{
  const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!CARDINAL_ORIENTATIONS.includes(o.orientation as typeof CARDINAL_ORIENTATIONS[number])||t.objects.filter(p=>p.x===o.x&&p.y===o.y).length!==1)return null;
