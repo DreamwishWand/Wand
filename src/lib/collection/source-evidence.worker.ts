@@ -10,6 +10,18 @@ import {summarizeCollectionDistribution,type CollectionAcquisitionWithDistributi
 import type {CollectionEvidenceRequest,CollectionEvidenceReply}
   from './source-evidence-client.ts';
 
+import {openCurrentItemDatabase,ITEM_MASTER_LOCALES,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
+import {readCollectionConcreteAcquisition} from './concrete-acquisition.ts';
+let current:Promise<PublicCompleteItemMaster>|null=null;
+let currentBase:string|null=null;
+function currentSource(base:string){
+  if(!current||currentBase!==base){
+    currentBase=base;
+    const task=openCurrentItemDatabase(base);
+    current=task;void task.catch(()=>{if(current===task)current=null;});
+  }
+  return current;
+}
 let sources:Promise<PublicSharedGameSources>|null=null;
 let activeBase:string|null=null;
 
@@ -18,7 +30,8 @@ function validRequest(raw:unknown):raw is CollectionEvidenceRequest{
   const r=raw as Partial<CollectionEvidenceRequest>;
   return Number.isSafeInteger(r.requestId)&&(r.requestId??-1)>0&&
     Number.isSafeInteger(r.itemId)&&(r.itemId??0)>0&&
-    (r.kind==='acquisition'||r.kind==='quests')&&
+    (r.kind==='acquisition'||r.kind==='quests'||r.kind==='concrete')&&
+    (r.kind==='concrete'?r.locale!==undefined&&ITEM_MASTER_LOCALES.includes(r.locale):r.locale===undefined)&&
     typeof r.basePath==='string'&&
     (r.basePath===''||
       /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(r.basePath));
@@ -35,6 +48,12 @@ self.addEventListener('message',(event:MessageEvent<unknown>)=>{
   const request=event.data;
   void(async()=>{
     try{
+      if(request.kind==='concrete'){
+        if(request.locale===undefined)throw new Error('COLLECTION_SOURCE_LOCALE');
+        const summary=await readCollectionConcreteAcquisition(await currentSource(request.basePath),request.itemId,request.locale);
+        const reply:CollectionEvidenceReply={requestId:request.requestId,kind:request.kind,itemId:request.itemId,ok:true,summary};
+        self.postMessage(reply);return;
+      }
       const catalog=await source(request.basePath);
       if(catalog.snapshotId!=='steam-1.26.2-native-itemlist-v1'||
          catalog.database.target.platform!=='Steam'||
@@ -68,7 +87,9 @@ self.addEventListener('message',(event:MessageEvent<unknown>)=>{
       }
     }catch{
       // No degraded or partial source-only fallback; allow a new exact retry.
-      if(activeBase===request.basePath)sources=null;
+      if(request.kind==='concrete'){
+        if(currentBase===request.basePath)current=null;
+      }else if(activeBase===request.basePath)sources=null;
       const reply:CollectionEvidenceReply={
         requestId:request.requestId,kind:request.kind,
         itemId:request.itemId,ok:false
