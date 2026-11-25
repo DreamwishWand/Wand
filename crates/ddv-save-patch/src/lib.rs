@@ -1010,7 +1010,7 @@ pub fn preview_isolated_fence(source:&str,d:&PlainGridDestination,base:u32,diago
  if decoded.into_iter().map(|(a,b)|canon(a,b)).collect::<HashSet<_>>()!=edges.iter().map(|&(a,b)|canon(a,b)).collect(){return Err(PatchError::InvalidTarget);}
  let q=d.tessellation as i32;let w=(d.size.0*d.tessellation) as i32;let h=(d.size.1*d.tessellation) as i32;
  if nodes.iter().any(|&(x,y)|x+q>w||y+q>h)||parts.iter().any(|p|{
-   let k=if p.item==base{1}else{p.item-base-if diagonal{6}else{0}} as i32;
+   let Some(key)=fence_topology::part_key(base,diagonal,p.item) else{return true;};let k=key.max(1) as i32;
    let (dx,dy)=if diagonal{(k*q,k*q)}else if p.left{(q,k*q)}else{(k*q,q)};
    p.x+dx>w||p.y+dy>h
  }){return Err(PatchError::InvalidTarget);}
