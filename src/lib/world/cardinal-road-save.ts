@@ -1,0 +1,45 @@
+import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
+import type {MainlandSavedObject} from './mainland-saved-objects.ts';
+import type {TerrainRaster} from './terrain-binding.ts';
+import {terrainWarnings} from './terrain-binding.ts';
+import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
+export const CARDINAL_ROAD_ID=40100068;
+export const ROAD_COPY_LIMIT=32;
+export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect';
+export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
+ if(!p?.shape||Number(p.object.itemId)!==CARDINAL_ROAD_ID||p.object.orientationCode!==8||p.object.subgrid)return false;
+ return roadPitch({itemId:CARDINAL_ROAD_ID,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[CARDINAL_ROAD_ID+':8']:p.shape}},p.factor)!==null;
+}
+export interface CardinalRoadCandidate{
+ plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean};
+ ghosts:readonly {x:number;y:number;size:number}[];
+}
+export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalRoadCandidate|null{
+ if(!roadSeedEligible(seed)||!seed.shape)return null;
+ const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
+ const pitch=2*g.factor,shape=seed.shape;
+ const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
+ const start=snap(a),end=snap(b),stroke=roadStroke([start,end],tool,pitch);if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
+ const erase=tool.startsWith('erase'),cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
+ const roadByCell=new Map<string,MainlandSavedObject[]>();
+ for(const p of objects){if(p.area!==g.key||p.object.layer!=='ground')continue;const key=p.object.x+':'+p.object.y,list=roadByCell.get(key)??[];list.push(p);roadByCell.set(key,list);}
+ for(const p of stroke){
+  if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
+  for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
+  const existing=roadByCell.get(p.x+':'+p.y)??[];
+  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
+  if(erase?!existing.length:existing.length>0)continue;
+  cells.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:pitch/g.factor});
+ }
+ return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase},ghosts}:null;
+}
+export const cardinalRoadWords={
+ ja:['直交道路を編集','直線','枠','塗りつぶし','直線撤去','範囲撤去','始点と終点をクリック','対象セル','変更を検証してコピーを作成','対象範囲またはセーブ構造を確認できません。','閉じる','在庫・コレクションは変更しません。'],
+ en:['Edit cardinal road','Line','Outline','Fill','Erase line','Erase rectangle','Click start and end','Cells','Validate and create copy','Unsupported area or Save structure.','Close','Inventory and Collection remain unchanged.'],
+ fr:['Modifier la route','Ligne','Contour','Remplir','Effacer ligne','Effacer zone','Cliquez le début et la fin','Cases','Vérifier et créer','Zone ou sauvegarde non prise en charge.','Fermer','Inventaire et Collection inchangés.'],
+ it:['Modifica strada','Linea','Contorno','Riempi','Cancella linea','Cancella area','Seleziona inizio e fine','Celle','Verifica e crea copia','Area o salvataggio non supportato.','Chiudi','Inventario e Collezione invariati.'],
+ de:['Weg bearbeiten','Linie','Umriss','Füllen','Linie löschen','Fläche löschen','Start und Ende anklicken','Felder','Prüfen und Kopie erstellen','Bereich oder Spielstand nicht unterstützt.','Schließen','Inventar und Sammlung unverändert.'],
+ 'es-ES':['Editar camino','Línea','Contorno','Rellenar','Borrar línea','Borrar área','Pulsa inicio y fin','Celdas','Verificar y crear copia','Zona o partida no compatible.','Cerrar','Inventario y colección intactos.'],
+ 'zh-CN':['编辑直角道路','直线','轮廓','填充','删除直线','删除区域','点击起点和终点','格子','验证并创建副本','区域或存档结构不支持。','关闭','不改变库存和收藏。'],
+ 'pt-BR':['Editar caminho','Linha','Contorno','Preencher','Apagar linha','Apagar área','Clique no início e fim','Células','Verificar e criar cópia','Área ou Save incompatível.','Fechar','Inventário e Coleção intactos.']
+} as const;

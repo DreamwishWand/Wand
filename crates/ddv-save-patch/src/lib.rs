@@ -882,6 +882,102 @@ fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+/// Experimental cardinal Main Street road cells. Inherited v1.25 direct
+/// writer semantics: ownership and Collection remain unchanged. This is
+/// deliberately not the ordinary furniture stock transaction.
+pub const MAX_CARDINAL_ROAD_CELLS:usize=32;
+pub const MAIN_STREET_ROAD:u64=40100068;
+pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(i32,i32)],erase:bool)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::Value;
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||cells.is_empty()||cells.len()>MAX_CARDINAL_ROAD_CELLS||
+    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+    !valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none(){return Err(PatchError::InvalidTarget);}
+ let pitch=2*d.tessellation as i32;
+ let requested:HashSet<_>=cells.iter().copied().collect();
+ if requested.len()!=cells.len()||cells.iter().any(|&(x,y)|x<0||y<0||x%pitch!=0||y%pitch!=0||x+pitch>(d.size.0*d.tessellation) as i32||y+pitch>(d.size.1*d.tessellation) as i32){return Err(PatchError::InvalidTarget);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
+ let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||
+    grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
+    grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+    collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
+ let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(PatchError::InvalidTarget)?;
+ if map.len()>100_000||map.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n==0||n>=next||n.to_string()!=*k||v.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(PatchError::AmbiguousTarget);}
+ let mut removals=HashSet::<String>::new();let mut occupied=HashSet::new();
+ for (key,v) in map{
+  let item=v.get("ItemID").and_then(Value::as_u64).ok_or(PatchError::InvalidTarget)?;
+  if item/100_000!=401{continue;}
+  let x=v.get("X").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
+  let y=v.get("Y").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
+  if !cells.iter().any(|&(a,b)|i64::from(x).abs_diff(i64::from(a))<=pitch as u64&&i64::from(y).abs_diff(i64::from(b))<=pitch as u64){continue;}
+  // No diagonal/mixed or foreign road mode is silently normalized.
+  if item!=MAIN_STREET_ROAD||x%pitch!=0||y%pitch!=0||v.get("Orientation").and_then(Value::as_str)!=Some("GridOrientation_Down")||
+     v.get("State").is_some_and(|v|!v.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+     !occupied.insert((x,y)){return Err(PatchError::InvalidTarget);}
+  if requested.contains(&(x,y)){if !erase{return Err(PatchError::AmbiguousTarget);}removals.insert(key.clone());}
+ }
+ if erase&&removals.len()!=cells.len(){return Err(PatchError::MissingTarget);}
+ let count=if erase{0}else{cells.len() as u32};
+ let following=next.checked_add(count).ok_or(PatchError::InvalidTarget)?;
+ if map.len()+count as usize>100_000{return Err(PatchError::InvalidTarget);}
+ // Locate exact raw member spans, preserve their order and contents.
+ let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id:MAIN_STREET_ROAD};
+ let mut locator=JsonLocator::grid_axis(source,&selector,"X")?;locator.signed_path=None;locator.item_path=None;
+ let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&d.grid_id)];
+ let mut parent=prefix.clone();parent.push(k("Objects"));let mut counter=prefix;counter.push(k("NextGridObjectID"));
+ locator.capture.insert(parent.clone(),None);locator.capture.insert(counter.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let cr=locator.capture.get(&counter).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ if source[cr.clone()].parse::<u32>().ok()!=Some(next){return Err(PatchError::InvalidTarget);}
+ locator.capture.clear();locator.pos=mr.start;locator.expect(b'{')?;
+ let mut members=Vec::<String>::new();let mut visited=0usize;
+ loop{
+  locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+  let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=parent.clone();p.push(k(&key));locator.value(&mut p)?;
+  if !removals.contains(&key){members.push(source[start..locator.pos].to_owned());}
+  visited+=1;locator.space();
+  if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(PatchError::InvalidDocument);}
+ }
+ if visited!=map.len(){return Err(PatchError::InvalidDocument);}
+ let mut additions=Vec::new();
+ if !erase{let mut sorted=cells.to_vec();sorted.sort_unstable_by_key(|&(x,y)|(y,x));for (i,(x,y)) in sorted.into_iter().enumerate(){let id=next+i as u32;let v=serde_json::json!({"ID":id,"ItemID":MAIN_STREET_ROAD,"X":x,"Y":y,"Orientation":"GridOrientation_Down","State":null});members.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));}}
+ let mut edits=vec![(mr,format!("{{{}}}",members.join(",")))];if !erase{edits.push((cr,following.to_string()));}edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut candidate=String::new();let mut last=0;for (r,v) in edits{candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
+ if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+ let target=root.get_mut("World").and_then(|v|v.get_mut("GridCollection")).and_then(|v|v.get_mut("Grids")).and_then(|v|v.get_mut(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
+ let objects=target.get_mut("Objects").and_then(Value::as_object_mut).ok_or(PatchError::MissingTarget)?;
+ for key in removals{objects.remove(&key);}for (key,value) in additions{objects.insert(key,value);}
+ if !erase{target.as_object_mut().ok_or(PatchError::MissingTarget)?.insert("NextGridObjectID".into(),Value::from(following));}
+ if serde_json::from_str::<Value>(&candidate).map_err(|_|PatchError::InvalidDocument)?!=root{return Err(PatchError::InvalidDocument);}
+ validate_json_without_edit(&candidate)?;
+ Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
+#[cfg(test)]
+mod cardinal_road_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":1262},"Player":{"ListInventories":{"0":{"Inventory":{"40100068":{"Amount":17,"Marker":"Favorite"}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2}}}}}}}"#;
+ fn destination()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(20,20)}}
+ #[test]fn road_add_erase_preserve_ownership_and_unknown_bytes(){
+  let add=preview_cardinal_road_cells(SOURCE,&destination(),&[(8,4),(12,4)],false).unwrap();
+  let old:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let changed:serde_json::Value=serde_json::from_str(&add.patched_json).unwrap();
+  assert_eq!(old["Player"],changed["Player"]);assert_eq!(old["GameInfo"],changed["GameInfo"]);assert!(add.patched_json.contains("\"Unknown\":1e2"));assert!(!add.export_authorized);
+  let g=&changed["World"]["GridCollection"]["Grids"]["7"];assert_eq!(g["NextGridObjectID"],5);assert_eq!(g["Objects"]["3"]["State"],serde_json::Value::Null);
+  let erased=preview_cardinal_road_cells(&add.patched_json,&destination(),&[(8,4),(12,4)],true).unwrap();let after:serde_json::Value=serde_json::from_str(&erased.patched_json).unwrap();
+  assert_eq!(after["Player"],old["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["Objects"],old["World"]["GridCollection"]["Grids"]["7"]["Objects"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
+ }
+ #[test]fn rejects_duplicate_off_lattice_and_unknown_neighbor(){
+  for cells in [vec![(8,4),(8,4)],vec![(5,4)],vec![(4,4)],vec![(80,4)]]{assert!(preview_cardinal_road_cells(SOURCE,&destination(),&cells,false).is_err());}
+  let unknown=SOURCE.replace("\"State\":null","\"State\":{\"FenceMode\":{\"Diagonal\":true}}");
+  assert!(preview_cardinal_road_cells(&unknown,&destination(),&[(8,4)],false).is_err());
+  assert!(preview_cardinal_road_cells(&unknown,&destination(),&[(4,4)],true).is_err());
+  assert!(preview_cardinal_road_cells(SOURCE,&destination(),&[(12,4)],true).is_err());
+ }
+}
 /// Ordinary, non-variation furniture stock adjustment. The caller must
 /// separately establish canonical item identity and default/no-state placement
 /// semantics from the game catalog; this intentionally remains a rehearsal.

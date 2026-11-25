@@ -1698,6 +1698,41 @@ mod browser_amount_preview {
             draft.patched_json.zeroize();
             Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
         }
+        pub fn prepare_cardinal_road_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_ROAD_PLAN_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>16384{return Err(invalid());}
+            let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"cells"|"erase"))).ok_or_else(invalid)?;
+            let erase=o.get("erase").and_then(|v|v.as_bool()).ok_or_else(invalid)?;
+            let cells=o.get("cells").and_then(|v|v.as_array()).filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_CARDINAL_ROAD_CELLS).ok_or_else(invalid)?;
+            let mut xy=Vec::new();
+            for c in cells{
+                let pair=c.as_array().filter(|a|a.len()==2).ok_or_else(invalid)?;
+                let int=|i:usize|pair[i].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid);
+                xy.push((int(0)?,int(1)?));
+            }
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
+            if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(1262){return Err(invalid());}
+            let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
+            let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&dest.grid_id)).ok_or_else(invalid)?;
+            let next=grid.get("NextGridObjectID").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
+            let mut ids=Vec::new();
+            if erase{
+                let objects=grid.get("Objects").and_then(|v|v.as_object()).ok_or_else(invalid)?;
+                for (id,v) in objects{
+                    if v.get("ItemID").and_then(|v|v.as_u64())==Some(ddv_save_patch::MAIN_STREET_ROAD)&&xy.iter().any(|&(x,y)|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(x))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(y))){ids.push(id.clone());}
+                }
+            }else{for offset in 0..xy.len(){ids.push(next.checked_add(offset as u64).ok_or_else(invalid)?.to_string());}}
+            if ids.len()!=xy.len(){return Err(invalid());}
+            for id in ids{
+                let target=ddv_save_patch::GridCoordinateTarget{kind:ddv_save_patch::GridObjectKind::Full,grid_id:dest.grid_id.clone(),object_id:id,item_id:ddv_save_patch::MAIN_STREET_ROAD};
+                let refs=grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?;
+                if refs.blocking()>0||!erase&&refs.historical>0{return Err(fail("DB05_ROAD_DEPENDENCY_BLOCKED"));}
+            }
+            let draft=ddv_save_patch::preview_cardinal_road_cells(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,&xy,erase).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn prepare_grid_transfer_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             if !allow_experimental_copy{return Err(fail("DB05_EXPERIMENTAL_COPY_NOT_ALLOWED"));}
             let draft=self.grid_transfer_candidate(plan)?;
