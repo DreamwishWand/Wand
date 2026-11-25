@@ -42,6 +42,7 @@ import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-ta
 import {createProductionSourceReader,type ProductionItemEvidence} from './public-production-sources.ts';
 import {createLootSourceReader,type LootItemEvidence} from './public-loot-sources.ts';
 import {createStallLootReader,type StallItemEvidence,type StallLootEvidence} from './public-stall-loot.ts';
+import {createPreferenceSourceReader,type CharacterPreferenceResult,type PreferenceItemResult} from './public-preference-sources.ts';
 import {createCritterSourceReader,type CritterSourceResult,type CritterFoodResult,type CritterFoodFilterResult,type CritterFoodFilterInverse} from './public-critter-sources.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
@@ -169,6 +170,8 @@ export interface PublicItemDetailsClient {
   getItemLootSources(itemIds:readonly number[],locale?:ItemMasterLocale):Promise<readonly (Readonly<LootItemEvidence>|null)[]>;
   getItemStallSources(itemIds:readonly number[]):Promise<readonly (Readonly<StallItemEvidence>|null)[]>;
   getStallLootDetails(stallIds:readonly number[]):Promise<readonly (Readonly<StallLootEvidence>|null)[]>;
+  getCharacterPreferenceSources(characterIds:readonly number[]):Promise<readonly (Readonly<CharacterPreferenceResult>|null)[]>;
+  getItemPreferenceReferences(itemIds:readonly number[]):Promise<readonly (Readonly<PreferenceItemResult>|null)[]>;
   getCritterSourceDetails(critterIds:readonly number[]):Promise<readonly (Readonly<CritterSourceResult>|null)[]>;
   getItemCritterFoodReferences(itemIds:readonly number[]):Promise<readonly (Readonly<CritterFoodResult>|null)[]>;
   getCritterFoodFilterCandidates(critterIds:readonly number[]):Promise<readonly (Readonly<CritterFoodFilterResult>|null)[]>;
@@ -397,6 +400,12 @@ export async function openPublicItemDetails(
     },
     async getItemStallSources(itemIds:readonly number[]){
       return createStallLootReader(await complete()).getForItems(itemIds);
+    },
+    async getCharacterPreferenceSources(characterIds:readonly number[]){
+      return createPreferenceSourceReader(await complete()).getForCharacters(characterIds);
+    },
+    async getItemPreferenceReferences(itemIds:readonly number[]){
+      return createPreferenceSourceReader(await complete()).getForItems(itemIds);
     },
     async getCritterSourceDetails(critterIds:readonly number[]){
       return createCritterSourceReader(await complete()).getForCritters(critterIds);
