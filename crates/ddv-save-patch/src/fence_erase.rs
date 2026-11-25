@@ -162,6 +162,35 @@ mod tests{
   let native:Vec<_>=after.as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
   let (nodes,edges)=fence_topology::decompile_fence(40700246,2,false,&native).unwrap();assert_eq!(nodes.len(),8);assert_eq!(edges.len(),6);assert!(!nodes.contains(&(20,28)));
  }
+ #[test]fn connect_to_existing_end_and_merge_split_components(){
+  let d=destination();
+  let extended=preview_fence_mutation(SOURCE,&d,40700246,(20,20),&[(20,38),(20,40)],FenceMutation::Connect).unwrap();
+  assert_eq!(extended.removed.len(),0);
+  let root:Value=serde_json::from_str(&extended.draft.patched_json).unwrap();
+  let map=root["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap();
+  let native:Vec<_>=map.values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
+  let (nodes,edges)=fence_topology::decompile_fence(40700246,2,false,&native).unwrap();
+  assert_eq!(nodes.len(),11);assert_eq!(edges.len(),10);
+  let split=preview_fence_erase(SOURCE,&d,40700246,(20,20),&[(20,28)]).unwrap();
+  let joined=preview_fence_mutation(&split.draft.patched_json,&d,40700246,(20,20),&[(20,28)],FenceMutation::Connect).unwrap();
+  let root:Value=serde_json::from_str(&joined.draft.patched_json).unwrap();
+  let native:Vec<_>=root["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
+  let (nodes,edges)=fence_topology::decompile_fence(40700246,2,false,&native).unwrap();
+  assert_eq!(nodes.len(),9);assert_eq!(edges.len(),8);
+  assert!(preview_fence_mutation(SOURCE,&d,40700246,(20,20),&[(60,60)],FenceMutation::Connect).is_err());
+ }
+ #[test]fn replace_preserves_posts_span_and_unrelated_records(){
+  let d=destination();let result=preview_fence_mutation(SOURCE,&d,40700246,(20,20),&[(20,20)],FenceMutation::Replace(40700268)).unwrap();
+  assert_eq!(result.removed.len(),4);assert_eq!(result.allocated.len(),4);
+  let old:Value=serde_json::from_str(SOURCE).unwrap();let new:Value=serde_json::from_str(&result.draft.patched_json).unwrap();
+  assert_eq!(old["Player"],new["Player"]);assert_eq!(old["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"],new["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"]);
+  let before:Vec<_>=old["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
+  let after:Vec<_>=new["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700268).unwrap()).collect();
+  assert_eq!(fence_topology::decompile_fence(40700246,2,false,&before).unwrap(),fence_topology::decompile_fence(40700268,2,false,&after).unwrap());
+  let layout=|ps:Vec<FencePart>,base:u32|ps.into_iter().map(|p|(p.item-base,p.x,p.y,p.left)).collect::<BTreeSet<_>>();
+  assert_eq!(layout(before,40700246),layout(after,40700268));
+  assert!(preview_fence_mutation(SOURCE,&d,40700246,(20,20),&[(20,20)],FenceMutation::Replace(40700246)).is_err());
+ }
  #[test]fn reject_empty_stale_and_unknown_state(){
   assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,20),&[(22,20)]).is_err());
   assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,22),&[(20,28)]).is_err());
