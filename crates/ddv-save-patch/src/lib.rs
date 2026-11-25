@@ -895,7 +895,17 @@ pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(
 /// The caller has established current original Road/Path identity, exact
 /// square shape, and an observed cardinal seed in the source Grid.
 pub fn preview_cardinal_road_style(source:&str,d:&PlainGridDestination,item_id:u64,cells:&[(i32,i32)],erase:bool)->Result<GridCoordinateDraft,PatchError>{
+ preview_road_mutation(source,d,item_id,cells,erase,false,None)
+}
+/// Known native road state, exact and without additional unrecognized fields.
+pub fn road_mode(v:&serde_json::Value)->Option<bool>{
+ match v.get("State"){None|Some(serde_json::Value::Null)=>Some(false),Some(s) if s==&serde_json::json!({"FenceMode":{"Diagonal":true}})=>Some(true),_=>None}
+}
+/// Test copy only. Replacement allocates new identities and preserves each
+/// selected cell's exact known mode. Unselected records are never normalized.
+pub fn preview_road_mutation(source:&str,d:&PlainGridDestination,item_id:u64,cells:&[(i32,i32)],erase:bool,diagonal:bool,replacement:Option<u64>)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::Value;
+ if replacement.is_some_and(|id|id==item_id||id/100_000!=401)||erase&&replacement.is_some(){return Err(PatchError::InvalidTarget);}
  if item_id/100_000!=401||source.is_empty()||source.len()>MAX_PROFILE_BYTES||cells.is_empty()||cells.len()>MAX_CARDINAL_ROAD_CELLS||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
     !valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none(){return Err(PatchError::InvalidTarget);}
@@ -914,7 +924,7 @@ pub fn preview_cardinal_road_style(source:&str,d:&PlainGridDestination,item_id:u
  let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(PatchError::InvalidTarget)?;
  if map.len()>100_000||map.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n==0||n>=next||n.to_string()!=*k||v.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(PatchError::AmbiguousTarget);}
- let mut removals=HashSet::<String>::new();let mut occupied=HashSet::new();
+ let mut removals=HashSet::<String>::new();let mut occupied=HashSet::new();let mut modes=HashMap::new();
  for (key,v) in map{
   let item=v.get("ItemID").and_then(Value::as_u64).ok_or(PatchError::InvalidTarget)?;
   if item/100_000!=401{continue;}
@@ -922,12 +932,13 @@ pub fn preview_cardinal_road_style(source:&str,d:&PlainGridDestination,item_id:u
   let y=v.get("Y").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
   if !cells.iter().any(|&(a,b)|i64::from(x).abs_diff(i64::from(a))<=pitch as u64&&i64::from(y).abs_diff(i64::from(b))<=pitch as u64){continue;}
   // No diagonal/mixed or foreign road mode is silently normalized.
-  if item!=item_id||x%pitch!=0||y%pitch!=0||v.get("Orientation").and_then(Value::as_str)!=Some("GridOrientation_Down")||
-     v.get("State").is_some_and(|v|!v.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+  if (item!=item_id&&replacement!=Some(item))||x%pitch!=0||y%pitch!=0||v.get("Orientation").and_then(Value::as_str)!=Some("GridOrientation_Down")||
+     road_mode(v).is_none()||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
      !occupied.insert((x,y)){return Err(PatchError::InvalidTarget);}
-  if requested.contains(&(x,y)){if !erase{return Err(PatchError::AmbiguousTarget);}removals.insert(key.clone());}
+  if requested.contains(&(x,y)){if item!=item_id||!erase&&replacement.is_none(){return Err(PatchError::AmbiguousTarget);}let mode=road_mode(v).ok_or(PatchError::InvalidTarget)?;if replacement.is_none()&&mode!=diagonal{return Err(PatchError::InvalidTarget);}modes.insert((x,y),mode);removals.insert(key.clone());}
+  else if !diagonal&&replacement.is_none()&&road_mode(v)==Some(true){return Err(PatchError::InvalidTarget);}
  }
- if erase&&removals.len()!=cells.len(){return Err(PatchError::MissingTarget);}
+ if (erase||replacement.is_some())&&removals.len()!=cells.len(){return Err(PatchError::MissingTarget);}
  let count=if erase{0}else{cells.len() as u32};
  let following=next.checked_add(count).ok_or(PatchError::InvalidTarget)?;
  if map.len()+count as usize>100_000{return Err(PatchError::InvalidTarget);}
@@ -951,7 +962,7 @@ pub fn preview_cardinal_road_style(source:&str,d:&PlainGridDestination,item_id:u
  }
  if visited!=map.len(){return Err(PatchError::InvalidDocument);}
  let mut additions=Vec::new();
- if !erase{let mut sorted=cells.to_vec();sorted.sort_unstable_by_key(|&(x,y)|(y,x));for (i,(x,y)) in sorted.into_iter().enumerate(){let id=next+i as u32;let v=serde_json::json!({"ID":id,"ItemID":item_id,"X":x,"Y":y,"Orientation":"GridOrientation_Down","State":null});members.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));}}
+ if !erase{let mut sorted=cells.to_vec();sorted.sort_unstable_by_key(|&(x,y)|(y,x));for (i,(x,y)) in sorted.into_iter().enumerate(){let id=next+i as u32;let mode=modes.get(&(x,y)).copied().unwrap_or(diagonal);let state=if mode{serde_json::json!({"FenceMode":{"Diagonal":true}})}else{Value::Null};let v=serde_json::json!({"ID":id,"ItemID":replacement.unwrap_or(item_id),"X":x,"Y":y,"Orientation":"GridOrientation_Down","State":state});members.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));}}
  let mut edits=vec![(mr,format!("{{{}}}",members.join(",")))];if !erase{edits.push((cr,following.to_string()));}edits.sort_unstable_by_key(|(r,_)|r.start);
  let mut candidate=String::new();let mut last=0;for (r,v) in edits{candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
  if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
