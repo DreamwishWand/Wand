@@ -1748,6 +1748,26 @@ mod terrain_session_tests{
         assert_eq!(g["7"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]);
         for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
         assert!(draft.patched_json.contains("\"Other\":1e2"));
+        // Restore a different portable arrangement, not just a clone.
+        let original_tree=subgrid_tree(original["World"]["GridCollection"].as_object().unwrap(),"7","1").unwrap();
+        let mut scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":original_tree});
+        scene["tree"]["objects"][0]["x"]=Value::from(2);
+        scene["tree"]["objects"][0]["child"]["objects"][0]["x"]=Value::from(2);
+        scene["tree"]["objects"][0]["child"]["objects"][1]["x"]=Value::from(0);
+        let d=support_parent_scene_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None,&scene).unwrap();
+        let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+        let collection=j["World"]["GridCollection"].as_object().unwrap();
+        assert_eq!(subgrid_tree(collection,"7","2").unwrap(),scene["tree"]);
+        assert_eq!(subgrid_tree(collection,"7","1").unwrap(),original_tree);
+        let mut incompatible=scene.clone();
+        incompatible["tree"]["objects"][0]["child"]["sourcePath"]=Value::from("GridData/Furniture/Unknown.json");
+        assert!(support_parent_scene_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None,&incompatible).is_err());
+        let mut incompatible=scene.clone();
+        incompatible["tree"]["objects"][0]["child"]["objects"][0]["itemId"]=Value::from(40009999);
+        assert!(support_parent_scene_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None,&incompatible).is_err());
+        let mut incompatible=scene.clone();
+        incompatible["tree"]["objects"][0]["child"]["objects"][0]["x"]=Value::from(999);
+        assert!(support_parent_scene_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None,&incompatible).is_err());
         let run=|v:&Value|support_parent_duplicate_candidate(&serde_json::to_vec(v).unwrap(),1,40005160,(4,6),(10,12),&witness,None,None);
         let mut bad=original.clone();bad["World"]["GridCollection"]["NextGridID"]=Value::from(9);assert!(run(&bad).is_err());
         let mut bad=original.clone();bad["World"]["FutureGridID"]=Value::from(21);assert!(run(&bad).is_err());
