@@ -1092,6 +1092,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
     let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    if rows.iter().any(|r|r.get("roomSource").is_some()){
+        if rows.len()!=1{return Err(bad);}
+        return crate::indoor_room_view::room_to_outdoor_candidate(profile,&rows[0]);
+    }
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
