@@ -1040,6 +1040,30 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const uint32=v=>Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
   const bits=v=>Array.from({length:32},(_,i)=>2**i).filter(b=>Math.floor(v/b)%2===1);
   for(const row of rows){
+    // Exact image references, not prefab/material/animation GUIDs and not
+    // encoded media hashes. Preserve field identity for alternate icons and
+    // masks so a shared GUID cannot be mistaken for an interchangeable item.
+    const imageReferences=[];
+    const imageGuid=(path,value)=>{
+      if(typeof value!=='string')return;
+      const guid=value.startsWith('guid:')?value.slice(5):value;
+      if(GUID.test(guid))imageReferences.push([path,guid]);
+    };
+    for(const key of ['iconGuid','imageGuid','maskGuid','maskDataGuid','blurredIconGuid','alternativeIconGuid']){
+      imageGuid('artwork.'+key,row.artwork?.[key]);
+    }
+    const imageFields=['IconAddress','MaleIconAddress','ImageAddress','MaskDataAddress',
+      'AlternativeIconAddress','BlurredIconAddress','AvatarIconAddress','DefaultSkinIconAddress',
+      'SignatureOverrideIcon','SpriteSquareAddress','SpritePortraitAddress','SpriteLandscapeAddress',
+      'SpriteAddress','MachineIconAddress','PortraitAddress'];
+    for(const key of imageFields){
+      imageGuid('source.'+key,row.sourceAttributes?.[key]??row.nativeProperties?.[key]);
+    }
+    if(imageReferences.length){
+      imageReferences.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+      add('media.sourceImageReferences',row.itemId,imageReferences);
+      add('media.sourceImageGuids',row.itemId,[...new Set(imageReferences.map(r=>r[1]))].sort());
+    }
     const g=row.sourceAttributes?.GridAreaData;
     if(g){
       if(Object.hasOwn(g,'AcceptedFloorTypesFlag')){
