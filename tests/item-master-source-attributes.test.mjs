@@ -657,3 +657,62 @@ test('compound canonical filters OR within field and AND across fields without l
     {field:'missing.field',anyOf:[{kind:'present'}]}
   ]),/UNKNOWN_FIELD/);
 });
+
+test('canonical acquisition source reverse lookup preserves exact source and role pairing',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete',gameVersion:'current'});
+  const relations=await db.getFieldRows('acquisition.sourceRelations');
+  const extras=await db.getFieldRows('acquisition.additionalSources');
+  const natives=await db.getFieldRows('acquisition.nativeCandidates');
+  // Independent recomputation from full source occurrences checks the entire
+  // corpus, including repeated edges and mixed roles for one source.
+  for(const [family,rows,links,identity] of [
+    ['indexed',relations,r=>r.links,l=>[l.kind,l.sourceId,l.role]],
+    ['additional',extras,r=>r,l=>[l.kind,l.sourceId]],
+    ['native',natives,r=>r,l=>['item_definition',l[0],l[1]]]
+  ]){
+    const keys=new Map(await db.getFieldRows('acquisition.'+family+'SourceKeys'));
+    const roles=family==='additional'?null:new Map(await db.getFieldRows('acquisition.'+family+'SourceRoleKeys'));
+    assert.equal(keys.size,rows.length);
+    if(roles)assert.equal(roles.size,rows.length);
+    for(const [id,row] of rows){
+      const tuples=links(row).map(identity);
+      const unique=items=>[...new Set(items.map(v=>JSON.stringify(v)))].sort();
+      assert.deepEqual(keys.get(id),unique(tuples.map(t=>t.slice(0,2))));
+      if(roles)assert.deepEqual(roles.get(id),unique(tuples));
+    }
+  }
+  // Compare representative source lookups against the canonical source rows.
+  for(const kind of ['quest','recipe','shop_offer','star_path','event','stall','iap_package']){
+    const link=relations.flatMap(([,r])=>r.links).find(l=>l.kind===kind);
+    assert(link,kind);
+    for(const role of [undefined,link.role]){
+      const query={family:'indexed',kind,sourceId:link.sourceId,...(role?{role}:{})};
+      const result=await db.findItemIdsByAcquisitionSource(query);
+      assert.equal(result.status,'indexed');
+      assert.deepEqual(result.itemIds,relations.filter(([,r])=>r.links.some(l=>
+        l.kind===kind&&l.sourceId===link.sourceId&&(!role||l.role===role))).map(([id])=>id));
+      assert.equal(result.coverageComplete,false);
+      assert.equal(result.currentAvailabilityVerified,false);
+    }
+  }
+  for(const kind of ['character_friendship_reward','pet_friendship_reward','configured_store_display','pre_dlc_store_list_member','design_challenge_catalog_unlock']){
+    const l=extras.flatMap(([,r])=>r).find(l=>l.kind===kind);
+    assert(l,kind);
+    const result=await db.findItemIdsByAcquisitionSource({family:'additional',kind,sourceId:l.sourceId});
+    assert.deepEqual(result.itemIds,extras.filter(([,r])=>r.some(x=>x.kind===kind&&x.sourceId===l.sourceId)).map(([id])=>id));
+  }
+  const [sourceItemId,role]=natives[0][1][0];
+  const native=await db.findItemIdsByAcquisitionSource({family:'native',sourceItemId,role});
+  assert.deepEqual(native.itemIds,natives.filter(([,r])=>r.some(x=>x[0]===sourceItemId&&x[1]===role)).map(([id])=>id));
+  const filtered=await db.findItemIdsByAcquisitionSource({family:'additional',kind:'configured_store_display',sourceId:'Store_Default'},
+    [{field:'nativeCategory',anyOf:[{kind:'equals',value:'Furniture'}]}]);
+  const cats=new Map(await db.getFieldRows('nativeCategory'));
+  assert(filtered.itemIds.length>0);
+  assert.deepEqual(filtered.itemIds,extras.filter(([id,r])=>cats.get(id)==='Furniture'&&r.some(l=>l.kind==='configured_store_display'&&l.sourceId==='Store_Default')).map(([id])=>id));
+  const missing=await db.findItemIdsByAcquisitionSource({family:'indexed',kind:'quest',sourceId:'not_a_real_source'});
+  assert.equal(missing.status,'indexed');assert.deepEqual(missing.itemIds,[]);
+  await assert.rejects(db.findItemIdsByAcquisitionSource({family:'additional',kind:'character_friendship_reward',sourceId:'10000001'}),/INVALID_ACQUISITION_ADDITIONAL_SOURCE/);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
+  console.log('DB01_CANONICAL_ACQUISITION_REVERSE',JSON.stringify({indexed:relations.length,additional:extras.length,native:natives.length}));
+});
