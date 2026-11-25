@@ -9,7 +9,7 @@
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {openCurrentItemDatabase,type ItemMasterRecord,type CompleteItemMasterRecord} from '../items/public-item-master.ts';
  import {worldArtwork} from './world-artwork.ts';
- import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorPickup,indoorEditWords,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
+ import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorEditWords,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {childEditWords,supportHitIndices,type SupportChildEdit} from './subgrid-local.ts';
  import type {SourceObjectShape} from './source-object-map.ts';
@@ -26,14 +26,14 @@
  $: editAllowed=testExport&&!blocked&&!!tree&&!finishOpen&&!editWorker&&!editCopy;
  $: left=indoorFurnitureEdits(face,shapes,editable,selectedObject,null,-1);
  $: right=indoorFurnitureEdits(face,shapes,editable,selectedObject,null,1);
- $: partners=face?face.positions.map((_,i)=>indoorFurnitureEdits(face,shapes,editable,selectedObject,i,1)?i:-1).filter(i=>i>=0):[];
+ $: partners=indoorSwapPartners(face,shapes,editable,selectedObject);
  $: pickup=indoorPickup(face,selectedObject,removable,stock);
  $: pw=positionWords[locale]??positionWords.en;
  let shapes:Readonly<Record<string,SourceObjectShape>>={},shapeRequest=0,shapeWorker:Worker|null=null;
  $: if(terrainWorker!==shapeWorker){shapeWorker?.removeEventListener('message',receiveShapes);shapeWorker=terrainWorker;shapeWorker?.addEventListener('message',receiveShapes);}
  $: requestShapes(positionOpen?face:null,terrainWorker);
  $: plot=positionOpen&&face?.gridStatus==='full'&&face.positions.length<=5000?indoorPositionPlot(face.positions,highlight,shapes):null;
- function requestShapes(f:IndoorSurface|null,wk:Worker|null){shapeRequest=0;shapes={};editable=new Set();removable=new Set();if(!wk||!f?.factor||f.positions.length>5000)return;const items=f.positions.filter(p=>p.orientationCode!==null).flatMap(p=>[0,4,8,12].map(orientationCode=>({itemId:p.itemId,orientationCode}))).filter((p,i,a)=>a.findIndex(q=>q.itemId===p.itemId&&q.orientationCode===p.orientationCode)===i);if(!items.length)return;shapeRequest=nextRequest();wk.postMessage({command:'indoor-shapes',factor:f.factor,items,requestId:shapeRequest});}
+ function requestShapes(f:IndoorSurface|null,wk:Worker|null){shapeRequest=0;shapes={};editable=new Set();removable=new Set();if(!wk||!f?.factor||f.positions.length>5000)return;const ids=[...new Set(f.positions.filter(p=>p.orientationCode!==null).map(p=>p.itemId))];const items=ids.flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));if(items.length>5000)return;if(!items.length)return;shapeRequest=nextRequest();wk.postMessage({command:'indoor-shapes',factor:f.factor,items,requestId:shapeRequest});}
  function receiveShapes(e:MessageEvent){const d=e.data;if(!shapeRequest||d?.requestId!==shapeRequest)return;shapeRequest=0;if(d.kind==='indoor-shapes'&&d.shapes&&typeof d.shapes==='object'){shapes=d.shapes;editable=new Set(Array.isArray(d.editable)?d.editable:[]);removable=new Set(Array.isArray(d.removable)?d.removable:[]);}}
  let owned:number[]=[],finishOpen=false,finishChoice=0,allWalls=false,preview:Worker|null=null,previewStatus:'idle'|'working'|'valid'|'error'='idle';
  $: fw=finishWords[locale]??finishWords.en;
