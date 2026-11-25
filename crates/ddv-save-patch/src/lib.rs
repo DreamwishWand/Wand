@@ -1010,7 +1010,7 @@ fn room_lexical_map_edit(source:&str,parent:Vec<Segment>,key:&str,replacement:Op
    (map_range.end-1..map_range.end-1,member)}
  }else{
   if found.is_none(){return Err(PatchError::MissingTarget);}
-  locator.pos=map_range.start;locator.expect(b'{')?;let mut comma=None;
+  locator.capture.clear();locator.pos=map_range.start;locator.expect(b'{')?;let mut comma=None;
   let removed=loop{
    locator.space();let start=locator.pos;let current=locator.string()?;locator.expect(b':')?;
    let mut p=parent.clone();p.push(k(&current));locator.value(&mut p)?;let end=locator.pos;locator.space();
@@ -1071,7 +1071,7 @@ pub fn preview_room_finish(source:&str,target:RoomFinishTarget,item:u32,action:R
     if wall.is_none_or(|w|usize::from(w)==pos)&&actual!=Some(item){next[pos]=Some(item);displaced.insert(actual.unwrap_or(0));changes.push(pos);}
    }
    if changes.is_empty(){return Err(PatchError::InvalidTarget);}
-   let stale:Vec<u32>=displaced.into_iter().filter(|id|!next.contains(&Some(*id))&&offsets.contains_key(&id.to_string())).collect();
+   let mut stale:Vec<u32>=displaced.into_iter().filter(|id|!next.contains(&Some(*id))&&offsets.contains_key(&id.to_string())).collect();stale.sort_unstable();
    let mut p=base.clone();p.push(k("Wallpapers"));let mut o=base;o.push(k("WallpaperOffsetById"));
    for pos in changes{
     let key=pos.to_string();candidate=room_lexical_map_edit(&candidate,p.clone(),&key,Some(item))?;
