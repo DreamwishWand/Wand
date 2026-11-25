@@ -1294,6 +1294,18 @@ pub fn preview_outdoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarg
  let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
  insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
 }
+/// The codec resolves exact room ownership and source pose before either transfer.
+pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||!full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)){return Err(PatchError::InvalidTarget);}
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ preview_plain_grid_place(&removed.patched_json,d,target.item_id,xy,orientation)
+}
+pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
+ validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
 /// Grid-local identities are allocated from the destination counter; stock is untouched.
 pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{

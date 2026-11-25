@@ -40,7 +40,7 @@
  $: baseReady=geometryReady&&!!counts&&groupStockAvailable(clip,counts);
  $: anchorPoint=point&&scene?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor):point;
  $: preview=geometryReady?previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene):null;
- $: ghost=candidate??preview;
+ $: ghost=candidate??(preview&&(!cutRows||groupCutPlan(cutRows,preview))?preview:null);
  $: actualRequired=ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
  $: ready=geometryReady&&!!counts&&(axis||mirrorOnly?!!ghost&&[...actualRequired].every(([id,n])=>(counts!.get(id)??0)>=n):baseReady);
  function previewGroup(clip:readonly DesignClipItem[],point:{x:number;y:number}|null,axis:WorldSymmetryAxis|null,mirror:WorldGroupPose[]|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:Map<number,Map<number,DesignItemGeometry>>,objects:readonly MainlandSavedObject[],omitted:number,required:Map<number,number>,counts:Map<number,number>|null,baseReady:boolean,scene:boolean){
@@ -89,7 +89,7 @@
   }catch{if(epoch===sceneEpoch)sceneError=gs[2];}finally{if(epoch===sceneEpoch)sceneReading=false;}
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
- export function capture(cut=false){if(!allowed||blocked||!selection||!file)return false;const rows=cut?captureCutWitness(items):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(selection);copied=true;return true;}
+ export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null){
   const data=sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length)return false;
@@ -107,7 +107,7 @@
  function receive(e:MessageEvent){const d=e.data,req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
   if(d.kind!=='design-shapes'||d.key!==req.key||!Array.isArray(d.result)){error=true;return;}
   const expected=new Set(clip.map(p=>p.itemId));
-  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable||!g.shapes)){error=true;return;}
+  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable&&!cutRows?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
   const next=new Map(defs);for(const g of d.result as DesignItemGeometry[]){if(g.name)sceneNames=new Map(sceneNames).set(g.itemId,g.name);const factors=new Map(next.get(g.itemId));factors.set(req.factor,g);next.set(g.itemId,factors);}defs=next;
  }
  export function hover(p:{x:number;y:number}|null){if(active&&!candidate&&!writing&&!copy&&!symmetryPicking&&!mirrorOnly)point=p;}
@@ -118,7 +118,7 @@
   if(mirrorOnly){chooseMirror();return;}
   const at=scene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;
   const q=previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene);
-  if(!q){error=true;return;}candidate=q;point=p;error=false;
+  if(!q||cutRows&&!groupCutPlan(cutRows,q)){error=true;return;}candidate=q;point=p;error=false;
  }
  export function turn(delta:number){if(!geometryReady||writing||copy||mirrorOnly)return;const q=rotateFurnitureGroup(clip,defs,delta);if(!q){error=true;return;}clip=q;candidate=null;error=false;}
  export function validate(){

@@ -3,7 +3,9 @@
 export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
 import type {SourceObjectShape} from "./source-object-map.ts";
-import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
+import {ROOM_CUT_LIMIT,rotateFurnitureGroup,type CutWitness} from './group-paste.ts';
+import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
 import type {TerrainRaster} from './terrain-binding.ts';
@@ -167,3 +169,40 @@ export function indoorTransferPlace(face:IndoorSurface|null,shapes:Readonly<Reco
 export const indoorTransferWords={
  ja:'切り取った家具を配置',en:'Place cut furniture',fr:'Placer le meuble coupé',it:'Posiziona mobile tagliato',de:'Ausgeschnittenes Möbel platzieren','es-ES':'Colocar mueble cortado','zh-CN':'放置剪切的家具','pt-BR':'Colocar móvel recortado'
 } as const;
+
+/** Same half-cell offsets as the shared outdoor clipboard, in source index order. */
+export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,removable:ReadonlySet<number>):{rows:CutWitness[];clip:DesignClipItem[]}|null{
+ const t=indoorEditableTree(face);
+ if(!t||face?.kind!=='floor'||!face.terrain||!Number.isSafeInteger(roomOrdinal)||roomOrdinal<1||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
+ for(const index of indices){
+  const o=t.objects[index];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!indoorClear(t,shapes,index))return null;
+  rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
+  clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
+ return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
+}
+export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
+/** Check every footprint against the floor and all already staged siblings. */
+export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number):IndoorTransferRow[]|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||face?.kind!=='floor'||!face.terrain||!rows.length||rows.length!==clip.length||rows.length>ROOM_CUT_LIMIT||![x,y].every(Number.isSafeInteger))return null;
+ const staged={...tree,objects:[...tree.objects]},out:IndoorTransferRow[]=[];
+ for(let i=0;i<rows.length;i++){
+  const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];
+  if(String(p.itemId)!==r.itemId||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
+  staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
+ }
+ return out;
+}
+export function rotateIndoorCut(clip:readonly DesignClipItem[],factor:1|2|null,shapes:Readonly<Record<string,SourceObjectShape>>,delta:number){
+ if(!factor)return null;
+ const defs=new Map<number,Map<number,DesignItemGeometry>>();
+ for(const p of clip){
+  const g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].flatMap(code=>{const key=p.itemId+':'+code;return shapes[key]?[[key,shapes[key]]]:[];}))};
+  defs.set(p.itemId,new Map([[factor,g]]));
+ }
+ return rotateFurnitureGroup(clip,defs,delta);
+}
