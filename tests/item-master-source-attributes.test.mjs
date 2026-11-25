@@ -582,3 +582,78 @@ test('typed historic source joins distinguish proven DLC association from indire
     assert.equal(row.values[fields[0]],null);
   }
 });
+
+test('typed content origins distinguish observed versions, verified release, and unresolved candidate',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const ids=[40005160,40006771,50900420,130000507,10000049,2130007038,99999999,40005160];
+  const [old,bridge,outfit,memory,reward,hotfix,missing,duplicate]=await db.getItemContentOrigins(ids);
+  assert.deepEqual(old,duplicate);
+  assert.equal(old.attribution,'unassigned');
+  assert.equal(old.firstObservedVersion,'1.25.3');
+  assert.equal(old.introducedVersion,null);
+  assert.equal(bridge.attribution,'candidate');
+  assert.equal(bridge.contentReleaseId,null);
+  assert.deepEqual(bridge.candidateReleaseIds,['dlc.the-keepsake-sea']);
+  assert.equal(outfit.attribution,'candidate');
+  assert.deepEqual(outfit.candidateReleaseIds,['version.26']);
+  for(const row of [memory,reward]){
+    assert.equal(row.attribution,'confirmed');
+    assert.equal(row.contentReleaseId,'dlc.the-keepsake-sea');
+    assert.equal(row.contentReleaseKind,'paid_dlc');
+    assert.equal(row.contentDlcType,'expansion');
+  }
+  assert.equal(hotfix.introducedVersion,'1.26.2');
+  assert.equal(hotfix.contentReleaseId,null);
+  assert.equal(hotfix.sourceReleaseId,'hotfix.1.26.2');
+  assert.equal(missing,null);
+  assert(Object.isFrozen(memory)&&Object.isFrozen(bridge.candidateReleaseIds));
+  const query=(kind,releaseId)=>db.findItemIdsByContent({kind,releaseId});
+  const confirmed=await query('confirmed_release','dlc.the-keepsake-sea');
+  assert.equal(confirmed.status,'indexed');
+  assert.equal(confirmed.itemIds.length,29);
+  const unresolved=await query('unconfirmed_candidate','dlc.the-keepsake-sea');
+  assert(unresolved.itemIds.includes(40006771));
+  assert(!unresolved.itemIds.some(id=>confirmed.itemIds.includes(id)));
+  const candidates=await db.findItemIdsByField('history.contentCandidateReleaseIds',
+    {kind:'contains',value:'dlc.the-keepsake-sea'});
+  const assignedCandidates=candidates.filter(id=>confirmed.itemIds.includes(id));
+  assert.equal(unresolved.itemIds.length,candidates.length-assignedCandidates.length);
+  assert.deepEqual((await query('confirmed_release','version.26')).itemIds,[]);
+  assert.equal((await query('unconfirmed_candidate','version.26')).itemIds.length,18);
+  assert.equal((await query('source_release','dlc.the-keepsake-sea')).itemIds.length,3254);
+  assert.equal((await db.findItemIdsByContent({kind:'introduced_version',version:'1.26.1'})).itemIds.length,3254);
+  assert.equal((await db.findItemIdsByContent({kind:'unknown_introduction'})).itemIds.length,35812);
+  const clothing=await db.findItemIdsByContent({kind:'unconfirmed_candidate',releaseId:'version.26'},
+    [{field:'nativeCategory',anyOf:[{kind:'equals',value:'Clothing'}]}]);
+  assert(clothing.itemIds.includes(50900420));
+  const categories=new Map(await db.getFieldRows('nativeCategory'));
+  assert(clothing.itemIds.every(id=>categories.get(id)==='Clothing'));
+  await assert.rejects(db.findItemIdsByContent({kind:'confirmed_release',releaseId:'../../x'}),/INVALID_CONTENT_RELEASE_ID/);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+test('compound canonical filters OR within field and AND across fields without losing null semantics',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const filters=[
+    {field:'nativeCategory',anyOf:[{kind:'equals',value:'Furniture'},{kind:'equals',value:'Clothing'}]},
+    {field:'history.introducedVersion',anyOf:[{kind:'equals',value:'1.26.1'}]},
+    {field:'history.contentReleaseId',anyOf:[{kind:'equals',value:null}]}
+  ];
+  const actual=await db.findItemIdsByFields(filters);
+  const categories=new Map(await db.getFieldRows('nativeCategory'));
+  const unassigned=new Set(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:null}));
+  const introduced=await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:'1.26.1'});
+  assert.deepEqual(actual,introduced.filter(id=>unassigned.has(id)&&['Furniture','Clothing'].includes(categories.get(id))));
+  assert(actual.length>0);
+  assert(Object.isFrozen(actual));
+  const sparse=await db.findItemIdsByFields([
+    {field:'history.contentCandidateReleaseIds',anyOf:[{kind:'equals',value:null}]}
+  ]);
+  assert.deepEqual(sparse,[]);
+  await assert.rejects(db.findItemIdsByFields([]),/INVALID_FILTERS/);
+  await assert.rejects(db.findItemIdsByFields([
+    {field:'nativeCategory',anyOf:[{kind:'equals',value:'NeverPresent'}]},
+    {field:'missing.field',anyOf:[{kind:'present'}]}
+  ]),/UNKNOWN_FIELD/);
+});
