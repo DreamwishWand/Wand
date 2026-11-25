@@ -52,7 +52,7 @@
   {/each}
  </div>
  {/if}
- <CampaignCodeList {language} community={data.latest} share={shareCode}/>
+ <CampaignCodeList {language} community={data.latest} share={shareCode} threadHref={provider? id=>provider!.threadHref(id):undefined}/>
 </section>
 <style>
  .guide-announcements{min-width:0;padding:12px;border:1px solid var(--wand-line);border-radius:12px;background:var(--wand-card);color:var(--wand-text)}
