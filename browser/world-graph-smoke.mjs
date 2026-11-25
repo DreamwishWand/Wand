@@ -1285,6 +1285,27 @@ try{
   await publicWorld.locator('.saved-object').first().waitFor({timeout:30000});
   assert.equal(await publicWorld.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
   await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
+  // Whole-world Save view uses the same source-local staging path, including
+  // integer coordinates, selection shortcuts and rejection of foreign areas.
+  await publicWorld.getByRole('button',{name:'本島全体マップ',exact:true}).click();
+  const wholeSave=publicWorld.locator('.mainland-overview');
+  await wholeSave.locator('.mainland-terrain').nth(7).waitFor({timeout:30000});
+  await wholeSave.locator('.mainland-save-object[data-area="Meadow"]').first().waitFor({timeout:30000});
+  await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
+  await wholeSave.locator('.overview-results button').first().click();
+  await wholeSave.getByRole('button',{name:'精密配置',exact:true}).click();
+  const savePrecise=wholeSave.locator('.overview-precise');
+  const oldX=await savePrecise.getByLabel('X',{exact:true}).inputValue();
+  const oldTransforms=await wholeSave.locator('.mainland-save-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort());
+  await savePrecise.getByLabel('X',{exact:true}).fill(String(Number(oldX)+5000));
+  await savePrecise.getByRole('button',{name:'適用',exact:true}).click();
+  await wholeSave.getByRole('alert').filter({hasText:'同じエリア内に移動してください'}).waitFor();
+  assert.deepEqual(await wholeSave.locator('.mainland-save-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),oldTransforms);
+  await savePrecise.getByRole('button',{name:'閉じる',exact:true}).click();
+  await wholeSave.locator('.mainland-map').focus();
+  await page.keyboard.press('BracketRight');
+  await wholeSave.getByRole('button',{name:'精密配置',exact:true}).waitFor();
+  await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();
   // Choose a source-backed furniture record through the normal picker and
   // compute the full terrain-origin raster with the real WASM Worker.
   const publicPlot=publicWorld.locator('.saved-shape-plot');
