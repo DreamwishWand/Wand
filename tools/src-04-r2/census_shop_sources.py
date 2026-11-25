@@ -97,6 +97,18 @@ def scan_ident(data):
     return result
 
 
+def json_safe(value):
+    if isinstance(value, bytes):
+        return {"binarySha256":sha(value),"bytes":len(value)}
+    if isinstance(value, dict):
+        return {str(k):json_safe(v) for k,v in value.items()}
+    if isinstance(value,(list,tuple)):
+        return [json_safe(v) for v in value]
+    if value is None or isinstance(value,(str,int,float,bool)):
+        return value
+    return {"unsupportedType":type(value).__name__}
+
+
 def canonical_candidate(value):
     if not isinstance(value, dict):
         return None
@@ -108,9 +120,9 @@ def canonical_candidate(value):
            or x["ItemId"] <= 0 or type(x.get("Quantity")) is not int
            or x["Quantity"] <= 0 for x in contents):
         return None
-    return {"onlineId":oid, "title":value.get("Title"),
+    return {"onlineId":oid, "title":json_safe(value.get("Title")),
             "contents":[[x["ItemId"],x["Quantity"]] for x in contents],
-            "visual":{k:value[k] for k in ("Image","Background","Layout","LightLayout",
+            "visual":{k:json_safe(value[k]) for k in ("Image","Background","Layout","LightLayout",
                       "AdjustImage","ImageAdjustment","MegaBundleAdjustment") if k in value},
             "status":"structured_candidate_requires_native_type_confirmation"}
 
@@ -186,7 +198,7 @@ class Census:
         for key, value in table.items():
             # No assumption that all titles are bundles; include unrecognized prefixes.
             if (member.casefold().endswith("liveops.locbin") and
-                    key.casefold().endswith(("_title","_name","_displayname"))) or KEY_HINT.search(key) or HINT.search(key):
+                    key.casefold().endswith(("_title","_name","_displayname"))) or (KEY_HINT.search(key) and key.casefold().endswith(("_title","_name"))) or HINT.search(key):
                 self.title_keys[(member,key)][locale] = value
 
     def structured_bytes(self, raw, source):
@@ -295,7 +307,20 @@ class Census:
         titles=[{"member":m,"key":k,"names":v,
                  "shopKeyCandidate":bool(KEY_HINT.search(k) or HINT.search(k))}
                 for (m,k),v in sorted(self.title_keys.items())]
+        exact_title_stems={k[:-6] for (m,k),v in self.title_keys.items()
+                           if m.casefold().endswith("liveops.locbin") and k.endswith("_Title")
+                           and v.get("en")}
+        structural_ids={x["onlineId"] for x in self.structured}
+        summary={"liveopsEnglishTitleKeys":len(exact_title_stems),
+                 "shopPrefixTitleKeys":sum(bool(KEY_HINT.search(k)) for k in exact_title_stems),
+                 "shopPrefixTitleKeysAllEight":sum(
+                     m.casefold().endswith("liveops.locbin") and k.endswith("_Title")
+                     and bool(KEY_HINT.search(k)) and all(v.get(l) for l in LOCALES.values())
+                     for (m,k),v in self.title_keys.items()),
+                 "distinctStructuredOnlineIds":len(structural_ids),
+                 "titleStemsWithStructuredId":len(exact_title_stems & structural_ids)}
         return {"schema":"wand.media.private-shop-source-census@1",
+                "summary":summary,
                 "privateOnly":True,"publicationAuthorized":False,
                 "historicalCoverageComplete":False,"serverCatalogQueried":False,
                 "counts":dict(self.count),"sourceFiles":self.files,
@@ -328,8 +353,10 @@ def main():
         c.issue("game","directory_enumeration",exc)
     for folder, dirs, files in os.walk(game,followlinks=False,onerror=walk_error):
         root=Path(folder)
-        dirs[:]=sorted(x for x in dirs if not (root/x).is_symlink()
-                      and not getattr(root/x,"is_junction",lambda:False)())
+        allowed=[x for x in dirs if not (root/x).is_symlink()
+                      and not getattr(root/x,"is_junction",lambda:False)()]
+        c.count["skippedLinkedDirectories"]+=len(dirs)-len(allowed)
+        dirs[:]=sorted(allowed)
         for name in sorted(files):
             path=root/name
             rel=path.relative_to(game).as_posix()
@@ -376,7 +403,7 @@ def main():
     out.parent.mkdir(parents=True,exist_ok=True)
     with out.open("x",encoding="utf-8") as f:
         json.dump(report,f,ensure_ascii=False,indent=2)
-    print(json.dumps({"files":c.count["files"],"localizationCandidates":len(c.title_keys),
+    print(json.dumps({"files":c.count["files"],"summary":report["summary"],"localizationCandidates":len(c.title_keys),
         "protoEntries":c.count["protoEntries"],"structuredCandidates":len(c.structured),
         "artCandidates":len(c.art),"errors":len(c.errors),"report":str(out)},ensure_ascii=False))
 
