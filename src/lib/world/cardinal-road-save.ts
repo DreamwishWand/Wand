@@ -2,6 +2,7 @@ import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainlan
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {terrainWarnings} from './terrain-binding.ts';
+import {fenceFamily} from './fence-family-catalog.ts';
 import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
@@ -38,7 +39,7 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
 }
 export const FENCE_COPY_LIMIT=128;
 export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
- if(!p?.shape||![40700246,40700268].includes(Number(p.object.itemId))||p.object.orientationCode!==8||p.object.subgrid)return false;
+ if(!p?.shape||!fenceFamily(Number(p.object.itemId))||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
  return fencePitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
@@ -67,7 +68,7 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
  return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId),...(erase||connect?{erase,seed:[seed.object.x,seed.object.y] as [number,number]}:{})},ghosts};
 }
 export function fenceReplacementCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],replacement:number):CardinalFenceCandidate|null{
- if(!fenceSeedEligible(seed)||replacement===Number(seed.object.itemId)||![40700246,40700268].includes(replacement))return null;
+ if(!fenceSeedEligible(seed)||replacement===Number(seed.object.itemId)||!fenceFamily(replacement))return null;
  const g=grids.find(g=>g.key===seed.area);if(!g||g.factor!==seed.factor)return null;
  const point:[number,number]=[seed.object.x,seed.object.y];
  return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes:[point],base:Number(seed.object.itemId),erase:false,seed:point,replacement},ghosts:[]};
