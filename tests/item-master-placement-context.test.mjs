@@ -46,7 +46,7 @@ test('native floor-context filter reconciles the entire original Furniture and B
   const [a,missing,b]=await db.getItemFields([40000047,99999999,40000047],['placement.sourceContext']);
   assert.equal(missing,null);assert.deepEqual(a,b);
   // The shared browse projection must not claim runtime legality or invent scope.
-  const path=requests.find(u=>u.includes('/fields/index.json')).replace(/fields\/index\.json$/,'explore.json');
+  const path='/ddv/item-master/steam-'+db.release.target.gameVersion+'-complete/explore.json';
   const catalog=JSON.parse(await readFile('static'+path,'utf8'));
   for(const row of catalog.items){
     const c=known.get(row.itemId);
