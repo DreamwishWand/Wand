@@ -5,14 +5,15 @@ import {terrainWarnings} from './terrain-binding.ts';
 import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
-export const ROAD_COPY_LIMIT=32;
+export const ROAD_COPY_LIMIT=256;
 export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect';
 export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
- if(!p?.shape||Number(p.object.itemId)!==CARDINAL_ROAD_ID||p.object.orientationCode!==8||p.object.subgrid)return false;
- return roadPitch({itemId:CARDINAL_ROAD_ID,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[CARDINAL_ROAD_ID+':8']:p.shape}},p.factor)!==null;
+ if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
+ const id=Number(p.object.itemId);
+ return roadPitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
 export interface CardinalRoadCandidate{
- plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean};
+ plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed:[number,number]};
  ghosts:readonly {x:number;y:number;size:number}[];
 }
 export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalRoadCandidate|null{
@@ -28,11 +29,11 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
   if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   const existing=roadByCell.get(p.x+':'+p.y)??[];
-  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
+  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.itemId!==seed.object.itemId||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
   if(erase?!existing.length:existing.length>0)continue;
   cells.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:pitch/g.factor});
  }
- return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase},ghosts}:null;
+ return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase,itemId:Number(seed.object.itemId),seed:[seed.object.x,seed.object.y]},ghosts}:null;
 }
 export const FENCE_COPY_LIMIT=128;
 export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
