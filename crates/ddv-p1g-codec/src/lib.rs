@@ -1702,8 +1702,14 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_FENCE_ERASE_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"seed"|"erase"))).ok_or_else(invalid)?;
-            if o.get("erase").and_then(|v|v.as_bool())!=Some(true){return Err(invalid());}
+            let o=v.as_object().filter(|o|(o.len()==5||o.len()==6)&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"seed"|"erase"|"replacement"))).ok_or_else(invalid)?;
+            use ddv_save_patch::fence_erase::FenceMutation;
+            let action=match (o.get("erase").and_then(|v|v.as_bool()),o.get("replacement")){
+                (Some(true),None)=>FenceMutation::Erase,
+                (Some(false),None)=>FenceMutation::Connect,
+                (Some(false),Some(v))=>FenceMutation::Replace(v.as_u64().and_then(|n|u32::try_from(n).ok()).ok_or_else(invalid)?),
+                _=>return Err(invalid())
+            };
             let base=o.get("base").and_then(|v|v.as_u64()).and_then(|n|u32::try_from(n).ok()).filter(|n|ddv_save_patch::fence_topology::supported_family(*n)).ok_or_else(invalid)?;
             let point=|v:&serde_json::Value|->Result<(i32,i32),JsValue>{
                 let pair=v.as_array().filter(|a|a.len()==2).ok_or_else(invalid)?;
@@ -1717,7 +1723,7 @@ mod browser_amount_preview {
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
             if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
-            let mut result=ddv_save_patch::fence_erase::preview_fence_erase(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy).map_err(|_|invalid())?;
+            let mut result=ddv_save_patch::fence_erase::preview_fence_mutation(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy,action).map_err(|_|invalid())?;
             let ids:Vec<_>=result.removed.iter().chain(result.allocated.iter()).map(|(id,_)|id.clone()).collect();
             let refs=match grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids){
                 Ok(r)=>r,Err(_)=>{result.draft.patched_json.zeroize();return Err(invalid());}
