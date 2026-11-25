@@ -75,3 +75,14 @@ test('cut follows world navigation but never another File or conflicting ordinal
  assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',source),false);
  assert.equal(cutClipboardMatches(cut,new File(['original'],'profile.json'),'VillageExpansion01',[]),false);
 });
+
+test('room cut clipboard has a room-local witness and follows the same File to outdoors',()=>{
+ const file=new File(['original'],'profile.json'),row={roomSource:{roomOrdinal:2,index:4},area:'indoor',itemId:String(item),expectedX:3,expectedY:2,expectedOrientation:'GridOrientation_Down'};
+ const cut={file,scope:'indoor',rows:[row]},clip=[{itemId:item,dx:0,dy:0,orientation:2}];
+ assert.equal(cutClipboardMatches(cut,file,'Village04',[saved(4,4,-3)]),true);
+ assert.equal(cutClipboardMatches(cut,file,'indoor',[]),false);
+ assert.equal(cutClipboardMatches(cut,new File(['original'],'profile.json'),'Village04',[]),false);
+ const q=groupPasteCandidate(clip,[grid],rasters,defs,new Map([[item,1]]),[],0,8.1,-2.1),plan=groupCutPlan(cut.rows,q);
+ assert.deepEqual(plan[0].roomSource,row.roomSource);assert.equal('localOrdinal' in plan[0],false);assert.equal('area' in plan[0],false);
+ assert.equal(plan[0].x,8);assert.equal(plan[0].expectedX,3);
+});
