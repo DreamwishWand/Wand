@@ -99,6 +99,21 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:'terrain',requestId:id,key:grid.key,sizeX:grid.sizeX,sizeY:grid.sizeY,nativeFloorValues:values},[values.buffer]);
       return;
     }
+    if(data.command==='road-family'){
+      const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor),q=2*grid.factor;
+      const verify=(id:number)=>{
+        const d=definitions.get(String(id));
+        if(!d||d.nativeType!=='Furniture'||Math.floor(id/100000)!==401||!/^(?:Path|Road)_/i.test(String(d.nativeName??''))||nativeActionBlocked(sourceEditRestrictions(d),'select'))return null;
+        const obj=cache.resolve(id,8),s=obj.shapeKey?cache.shapes[obj.shapeKey]:null;
+        return obj.layer==='ground'&&s&&s.width===q&&s.height===q&&s.cellCount===q*q&&s.runs.length===q&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===q)&&s.acceptedFloorTypesFlag!==undefined?s.acceptedFloorTypesFlag:null;
+      };
+      const mask=verify(data.itemId);if(mask===null)throw Error('road family');
+      const names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const replacementOptions:{id:number;name:string}[]=[];
+      for(const [key,d] of definitions){const id=Number(key);if(id!==data.itemId&&Math.floor(id/100000)===401&&verify(id)===mask)replacementOptions.push({id,name:names.get(id)??String(d.nativeName)});}
+      replacementOptions.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.id-b.id);
+      scope.postMessage({kind:'road-family',requestId:id,key:grid.key,itemId:data.itemId,factor:grid.factor,verified:true,replacementOptions});return;
+    }
     if(data.command==='fence-family'){
       const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
       const q=grid.factor;
