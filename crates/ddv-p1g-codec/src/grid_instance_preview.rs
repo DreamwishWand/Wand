@@ -535,6 +535,85 @@ fn local_subgrid_summary(collection:Option<&Map<String,Value>>,parent:Option<&Ma
     };
     Some(serde_json::json!({"status":"resolved_full","objectCount":count}))
 }
+/// Exact child ownership, no guessed child-to-parent transform. The
+/// receipt contains only local item geometry inputs, never native keys.
+fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&str)->Result<Value,CodecError>{
+ let bad=CodecError::Json;
+ let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+ let diff=collection.get("DiffGrids").map(|v|v.as_object().ok_or(bad)).transpose()?;
+ let mut owners=HashMap::<String,Vec<(String,String)>>::new();
+ let mut scanned=0usize;
+ for (scope,object_key) in [(Some(grids),"Objects"),(diff,"ModifiedObjects")]{
+  if let Some(scope)=scope{for (g,v) in scope{
+   if let Some(objects)=v.get(object_key).and_then(Value::as_object){for (o,value) in objects{
+    scanned+=1;if scanned>MAX_SCANNED_OBJECTS{return Err(CodecError::Bounds);}
+    if let Some(id)=value.get("State").and_then(|s|s.get("SubGrid")).and_then(|s|s.get("GridID")).and_then(Value::as_u64){
+     owners.entry(id.to_string()).or_default().push((g.clone(),o.clone()));
+    }
+   }}
+  }}
+ }
+ fn visit(grids:&Map<String,Value>,diff:Option<&Map<String,Value>>,owners:&HashMap<String,Vec<(String,String)>>,parent_grid:&str,parent_object:&str,seen:&mut HashSet<String>,count:&mut usize,depth:usize)->Result<Value,CodecError>{
+  let bad=CodecError::Json;if depth>8{return Err(CodecError::Bounds);}
+  let parent=grids.get(parent_grid).and_then(|g|g.get("Objects")).and_then(|o|o.get(parent_object)).ok_or(bad)?;
+  let child=parent.get("State").and_then(|s|s.get("SubGrid")).and_then(|s|s.get("GridID")).and_then(Value::as_u64).filter(|n|*n>0).ok_or(bad)?.to_string();
+  if !seen.insert(child.clone())||diff.is_some_and(|d|d.contains_key(&child))||owners.get(&child).is_none_or(|o|o.len()!=1||o[0].0!=parent_grid||o[0].1!=parent_object){return Err(bad);}
+  let g=grids.get(&child).and_then(|v|valid_grid(&child,v)).ok_or(bad)?;
+  if g.get("ID").and_then(Value::as_u64)!=key_id(&child){return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
+  let empty=Map::new();let objects=g.get("Objects").map_or(Some(&empty),Value::as_object).ok_or(bad)?;
+  let mut rows=Vec::new();
+  for (key,v) in objects{
+   *count+=1;if *count>512{return Err(CodecError::Bounds);}
+   let obj=v.as_object().ok_or(bad)?;
+   if obj.get("ID").and_then(Value::as_u64)!=key_id(key){return Err(bad);}
+   let item=obj.get("ItemID").and_then(Value::as_u64).filter(|n|*n>0&&*n<=u32::MAX as u64).ok_or(bad)?;
+   let (x,y)=observed_coordinates(obj).ok_or(bad)?;
+   let orientation=observed_orientation(obj).ok_or(bad)?;
+   let nested=if obj.get("State").and_then(|s|s.get("SubGrid")).is_some(){visit(grids,diff,owners,&child,key,seen,count,depth+1)?}else{Value::Null};
+   rows.push(serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":orientation,"child":nested}));
+  }
+  Ok(serde_json::json!({"factor":factor,"objects":rows}))
+ }
+ let mut seen=HashSet::from([parent_grid.to_owned()]);let mut count=0;
+ visit(grids,diff,&owners,parent_grid,parent_object,&mut seen,&mut count,0)
+}
+pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32))->Result<String,CodecError>{
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0||ordinal==0{return Err(CodecError::Json);}
+ let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(CodecError::Json)?;
+ if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected)||!scan.subgrid_parents.contains(&ordinal){return Err(CodecError::Json);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
+ let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
+ serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false})).map_err(|_|CodecError::Json)
+}
+/// Translation-only test operation. Parent's reference and every descendant
+/// remain byte-identical; only the two parent coordinates are replaced.
+pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let bad=CodecError::Json;
+ if ordinal==0||item/100_000!=400||expected==replacement{return Err(bad);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+ if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected)||!scan.subgrid_parents.contains(&ordinal){return Err(bad);}
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+ let dest=resolve_plain_grid_destination(profile,witness)?;
+ if dest.grid_id!=target.grid_id{return Err(bad);}
+ let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u32)<dest.size.0*dest.tessellation&&(y as u32)<dest.size.1*dest.tessellation;
+ if !valid(expected)||!valid(replacement){return Err(bad);}
+ let obj=c.get("Grids").and_then(|g|g.get(&target.grid_id)).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).ok_or(bad)?;
+ if obj.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id)||obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+    obj.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid"))||
+    obj.get("Orientation").and_then(Value::as_str).is_none_or(|o|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o)){return Err(bad);}
+ subgrid_tree(c,&target.grid_id,&target.object_id)?;
+ if grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
+ let draft=ddv_save_patch::preview_existing_grid_coordinates(std::str::from_utf8(profile).map_err(|_|bad)?,target.clone(),expected,replacement).map_err(|_|CodecError::Patch)?;
+ if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{return Err(bad);}
+ Ok(draft)
+}
 fn saved_db04_source_projection(
     profile:&[u8],witness:&str,terrain_session:bool
 )->Result<String,CodecError>{
@@ -1044,6 +1123,31 @@ mod terrain_session_tests{
         root["World"]["GridCollection"]["Grids"]["21"]=other;
         root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
+    fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
+            "1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":1,"Y":2,"Orientation":"GridOrientation_Left","State":{"SubGrid":{"GridID":9}}}}},
+          "9":{"ID":9,"Objects":{"1":{"ID":1,"ItemID":40005162,"X":0,"Y":1,"Orientation":"GridOrientation_Down","Unknown":1e2}}}
+        }}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":20,"sizeY":20});
+        let view:Value=serde_json::from_str(&inspect_subgrid_json(save,1,40005160,(4,6)).unwrap()).unwrap();
+        assert_eq!(view["tree"]["objects"][0]["child"]["objects"][0]["itemId"],40005162);
+        assert_eq!(view["tree"]["objects"][0]["orientation"],"GridOrientation_Left");
+        assert!(!view.to_string().contains("GridID"));assert!(!view.to_string().contains("Unknown"));
+        let draft=support_parent_move_candidate(save,1,40005160,(4,6),(10,12),&witness).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["X"]=Value::from(10);expected["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["Y"]=Value::from(12);
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Unknown\":1e2"));assert!(draft.patched_json.contains("\"Other\":1e2"));
+        assert!(support_parent_move_candidate(save,1,40005160,(4,6),(40,12),&witness).is_err());
+        let mut alias:Value=serde_json::from_slice(save).unwrap();
+        let mut duplicate=alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"].clone();duplicate["ID"]=Value::from(2);alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=duplicate;
+        alias["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
+        assert!(inspect_subgrid_json(&serde_json::to_vec(&alias).unwrap(),1,40005160,(4,6)).is_err());
+        let mut cycle:Value=serde_json::from_slice(save).unwrap();cycle["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":7}});
+        assert!(inspect_subgrid_json(&serde_json::to_vec(&cycle).unwrap(),1,40005160,(4,6)).is_err());
     }
     #[test]
     fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
