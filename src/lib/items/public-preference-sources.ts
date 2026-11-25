@@ -87,7 +87,8 @@ export function createPreferenceSourceReader(db:PublicCompleteItemMaster){
   }
   async function getForCharacters(ids:readonly number[]):Promise<readonly (Readonly<CharacterPreferenceResult>|null)[]>{
     input(ids);const catalog=await index();
-    const rows=await db.getItemFields(ids,catalog?['sourceClass',primary,fallback,...(catalog.has('source.PreferredItemDifficulties')?['source.PreferredItemDifficulties']:[])]:['itemId']);
+    if(!catalog)return Object.freeze((await db.getItemFields(ids,['itemId'])).map(r=>r?Object.freeze({itemId:r.itemId,status:'not_indexed' as const,definition:null}):null));
+    const rows=await db.getItemFields(ids,['sourceClass',primary,fallback,...(catalog.has('source.PreferredItemDifficulties')?['source.PreferredItemDifficulties']:[])]);
     const profileIds=unique(rows.flatMap(r=>r?.values.sourceClass==='CharacterItemData'?[r.values[primary],r.values[fallback]].filter(id):[]));
     const profiles=new Map<number,readonly number[]>();
     for(const row of await db.getItemFields(profileIds,['sourceClass',slots])){
