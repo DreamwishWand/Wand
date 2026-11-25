@@ -983,9 +983,76 @@ fn saved_db04_source_projection(
     })).map_err(|_|CodecError::Json)
 }
 
+/// All group ordinals resolve against the same immutable original. Only
+/// ordinary leaf furniture with exact poses and existing stock routes can
+/// be removed. A failed member discards the entire candidate.
+pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
+    use zeroize::{Zeroize,Zeroizing};
+    if plan.len()>16384{return Err(CodecError::Bounds);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
+    let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    let rows=rows.as_array().filter(|a|a.len()>=2&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    let mut selections=Vec::with_capacity(rows.len());
+    for v in rows{
+        let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
+        let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
+        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
+        selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
+    }
+    let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let mut by_grid=HashMap::<String,Vec<String>>::new();
+    for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
+    for (grid,ids) in by_grid{
+        if grid_identity_dependencies_for_ids(profile,&grid,&ids)?.blocking()>0{return Err(CodecError::Json);}
+    }
+    let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let mut stock=HashMap::<u64,u32>::new();
+    for t in &targets{
+        if stock.contains_key(&t.item_id){continue;}
+        let amount=inventory.get(&t.item_id.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
+        stock.insert(t.item_id,amount);
+    }
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
+    for (target,selection) in targets.iter().zip(&selections){
+        let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
+        let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(CodecError::Bounds)?;
+        let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Pickup{target,expected:selection.2}).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{
+            draft.patched_json.zeroize();return Err(CodecError::Patch);
+        }
+        working.zeroize();*working=draft.patched_json;*amount=next;
+    }
+    Ok(std::mem::take(&mut *working))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn group_pickup_resolves_once_and_returns_all_stock_or_nothing(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Unknown":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+        let mut rows=serde_json::json!([
+         {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"},
+         {"localOrdinal":2,"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}
+        ]);
+        let d=group_pickup_candidate(raw,&rows.to_string()).unwrap();
+        let result:Value=serde_json::from_str(&d).unwrap();
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],4);
+        assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],3);
+        assert!(d.contains("\"Unknown\":1e2"));
+        rows[1]["expectedX"]=Value::from(3);
+        assert!(group_pickup_candidate(raw,&rows.to_string()).is_err());
+        rows[1]["expectedX"]=Value::from(2);
+        let mut invalid:Value=serde_json::from_slice(raw).unwrap();
+        invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":5});
+        assert!(group_pickup_candidate(&serde_json::to_vec(&invalid).unwrap(),&rows.to_string()).is_err());
+    }
 
     fn project(input:&[u8])->Value{
         serde_json::from_str(&saved_grid_instances_json(input).unwrap()).unwrap()
