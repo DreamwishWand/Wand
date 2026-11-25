@@ -1,4 +1,6 @@
 import {writable} from 'svelte/store';
+import {readWandLanguage} from './preferences.ts';
+import {checkpointWords} from '../world/world-checkpoint-words.ts';
 
 /** A selected game save stays exclusively in this browser tab's memory. */
 export type LocalSaveReadStatus='selected'|'reading'|'parsed'|'invalid';
@@ -45,16 +47,24 @@ export function registerLocalSaveChangeGuard(
     if(changeGuard===guard)changeGuard=null;
   };
 }
+function guardCheckpointUnload(e:BeforeUnloadEvent){if(current.worldCheckpoint){e.preventDefault();e.returnValue='';}}
+function confirmExternalChange(next:File|null):boolean{
+ if(changeGuard)return changeGuard(current.file,next);
+ return !current.worldCheckpoint||typeof window!=='undefined'&&window.confirm(checkpointWords[readWandLanguage()][5]);
+}
+function clearCheckpointUnload(){if(typeof window!=='undefined')window.removeEventListener('beforeunload',guardCheckpointUnload);}
 export function selectLocalSaveFile(file:File):boolean{
   if(current.file===file)return true;
-  if(changeGuard&&!changeGuard(current.file,file))return false;
+  if(!confirmExternalChange(file))return false;
+  clearCheckpointUnload();
   current={file,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
   return true;
 }
 export function closeLocalSaveFile():boolean{
   if(current.file===null)return true;
-  if(changeGuard&&!changeGuard(current.file,null))return false;
+  if(!confirmExternalChange(null))return false;
+  clearCheckpointUnload();
   current={file:null,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
   return true;
@@ -82,6 +92,7 @@ export function commitWorldCheckpoint(source:File,copy:File):boolean{
  const history=appendWorldCheckpoint(current.worldCheckpoint,source,copy);
  if(!history)return false;
  current={file:copy,revision:++nextRevision,collectionStatus:'selected',worldCheckpoint:history};
+ if(typeof window!=='undefined')window.addEventListener('beforeunload',guardCheckpointUnload);
  state.set(current);return true;
 }
 export function travelWorldCheckpoint(source:File,delta:-1|1):boolean{
