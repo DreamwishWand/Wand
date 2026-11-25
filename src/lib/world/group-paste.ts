@@ -24,7 +24,9 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[]):Desi
  const a=rows as DesignClipItem[],x=Math.min(...a.map(p=>p.dx)),y=Math.min(...a.map(p=>p.dy));
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
-export interface CutWitness{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string}
+export type RoomCutSource={roomOrdinal:number;index:number};
+type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string};
+export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
 export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitness[]|null{
@@ -39,6 +41,7 @@ export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly Ma
  * re-resolves every source pose against the unchanged file before writing. */
 export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[]):boolean{
  if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
+ if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length===1&&!!cut.rows[0].roomSource&&scope!=='indoor';
  if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects);
  return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));
 }
