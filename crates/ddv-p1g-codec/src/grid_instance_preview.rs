@@ -1092,6 +1092,26 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
     let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    if rows.iter().any(|r|r.get("roomSource").is_some()){
+        if rows.len()>32{return Err(bad);}
+        // All source indices refer to one unchanged room; remove highest first
+        // so the remaining indices cannot shift. Reject mixed/duplicate witnesses.
+        let mut sorted=Vec::new();let mut room=None;let mut seen=HashSet::new();
+        for r in rows{
+            let w=r.get("roomSource").ok_or(bad)?;
+            let ordinal=w.get("roomOrdinal").and_then(Value::as_u64).ok_or(bad)?;
+            let index=w.get("index").and_then(Value::as_u64).ok_or(bad)?;
+            if room.is_some_and(|n|n!=ordinal)||!seen.insert(index){return Err(bad);}
+            room=Some(ordinal);sorted.push((index,r));
+        }
+        sorted.sort_by_key(|(index,_)|std::cmp::Reverse(*index));
+        let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+        for (_,row) in sorted{
+            let next=crate::indoor_room_view::room_to_outdoor_candidate(working.as_bytes(),row)?;
+            working.zeroize();**working=next;
+        }
+        return Ok(std::mem::take(&mut *working));
+    }
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
