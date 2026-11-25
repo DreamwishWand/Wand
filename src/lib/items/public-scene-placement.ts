@@ -59,7 +59,7 @@ export function evaluateStaticSceneGate(restriction:unknown,scene:Readonly<Nativ
         if(keys.length>1||Object.keys(p).some(k=>!validKeys.has(k))){
           selector='unresolved';sceneMatch=null;customRestrictionCount=null;
         }else{
-          selector=keys[0]??'none';
+          selector=keys.length===0?'none':keys[0];
           const value=selector==='none'?null:p[selector];
           if(selector==='SceneType'?!code(value):selector!=='none'&&!id(value)){
             selector='unresolved';sceneMatch=null;
