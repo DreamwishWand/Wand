@@ -14,6 +14,8 @@ use zeroize::Zeroize;
 mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
+#[cfg(feature="wasm")]
+mod indoor_room_view;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -1376,6 +1378,14 @@ mod browser_amount_preview {
             };
             saved_grid_references_json(source)
                 .map_err(|_|fail("DB05_GRID_INDEX_INVALID"))
+        }
+        pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
+            let source=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_INDOOR_NOT_OPEN"))?.profile.as_slice()
+            };
+            indoor_room_view::project(source).map_err(|_|fail("DB05_INDOOR_UNAVAILABLE"))
         }
         pub fn list_furniture_catalog_stock(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_FURNITURE_STOCK_NOT_OPEN"));}
