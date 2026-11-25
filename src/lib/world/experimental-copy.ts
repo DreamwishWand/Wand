@@ -1,3 +1,4 @@
+import {parseReplayStep,rememberReplayStep} from './checkpoint-journal.ts';
 /** Local-only copy transport; no raw Save content is logged or sent off-device. */
 export interface ExperimentalCopyReceipt{contract:'wand.db05.experimental-copy@1';copyBytes:number;originalUnchanged:true;independentReopenVerified:true;experimentalCopyOnly:true;productionWriterAuthorized:false}
 const MAX_COPY=32*1024*1024;
@@ -10,13 +11,14 @@ export function readExperimentalCopy(length:number,take:(size:number)=>Uint8Arra
  }catch(e){bytes.fill(0);throw e;}
 }
 export function experimentalCopyDownload(data:unknown,source:File){
- const d=data as {bytes?:Uint8Array;receipt?:Partial<ExperimentalCopyReceipt>}|null;
+ const d=data as {bytes?:Uint8Array;receipt?:Partial<ExperimentalCopyReceipt>;replay?:unknown}|null;
  const b=d?.bytes,r=d?.receipt;
  if(!(b instanceof Uint8Array))throw Error('copy bytes');
  try{
   if(b.byteLength<1||b.byteLength>MAX_COPY||r?.contract!=='wand.db05.experimental-copy@1'||r.copyBytes!==b.byteLength||r.originalUnchanged!==true||r.independentReopenVerified!==true||r.experimentalCopyOnly!==true||r.productionWriterAuthorized!==false)throw Error('copy receipt');
   const dot=source.name.lastIndexOf('.'),name=dot>0?source.name.slice(0,dot)+'-world-test'+source.name.slice(dot):source.name+'-world-test';
   const file=new File([b.slice().buffer as ArrayBuffer],source.name,{type:source.type||'application/octet-stream'});
+  try{const step=parseReplayStep(d?.replay);rememberReplayStep(file,step.command,step.plan,step.destination);}catch{/* Recovery unavailable for this copy. */}
   return {url:URL.createObjectURL(file),name,file};
  }finally{b.fill(0);}
 }

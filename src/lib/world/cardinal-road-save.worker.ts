@@ -13,7 +13,7 @@ scope.onmessage=async({data})=>{
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   const copy=readExperimentalCopy(data.command==='cardinal-fence-erase'?wasm.prepare_fence_erase_experimental_copy(JSON.stringify(data.plan),true):data.command==='cardinal-fence-copy'?wasm.prepare_isolated_fence_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_cardinal_road_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));
-  scope.postMessage({kind:'cardinal-road-copy',...copy},[copy.bytes.buffer]);
+  scope.postMessage({kind:'cardinal-road-copy',replay:{command:data.command,plan:data.plan},...copy},[copy.bytes.buffer]);
  }catch{scope.postMessage({kind:'cardinal-road-error'});}
  finally{bytes?.fill(0);wasm?.close();wasm?.free();}
 };

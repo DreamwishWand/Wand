@@ -2,6 +2,7 @@
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
+ import {rememberReplayStep} from './checkpoint-journal.ts';
  import {commitWorldCheckpoint} from '../ui/local-save-session';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
@@ -82,7 +83,7 @@
    if(exporting){
     const r=d?.receipt,b=d?.bytes;
     if(d?.kind==='furniture-stock-copy'&&b instanceof Uint8Array&&b.byteLength>0&&b.byteLength<=32*1024*1024&&r?.contract==='wand.db05.experimental-copy@1'&&r.copyBytes===b.byteLength&&r.originalUnchanged===true&&r.independentReopenVerified===true&&r.experimentalCopyOnly===true&&r.productionWriterAuthorized===false){
-     try{const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';copyFile=new File([b.slice().buffer as ArrayBuffer],f.name,{type:f.type||'application/octet-stream'});copyUrl=URL.createObjectURL(copyFile);status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
+     try{const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';copyFile=new File([b.slice().buffer as ArrayBuffer],f.name,{type:f.type||'application/octet-stream'});rememberReplayStep(copyFile,'furniture-stock-export',q.plan,q.destination);copyUrl=URL.createObjectURL(copyFile);status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
     }
     b?.fill(0);status='error';return;
    }
