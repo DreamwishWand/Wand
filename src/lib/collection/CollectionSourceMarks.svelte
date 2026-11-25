@@ -1,9 +1,9 @@
 <script lang="ts">
   import WandIcon from '$lib/ui/WandIcon.svelte';
-  import type {Db01ItemAcquisitionIndex} from '$lib/acquisition/db01-item-acquisition.ts';
+  import type {CollectionAcquisitionIndex} from './current-acquisition.ts';
   import type {GameNativeItemCategory} from '$lib/acquisition/game-native-item-categories.ts';
   import {collectionDb01AcquisitionLabel,collectionDb01AcquisitionHeading} from './db01-browse-labels.ts';
-  export let index:Db01ItemAcquisitionIndex|null=null;
+  export let index:CollectionAcquisitionIndex|null=null;
   export let itemId:number;
   export let locale:string;
   const icons:Record<GameNativeItemCategory,string>={

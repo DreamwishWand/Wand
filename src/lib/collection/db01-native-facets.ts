@@ -69,6 +69,9 @@ export interface CollectionDb01Index{
   readonly itemsByRoot?:ReadonlyMap<CollectionTopCategory,readonly number[]>;
   readonly universeSourceStatusByItem?:ReadonlyMap<number,ItemMasterUniverseStatus>;
   readonly iconGuidByItem?:ReadonlyMap<number,string>;
+  readonly browseUniverseIdsByItem?:ReadonlyMap<number,readonly number[]>;
+  readonly itemsByBrowseUniverseId?:ReadonlyMap<number,readonly number[]>;
+  readonly universeLabelsById?:ReadonlyMap<number,Readonly<Record<string,string|null>>>;
   readonly worldLabelsByKey?:ReadonlyMap<string,Readonly<Record<string,string|null>>>;
   readonly sourceSetByItem?:ReadonlyMap<number,number>;
   readonly parentEntityByItem?:ReadonlyMap<number,number>;

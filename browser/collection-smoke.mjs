@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import {loadCurrentCollectionAcquisition} from '../src/lib/collection/current-acquisition.ts';
 import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
@@ -447,8 +448,9 @@ try{
     'leaf categories never appear at root');
   assert.equal(await page.locator('.collection-original-category-grid').count(),0);
   assert.equal(await parents.filter({hasText:/口ひげ|あごひげ/}).count(),0);
-  const completeIndex=(await loadCompleteCollection('/Wand',async url=>
-    new Response(await readFile('static/'+url.replace(/^\/Wand\//,'')),{status:200}))).index;
+  const completeCatalog=await loadCompleteCollection('/Wand',async url=>
+    new Response(await readFile('static/'+url.replace(/^\/Wand\//,'')),{status:200}));
+  const completeIndex=completeCatalog.index;
   const totalText=completeIndex.sourceItemCount.toLocaleString('ja');
   const browseAll=page.locator('.collection-categories-heading button');
   assert.ok((await browseAll.innerText()).includes(totalText));
@@ -564,13 +566,8 @@ try{
   await acquisitionFilter.waitFor({timeout:15000});
   await acquisitionFilter.selectOption('star_path');
   await page.locator('.item-card').first().waitFor({timeout:12000});
-  const starPathIds=await page.evaluate(async()=>{
-    const response=await fetch('/Wand/acquisition/public/db01-item-acquisition-1.26.2.json');
-    if(!response.ok)throw Error('DB01_ACQUISITION_FETCH_FAILED');
-    const doc=await response.json();
-    return doc.items.filter(row=>row[1].some(group=>group[0]==='star_path'))
-      .map(row=>String(row[0]));
-  });
+  const canonicalAcquisition=await loadCurrentCollectionAcquisition(completeCatalog.master);
+  const starPathIds=canonicalAcquisition.listItemIds('star_path').map(String);
   const starPathSet=new Set(starPathIds);
   const displayedIds=await page.locator('.item-card').evaluateAll(cards=>
     cards.map(card=>card.getAttribute('data-item-id')));
@@ -612,6 +609,10 @@ try{
   await db01Details.locator('summary').click();
   assert.match(await db01Details.innerText(),/Bedroom/);
   assert.match(await db01Details.innerText(),/Glass Shoe/);
+  const currentFacts=deep.locator('.collection-current-facts');
+  await currentFacts.locator('summary').click();
+  await currentFacts.locator('.fact-note').waitFor({timeout:60000});
+  await currentFacts.locator('summary').click();
   await assertCollectionThemes(deep,[
     ['.item-inspector','background-color','--wand-header'],
     ['.item-inspector h2','color','--wand-text'],

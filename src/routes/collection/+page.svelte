@@ -3,6 +3,7 @@
   import { base } from '$app/paths';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
     loadCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
@@ -24,8 +25,7 @@
   import {collectionNativeSubtypeLabel}
     from '$lib/collection/native-subtype-labels.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
-  import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
-    from '$lib/acquisition/db01-item-acquisition.ts';
+  import {loadCurrentCollectionAcquisition,type CollectionAcquisitionIndex} from '$lib/collection/current-acquisition.ts';
   import {DB02_ACQUISITION_CATEGORY_ORDER,type GameNativeItemCategory}
     from '$lib/acquisition/game-native-item-categories.ts';
   import {collectionDb01AcquisitionLabel,collectionDb01AcquisitionHeading}
@@ -111,7 +111,7 @@
   let sourceLoadError=false;
   let sourceUniverseOptions:{key:string;count:number}[]=[];
   let sourceWorldOptions:{key:string;count:number}[]=[];
-  let acquisitionIndex:Db01ItemAcquisitionIndex|null=null;
+  let acquisitionIndex:CollectionAcquisitionIndex|null=null;
   let acquisitionLoad:Promise<void>|null=null;
   let acquisitionLoadError=false;
   let acquisitionFilter:GameNativeItemCategory|''='';
@@ -189,7 +189,7 @@
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
   $: universeChoices=(sourceIndex
     ?sortedCollectionUniverseOptions(sourceIndex,locale,
-        key=>collectionUniverseDisplayLabel(locale,key),
+        key=>sourceIndex?.universeLabelsById?.get(Number(key))?.[locale]??collectionUniverseDisplayLabel(locale,key),
         locale==='ja'?'ユニバース未設定':'No source universe tag')
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
@@ -639,7 +639,7 @@
     if(!canUseDb01SourceFacets()||acquisitionIndex||acquisitionLoad)return;
     acquisitionLoadError=false;
     const generation=sourceGeneration;
-    const task=loadDb01ItemAcquisitionHandoff(base).then(index=>{
+    const task=loadCompleteCollection(base).then(catalog=>loadCurrentCollectionAcquisition(catalog.master)).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       acquisitionIndex=index;if(acquisitionFilter)refresh();
     }).catch(()=>{
@@ -1343,7 +1343,7 @@
           <span class="collection-axis-selected">
             {sourceUniverseSelection!==null
               ?sortedCollectionUniverseOptions(sourceIndex!,locale,
-                key=>collectionUniverseDisplayLabel(locale,key),
+                key=>sourceIndex?.universeLabelsById?.get(Number(key))?.[locale]??collectionUniverseDisplayLabel(locale,key),
                 locale==='ja'?'ユニバース未設定':'No source universe tag')
                   .find(option=>option.id===sourceUniverseSelection)?.label??''
               :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
@@ -1474,7 +1474,7 @@
               <div class="breadcrumbs"><button type="button" on:click={()=>chooseUniverse('')}>{copy.universeList}</button>
                 <span> / {sourceUniverseSelection!==null
                   ?sortedCollectionUniverseOptions(sourceIndex!,locale,
-                    key=>collectionUniverseDisplayLabel(locale,key),
+                    key=>sourceIndex?.universeLabelsById?.get(Number(key))?.[locale]??collectionUniverseDisplayLabel(locale,key),
                     locale==='ja'?'ユニバース未設定':'No source universe tag')
                     .find(option=>option.id===sourceUniverseSelection)?.label??''
                   :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
@@ -1703,6 +1703,7 @@
             {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
+                <CurrentItemFacts itemId={selectedItem.itemId} {locale}/>
               {/key}
             {/if}
             {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}

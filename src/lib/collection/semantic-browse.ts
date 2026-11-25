@@ -40,14 +40,14 @@ const styleKeys=(source:CollectionDb01Index,id:number)=>[...new Set((source.byIt
 /** Source-backed presentation, not a new game relationship. All Item IDs
  * remain distinct. Only rank a multi-universe item once inside a world list. */
 export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:string,universeSelected:boolean,selectedWorld=''):CollectionBrowseOrder{
-  const options=sortedCollectionUniverseOptions(source,locale,key=>collectionUniverseDisplayLabel(locale,key),
+  const options=sortedCollectionUniverseOptions(source,locale,key=>source.universeLabelsById?.get(Number(key))?.[locale]??collectionUniverseDisplayLabel(locale,key),
     locale==='ja'?'ユニバース未設定':'No source universe tag');
   const ranks=new Map(options.map((option,i)=>[option.id,i]));
   const labels=new Map(options.map(option=>[option.id,option.label]));
   const fallback=(id:number)=>source.universeSourceStatusByItem?.get(id)==='unresolved_source'
     ?COLLECTION_UNIVERSE_UNRESOLVED:COLLECTION_UNIVERSE_UNTAGGED;
   const primary=(id:number)=>{
-    const tags=(source.universeTagIdsByItem.get(id)??[]).map(String);
+    const tags=((source.browseUniverseIdsByItem??source.universeTagIdsByItem).get(id)??[]).map(String);
     const keys=tags.length?tags:source.universesByItem.get(id)??[];
     return [...keys].sort((a,b)=>(ranks.get(a)??999)-(ranks.get(b)??999)||a.localeCompare(b,'en'))[0]??fallback(id);
   };
