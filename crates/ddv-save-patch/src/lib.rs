@@ -988,6 +988,25 @@ mod cardinal_road_tests{
   let erased=preview_cardinal_road_cells(&add.patched_json,&destination(),&[(8,4),(12,4)],true).unwrap();let after:serde_json::Value=serde_json::from_str(&erased.patched_json).unwrap();
   assert_eq!(after["Player"],old["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["Objects"],old["World"]["GridCollection"]["Grids"]["7"]["Objects"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
  }
+ #[test]fn diagonal_cells_and_replacement_preserve_mode_and_ownership(){
+  let d=destination();
+  let diagonal=preview_road_mutation(SOURCE,&d,MAIN_STREET_ROAD,&[(8,4),(12,4),(8,8),(12,8)],false,true,None).unwrap();
+  let old:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let first:serde_json::Value=serde_json::from_str(&diagonal.patched_json).unwrap();
+  assert_eq!(old["Player"],first["Player"]);let g=&first["World"]["GridCollection"]["Grids"]["7"];
+  assert_eq!(g["Objects"]["3"]["State"]["FenceMode"]["Diagonal"],true);assert!(g["Objects"]["1"]["State"].is_null());
+  let changed=preview_road_mutation(&diagonal.patched_json,&d,MAIN_STREET_ROAD,&[(4,4),(8,4)],false,false,Some(40100038)).unwrap();
+  let actual:serde_json::Value=serde_json::from_str(&changed.patched_json).unwrap();
+  assert_eq!(actual["Player"],old["Player"]);let g=&actual["World"]["GridCollection"]["Grids"]["7"];
+  assert!(g["Objects"]["7"]["State"].is_null());assert_eq!(g["Objects"]["8"]["State"]["FenceMode"]["Diagonal"],true);
+  assert_eq!(g["Objects"]["7"]["ItemID"],40100038);assert_eq!(g["Objects"]["8"]["ItemID"],40100038);
+  assert_eq!(g["Objects"]["2"],old["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]);
+  assert!(changed.patched_json.contains("\"Unknown\":1e2"));
+  assert!(preview_road_mutation(&diagonal.patched_json,&d,MAIN_STREET_ROAD,&[(4,4)],true,true,None).is_err());
+  let removed=preview_road_mutation(&diagonal.patched_json,&d,MAIN_STREET_ROAD,&[(8,4),(12,4)],true,true,None).unwrap();
+  let actual:serde_json::Value=serde_json::from_str(&removed.patched_json).unwrap();
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],7);
+  assert_eq!(actual["Player"],old["Player"]);
+ }
  #[test]fn other_cardinal_style_and_large_stroke_preserve_player(){
   let source=SOURCE.replace("40100068","40100038");
   let cells:Vec<_>=(0..8).flat_map(|y|(0..8).map(move |x|(12+x*4,12+y*4))).collect();
