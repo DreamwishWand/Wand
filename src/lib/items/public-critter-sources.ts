@@ -3,6 +3,7 @@
  * schedule order and selector modes, including filters and empty days.
  */
 import type {PublicCompleteItemMaster,ItemFieldValue} from './public-item-master.ts';
+import {createItemFilterCandidateReader,type QuestFilterCandidateResult} from './public-quest-filter-candidates.ts';
 const SOURCE='62008c61bf0b407c40d0adf417db043ab058f4ec0ca2764355e176a3532c2219';
 const DUMP='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08';
 type Obj=Readonly<Record<string,ItemFieldValue>>;
@@ -49,6 +50,25 @@ export interface CritterSourceResult {
   readonly itemId:number;
   readonly status:'indexed'|'not_indexed'|'not_critter';
   readonly definition:Readonly<CritterSourceDefinition>|null;
+}
+export interface CritterFoodFilterResult {
+  readonly critterItemId:number;
+  readonly status:CritterSourceResult['status'];
+  readonly like:Readonly<QuestFilterCandidateResult>|null;
+  readonly favorite:Readonly<QuestFilterCandidateResult>|null;
+  readonly runtimeAcceptanceVerified:false;
+}
+export interface CritterFoodFilterReference {
+  readonly critterItemId:number;
+  readonly preference:'like'|'favorite';
+  readonly evidence:QuestFilterCandidateResult['candidates'][number];
+  readonly facts:QuestFilterCandidateResult['facts'];
+}
+export interface CritterFoodFilterInverse {
+  readonly itemId:number;
+  readonly status:'indexed'|'not_indexed';
+  readonly references:readonly Readonly<CritterFoodFilterReference>[];
+  readonly runtimeAcceptanceVerified:false;
 }
 export interface CritterFoodResult {
   readonly itemId:number;
@@ -100,6 +120,7 @@ function definition(itemId:number,v:Obj,refs:readonly (readonly [number,string])
 export function createCritterSourceReader(db:PublicCompleteItemMaster){
   const release=db.release;
   const pinned=release.target.platform==='Steam'&&release.sourceFilesSha256?.Companion===SOURCE&&release.sourceIl2cppDumpSha256===DUMP;
+  const filters=createItemFilterCandidateReader(db,'critter');
   let indexTask:Promise<ReadonlySet<string>|null>|undefined;
   function index(){
     if(!indexTask){
@@ -140,5 +161,65 @@ export function createCritterSourceReader(db:PublicCompleteItemMaster){
           preference:m[1]==='LikeItem'?'like' as const:'favorite' as const})]:[];
       })),filterEligibilityVerified:false as const})));
   }
-  return Object.freeze({release,getForCritters,getForFood});
+  // Cache only the distinct configured filters, not copies for each critter.
+  const filterTasks=new Map<string,Promise<Readonly<QuestFilterCandidateResult>>>();
+  function resolveFoodFilter(selector:Readonly<CritterFoodSelector>){
+    if(selector.mode!=='FilterGenerator')return Promise.resolve(null);
+    const raw=selector.original.FilterGenerator;
+    check(obj(raw),'FOOD_FILTER');
+    const key=JSON.stringify(raw);
+    let task=filterTasks.get(key);
+    if(!task){
+      const started=filters.resolve(raw);
+      filterTasks.set(key,started);
+      void started.catch(()=>{if(filterTasks.get(key)===started)filterTasks.delete(key);});
+      task=started;
+    }
+    return task;
+  }
+  /** All source type-matched candidates are preserved, including negative
+   * direct-tag evidence and unresolved runtime constraints. Explicit lists
+   * are returned separately by getForCritters/getForFood. */
+  async function getFoodFilterCandidates(ids:readonly number[]):Promise<readonly (Readonly<CritterFoodFilterResult>|null)[]>{
+    const rows=await getForCritters(ids);
+    return Object.freeze(await Promise.all(rows.map(async r=>{
+      if(!r)return null;
+      const [like,favorite]=r.definition?await Promise.all([
+        resolveFoodFilter(r.definition.like),resolveFoodFilter(r.definition.favorite)
+      ]):[null,null];
+      return Object.freeze({critterItemId:r.itemId,status:r.status,like,favorite,runtimeAcceptanceVerified:false as const});
+    })));
+  }
+  let allFilters:Promise<readonly (Readonly<CritterFoodFilterResult>|null)[]>|undefined;
+  async function getForFoodFilterCandidates(ids:readonly number[]):Promise<readonly (Readonly<CritterFoodFilterInverse>|null)[]>{
+    input(ids);
+    const catalog=await index();
+    const items=await db.getItemFields(ids,['itemId']);
+    if(!catalog)return Object.freeze(items.map(r=>r?Object.freeze({
+      itemId:r.itemId,status:'not_indexed' as const,references:Object.freeze([]),runtimeAcceptanceVerified:false as const}):null));
+    if(!allFilters){
+      const task=db.findItemIdsByField('sourceClass',{kind:'equals',value:'CritterItemData'}).then(getFoodFilterCandidates);
+      allFilters=task;void task.catch(()=>{if(allFilters===task)allFilters=undefined;});
+    }
+    const wanted=new Set(ids);
+    const byItem=new Map<number,CritterFoodFilterReference[]>();
+    const resolved=await allFilters;
+    const indexed=resolved.every(r=>r&&r.status==='indexed'&&[r.like,r.favorite].every(f=>!f||f.status==='source_definition_candidates'));
+    if(indexed)for(const row of resolved){
+      if(!row)continue;
+      for(const preference of ['like','favorite'] as const){
+        const filter=row[preference];if(!filter)continue;
+        for(const evidence of filter.candidates){
+          if(!wanted.has(evidence.itemId))continue;
+          const ref=Object.freeze({critterItemId:row.critterItemId,preference,evidence,facts:filter.facts});
+          const list=byItem.get(evidence.itemId);
+          if(list)list.push(ref);else byItem.set(evidence.itemId,[ref]);
+        }
+      }
+    }
+    return Object.freeze(items.map(r=>r?Object.freeze({itemId:r.itemId,
+      status:indexed?'indexed' as const:'not_indexed' as const,
+      references:Object.freeze(byItem.get(r.itemId)??[]),runtimeAcceptanceVerified:false as const}):null));
+  }
+  return Object.freeze({release,getForCritters,getForFood,getFoodFilterCandidates,getForFoodFilterCandidates});
 }
