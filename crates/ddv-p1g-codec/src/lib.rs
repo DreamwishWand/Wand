@@ -1566,6 +1566,38 @@ mod browser_amount_preview {
             Ok(r#"{"contract":"wand.db05.grid-structure-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
         }
 
+        /// Private transfer rehearsal. Never returns native IDs, draft bytes,
+        /// or export authority. Source and destination are independently resolved.
+        pub fn preview_plain_grid_transfer(&self,plan:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared||plan.len()>8192{
+                return Err(fail("DB05_GRID_TRANSFER_SESSION_INVALID"));
+            }
+            let invalid=||fail("DB05_GRID_TRANSFER_PLAN_INVALID");
+            let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=v.as_object().ok_or_else(invalid)?;
+            if o.len()!=9||o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation")){return Err(invalid());}
+            let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
+            let item=o.get("itemId").and_then(|v|v.as_str()).and_then(|v|v.parse::<u64>().ok()).ok_or_else(invalid)?;
+            let int=|key:&str|o.get(key).and_then(|v|v.as_i64()).and_then(|v|i32::try_from(v).ok()).ok_or_else(invalid);
+            let text=|key:&str|o.get(key).and_then(|v|v.as_str()).ok_or_else(invalid);
+            let expected=(int("expectedX")?,int("expectedY")?);
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_GRID_TRANSFER_SESSION_INVALID"))?.profile.as_slice()
+            };
+            let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),Some(text("expectedOrientation")?.to_owned()))])
+                .map_err(|_|fail("DB05_GRID_TRANSFER_STALE"))?.pop().ok_or_else(invalid)?;
+            let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?)
+                .map_err(|_|fail("DB05_GRID_TRANSFER_DESTINATION_UNRESOLVED"))?;
+            let json=std::str::from_utf8(original).map_err(|_|invalid())?;
+            let mut draft=ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)
+                .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
+            let valid=validate_profile(draft.patched_json.as_bytes()).is_ok()&&draft.changed&&draft.untouched_bytes_preserved&&!draft.writer_authorized&&!draft.export_authorized;
+            draft.patched_json.zeroize();
+            if !valid{return Err(fail("DB05_GRID_TRANSFER_INVALID_DRAFT"));}
+            Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
+        }
+
         /// Experimental 1..=16 mixed Grid edits. The same independent
         /// P1G reopen is required for validation and explicit copy export.
         pub fn preview_grid_mixed_batch(&mut self,plan:&str)

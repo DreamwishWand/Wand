@@ -346,6 +346,31 @@ pub(super) fn resolve_grid_mixed_targets(
     Ok(out)
 }
 
+/// Resolve a transfer destination without exposing native Save IDs.
+pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
+    let o=witness.as_object().ok_or(CodecError::Json)?;
+    if o.len()!=5||o.keys().any(|k|!matches!(k.as_str(),"layoutId"|"gridDataPath"|"factor"|"sizeX"|"sizeY")){return Err(CodecError::Json);}
+    let layout=o.get("layoutId").and_then(Value::as_str).filter(|s|s.len()<=512&&s.starts_with("SceneLayouts/")&&s.ends_with(".json")&&!s.contains("..")).ok_or(CodecError::Json)?;
+    let data=o.get("gridDataPath").and_then(Value::as_str).filter(|s|s.len()<=512&&s.starts_with("GridData/")&&s.ends_with(".json")&&!s.contains("..")).ok_or(CodecError::Json)?;
+    let num=|key:&str|o.get(key).and_then(Value::as_u64).and_then(|v|u32::try_from(v).ok()).ok_or(CodecError::Json);
+    let factor=num("factor")?;let sx=num("sizeX")?;let sy=num("sizeY")?;
+    if !matches!(factor,1|2)||sx==0||sy==0||sx>65536||sy>65536||u64::from(sx)*u64::from(sy)>16_777_216{return Err(CodecError::Bounds);}
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(CodecError::Json)?;
+    let grids=collection.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let mut candidates=grids.iter().filter(|(_,v)|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&v.get("GridDataPath").and_then(Value::as_str)==Some(data));
+    let (id,grid)=candidates.next().ok_or(CodecError::Json)?;
+    if candidates.next().is_some()||valid_grid(id,grid).is_none()||
+       grid.get("ID").and_then(Value::as_u64)!=key_id(id)||
+       grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||
+       collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(id))){
+       return Err(CodecError::Json);
+    }
+    Ok(ddv_save_patch::PlainGridDestination{grid_id:id.clone(),layout_path:layout.to_owned(),data_path:data.to_owned(),tessellation:factor,size:(sx,sy)})
+}
+
 /// Resolve a cardinal orientation edit exclusively against the original,
 /// locally opened Save. No native Grid/Object ID leaves this Rust module.
 pub(super) fn resolve_grid_orientation_target(
