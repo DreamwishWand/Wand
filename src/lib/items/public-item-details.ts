@@ -39,6 +39,7 @@ import {
 
 import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from './public-item-acquisition-details.ts';
 import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-taxonomy-details.ts';
+import {createProductionSourceReader,type ProductionItemEvidence} from './public-production-sources.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
@@ -159,6 +160,8 @@ export interface PublicItemDetailsClient {
   /** Canonical source tags, series, worlds and browse universe with one locale. */
   getItemTaxonomyDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemTaxonomyDetails>|null)[]>;
   getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
+  /** Original mining, timebending and seed production routes, not live availability. */
+  getItemProductionSources(itemIds:readonly number[]):Promise<readonly (Readonly<ProductionItemEvidence>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
   getSelectedItems(itemIds:readonly number[],fields:readonly string[],
     options?:PublicItemSelectionOptions):Promise<readonly (Readonly<PublicSelectedItem>|null)[]>;
@@ -377,6 +380,9 @@ export async function openPublicItemDetails(
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
+    },
+    async getItemProductionSources(itemIds:readonly number[]){
+      return createProductionSourceReader(await complete()).getForItems(itemIds);
     },
     async getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
       return readItemPriceDetails(await complete(),itemIds,locale);
