@@ -846,6 +846,7 @@ function loadLinkedLocalizations(project,e,version,source,byId,legacy){
 // ingredient, tag, exclusion or spawn references. Source roles are candidates
 // independent of DB-02's six acquisition categories and runtime availability.
 function nativeAcquisitionRole(category,path,sourceClass){
+  if(sourceClass==='CritterItemData'&&path==='source.BefriendingPetRewardItemID')return 'critter_befriending_reward';
   if(sourceClass==='FurnitureBlockerItemData'&&path==='source.DefaultRewardItemID')return 'blocker_default_reward';
   if(sourceClass==='FurnitureAncientMachineItemData'&&path==='source.BeeHouse.ProducedItemID')return 'machine_produced_item';
   if(category==='ActivityData'&&/^source\.(?:Result\.ItemID|ResultItemID)$/.test(path))return 'activity_result';
