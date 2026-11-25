@@ -52,3 +52,39 @@ export const supportSceneWords={
  'zh-CN':['支撑面场景','保存布局','打开场景','在相同空支撑面上恢复','所需物品','库存或形状不匹配，或存在嵌套支撑。','无法打开场景。','返回'],
  'pt-BR':['Cena de suporte','Salvar disposição','Abrir cena','Restaurar em suporte vazio idêntico','Itens necessários','Estoque ou geometria incompatível.','Não foi possível abrir.','Voltar']
 } as const;
+
+/** The portable file contains layout only. Each required support type must
+ * have an exact native template in the currently selected hierarchy. */
+export function supportSceneTemplateCompatible(scene:SupportScene,owner:number,source:SupportTree):boolean{
+ if(owner!==scene.ownerItemId)return false;
+ const templates=new Map<number,Set<string>>(),plain=new Set<number>();let total=1;
+ const key=(t:SupportTree)=>t.factor+':'+t.sourcePath;
+ function collect(id:number,t:SupportTree,depth:number):boolean{
+  if(depth>8||!t.sourcePath)return false;
+  const a=templates.get(id)??new Set<string>();a.add(key(t));templates.set(id,a);
+  for(const o of t.objects){if(++total>32||!furniture(o.itemId)||!isCardinal(o.orientation))return false;if(o.child){if(!collect(o.itemId,o.child,depth+1))return false;}else plain.add(o.itemId);}
+  return true;
+ }
+ if(!collect(owner,source,0))return false;
+ total=1;
+ function check(id:number,t:SupportTree,depth:number):boolean{
+  if(depth>8||!templates.get(id)?.has(key(t)))return false;
+  const anchors=new Set<string>();
+  for(const o of t.objects){
+   const a=o.x+':'+o.y;if(++total>32||o.x<0||o.y<0||anchors.has(a))return false;anchors.add(a);
+   if(o.child){if(!check(o.itemId,o.child,depth+1))return false;}else if(!plain.has(o.itemId)||templates.has(o.itemId))return false;
+  }return true;
+ }
+ return check(owner,scene.tree,0);
+}
+export function supportSceneRootCounts(scene:SupportScene){const counts=supportSceneCounts(scene.tree);counts.set(scene.ownerItemId,(counts.get(scene.ownerItemId)??0)+1);return counts;}
+export const supportSceneCreateWords={
+ ja:['支持家具ごとSceneを配置','同じ種類の既存家具を原本テンプレートとして使用します。','Sceneの新規配置に対応する原本構造・在庫がありません。'],
+ en:['Place Scene with support furniture','Uses existing matching furniture as a native template.','Missing compatible template or stock for Scene creation.'],
+ fr:['Placer la scène avec son support','Utilise un meuble identique comme modèle natif.','Modèle ou stock incompatible.'],
+ it:['Posiziona scena con supporto','Usa un mobile identico come modello nativo.','Modello o scorte incompatibili.'],
+ de:['Szene mit Möbel platzieren','Verwendet ein gleiches Möbel als Vorlage.','Vorlage oder Bestand fehlt.'],
+ 'es-ES':['Colocar escena con soporte','Usa un mueble idéntico como plantilla.','Falta una plantilla o inventario.'],
+ 'zh-CN':['连同支撑家具放置场景','使用现有同类家具作为原始模板。','缺少匹配模板或库存。'],
+ 'pt-BR':['Posicionar cena com suporte','Usa móvel idêntico como modelo nativo.','Modelo ou estoque indisponível.']
+} as const;
