@@ -1108,7 +1108,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
         for (_,row) in sorted{
             let next=crate::indoor_room_view::room_to_outdoor_candidate(working.as_bytes(),row)?;
-            working.zeroize();**working=next;
+            working.zeroize();*working=next;
         }
         return Ok(std::mem::take(&mut *working));
     }
