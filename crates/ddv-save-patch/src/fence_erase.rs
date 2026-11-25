@@ -195,6 +195,24 @@ mod tests{
   assert_eq!(layout(before,40700246),layout(after,40700268));
   assert!(preview_fence_mutation(SOURCE,&d,40700246,(20,20),&[(20,20)],FenceMutation::Replace(40700246)).is_err());
  }
+ #[test]fn diagonal_reverse_span_erase_and_reconnect(){
+  // Native reverse diagonal extension anchor (22,22) is NOT a
+  // logical node of the slope from (20,28) to (28,20).
+  let empty=SOURCE.replace("\"1\":{\"ID\":1,\"ItemID\":40700246,\"X\":20,\"Y\":20,\"Orientation\":\"GridOrientation_Down\",\"State\":null},\"2\":{\"ID\":2,\"ItemID\":40700252,\"X\":20,\"Y\":22,\"Orientation\":\"GridOrientation_Left\",\"State\":null},\"3\":{\"ID\":3,\"ItemID\":40700246,\"X\":20,\"Y\":34,\"Orientation\":\"GridOrientation_Down\",\"State\":null},\"4\":{\"ID\":4,\"ItemID\":40700246,\"X\":20,\"Y\":36,\"Orientation\":\"GridOrientation_Down\",\"State\":null},","");
+  let nodes=vec![(20,28),(22,26),(24,24),(26,22),(28,20)];
+  let edges=nodes.windows(2).map(|p|(p[0],p[1])).collect::<Vec<_>>();
+  let d=destination();let initial=preview_isolated_fence(&empty,&d,40700246,true,&nodes,&edges).unwrap();
+  let cut=preview_fence_mutation_mode(&initial.patched_json,&d,40700246,nodes[0],&[nodes[2]],FenceMutation::Erase,true).unwrap();
+  let decode=|source:&str|{
+   let root:Value=serde_json::from_str(source).unwrap();
+   let native:Vec<_>=root["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part_mode(v,40700246,true).unwrap()).collect();
+   fence_topology::decompile_fence(40700246,2,true,&native).unwrap()
+  };
+  let (n,e)=decode(&cut.draft.patched_json);assert_eq!(n.len(),4);assert_eq!(e.len(),2);assert!(!n.contains(&nodes[2]));
+  let joined=preview_fence_mutation_mode(&cut.draft.patched_json,&d,40700246,nodes[0],&[nodes[2]],FenceMutation::Connect,true).unwrap();
+  assert_eq!(decode(&joined.draft.patched_json),decode(&initial.patched_json));
+  assert!(preview_fence_mutation(&initial.patched_json,&d,40700246,nodes[0],&[nodes[2]],FenceMutation::Erase).is_err());
+ }
  #[test]fn reject_empty_stale_and_unknown_state(){
   assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,20),&[(22,20)]).is_err());
   assert!(preview_fence_erase(SOURCE,&destination(),40700246,(20,22),&[(20,28)]).is_err());
