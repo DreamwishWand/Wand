@@ -1,6 +1,6 @@
 <script lang="ts">
  import {localSaveSession} from '../ui/local-save-session';
- import {captureScene,parseScene,sceneOrigin,sceneBounds,sceneWords,type ScenePreset} from './scene-preset.ts';
+ import {captureScene,parseScene,sceneOrigin,sceneBounds,sceneItemCounts,sceneWords,type ScenePreset} from './scene-preset.ts';
  import {parseFurnitureStock,furnitureStockWords} from './furniture-stock-view.ts';
  import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
@@ -264,6 +264,8 @@
  let activeScene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='center',sceneReading=false;
  $: sceneText=sceneWords[locale]??sceneWords.en;
  $: sceneCapture=grid&&selectedIds.size?captureScene(timeline,[...selectedIds],definitions,grid.factor):null;
+ $: sceneRequired=activeScene?sceneItemCounts(activeScene.items):new Map<number,number>();
+ $: if(activeScene)loadImages([...sceneRequired.keys()].map(itemId=>({itemId})));
  function scenePoint(p:Cell|null,clip=pasting,defs=definitions){return !p?null:activeScene?sceneOrigin(p,sceneAnchor,clip,defs):p;}
  function setSceneAnchor(value:ScenePreset['anchor']){sceneAnchor=value;hover=scenePoint(lastPoint);}
  function saveScene(){if(!sceneCapture||busyImport)return;try{const text=JSON.stringify(sceneCapture);parseScene(text,sceneCapture.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
@@ -359,11 +361,11 @@
    if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=String(grid.factor),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
    if(pasteRequest&&d?.requestId===pasteRequest){
      pasteRequest=0;const clip=pastePending;pastePending=[];
-     if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result))return;
+     if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){if(activeScene){activeScene=null;error=sceneText[5];}return;}
      const factor=String(grid.factor),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
-     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){error='配置形状を取得できませんでした。';return;}
+     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){activeScene=null;error='配置形状を取得できませんでした。';return;}
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}const merged=new Map([...definitions,...incoming]);if(activeScene&&!sceneBounds(clip,merged)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint,clip,merged);return;
+     if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){activeScene=null;error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}const merged=new Map([...definitions,...incoming]);if(activeScene&&!sceneBounds(clip,merged)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint,clip,merged);return;
    }
    if(pendingImport&&d?.requestId===pendingImport.id){
      const pending=pendingImport;pendingImport=null;
@@ -398,7 +400,7 @@
  }
  function chooseItem(id:number){
    if(!worker||!grid||busyImport)return;
-   closeNetworkStyle();groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
+   closeNetworkStyle();activeScene=null;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
    const g=definitions.get(id);
    if(g){if(!layerSelectable(layerState,g)||worldFrame&&!worldCatalogEligible(g))return;if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
@@ -655,7 +657,7 @@
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
-   {#if activeScene}<div class="scene-placement"><strong>Scene · {activeScene.items.length}</strong><small>{sceneText[6]}</small><div><button type="button" aria-pressed={sceneAnchor==='center'} on:click={()=>setSceneAnchor('center')}>{sceneText[2]}</button><button type="button" aria-pressed={sceneAnchor==='corner'} on:click={()=>setSceneAnchor('corner')}>{sceneText[3]}</button><button type="button" on:click={cancel}>{sceneText[4]}</button></div></div>{/if}
+   {#if activeScene}<div class="scene-placement"><strong>Scene · {activeScene.items.length}</strong><small>{sceneText[6]}</small><div class="scene-required">{#each [...sceneRequired] as [itemId,count] (itemId)}<div class="scene-required-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>{/each}</div><div><button type="button" aria-pressed={sceneAnchor==='center'} on:click={()=>setSceneAnchor('center')}>{sceneText[2]}</button><button type="button" aria-pressed={sceneAnchor==='corner'} on:click={()=>setSceneAnchor('corner')}>{sceneText[3]}</button><button type="button" on:click={cancel}>{sceneText[4]}</button></div></div>{/if}
    {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
    {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
@@ -752,7 +754,7 @@
  </div>
 {/if}
 <style>
- .scene-placement{position:absolute;top:52px;right:8px;z-index:8;display:grid;gap:5px;padding:8px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);color:var(--wand-text)}.scene-placement div{display:flex;gap:4px;flex-wrap:wrap}
+ .scene-placement{position:absolute;top:52px;right:8px;z-index:8;display:grid;gap:5px;padding:8px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);color:var(--wand-text)} .scene-placement div{display:flex;gap:4px;flex-wrap:wrap}.scene-placement .scene-required{display:grid;max-height:25vh;overflow:auto}.scene-required-row{align-items:center}.scene-required-row img{width:24px;height:24px;object-fit:contain}.scene-required-row span{flex:1}
  .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
  .stock-filter{font-size:12px;color:var(--wand-muted)}.stock-filter label{display:flex;align-items:center;gap:4px}.furniture-stock-count{font-size:10px;color:var(--wand-muted)}
  .file-input{display:none}
