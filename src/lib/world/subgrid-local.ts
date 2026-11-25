@@ -100,16 +100,30 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
 export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
-export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string):SupportStockPlan|null{
- if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!Number.isInteger(count)||count<1||count>2147483647||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return null;
+export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string):boolean{
+ if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
  const shape=shapes[itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!shape||!shape.cellCount||shape.cellCount>65536||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
- for(const o of tree.objects){const key=supportShapeKey(o),other=key?shapes[key]:null;if(!other)return null;
+ if(!shape||!shape.cellCount||shape.cellCount>65536||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return false;
+ for(const o of tree.objects){const key=supportShapeKey(o),other=key?shapes[key]:null;if(!other)return false;
   if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
-  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return null;
+  if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return false;
  }
+ return true;
+}
+export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string):SupportStockPlan|null{
+ if(!Number.isInteger(count)||count<1||count>2147483647||!supportPlacementFits(tree,shapes,raster,itemId,x,y,orientation))return null;
  return {action:'place',itemId,expectedStock:count,x,y,orientation};
 }
+export const supportTransferWords={
+ ja:['別の家具へ移動','移動先の家具を選択','移動先の支持面を確認できません。'],
+ en:['Move to another support','Choose destination furniture','Destination support unavailable.'],
+ fr:['Déplacer vers un autre meuble','Choisir le meuble de destination','Support de destination indisponible.'],
+ it:['Sposta su un altro mobile','Scegli il mobile di destinazione','Supporto di destinazione non disponibile.'],
+ de:['Auf anderes Möbel verschieben','Zielmöbel auswählen','Zielauflage nicht verfügbar.'],
+ 'es-ES':['Mover a otro mueble','Elegir mueble de destino','Soporte de destino no disponible.'],
+ 'zh-CN':['移动到其他家具','选择目标家具','目标支撑面不可用。'],
+ 'pt-BR':['Mover para outro móvel','Escolher móvel de destino','Suporte de destino indisponível.']
+} as const;
 export function supportStockPickup(tree:SupportTree,index:number,counts:ReadonlyMap<number,number>,removable:ReadonlySet<number>):SupportStockPlan|null{
  const o=tree.objects[index];if(!o||o.child||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!isCardinal(o.orientation))return null;
  const count=counts.get(o.itemId);if(count===undefined||count>=2147483647)return null;
