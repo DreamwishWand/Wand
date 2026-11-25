@@ -1698,6 +1698,23 @@ mod browser_amount_preview {
             draft.patched_json.zeroize();
             Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
         }
+        pub fn inspect_subgrid(&self,ordinal:u32,item:u32,x:i32,y:i32)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_SUBGRID_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_SUBGRID_NOT_OPEN"))?.profile.as_slice()};
+            grid_instance_preview::inspect_subgrid_json(source,ordinal as usize,u64::from(item),(x,y)).map_err(|_|fail("DB05_SUBGRID_UNRESOLVED"))
+        }
+        pub fn prepare_support_parent_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_SUPPORT_PARENT_MOVE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
+            let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=v.as_object().filter(|o|o.len()==7&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"))).ok_or_else(invalid)?;
+            let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|n|usize::try_from(n).ok()).ok_or_else(invalid)?;
+            let item=o.get("itemId").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
+            let int=|k:&str|o.get(k).and_then(|v|v.as_i64()).and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid);
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let draft=grid_instance_preview::support_parent_move_candidate(source,ordinal,item,(int("expectedX")?,int("expectedY")?),(int("x")?,int("y")?),o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn prepare_fence_erase_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_FENCE_ERASE_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
