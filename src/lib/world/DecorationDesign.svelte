@@ -10,6 +10,7 @@
  import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
  import {onDestroy} from 'svelte';
+ import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft,readDesignDraft,writeDesignDraft,discardDesignDraft,type DraftLocation,type DesignDraft} from './design-draft.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import type {TerrainRaster,TerrainBinding} from './terrain-binding.ts';
  import {terrainWarnings} from './terrain-binding.ts';
@@ -54,6 +55,78 @@
  export let nextRequest:()=>number;
  export let locale:WandLanguage='ja';
  let layouts:Record<string,DesignTimeline>={};
+ type RecoveryState={phase:'loading'|'offer'|'restoring'|'discarding'|'ready';revision:string|null;record?:DesignDraft;warning?:'unavailable'|'invalid'|'conflict';writable:boolean};
+ type RecoveryJob={location:DraftLocation;context:string;grid:PublicTerrainGridRef;frame:MainlandDesignFrame|null;draft:DesignDraft;ids:number[];offset:number;defs:Map<number,DesignItemGeometry>;own:Worker};
+ let recovery:Record<string,RecoveryState>={};
+ const recoveryJobs=new Map<number,RecoveryJob>(),recoveryWrites=new Map<string,Promise<void>>();
+ const recoveryWords={
+  ja:['設計の下書きがあります','作業を再開','下書きを破棄','下書きを読み込み中…','自動保存できません。設計ファイルを保存してください。','現在のゲームデータで下書きを復元できません。','別のタブで下書きが更新されました。設計ファイルを保存してください。','保存済みの下書きを破棄しますか？'],
+  en:['A design draft is available','Resume draft','Discard draft','Loading draft…','Autosave unavailable. Save your design file.','Draft is incompatible with current game data.','Another tab changed the draft. Save your design file.','Discard the saved draft?'],
+  fr:['Un brouillon est disponible','Reprendre','Supprimer le brouillon','Chargement du brouillon…','Sauvegarde automatique indisponible. Enregistrez le fichier.','Brouillon incompatible avec les données actuelles.','Un autre onglet a modifié le brouillon. Enregistrez le fichier.','Supprimer le brouillon enregistré ?'],
+  it:['È disponibile una bozza','Riprendi','Elimina bozza','Caricamento bozza…','Salvataggio automatico non disponibile. Salva il file.','Bozza incompatibile con i dati attuali.','Un’altra scheda ha modificato la bozza. Salva il file.','Eliminare la bozza salvata?'],
+  de:['Ein Entwurf ist verfügbar','Fortsetzen','Entwurf verwerfen','Entwurf wird geladen…','Automatisches Speichern nicht verfügbar. Entwurf als Datei speichern.','Entwurf ist mit den aktuellen Daten inkompatibel.','Ein anderer Tab hat den Entwurf geändert. Datei speichern.','Gespeicherten Entwurf verwerfen?'],
+  'es-ES':['Hay un borrador disponible','Reanudar','Descartar borrador','Cargando borrador…','Guardado automático no disponible. Guarda el archivo.','Borrador incompatible con los datos actuales.','Otra pestaña cambió el borrador. Guarda el archivo.','¿Descartar el borrador guardado?'],
+  'zh-CN':['有未完成的设计','继续设计','丢弃草稿','正在加载草稿…','无法自动保存，请保存设计文件。','草稿与当前游戏数据不兼容。','其他标签页已修改草稿，请保存设计文件。','丢弃已保存的草稿？'],
+  'pt-BR':['Há um rascunho disponível','Continuar','Descartar rascunho','Carregando rascunho…','Salvamento automático indisponível. Salve o arquivo.','Rascunho incompatível com os dados atuais.','Outra aba alterou o rascunho. Salve o arquivo.','Descartar o rascunho salvo?']
+ } as const;
+ $: rw=recoveryWords[locale]??recoveryWords.en;
+ $: recoveryLocation=grid?designDraftLocation(grid,worldFrame):null;
+ $: recoveryState=recoveryLocation?recovery[recoveryLocation.identity]:undefined;
+ $: recoveryBlocked=active&&Boolean(recoveryLocation)&&recoveryState?.phase!=='ready';
+ $: if(active&&grid&&raster&&recoveryLocation&&typeof window!=='undefined')void inspectRecovery(recoveryLocation);
+ function setRecovery(location:DraftLocation,state:RecoveryState){recovery={...recovery,[location.identity]:state};}
+ async function inspectRecovery(location:DraftLocation){
+  if(recovery[location.identity])return;
+  setRecovery(location,{phase:'loading',revision:null,writable:false});
+  try{
+   const stored=await readDesignDraft(location.key);
+   if(!stored){setRecovery(location,{phase:'ready',revision:null,writable:true});return;}
+   try{const draft=parseDesignDraft(stored.draft,location);setRecovery(location,{phase:'offer',revision:stored.revision,record:draft,writable:false});}
+   catch{setRecovery(location,{phase:'offer',revision:stored.revision,warning:'invalid',writable:false});}
+  }catch{setRecovery(location,{phase:'ready',revision:null,warning:'unavailable',writable:false});}
+ }
+ async function discardRecovery(){
+  const loc=recoveryLocation,state=recoveryState;if(!loc||state?.phase!=='offer'||!window.confirm(rw[7]))return;
+  setRecovery(loc,{...state,phase:'discarding'});
+  try{await discardDesignDraft(loc.key,state.revision);setRecovery(loc,{phase:'ready',revision:null,writable:true});}
+  catch{setRecovery(loc,{...state,phase:'offer',warning:'conflict'});}
+ }
+ function resumeRecovery(){
+  const location=recoveryLocation,state=recoveryState;
+  if(!location||state?.phase!=='offer'||!state.record||!grid||!worker)return;
+  const draft=state.record,job:RecoveryJob={location,context:contextKey,grid,frame:worldFrame,draft,ids:draftItemIds(draft),offset:0,defs:new Map(),own:worker};
+  setRecovery(location,{...state,phase:'restoring'});requestRecoveryShapes(job);
+ }
+ function requestRecoveryShapes(job:RecoveryJob){
+  if(job.offset>=job.ids.length){finishRecovery(job);return;}
+  const requestId=nextRequest();recoveryJobs.set(requestId,job);
+  try{job.own.postMessage({command:'design-shapes',requestId,key:job.grid.key,itemIds:job.ids.slice(job.offset,job.offset+128)});}
+  catch{recoveryJobs.delete(requestId);failRecovery(job);}
+ }
+ function failRecovery(job:RecoveryJob){
+  const state=recovery[job.location.identity];if(state?.phase==='restoring')setRecovery(job.location,{...state,phase:'offer',warning:'invalid'});
+ }
+ function finishRecovery(job:RecoveryJob){
+  const state=recovery[job.location.identity];if(state?.phase!=='restoring')return;
+  if(!validateDesignDraft(job.draft,job.location,job.frame,job.defs)){failRecovery(job);return;}
+  const factor=String(job.grid.factor);
+  cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...job.defs])};
+  layouts={...layouts,[job.context]:job.draft.timeline};
+  if(recoveryLocation?.identity===job.location.identity){cancel();camera=job.draft.camera;selected=job.draft.selection.length===1?job.draft.selection[0]:null;groupIds=job.draft.selection.length>1?job.draft.selection:[];}
+  setRecovery(job.location,{phase:'ready',revision:state.revision,writable:true});
+ }
+ function persistRecovery(next:DesignTimeline){
+  const location=recoveryLocation,state=location?recovery[location.identity]:undefined;
+  if(!location||state?.phase!=='ready'||!state.writable)return;
+  const draft=makeDesignDraft(location,next,camera,groupIds.length?groupIds:selected===null?[]:[selected]);
+  const tail=recoveryWrites.get(location.identity)??Promise.resolve();
+  const write=tail.then(async()=>{
+   const current=recovery[location.identity];if(!current?.writable||current.phase!=='ready')return;
+   try{const revision=await writeDesignDraft(location.key,current.revision,draft);setRecovery(location,{phase:'ready',revision,writable:true});}
+   catch(e){const conflict=e instanceof Error&&e.message==='DRAFT_CONFLICT';setRecovery(location,{...current,warning:conflict?'conflict':'unavailable',writable:!conflict});}
+  });
+  recoveryWrites.set(location.identity,write);void write.finally(()=>{if(recoveryWrites.get(location.identity)===write)recoveryWrites.delete(location.identity);});
+ }
  let cache:Record<string,Map<number,DesignItemGeometry>>={};
  let catalog:DesignCatalogItem[]=[],catalogLocale='',catalogLoading=false,catalogError='',catalogId=0;
  let images=new Map<number,string>(),imagePending=new Set<number>();
@@ -129,7 +202,7 @@
   'pt-BR':['Salvar','Abrir','Itens necessários','Não foi possível abrir o projeto. Verifique a área e os itens.','Substituir o projeto da área?','Abrindo…']
  } as const;
  $: words=labels[locale]??labels.en;
- $: busyImport=reading||pendingImport!==null;
+ $: busyImport=reading||pendingImport!==null||recoveryBlocked;
  $: counts=designItemCounts(placements);
  $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
  $: if(active&&showCounts)loadImages([...counts.keys()].map(itemId=>({itemId})));
@@ -170,7 +243,9 @@
    }
  }
  $: if(worker!==subscribed){
-   subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);
+   subscribed?.removeEventListener('message',receive);
+   for(const job of recoveryJobs.values())failRecovery(job);recoveryJobs.clear();
+   subscribed=worker;subscribed?.addEventListener('message',receive);
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
@@ -183,6 +258,14 @@
  }
  function receive(e:MessageEvent){
    const d=e.data;
+   const job=recoveryJobs.get(d?.requestId);
+   if(job){
+     recoveryJobs.delete(d.requestId);
+     const batch=job.ids.slice(job.offset,job.offset+128);
+     if(d.kind!=='design-shapes'||d.key!==job.grid.key||!Array.isArray(d.result)||d.result.length!==batch.length||d.result.some((g:DesignItemGeometry,i:number)=>g.itemId!==batch[i])){failRecovery(job);return;}
+     for(const g of d.result as DesignItemGeometry[])job.defs.set(g.itemId,g);
+     job.offset+=batch.length;requestRecoveryShapes(job);return;
+   }
    if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=String(grid.factor),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
    if(pasteRequest&&d?.requestId===pasteRequest){
      pasteRequest=0;const clip=pastePending;pastePending=[];
@@ -202,7 +285,7 @@
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;groupIds=[];cancel();layouts={...layouts,[contextKey]:next};error='';return;
+     selected=null;groupIds=[];cancel();layouts={...layouts,[contextKey]:next};persistRecovery(next);error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -265,8 +348,8 @@
    ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
  }
  function save(next:DesignTimeline|null,defs=definitions):boolean{
-   if(!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)){error=worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
-   layouts={...layouts,[contextKey]:next};error='';return true;
+   if(recoveryBlocked||!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)){error=worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
+   if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}error='';return true;
  }
  function cancel(){closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
@@ -466,7 +549,10 @@
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
-   <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
+   <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
+   {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button></div>
+   {:else if recoveryBlocked}<p role="status">{rw[3]}</p>
+   {:else if recoveryState?.warning}<p role="alert">{recoveryState.warning==='conflict'?rw[6]:rw[4]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
    {#if networkSeed!==null}<div class="network-style-panel"><NetworkStyleControls {locale} count={networkIds.length} options={networkOptions} value={networkTarget} loading={networkLoading} valid={Boolean(networkPlan)} onChange={changeNetworkTarget} onConfirm={confirmNetworkStyle} onCancel={closeNetworkStyle}/></div>{/if}
@@ -583,6 +669,7 @@
  .design-controls{top:52px;left:6px;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap}.design-controls button{flex:none;min-height:34px}
  .design-status{bottom:6px;left:6px;max-width:calc(100% - 65px)}.design-status small{white-space:nowrap}
  .design-messages{position:absolute;z-index:7;top:104px;right:6px;max-width:calc(100% - 12px);background:var(--wand-card);border-radius:5px}.design-messages:empty{display:none}.design-messages p{margin:0;padding:6px;font-size:12px}
+ .draft-offer{padding:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}.draft-offer p{flex-basis:100%}
  .design-counts{position:absolute;z-index:5;top:104px;right:6px;width:min(300px,70%);max-height:55%;padding:4px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);box-shadow:0 2px 8px #0003}
  @media(max-width:700px){aside{top:auto;bottom:38px;left:6px;width:calc(100% - 65px);height:min(31%,220px)}.design-controls button{min-height:36px}}
 </style>

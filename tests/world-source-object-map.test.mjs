@@ -493,3 +493,26 @@ test('region fill stops at original terrain boundaries and existing paths; overs
  assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-line',2).length,3);
  assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-rect',2).length,9);
 });
+
+import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft} from '../src/lib/world/design-draft.ts';
+test('local design recovery preserves undo and redo, identity and safe synthetic placement history',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape}};
+ const grid={key:'draft-test',layoutId:'SceneLayouts/Village04/A.json',gridDataPath:'GridData/A.json',gridIdNative:1,sizeX:20,sizeY:20,factor:1};
+ const loc=designDraftLocation(grid,null),defs=new Map([[g.itemId,g]]);
+ let timeline=placeDesign(emptyDesign(),g,1,2,2,20,20);timeline=placeDesign(timeline,g,4,2,2,20,20);
+ timeline=travelDesign(timeline,-1);
+ const draft=makeDesignDraft(loc,timeline,{zoom:2,x:.5,y:.5},[1,2]);
+ const restored=parseDesignDraft(JSON.parse(JSON.stringify(draft)),loc);
+ assert.deepEqual(restored.timeline,timeline);assert.deepEqual(restored.selection,[1]);assert.deepEqual(draftItemIds(restored),[g.itemId]);
+ assert.equal(currentDesign(travelDesign(restored.timeline,1)).length,2);
+ assert.equal(validateDesignDraft(restored,loc,null,defs),true);
+ assert.equal(validateDesignDraft(restored,loc,null,new Map()),false);
+ assert.throws(()=>parseDesignDraft(draft,designDraftLocation({...grid,factor:2},null)),/CONTEXT/);
+ assert.throws(()=>parseDesignDraft({...draft,timeline:{...timeline,nextId:1}},loc),/PLACEMENT/);
+ assert.throws(()=>parseDesignDraft({...draft,timeline:{...timeline,cursor:100}},loc),/HISTORY/);
+ const unsafe=structuredClone(draft);unsafe.timeline.snapshots[2][1].x=19;
+ assert.equal(validateDesignDraft(parseDesignDraft(unsafe,loc),loc,null,defs),false);
+ const duplicate=structuredClone(draft);duplicate.timeline.snapshots[2][1].id=1;
+ assert.throws(()=>parseDesignDraft(duplicate,loc),/PLACEMENT/);
+});
