@@ -62,6 +62,19 @@ export function mainlandSavedAt(objects:readonly MainlandSavedObject[],x:number,
   return p.shape?p.shape.runs.some(r=>r.y===dy&&dx>=r.x&&dx<r.x+r.width):dx===0&&dy===0;
  }).reverse();
 }
+/** Rectangle selection uses occupied runs, not the bounding rectangle.
+ * Unknown shapes remain selectable by the same one-cell marker as hit testing.
+ * Both axes are in common map space; native Y increases downwards. */
+export function mainlandSavedInRect(objects:readonly MainlandSavedObject[],a:{x:number;y:number},b:{x:number;y:number}):MainlandSavedObject[]{
+ const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),bottom=Math.min(a.y,b.y),top=Math.max(a.y,b.y);
+ if(![left,right,bottom,top].every(Number.isFinite)||left===right||bottom===top)return [];
+ return objects.filter(p=>{
+  if(!Number.isFinite(p.factor)||p.factor<=0)return false;
+  if(p.x>=right||p.x+(p.shape?.width??1)/p.factor<=left||p.y<=bottom||p.y-(p.shape?.height??1)/p.factor>=top)return false;
+  if(!p.shape)return true;
+  return p.shape.runs.some(r=>p.x+r.x/p.factor<right&&p.x+(r.x+r.width)/p.factor>left&&p.y-r.y/p.factor>bottom&&p.y-(r.y+1)/p.factor<top);
+ });
+}
 export function visibleMainlandSaved(objects:readonly MainlandSavedObject[],v:{x:number;y:number;w:number;h:number}):MainlandSavedObject[]{
  return objects.filter(p=>p.x<=v.x+v.w+1&&p.x+(p.shape?.width??1)/p.factor>=v.x-1&&p.y>=v.y-1&&p.y-(p.shape?.height??1)/p.factor<=v.y+v.h+1);
 }
