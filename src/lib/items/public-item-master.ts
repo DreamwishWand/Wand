@@ -316,7 +316,19 @@ export interface OriginalPriceProjection {
     missionItemCount:number;unsellableCount:number;runtimeSaleEligibilityVerified:false;
   }>;
 }
+export interface QuestFlowProjection {
+  readonly originalMissionSha256:string;
+  readonly introProjectionSha256:string;
+  readonly sourceGameVersion:string;
+  readonly counts:Readonly<Record<'intro_grant'|'substep_handoff'|'post_mission_cleanup'|'additional_reward_loot',number>>;
+  readonly questCount:number;
+  readonly itemCount:number;
+  readonly total:number;
+  readonly guaranteedGrantVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface ItemMasterRelease {
+  readonly questFlowProjection?:Readonly<QuestFlowProjection>;
   readonly originalPriceProjection?:Readonly<OriginalPriceProjection>;
   readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionProjection>;
   readonly schema: 'wand.item-master.release@1';

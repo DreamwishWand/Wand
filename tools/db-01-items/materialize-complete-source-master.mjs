@@ -14,6 +14,7 @@ import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
+import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
@@ -1021,7 +1022,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1163,6 +1164,9 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
     const sequences=storeLayout.sequenceLinks.get(row.itemId);
     if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
+    const flows=questFlows.byQuest.get(row.itemId),uses=questFlows.byItem.get(row.itemId);
+    if(flows?.length)add('quest.itemFlows',row.itemId,flows);
+    if(uses?.length)add('quest.itemFlowUses',row.itemId,uses);
     const saleFlags=originalPrices.saleFlags.get(row.itemId);
     if(saleFlags){
       add('price.sourceSaleFlags',row.itemId,saleFlags);
@@ -1523,6 +1527,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
   const originalPrices=loadOriginalPriceFacts(project,source,byId);
+  const questFlows=loadQuestFlowColumns(project,source,rows);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
@@ -1537,6 +1542,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
     ...(originalPrices.metadata?{originalPriceProjection:originalPrices.metadata}:{}),
+    ...(questFlows.metadata?{questFlowProjection:questFlows.metadata}:{}),
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
     ...(e.introductionHistorySha256?{introductionHistorySha256:e.introductionHistorySha256}:{}),
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
@@ -1596,7 +1602,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
