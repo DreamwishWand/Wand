@@ -406,7 +406,7 @@ export type ItemReferenceDirection='incoming'|'outgoing';
 export const NATIVE_ACQUISITION_ROLES = [
   'activity_result','produced_item','story_reward','board_game_reward','duty_reward',
   'conditional_grant','quest_currency_reward','quest_additional_loot_candidate','loot_table_candidate',
-  'blocker_default_reward','machine_produced_item'
+  'blocker_default_reward','machine_produced_item','critter_befriending_reward'
 ] as const;
 export type NativeAcquisitionRole=(typeof NATIVE_ACQUISITION_ROLES)[number];
 /** Original source definition and occurrence only; not a confirmed grant or availability. */
