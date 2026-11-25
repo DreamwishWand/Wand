@@ -106,7 +106,19 @@ export interface CatalogAcquisitionFacts {
   readonly storeMembershipVerified:false;
   readonly currentAvailabilityVerified:false;
 }
+/** Only the reviewed native furniture type and IIsHiddable gates.
+ * Non-exclusion is not evidence of shop membership. */
+export interface StoreDisplayScreen {
+  readonly status:'excluded_by_furniture_type'|'excluded_by_hidden'|'not_excluded_by_reviewed_gates'|'unresolved';
+  readonly furnitureTypeGate:boolean|null;
+  readonly hidden:boolean|null;
+  readonly scope:'generated_furniture_clothing_display';
+  readonly otherNativeConditionsVerified:false;
+  readonly storeMembershipVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface PublicSelectedItem extends ItemFieldProjection {
+  readonly storeDisplayScreen?:Readonly<StoreDisplayScreen>;
   /** Original catalog predicates, not proof of store membership or live stock. */
   readonly catalogFacts?:Readonly<CatalogAcquisitionFacts>;
   /** Current source-derived categories including individual friendship rewards.
@@ -347,6 +359,7 @@ export async function openPublicItemDetails(
           if(selection.acquisition&&catalog.has('acquisition.effectiveCategories'))selectedFields.push('acquisition.effectiveCategories');
           if(selection.sourceRelations&&catalog.has('acquisition.additionalSources'))selectedFields.push('acquisition.additionalSources');
           if(selection.sourceRelations&&catalog.has('acquisition.catalogFacts'))selectedFields.push('acquisition.catalogFacts');
+          if(selection.sourceRelations&&catalog.has('acquisition.storeDisplayScreen'))selectedFields.push('acquisition.storeDisplayScreen');
         }
         const knownIds=[...new Set(projected.flatMap(row=>row?[row.itemId]:[]))];
         const metadata=selectedFields.length
@@ -383,6 +396,9 @@ export async function openPublicItemDetails(
           return Object.freeze({...row,...(acquisition?{acquisition}:{}),
             ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
             ...(additionalSources?{additionalSources}:{}),
+            ...(selection.sourceRelations&&values?.['acquisition.storeDisplayScreen']?{
+              storeDisplayScreen:values['acquisition.storeDisplayScreen'] as unknown as Readonly<StoreDisplayScreen>
+            }:{}),
             ...(selection.sourceRelations&&values?.['acquisition.catalogFacts']?{
               catalogFacts:values['acquisition.catalogFacts'] as unknown as Readonly<CatalogAcquisitionFacts>
             }:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
