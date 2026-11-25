@@ -1855,6 +1855,25 @@ mod terrain_session_tests{
         let mut incompatible=scene.clone();
         incompatible["tree"]["objects"][0]["child"]["objects"][0]["x"]=Value::from(999);
         assert!(support_parent_scene_candidate(save,1,40005160,(4,6),(10,12),&witness,None,None,&incompatible).is_err());
+        // The same portable file works even when none of its furniture
+        // has been placed in this Save. No native source IDs are supplied.
+        let mut blank=original.clone();
+        let grids=blank["World"]["GridCollection"]["Grids"].as_object_mut().unwrap();
+        grids.remove("8");grids.remove("9");grids.get_mut("7").unwrap()["Objects"]=serde_json::json!({});
+        let raw=serde_json::to_vec(&blank).unwrap();
+        let placed=support_scene_place_candidate(&raw,40005160,(10,12),&witness,"GridOrientation_Left",&scene).unwrap();
+        let placed:Value=serde_json::from_str(&placed.patched_json).unwrap();
+        let c=placed["World"]["GridCollection"].as_object().unwrap();
+        assert_eq!(c["NextGridID"],22);
+        assert_eq!(subgrid_tree(c,"7","2").unwrap(),scene["tree"]);
+        assert_eq!(c["Grids"]["20"]["NextGridObjectID"],2);
+        assert_eq!(c["Grids"]["21"]["NextGridObjectID"],3);
+        assert!(c["Grids"].get("8").is_none());
+        assert_eq!(placed["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
+        let mut conflict=blank.clone();conflict["World"]["FutureGridID"]=Value::from(20);
+        assert!(support_scene_place_candidate(&serde_json::to_vec(&conflict).unwrap(),40005160,(10,12),&witness,"GridOrientation_Left",&scene).is_err());
+        let mut no_stock=blank.clone();no_stock["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"]=Value::from(0);
+        assert!(support_scene_place_candidate(&serde_json::to_vec(&no_stock).unwrap(),40005160,(10,12),&witness,"GridOrientation_Left",&scene).is_err());
         let run=|v:&Value|support_parent_duplicate_candidate(&serde_json::to_vec(v).unwrap(),1,40005160,(4,6),(10,12),&witness,None,None);
         let mut bad=original.clone();bad["World"]["GridCollection"]["NextGridID"]=Value::from(9);assert!(run(&bad).is_err());
         let mut bad=original.clone();bad["World"]["FutureGridID"]=Value::from(21);assert!(run(&bad).is_err());
