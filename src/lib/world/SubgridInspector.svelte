@@ -7,7 +7,7 @@
  import type {SourceObjectShape} from './source-object-map.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
- import {parseSupportTree,supportItems,supportExtent,supportShapeKey,supportParentCandidate,supportParentEligible,supportWords,supportChildEdits,childEditWords,supportFreeEdit,supportFreeWords,supportStockPlacement,supportStockPickup,supportStockWords,supportHitIndices,supportPlacementFits,supportDragDestination,supportTransferWords,type SupportObject,type SupportStockPlan,type SupportChildEdit,type SupportTree,type SupportParentCandidate} from './subgrid-local.ts';
+ import {parseSupportTree,supportItems,supportExtent,supportShapeKey,supportParentCandidate,supportParentEligible,supportWords,supportChildEdits,childEditWords,supportFreeEdit,supportFreeWords,supportStockPlacement,supportStockPickup,supportStockWords,supportHitIndices,supportPlacementFits,supportDragDestination,supportTransferWords,supportDuplicateCounts,supportDuplicateWords,type SupportObject,type SupportStockPlan,type SupportChildEdit,type SupportTree,type SupportParentCandidate} from './subgrid-local.ts';
  import {testSaveWords} from './test-save-export.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
@@ -26,7 +26,10 @@
  export function hoverParent(point:{x:number;y:number}|null){parentPoint=placing?point:null;}
  export let supports:readonly MainlandSavedObject[]=[];
  export let saveMaps:ReadonlyMap<string,SavedShapeMap>=new Map();
- let parentOrientation:string|null=null;
+ let parentOrientation:string|null=null,duplicating=false;
+ $: dw=supportDuplicateWords[locale];
+ $: duplicateNeeds=parent?supportDuplicateCounts(Number(parent.object.itemId),stack[0]??null):null;
+ $: duplicateReady=!!duplicateNeeds&&[...duplicateNeeds].every(([id,n])=>(counts.get(id)??0)>=n);
  $: parentShapes=parent?saveMaps.get(parent.area)?.shapes??{}:{};
  $: parentRotate=!!parent&&supportParentEligible(parent)&&!nativeActionBlocked(parent.object.editRestrictions,'rotate');
  let activeFile:File|null=null,activeOrdinal=0,activeOpen=false,own:Worker|null=null,subscribed:Worker|null=null;
@@ -66,7 +69,7 @@
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
  function stopOwn(){own?.terminate();own=null;}
  function clearCopy(){if(copy)URL.revokeObjectURL(copy.url);copy=null;}
- export function cancel(){childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
+ export function cancel(){duplicating=false;childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
  function refresh(show:boolean,source:File|null,p:MainlandSavedObject|null){
   cancel();request=0;activeOpen=show;activeFile=source;activeOrdinal=p?.object.localOrdinal??0;stack=[];path=[];owners=[];selected=-1;tree=null;terrain=null;shapes={};editable=new Set();removable=new Set();counts=new Map();stockCatalog=[];catalogRequest=0;images=new Map();imageEpoch++;
   if(!show||!source||!p?.object.subgrid)return;
@@ -202,7 +205,7 @@
   const finish=(d:any)=>{session.terminate();if(own!==session||activeFile!==source||edits!==chosen||stockDraft!==stock||transferDraft!==transfer){d?.bytes?.fill(0);return;}own=null;loading=false;try{if(d?.kind!=='support-child-copy')throw Error('copy');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-child-copy',file:source,allowExperimentalCopy:true,plan:{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),expectedX:parent.object.x,expectedY:parent.object.y,path:transfer?from!.path:path,...(transfer?{transfer}:stock?{stock,...(stock.action==='place'&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})}:{edits:chosen,...(freeDraft&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})})}});
  }
- function begin(){if(!canMove||!supportParentEligible(parent)||!tree||loading)return;clearCopy();cancelStock();edits=null;swap=false;free=false;freeDraft=false;ghost=null;error=false;parentOrientation=parent.object.orientation;parentPoint=null;placing=true;}
+ function begin(duplicate=false){if(duplicate&&!duplicateReady)return;if(!canMove||!supportParentEligible(parent)||!tree||loading)return;clearCopy();cancelStock();edits=null;swap=false;free=false;freeDraft=false;ghost=null;error=false;parentOrientation=parent.object.orientation;parentPoint=null;duplicating=duplicate;placing=true;}
  export function turnParent(delta:-1|1){
   if(!canMove||!parentRotate||!parent||loading||copy||transferSource||edits||stockDraft||stockPlacing||stockOpen||swap||free||!tree)return;
   const previous=parentOrientation??parent.object.orientation;if(!isCardinal(previous))return;
@@ -214,11 +217,11 @@
  }
  export function pick(point:{x:number;y:number}){if(!placing||!parent||!canMove)return;ghost=supportParentCandidate(parent,grids,rasters,point.x,point.y,parentOrientation??parent.object.orientation,parentShapes);error=!ghost;if(ghost){placing=false;parentPoint=null;}}
  function validate(){
-  if(!canMove||!ghost||!file||file!==activeFile||own||!open)return;
+  if(!canMove||!ghost||!file||file!==activeFile||own||!open||duplicating&&!duplicateReady)return;
   const source=file,plan=ghost;loading=true;error=false;clearCopy();
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
   const finish=(d:any)=>{session.terminate();if(own!==session||activeFile!==source||ghost!==plan){d?.bytes?.fill(0);return;}own=null;loading=false;try{if(d?.kind!=='support-parent-copy')throw Error('copy');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
-  session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-parent-copy',file:source,allowExperimentalCopy:true,plan:plan.plan});
+  session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-parent-copy',file:source,allowExperimentalCopy:true,plan:{...plan.plan,...(duplicating?{duplicate:true}:{})}});
  }
  function apply(){if(!canMove||!copy||!file||file!==activeFile||!commitWorldCheckpoint(file,copy.file)){error=true;return;}onClose();}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);imageEpoch++;});
@@ -260,10 +263,11 @@
    {#if transferDraft&&!copy}<button type="button" disabled={loading} on:click={validateChild}>{cw[5]}</button>{/if}
    {#if stockDraft&&!copy}<small>{stockDraft.expectedStock} → {stockDraft.expectedStock+(stockDraft.action==='place'?-1:1)}</small><button type="button" disabled={loading} on:click={validateChild}>{cw[5]}</button><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button>{/if}
    {#if canMove&&!transferSource&&supportParentEligible(parent)}
-    {#if placing}<small role="status">{words[3]}</small>{:else if !ghost&&!edits&&!swap&&!copy&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<button type="button" disabled={loading} on:click={begin}>{words[2]}</button>{/if}
+    {#if placing}<small role="status">{words[3]}</small>{:else if !ghost&&!edits&&!swap&&!copy&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<button type="button" disabled={loading} on:click={()=>begin()}>{words[2]}</button><button type="button" disabled={loading||!duplicateReady} title={!duplicateReady?dw[1]:dw[0]} on:click={()=>begin(true)}>{dw[0]}</button>{/if}
     {#if parentRotate&&!copy&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<div class="child-actions"><button type="button" disabled={loading} aria-label={words[2]+' · '+cw[0]} on:click={()=>turnParent(-1)}>⟲ {cw[0]}</button><button type="button" disabled={loading} aria-label={words[2]+' · '+cw[1]} on:click={()=>turnParent(1)}>⟳ {cw[1]}</button></div>{/if}
+    {#if duplicating&&duplicateNeeds}<strong>{dw[0]}</strong><div class="support-list">{#each [...duplicateNeeds] as [id,n]}<small>{names.get(id)??"—"} · {dw[2]} {n}/{counts.get(id)??0}</small>{/each}</div>{/if}
     {#if ghost&&!copy}<button type="button" disabled={loading} on:click={validate}>{words[4]}</button>{/if}
-    {#if (ghost||placing)&&!copy}<button type="button" disabled={loading} on:click={()=>{ghost=null;placing=false;parentPoint=null;parentOrientation=null;error=false;}}>{words[11]}</button>{/if}
+    {#if (ghost||placing)&&!copy}<button type="button" disabled={loading} on:click={()=>{ghost=null;placing=false;duplicating=false;parentPoint=null;parentOrientation=null;error=false;}}>{words[11]}</button>{/if}
    {/if}
    {#if (transferDraft||stockDraft||edits||ghost||copy)&&canMove}<small>{tw[1]}</small>{/if}
    {#if copy&&canMove}<button type="button" on:click={apply}>{words[5]}</button><a href={copy.url} download={copy.name}>{words[6]}</a>{/if}
