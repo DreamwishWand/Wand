@@ -107,9 +107,10 @@ export function sortedCollectionUniverseOptions(
 export function groupCollectionUniverseItems(
   items:readonly CollectionItem[],
   group:(item:CollectionItem)=>Readonly<{id:string;label:string;rank:number}>,
-  visible:number
+  visible:number,
+  compare:(a:CollectionItem,b:CollectionItem)=>number=(a,b)=>a.itemId-b.itemId
 ):readonly CollectionUniverseBrowseSection[]{
-  const ordered=[...items].sort((a,b)=>a.itemId-b.itemId);
+  const ordered=[...items].sort(compare);
   const groups=new Map<string,{
     id:string;label:string;rank:number;total:number;items:CollectionItem[]
   }>();

@@ -122,7 +122,9 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
   return {release:source.release,sourceItemCount:rootsByItem.size,taggedItems:byItem.size,byItem,
     categoriesByItem,itemsByCategory,activityTypesByItem,itemsByActivityType,activityTypeNames,
     nativeSubtypeByItem,itemsByNativeSubtype,nativeSubtypeNames,universesByItem,itemsByUniverse,
-    universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem};
+    universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem,
+    worldLabelsByKey:new Map(source.worldTags.map(row=>[row.key,row.names])),
+    sourceSetByItem:new Map(source.sourceSetItems.filter(([id])=>known(id)))};
 }
 /** Original FurnitureFunctionTagItemData identities, not guessed localized
  * category names. Fetch only the source key and eight name fields. */
@@ -143,6 +145,31 @@ Promise<ReadonlyMap<string,Readonly<Record<string,string>>>>{
   }
   return labels;
 }
+/** Only explicit native parent references whose target is the expected base
+ * entity are used. A skin's universe or similar name is never a parent link. */
+async function loadParentEntities(master:PublicCompleteItemMaster,index:CollectionDb01Index):Promise<ReadonlyMap<number,number>>{
+  const ids=[...index.nativeSubtypeByItem].filter(([,r])=>
+    (r.nativeType==='Skin'&&(r.code===0||r.code===4))||r.nativeType==='MountGear').map(([id])=>id);
+  const fields=(await master.getFieldCatalog()).map(r=>r.field);
+  const selected=['source.CharacterItemID','source.MountItemID','source.BaseItemID'].filter(f=>fields.includes(f));
+  const parents=new Map<number,number>();
+  if(!ids.length||!selected.length)return parents;
+  for(const row of await master.getItemFields(ids,selected)){
+    if(!row)continue;
+    const native=index.nativeSubtypeByItem.get(row.itemId);
+    const character=native?.nativeType==='Skin'&&native.code===0;
+    const candidates=new Set<number>();
+    for(const field of selected){
+      const id=row.values[field];
+      if(typeof id!=='number')continue;
+      const target=index.nativeSubtypeByItem.get(id);
+      if(character?target?.nativeType==='Character':
+        target?.nativeType==='Companion'&&target.code===3)candidates.add(id);
+    }
+    if(candidates.size===1)parents.set(row.itemId,[...candidates][0]);
+  }
+  return parents;
+}
 const cached=new Map<string,Promise<CollectionCompleteCatalog>>();
 export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):Promise<CollectionCompleteCatalog>{
   const useCache=fetcher===fetch;
@@ -153,7 +180,8 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
     const [supplement,furnitureKindLabels]=await Promise.all([
       loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
     ]);
-    const index={...projectCompleteCollection(source,supplement),furnitureKindLabels};
+    const projected=projectCompleteCollection(source,supplement);
+    const index={...projected,furnitureKindLabels,parentEntityByItem:await loadParentEntities(master,projected)};
     const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){

@@ -6,9 +6,29 @@ export interface CollectionSubcategory {
   readonly key:string;readonly nativeType:string;readonly nativeName:string|null;
   readonly ids:readonly number[];readonly total:number;
 }
-/** Use the original furniture-kind tags for default furniture. Multiple
- * native tags may overlap; root membership is still counted exactly once.
- * Other types retain their native subtype, with no invented classification. */
+const FURNITURE_ORDER=['Storage','Seating','Table','Bed','Lighting','Appliance','Electronic','Rug',
+  'Wall','CeilingDecoration','Window','Door','Floor','Trimming','Art','Foliage','Utility','Ride',
+  'Landscaping','Trees','Underbrush','Rocks','Pathing','Fencing','Essential','Decor','Misc','__unset__'];
+const BROAD_FURNITURE=new Set(['Essential','Decor','Misc']);
+/** Specific furniture functions take precedence over overlapping catch-all
+ * tags. Preserve every meaningful source kind; retain broad tags for items
+ * with no specific kind, and always retain a path to every item. */
+export function collectionFurnitureKinds(tags:readonly string[]):readonly string[]{
+  const unique=[...new Set(tags)];
+  const specific=unique.filter(tag=>!BROAD_FURNITURE.has(tag));
+  if(specific.length)return specific;
+  // Decor/Essential are more useful than Misc; never repeat a generic item
+  // in three nearly identical buckets.
+  return unique.includes('Decor')?['Decor']:unique.includes('Essential')?['Essential']:
+    unique.includes('Misc')?['Misc']:unique;
+}
+export function collectionMountPart(key:string):number{
+  return key.startsWith('Companion:')?0:key.startsWith('Skin:')?1:key.startsWith('MountGear:')?2:3;
+}
+export function collectionMountSubcategory(key:string):string{
+  return ['mount:base','mount:skin','mount:gear','mount:other'][collectionMountPart(key)];
+}
+/** Exact source kinds and native subtypes, with deliberate functional order. */
 export function collectionSubcategories(
   source:CollectionDb01Index,root:CollectionTopCategory,scope?:WorldBrowseScope
 ):readonly CollectionSubcategory[]{
@@ -22,19 +42,30 @@ export function collectionSubcategories(
     const type=source.nativeSubtypeByItem.get(id);if(!type)continue;
     const key=type.nativeType+':'+type.code;
     if(root==='furniture'&&key==='Furniture:0'){
-      const kinds=new Set((source.byItem.get(id)??[]).filter(([facet])=>facet==='furnitureKind').map(([,tag])=>tag));
-      if(kinds.size)for(const kind of kinds)add('furniture-kind:'+kind,'Furniture',kind,id);
+      const kinds=collectionFurnitureKinds((source.byItem.get(id)??[]).filter(([facet])=>facet==='furnitureKind').map(([,tag])=>tag));
+      if(kinds.length)for(const kind of kinds)add('furniture-kind:'+kind,'Furniture',kind,id);
       else add('furniture-kind:__unset__','Furniture',null,id);
-    }else add(key,type.nativeType,type.nativeName,id);
+    }else if(root==='mounts')add(collectionMountSubcategory(key),type.nativeType,null,id);
+    else add(key,type.nativeType,type.nativeName,id);
   }
   return [...groups.values()].map(group=>({...group,total:group.ids.length})).sort((a,b)=>{
-    const unset=(s:string)=>s.endsWith(':__unset__')?1:0;
-    return unset(a.key)-unset(b.key)||a.key.localeCompare(b.key,'en',{numeric:true});
+    const rank=(key:string)=>{
+      if(root==='mounts')return ['mount:base','mount:skin','mount:gear','mount:other'].indexOf(key);
+      if(root==='furniture'){
+        if(key.startsWith('furniture-kind:')){
+          const i=FURNITURE_ORDER.indexOf(key.slice('furniture-kind:'.length));
+          return i<0?FURNITURE_ORDER.length-1:i;
+        }
+        return FURNITURE_ORDER.length;
+      }
+      return 0;
+    };
+    return rank(a.key)-rank(b.key)||a.key.localeCompare(b.key,'en',{numeric:true});
   });
 }
 const GROUPED_ROOTS=new Set<CollectionTopCategory>([
   'furniture','clothing','appearance','roads-fences','interior','buildings','environment',
-  'characters','mounts','touch-of-magic','photo-mode','tools','upgrades'
+  'mounts','touch-of-magic','photo-mode','tools','upgrades'
 ]);
 export function collectionUsesSubcategories(root:CollectionTopCategory,groups:readonly CollectionSubcategory[]):boolean{
   return GROUPED_ROOTS.has(root)&&groups.length>1;
@@ -315,7 +346,14 @@ const KIND_LABELS:Readonly<Record<string,readonly string[]>>={
   ]
 };
 const UNSET:Readonly<Record<string,string>>={ja:'種類未設定',en:'Type not specified',fr:'Type non spécifié',it:'Tipo non specificato',de:'Typ nicht angegeben','es-ES':'Tipo sin especificar','zh-CN':'未指定类型','pt-BR':'Tipo não especificado'};
+const MOUNT_LABELS:Readonly<Record<string,readonly string[]>>={
+  'mount:base':['マウント','Mounts','Montures','Cavalcature','Reittiere','Monturas','坐骑','Montarias'],
+  'mount:skin':['スキン','Skins','Apparences','Aspetti','Skins','Aspectos','外观','Visuais'],
+  'mount:gear':['装備','Gear','Équipement','Equipaggiamento','Ausrüstung','Equipo','装备','Equipamentos'],
+  'mount:other':['その他','Other','Autres','Altro','Sonstiges','Otros','其他','Outros']
+};
 export function collectionFurnitureKindLabel(locale:string,key:string,source?:CollectionDb01Index|null):string|null{
+  const mount=MOUNT_LABELS[key];if(mount)return mount[LOCALES.indexOf(locale)]??mount[1];
   if(!key.startsWith('furniture-kind:'))return null;
   const tag=key.slice('furniture-kind:'.length);
   if(tag==='__unset__')return UNSET[locale]??UNSET.en;

@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
-import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
+import {buildWorldBrowseIndex,countOwnedInWorldScope} from '../src/lib/collection/world-browse-index.ts';
 import {collectionTopCategoryCards} from '../src/lib/collection/category-hierarchy.ts';
 import {COLLECTION_WORLD_NAVIGATION} from '../src/lib/collection/scope-options.ts';
 import {collectionInterfaceCopy} from '../src/lib/collection/interface-copy.ts';
@@ -467,41 +467,46 @@ try{
     'foraging','fish','gems','timebending','memories','board-game','snippets',
     'lorekeeper-tales','quest-puzzles','exhibition'
   ]);
-  const appearance=page.locator('[data-top-category="appearance"]');
-  await appearance.click();
-  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'口ひげ'}).count(),1);
-  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'あごひげ'}).count(),1);
-  await returnRoot();
-  for(const [parent,selector,count,code] of [
-    ['meals',null,'618',3],
-    ['ingredients',null,'366',null],
-    ['fish',null,'103',10],
-    ['roads-fences','[data-native-subtype="Furniture:7"]','319',7],
-    ['appearance','[data-native-subtype="Clothing:5"]','114',5],
-    ['interior','[data-native-subtype="Trimming:0"]','218',0]
-  ]){
-    await page.locator(`[data-top-category="${parent}"]`).click();
-    if(selector)await page.locator(selector).click();
+  const allScope=buildWorldBrowseIndex(completeIndex).get('');
+  const initialOwned=countOwnedInWorldScope(completeIndex,allScope,seed.workspaces[0].entries).root;
+  for(const parent of ['furniture','clothing','appearance','meals','ingredients','fish','roads-fences','interior','mounts','characters','crafting']){
+    const root=page.locator(`[data-top-category="${parent}"]`);
+    const progress=root.locator('.collection-category-progress');
+    assert.equal(Number(await progress.getAttribute('data-progress-total')),allScope.progressTotals.get(parent));
+    assert.equal(Number(await progress.getAttribute('data-progress-owned')),initialOwned.get(parent)??0,parent+' seeded collection progress');
+    await root.click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
+    assert.equal(await page.locator('.collection-native-subtype').count(),0,'one click opens actual items');
     const rootIds=completeIndex.itemsByRoot.get(parent)??[];
-    const expectedIds=selector?rootIds.filter(id=>{
-      const native=completeIndex.nativeSubtypeByItem.get(id);
-      return native&&native.nativeType+':'+native.code===selector.split('"')[1];
-    }):rootIds;
-    assert.ok((await page.locator('.result-count').innerText()).includes(expectedIds.length.toLocaleString('ja')));
+    assert.ok((await page.locator('.result-count').innerText()).includes(rootIds.length.toLocaleString('ja')));
     const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-    assert.ok(expectedIds.includes(id));
-    if(selector){
-      await page.locator('.breadcrumbs button').nth(1).click();
-      await page.locator(selector).waitFor();
-    }
+    assert.ok(rootIds.includes(id));
+    if(['furniture','clothing','ingredients','crafting','mounts','meals'].includes(parent))
+      assert.ok(await page.locator('.collection-item-universe-heading').count()>0,'inline category-specific group headings');
+    if(parent==='meals')assert.equal(await page.locator('.collection-item-world-heading').count(),0,'world sorting must not introduce headings or grid breaks');
     await returnRoot();
   }
-  await page.locator('[data-top-category="furniture"]').click();
-  const furnitureKinds=page.locator('[data-native-subtype^="furniture-kind:"]');
-  assert.ok(await furnitureKinds.count()>5,'furniture uses source-backed detailed categories');
-  assert.equal(await page.locator('[data-native-subtype="Furniture:0"]').count(),0);
+  // Toggle the existing seeded owned item and restore it, preserving the
+  // fixture for subsequent save-import and history checks.
+  const furnitureCard=page.locator('[data-top-category="furniture"]');
+  const initialFurniture=initialOwned.get('furniture')??0;
+  const testProgressSearch=page.getByRole('searchbox',{name:/8言語/});
+  const seedToggle=page.locator('.item-card[data-item-id="40005160"] .item-state-toggle');
+  await furnitureCard.click();
+  await testProgressSearch.fill('40005160');
+  await seedToggle.waitFor();
+  await seedToggle.click();
+  await page.waitForFunction(()=>!document.querySelector('.item-card[data-item-id="40005160"] .item-state-toggle')?.classList.contains('owned'));
+  await waitForLocalState(page,{item:'40005160',status:'missing'});
   await returnRoot();
+  assert.equal(Number(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned')),initialFurniture-1);
+  await furnitureCard.click();
+  await testProgressSearch.fill('40005160');
+  await seedToggle.waitFor();
+  await seedToggle.click();
+  await waitForLocalState(page,{item:'40005160',status:'owned'});
+  await returnRoot();
+  assert.equal(Number(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned')),initialFurniture);
   assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
     !(completeIndex.itemsByRoot.get('buildings')?.length));
   // A failed v3 source asset must fail closed; reloading retries verified data.
@@ -681,7 +686,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
   await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
-  assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  assert.equal(await page.locator('.item-card-copy strong').first().innerText(),'ガラスの靴');
   // A local favorite must be searchable independently of ownership and persist
   // through Rust/WASM -> IndexedDB. Unstarring the only match removes it.
   const starFilter=page.getByRole('button',{name:'お気に入りのみ表示'});
@@ -919,7 +924,6 @@ try{
     'world tabs open scoped category cards, not an immediate flat item grid');
   const scopedFamily=page.locator('.collection-detail-category-grid .facet-card:not([disabled])').first();
   await scopedFamily.click();
-  await page.locator('.collection-categories-heading button.subtle-button').click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
@@ -932,8 +936,7 @@ try{
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
-    await page.locator('.collection-categories-heading button.subtle-button').click();
-  } catch (error) {
+    } catch (error) {
     console.error('COLLECTION_FACET_DEBUG',await page.locator('body').innerText());
     console.error('COLLECTION_FACET_ERRORS',browserErrors);
     throw error;
