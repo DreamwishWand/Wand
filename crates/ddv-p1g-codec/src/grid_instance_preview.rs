@@ -1174,6 +1174,28 @@ mod terrain_session_tests{
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
     }
     #[test]
+    fn child_rotation_and_swap_change_only_selected_scalars(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":1,"Y":2,"Orientation":"GridOrientation_Left","State":null},"2":{"ID":2,"ItemID":40005162,"X":3,"Y":4,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"edits":[{"index":0,"itemId":40005161,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Left","x":1,"y":2,"orientation":"GridOrientation_Down"}]});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Down");
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["edits"][0]["x"]=Value::from(3);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"]=serde_json::json!([
+          {"index":0,"itemId":40005161,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Left","x":3,"y":4,"orientation":"GridOrientation_Left"},
+          {"index":1,"itemId":40005162,"expectedX":3,"expectedY":4,"expectedOrientation":"GridOrientation_Down","x":1,"y":2,"orientation":"GridOrientation_Down"}
+        ]);
+        let draft=support_child_candidate(save,&plan).unwrap();let mut expected:Value=serde_json::from_slice(save).unwrap();
+        for (id,x,y) in [("1",3,4),("2",1,2)]{expected["World"]["GridCollection"]["Grids"]["8"]["Objects"][id]["X"]=Value::from(x);expected["World"]["GridCollection"]["Grids"]["8"]["Objects"][id]["Y"]=Value::from(y);}
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        plan["edits"][1]["y"]=Value::from(7);assert!(support_child_candidate(save,&plan).is_err());
+        plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
     fn support_tree_and_parent_translation_preserve_descendants_and_block_aliases(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
