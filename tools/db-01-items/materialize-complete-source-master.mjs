@@ -1027,6 +1027,19 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     check(!entries.length||entries[entries.length-1][0]<id,'COLUMN_DUPLICATE');
     entries.push([id,value]);
   };
+  // JSON tuple keys retain exact kind/ID/role pairing, including the type
+  // of a source ID. A bare ID or independent role column could cross-match.
+  const sourceKeys=(id,family,links,identity)=>{
+    if(!links.length)return;
+    const keys=new Set(),roleKeys=new Set();
+    for(const link of links){
+      const [kind,sourceId,role]=identity(link);
+      keys.add(JSON.stringify([kind,sourceId]));
+      if(role!==undefined)roleKeys.add(JSON.stringify([kind,sourceId,role]));
+    }
+    add('acquisition.'+family+'SourceKeys',id,[...keys].sort());
+    if(roleKeys.size)add('acquisition.'+family+'SourceRoleKeys',id,[...roleKeys].sort());
+  };
   // Preserve complete object columns, and also expose nested object fields.
   // Arrays are atomic values: never flatten repeated entries and lose pairing.
   const addSource=(field,id,value,depth=0)=>{
@@ -1115,7 +1128,10 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const rewardLinks=protoAcquisition.byItem.get(row.itemId)??[];
     const ownerRewards=protoAcquisition.byOwner.get(row.itemId);
     const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean)];
-    if(extraSources.length)add('acquisition.additionalSources',row.itemId,extraSources);
+    if(extraSources.length){
+      add('acquisition.additionalSources',row.itemId,extraSources);
+      sourceKeys(row.itemId,'additional',extraSources,l=>[l.kind,l.sourceId]);
+    }
     if(ownerRewards?.length)add('acquisition.individualFriendshipRewards',row.itemId,ownerRewards);
     const effectiveCategories=acquisition?.summary.get(row.itemId)?.categories??[];
     const friendship=rewardLinks.some(link=>link.amount!==null);
@@ -1129,7 +1145,10 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
         if(summary.categories.length)add('acquisition.categories',row.itemId,summary.categories);
         if(summary.unresolvedOnlineHints.length)add('acquisition.onlineHints',row.itemId,summary.unresolvedOnlineHints);
       }
-      if(relations)add('acquisition.sourceRelations',row.itemId,relations);
+      if(relations){
+        add('acquisition.sourceRelations',row.itemId,relations);
+        sourceKeys(row.itemId,'indexed',relations.links,l=>[l.kind,l.sourceId,l.role]);
+      }
     }
     for(const [key,value] of Object.entries(history.get(row.itemId)))add('history.'+key,row.itemId,value);
     for(const [key,value] of Object.entries(row)){
@@ -1148,7 +1167,10 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const role=nativeAcquisitionRole(sourceCategories.get(sourceId),path);
       return role===null?[]:[[sourceId,role,path]];
     });
-    if(candidates.length)add('acquisition.nativeCandidates',row.itemId,candidates);
+    if(candidates.length){
+      add('acquisition.nativeCandidates',row.itemId,candidates);
+      sourceKeys(row.itemId,'native',candidates,l=>['item_definition',l[0],l[1]]);
+    }
     for(const direction of ['incoming','outgoing']){
       const values=refs[direction].get(row.itemId);
       if(values?.length)add('references.'+direction,row.itemId,values);
