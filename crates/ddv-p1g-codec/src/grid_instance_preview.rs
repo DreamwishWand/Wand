@@ -937,6 +937,20 @@ mod terrain_session_tests{
         assert!(!r.to_string().contains("SceneLayouts/"));
     }
     #[test]
+    fn transfer_destination_resolves_empty_full_grid_and_rejects_ambiguity(){
+        let save=br#"{"World":{"GridCollection":{"Grids":{"20":{"ID":20,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","NextGridObjectID":3,"Objects":{}}},"DiffGrids":{}}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/B.json","gridDataPath":"GridData/B.json","factor":1,"sizeX":20,"sizeY":20});
+        let d=resolve_plain_grid_destination(save,&witness).unwrap();
+        assert_eq!(d.grid_id,"20");assert_eq!(d.tessellation,1);
+        let mut wrong=witness.clone();wrong["factor"]=serde_json::json!(2);
+        assert!(resolve_plain_grid_destination(save,&wrong).is_err());
+        let mut root:Value=serde_json::from_slice(save).unwrap();
+        let other=root["World"]["GridCollection"]["Grids"]["20"].clone();
+        root["World"]["GridCollection"]["Grids"]["21"]=other;
+        root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
+        assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
     fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
         let save=br#"{"World":{"GridCollection":{"Grids":{
           "1":{"GridDefaultLayoutPath":"SceneLayouts/Test.json","GridDataPath":"GridData/Test.json","Objects":{

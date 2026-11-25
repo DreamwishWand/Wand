@@ -183,6 +183,16 @@ test('mainland save move drafts remain native same-grid and reject overlaps or o
  assert.equal(mainlandGroupFactor([a,{...b2,factor:2}]),1);
  assert.equal(mainlandSavedAdvancedDraft([a,{...b2,factor:2}],grids,rasters,new Map([[g.key,map2]]),timeline,'left').next,null);
  assert.equal(mainlandSavedAdvancedDraft([a,b2],grids,rasters,new Map([[g.key,map2]]),timeline,'left').next,null);
+ r.nativeFloorValues[9*r.sizeX+4]=4;
+ const aligned=mainlandSavedAdvancedDraft([a,b2],grids,rasters,new Map([[g.key,map2]]),timeline,'left');
+ assert.equal(aligned.next?.snapshots.length,2);
+ assert.equal(currentWorldEdits(aligned.next)[0].plan.replacementX,4);
+ assert.equal(currentWorldEdits(aligned.next)[0].plan.localOrdinal,2);
+ const rotatedMap={...map2,shapes:{'40005160:0':shape,'40005160:4':shape,'40005160:8':shape,'40005160:12':shape}};
+ r.nativeFloorValues[6*r.sizeX+7]=4;r.nativeFloorValues[10*r.sizeX+4]=4;
+ const rotated=mainlandSavedAdvancedDraft([a,b2],grids,rasters,new Map([[g.key,rotatedMap]]),timeline,1);
+ assert.equal(rotated.next?.snapshots.length,2);
+ assert.equal(currentWorldEdits(rotated.next).length,2);
  assert.equal(mainlandSavedGroupDraft([a,b2],grids,rasters,new Map([[g.key,map2]]),timeline,5000,0).next,null);
  assert.equal(mainlandSavedGroupDraft([a,a],grids,rasters,new Map([[g.key,map2]]),timeline,1,0).next,null);
  const outside=mainlandMapAnchor(g,50.5,50.5);assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,outside.x,outside.y,o.orientation)?.valid,false);
