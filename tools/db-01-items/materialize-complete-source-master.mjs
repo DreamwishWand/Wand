@@ -1072,16 +1072,6 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const uint32=v=>Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
   const bits=v=>Array.from({length:32},(_,i)=>2**i).filter(b=>Math.floor(v/b)%2===1);
   for(const row of rows){
-    const costs=costEntries(row);
-    if(costs.length){
-      add('cost.configuredOccurrences',row.itemId,costs);
-      add('cost.configuredKinds',row.itemId,[...new Set(costs.map(v=>v.kind))].sort());
-      const keys=[...new Set(costs.filter(v=>v.currencyDefinitionResolved).map(v=>JSON.stringify([v.kind,v.currencyItemId])))].sort();
-      if(keys.length)add('cost.configuredKindCurrencyKeys',row.itemId,keys);
-      const explicit=costs.filter(v=>v.currencyDefinitionResolved&&v.amountFieldPresent);
-      if(explicit.length)add('cost.configuredKindCurrencyAmountKeys',row.itemId,
-        [...new Set(explicit.map(v=>JSON.stringify([v.kind,v.currencyItemId,v.amount])))].sort());
-    }
     const g=row.sourceAttributes?.GridAreaData;
     if(g){
       if(Object.hasOwn(g,'AcceptedFloorTypesFlag')){
@@ -1131,6 +1121,16 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
     const sequences=storeLayout.sequenceLinks.get(row.itemId);
     if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
+    const costs=costEntries(row);
+    if(costs.length){
+      add('cost.configuredOccurrences',row.itemId,costs);
+      add('cost.configuredKinds',row.itemId,[...new Set(costs.map(v=>v.kind))].sort());
+      const keys=[...new Set(costs.filter(v=>v.currencyDefinitionResolved).map(v=>JSON.stringify([v.kind,v.currencyItemId])))].sort();
+      if(keys.length)add('cost.configuredKindCurrencyKeys',row.itemId,keys);
+      const explicit=costs.filter(v=>v.currencyDefinitionResolved&&v.amountFieldPresent);
+      if(explicit.length)add('cost.configuredKindCurrencyAmountKeys',row.itemId,
+        [...new Set(explicit.map(v=>JSON.stringify([v.kind,v.currencyItemId,v.amount])))].sort());
+    }
     const purchaseCurrency=catalogFacts.purchaseCurrencies.get(row.itemId);
     if(purchaseCurrency){
       add('acquisition.purchaseCurrencySelection',row.itemId,purchaseCurrency);
