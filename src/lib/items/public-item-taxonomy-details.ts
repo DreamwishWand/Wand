@@ -77,7 +77,7 @@ export async function readItemTaxonomyDetails(db:PublicCompleteItemMaster,itemId
     });
     for(const value of [...originalUniverseIds,...directUniverseIds,...setUniverseIds,...predicateUniverseIds,...browseUniverseIds,...worldIds])related.add(value);
     if(sourceSetItemId!==null)related.add(sourceSetItemId);
-    return {itemId:row.itemId,category,subtype,subtypeName,universeStatus,tags,originalUniverseIds,directUniverseIds,
+    return {itemId:row.itemId,category,subtype,subtypeName,universeStatus:universeStatus as ItemMasterUniverseStatus,tags,originalUniverseIds,directUniverseIds,
       setUniverseIds,predicateUniverseIds,browseUniverseIds,association,worldIds,sourceSetItemId};
   });
   const identityMap=new Map<number,Readonly<ItemTaxonomyIdentity>>();
