@@ -419,3 +419,13 @@ test('support direct drag preserves grab offset on native cells',()=>{
  assert.equal(supportDragDestination(o,{x:0,y:0},{x:Infinity,y:1}),null);
  assert.equal(supportDragDestination(o,{x:0,y:0},{x:2147483647,y:1}),null);
 });
+
+import {supportDuplicateCounts} from '../src/lib/world/subgrid-local.ts';
+test('support duplication counts roots and repeated nested items without Save IDs',()=>{
+ const leaf={itemId:40000002,x:0,y:0,orientation:'GridOrientation_Down',child:null};
+ const surface={factor:2,sourcePath:'GridData/Furniture/Example.json',objects:[leaf,{...leaf,itemId:40000001,child:{factor:1,sourcePath:'GridData/Furniture/Nested.json',objects:[leaf]}}]};
+ assert.deepEqual([...supportDuplicateCounts(40000001,surface)],[[40000001,2],[40000002,2]]);
+ assert.equal(supportDuplicateCounts(40000001,{...surface,sourcePath:null}),null);
+ assert.equal(supportDuplicateCounts(40000001,{...surface,objects:Array.from({length:32},()=>leaf)}),null);
+ assert.equal(supportDuplicateCounts(40000001,{...surface,objects:[{...leaf,orientation:'Unknown'}]}),null);
+});
