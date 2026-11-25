@@ -77,6 +77,45 @@ pub fn cardinal_fence_graph(nodes:&[Point],factor:u32)->Result<Vec<(Point,Point)
  let mut edges=Vec::new();for &(x,y) in &points{for p in [(x+q,y),(x,y+q)]{if points.contains(&p){edges.push(((x,y),p));}}}
  Ok(edges)
 }
+/// Decompile exact supported homogeneous native records into their logical
+/// lattice. Existing representation posts are retained as explicit parts;
+/// caller must not regenerate them implicitly when only reading.
+pub fn decompile_fence(base:u32,factor:u32,diagonal:bool,parts:&[FencePart])->Result<(Vec<Point>,Vec<(Point,Point)>),PatchError>{
+ let bad=PatchError::InvalidTarget;
+ if !supported_family(base)||!matches!(factor,1|2)||parts.is_empty()||parts.len()>MAX_FENCE_NODES{return Err(bad);}
+ let q=factor as i32;
+ let mut posts=BTreeSet::new();let mut occupied=BTreeSet::new();
+ for p in parts{
+  if p.diagonal!=diagonal||p.x<0||p.y<0||p.x>131072||p.y>131072||p.x%q!=0||p.y%q!=0||!occupied.insert((p.x,p.y)){return Err(bad);}
+  if p.item==base{if p.left{return Err(bad);}posts.insert((p.x,p.y));}
+ }
+ let mut points=posts.clone();let mut edges=BTreeSet::new();
+ for p in parts.iter().filter(|p|p.item!=base){
+  let key=p.item.checked_sub(base+if diagonal{6}else{0}).filter(|k|*k>=1&&*k<=if diagonal{4}else{6}).ok_or(bad)? as i32;
+  let (a,step)=match (diagonal,p.left){
+   (false,false)=>((p.x-q,p.y),(q,0)),
+   (false,true)=>((p.x,p.y-q),(0,q)),
+   (true,false)=>((p.x-q,p.y-q),(q,q)),
+   (true,true)=>((p.x-q,p.y+key*q),(q,-q))
+  };
+  let b=(a.0+step.0*(key+1),a.1+step.1*(key+1));
+  if !posts.contains(&a)||!posts.contains(&b){return Err(bad);}
+  let mut prev=a;
+  for i in 1..=key+1{
+   let n=(a.0+step.0*i,a.1+step.1*i);
+   if i<=key&&!points.insert(n){return Err(bad);}
+   if !edges.insert(edge(prev,n)){return Err(bad);}prev=n;
+  }
+ }
+ // Adjacent base posts can connect with no extension.
+ for &(x,y) in &posts{
+  let dirs=if diagonal{[(q,q),(q,-q)]}else{[(q,0),(0,q)]};
+  for (dx,dy) in dirs{let n=(x+dx,y+dy);if posts.contains(&n){edges.insert(edge((x,y),n));}}
+ }
+ if points.len()>MAX_FENCE_NODES{return Err(bad);}
+ Ok((points.into_iter().collect(),edges.into_iter().collect()))
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -95,6 +134,14 @@ mod tests{
   let parts=compile_fence(B,1,false,&p,&e).unwrap();assert_eq!(parts.len(),8);assert_eq!(parts.iter().filter(|p|p.item==B).count(),4);
   let p=vec![(0,1),(1,1),(2,1),(3,1),(4,1),(2,0),(2,2)];let e=cardinal_fence_graph(&p,1).unwrap();let parts=compile_fence(B,1,false,&p,&e).unwrap();assert!(parts.iter().any(|p|p.item==B&&p.x==2&&p.y==1));
   let (mut p,_)=straight(9,true,false);p.remove(4);let e=cardinal_fence_graph(&p,2).unwrap();let parts=compile_fence(B,2,false,&p,&e).unwrap();assert_eq!(parts.len(),6);assert_eq!(parts.iter().filter(|p|p.item==B+2).count(),2);
+ }
+ #[test]fn decompile_preserves_logical_quantity_and_rejects_missing_endpoint(){
+  for (n,vertical,diagonal) in [(9,true,false),(6,false,true),(3,false,false)]{
+   let (nodes,edges)=straight(n,vertical,diagonal);let parts=compile_fence(B,2,diagonal,&nodes,&edges).unwrap();
+   let (actual,actual_edges)=decompile_fence(B,2,diagonal,&parts).unwrap();assert_eq!(actual.into_iter().collect::<BTreeSet<_>>(),nodes.into_iter().collect());assert_eq!(actual_edges.into_iter().collect::<BTreeSet<_>>(),edges.into_iter().map(|(a,b)|edge(a,b)).collect());
+   let without:Vec<_>=parts.into_iter().filter(|p|!(p.item==B&&p.x==20&&p.y==20)).collect();
+   assert!(decompile_fence(B,2,diagonal,&without).is_err());
+  }
  }
  #[test]fn invalid_edges_fail_closed(){
   assert!(compile_fence(B,1,false,&[(0,0),(2,0)],&[((0,0),(2,0))]).is_err());
