@@ -58,7 +58,7 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
  if(diagonal){
   const dx=last.x-first.x,dy=last.y-first.y,steps=Math.abs(dx)/pitch;
   if(!steps||Math.abs(dx)!==Math.abs(dy)||steps>=FENCE_COPY_LIMIT)return null;
-  stroke=Array.from({length:steps+1},(_,i)=>({x:first.x+Math.sign(dx)*i*pitch,y:first.y+Math.sign(dy)*i*pitch}));
+  stroke=Array.from({length:steps+1},(_,i)=>({x:first.x+Math.sign(dx)*i*pitch,y:first.y+Math.sign(dy)*i*pitch}));if(dx<0)stroke.reverse();
  }else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool,pitch);
  if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
  const fences=objects.filter(p=>p.area===g.key&&p.object.layer==='fence');
