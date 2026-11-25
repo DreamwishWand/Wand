@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
-from extract_memory_sources import read_memory_rows, targets, pointer, materialize, stripped_mask_tree
+from extract_memory_sources import read_memory_rows, targets, pointer, materialize, stripped_mask_tree, verify_game_version
 
 class MemorySourceTests(unittest.TestCase):
     def create(self, root, rows):
@@ -54,6 +54,18 @@ class MemorySourceTests(unittest.TestCase):
             pointer(tree,"Mask",obj,[own,other,other],"Texture2D")
         with self.assertRaises(ValueError):
             pointer(tree,"Mask",obj,[own,other],"Sprite")
+
+    def test_game_version_guard(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            aa=root/"ddv_Data"/"StreamingAssets"/"aa"
+            aa.mkdir(parents=True)
+            with self.assertRaises(ValueError):
+                verify_game_version(aa,"1.26.2")
+            (root/"FullVersion.txt").write_text("releases_1.26ex-v1.26.2-6-g77de7caf1acf-incremental-22\n")
+            self.assertIn("-v1.26.2-",verify_game_version(aa,"1.26.2"))
+            with self.assertRaises(ValueError):
+                verify_game_version(aa,"1.26.1")
 
     def test_stripped_native_mask_payload(self):
         name=b"MemoryShardMaskData12"
