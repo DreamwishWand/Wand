@@ -135,3 +135,12 @@ export const supportFreeWords={
  'zh-CN':['在支撑面内移动','点击目的地','支撑面','缺少原始数据，无法自由移动'],
  'pt-BR':['Mover no suporte','Clique no destino','Superfície','Movimento livre indisponível']
 } as const;
+
+/** Hit only verified occupied runs; transparent holes and unknown shapes are not furniture. */
+export function supportHitIndices(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,x:number,y:number):number[]{
+ if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))return [];
+ return tree.objects.flatMap((o,i)=>{
+  const key=supportShapeKey(o),shape=key?shapes[key]:null;
+  return shape?.runs.some(run=>y===o.y+run.y&&x>=o.x+run.x&&x<o.x+run.x+run.width)?[i]:[];
+ });
+}
