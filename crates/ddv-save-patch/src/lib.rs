@@ -887,11 +887,16 @@ fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,
 /// Experimental cardinal Main Street road cells. Inherited v1.25 direct
 /// writer semantics: ownership and Collection remain unchanged. This is
 /// deliberately not the ordinary furniture stock transaction.
-pub const MAX_CARDINAL_ROAD_CELLS:usize=32;
+pub const MAX_CARDINAL_ROAD_CELLS:usize=256;
 pub const MAIN_STREET_ROAD:u64=40100068;
 pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(i32,i32)],erase:bool)->Result<GridCoordinateDraft,PatchError>{
+ preview_cardinal_road_style(source,d,MAIN_STREET_ROAD,cells,erase)
+}
+/// The caller has established current original Road/Path identity, exact
+/// square shape, and an observed cardinal seed in the source Grid.
+pub fn preview_cardinal_road_style(source:&str,d:&PlainGridDestination,item_id:u64,cells:&[(i32,i32)],erase:bool)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::Value;
- if source.is_empty()||source.len()>MAX_PROFILE_BYTES||cells.is_empty()||cells.len()>MAX_CARDINAL_ROAD_CELLS||
+ if item_id/100_000!=401||source.is_empty()||source.len()>MAX_PROFILE_BYTES||cells.is_empty()||cells.len()>MAX_CARDINAL_ROAD_CELLS||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
     !valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none(){return Err(PatchError::InvalidTarget);}
  let pitch=2*d.tessellation as i32;
@@ -917,7 +922,7 @@ pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(
   let y=v.get("Y").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
   if !cells.iter().any(|&(a,b)|i64::from(x).abs_diff(i64::from(a))<=pitch as u64&&i64::from(y).abs_diff(i64::from(b))<=pitch as u64){continue;}
   // No diagonal/mixed or foreign road mode is silently normalized.
-  if item!=MAIN_STREET_ROAD||x%pitch!=0||y%pitch!=0||v.get("Orientation").and_then(Value::as_str)!=Some("GridOrientation_Down")||
+  if item!=item_id||x%pitch!=0||y%pitch!=0||v.get("Orientation").and_then(Value::as_str)!=Some("GridOrientation_Down")||
      v.get("State").is_some_and(|v|!v.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
      !occupied.insert((x,y)){return Err(PatchError::InvalidTarget);}
   if requested.contains(&(x,y)){if !erase{return Err(PatchError::AmbiguousTarget);}removals.insert(key.clone());}
@@ -927,7 +932,7 @@ pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(
  let following=next.checked_add(count).ok_or(PatchError::InvalidTarget)?;
  if map.len()+count as usize>100_000{return Err(PatchError::InvalidTarget);}
  // Locate exact raw member spans, preserve their order and contents.
- let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id:MAIN_STREET_ROAD};
+ let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id};
  let mut locator=JsonLocator::grid_axis(source,&selector,"X")?;locator.signed_path=None;locator.item_path=None;
  let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&d.grid_id)];
  let mut parent=prefix.clone();parent.push(k("Objects"));let mut counter=prefix;counter.push(k("NextGridObjectID"));
@@ -946,7 +951,7 @@ pub fn preview_cardinal_road_cells(source:&str,d:&PlainGridDestination,cells:&[(
  }
  if visited!=map.len(){return Err(PatchError::InvalidDocument);}
  let mut additions=Vec::new();
- if !erase{let mut sorted=cells.to_vec();sorted.sort_unstable_by_key(|&(x,y)|(y,x));for (i,(x,y)) in sorted.into_iter().enumerate(){let id=next+i as u32;let v=serde_json::json!({"ID":id,"ItemID":MAIN_STREET_ROAD,"X":x,"Y":y,"Orientation":"GridOrientation_Down","State":null});members.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));}}
+ if !erase{let mut sorted=cells.to_vec();sorted.sort_unstable_by_key(|&(x,y)|(y,x));for (i,(x,y)) in sorted.into_iter().enumerate(){let id=next+i as u32;let v=serde_json::json!({"ID":id,"ItemID":item_id,"X":x,"Y":y,"Orientation":"GridOrientation_Down","State":null});members.push(format!("\"{}\":{}",id,v));additions.push((id.to_string(),v));}}
  let mut edits=vec![(mr,format!("{{{}}}",members.join(",")))];if !erase{edits.push((cr,following.to_string()));}edits.sort_unstable_by_key(|(r,_)|r.start);
  let mut candidate=String::new();let mut last=0;for (r,v) in edits{candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
  if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
