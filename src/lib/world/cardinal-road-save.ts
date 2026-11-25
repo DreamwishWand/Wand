@@ -7,35 +7,46 @@ import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
 export const ROAD_COPY_LIMIT=256;
-export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect';
+export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect'|'diagonal-fill'|'replace-road';
 export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
  if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
  return roadPitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
 export interface CardinalRoadCandidate{
- plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed:[number,number]};
+ plan:{destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};cells:readonly [number,number][];erase:boolean;itemId:number;seed:[number,number];diagonal?:true;replacement?:number};
  ghosts:readonly {x:number;y:number;size:number}[];
 }
-export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalRoadCandidate|null{
+export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool,replacement?:number):CardinalRoadCandidate|null{
  if(!roadSeedEligible(seed)||!seed.shape)return null;
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=2*g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
- if(tool==='connect-line'||tool==='connect-outline'||tool.startsWith('diagonal-'))return null;
- const start=snap(a),end=snap(b),stroke=roadStroke([start,end],tool as 'line'|'outline'|'fill'|'erase-line'|'erase-rect',pitch);if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
- const erase=tool.startsWith('erase'),cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
+ if(['connect-line','connect-outline','diagonal-connect'].includes(tool))return null;
+ const diagonal=tool.startsWith('diagonal-'),replace=tool==='replace-road';
+ if(replace&&(!Number.isSafeInteger(replacement)||Math.floor(replacement!/100000)!==401||replacement===Number(seed.object.itemId)))return null;
+ const start=snap(a),end=snap(b);
+ let stroke:RoadPoint[]|null;
+ if(tool==='diagonal-line'||tool==='diagonal-erase'){
+  const dx=end.x-start.x,dy=end.y-start.y,n=Math.abs(dx)/pitch;
+  if(Math.abs(dx)!==Math.abs(dy)||n>=ROAD_COPY_LIMIT)return null;
+  stroke=Array.from({length:n+1},(_,i)=>({x:start.x+Math.sign(dx)*i*pitch,y:start.y+Math.sign(dy)*i*pitch}));
+ }else stroke=roadStroke([start,end],tool==='diagonal-fill'||replace?'fill':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'fill'|'erase-line'|'erase-rect',pitch);
+ if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
+ const erase=tool.startsWith('erase')||tool==='diagonal-erase'||tool==='diagonal-erase-rect',cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  const roadByCell=new Map<string,MainlandSavedObject[]>();
  for(const p of objects){if(p.area!==g.key||p.object.layer!=='ground')continue;const key=p.object.x+':'+p.object.y,list=roadByCell.get(key)??[];list.push(p);roadByCell.set(key,list);}
  for(const p of stroke){
   if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   const existing=roadByCell.get(p.x+':'+p.y)??[];
-  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.itemId!==seed.object.itemId||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
-  if(erase?!existing.length:existing.length>0)continue;
+  if(existing.length>1||existing.some(o=>!roadSeedEligible(o)||o.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
+  if(replace&&existing.length&&existing[0].object.itemId!==seed.object.itemId)continue;
+  if(!replace&&existing.some(o=>o.object.itemId!==seed.object.itemId))return null;
+  if(erase||replace?!existing.length:existing.length>0)continue;
   cells.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:pitch/g.factor});
  }
- return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase,itemId:Number(seed.object.itemId),seed:[seed.object.x,seed.object.y]},ghosts}:null;
+ return cells.length?{plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},cells,erase,itemId:Number(seed.object.itemId),seed:[seed.object.x,seed.object.y],...(diagonal?{diagonal:true as const}:{}),...(replace?{replacement}:{})},ghosts}:null;
 }
 export const FENCE_COPY_LIMIT=128;
 export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
@@ -133,6 +144,16 @@ export const isolatedFenceWords={
  'es-ES':['Editar valla','Dibuja una valla aislada o borra dentro de la red elegida.','Comprobando geometría original'],
  'zh-CN':['编辑直角围栏','放置独立直线或边框，或删除所选网络中的格子。','正在验证原始围栏形状'],
  'pt-BR':['Editar cerca','Desenhe cerca isolada ou apague na rede selecionada.','Verificando formas originais']
+} as const;
+export const roadMutationWords={
+ ja:['斜めモード塗りつぶし','範囲内の道路スタイル置換','道路を編集'],
+ en:['Diagonal-mode fill','Replace road style in area','Edit road'],
+ fr:['Remplissage diagonal','Remplacer le style dans la zone','Modifier le chemin'],
+ it:['Riempi in diagonale','Sostituisci stile nell’area','Modifica strada'],
+ de:['Diagonal füllen','Wegstil im Bereich ersetzen','Weg bearbeiten'],
+ 'es-ES':['Relleno diagonal','Sustituir estilo en zona','Editar camino'],
+ 'zh-CN':['斜向模式填充','替换范围内道路样式','编辑道路'],
+ 'pt-BR':['Preencher modo diagonal','Trocar estilo na área','Editar caminho']
 } as const;
 export const cardinalRoadWords={
  ja:['直交道路を編集','直線','枠','塗りつぶし','直線撤去','範囲撤去','始点と終点をクリック','対象セル','変更を検証してコピーを作成','対象範囲またはセーブ構造を確認できません。','閉じる','在庫・コレクションは変更しません。'],
