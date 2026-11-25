@@ -2,8 +2,9 @@
  * silently converted to item zero. Native Grid IDs never reach the UI. */
 export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
-export interface IndoorPosition{itemId:number;x:number;y:number}
-export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];missingPositions:number}
+import type {SourceObjectShape} from "./source-object-map.ts";
+export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
+export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
@@ -14,13 +15,13 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  return value.rooms.map((room,i)=>{
   if(!record(room)||Object.keys(room).length!==6||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
-   if(!record(s)||Object.keys(s).length!==8||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000))throw Error('INDOOR_SURFACE_INVALID');
+   if(!record(s)||Object.keys(s).length!==9||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
    const items=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map(items.map(p=>[p.itemId,p.quantity]));let count=0;
-   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||Object.keys(p).length!==3||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y};});
-   if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions))throw Error('INDOOR_POSITION_COUNT');
-   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,missingPositions:s.missingPositions};
+   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||Object.keys(p).length!==4||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode};});
+   if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
+   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions};
   });
   return {ordinal:i+1,house:room.house,floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
  });
@@ -55,16 +56,19 @@ export const finishWords={
 
 /** View extents describe recorded points, not the dimensions of a room.
  * Group coincident anchors so stacked objects remain countable. */
-export function indoorPositionPlot(positions:readonly IndoorPosition[],itemId:number|null=null){
+export function indoorPositionPlot(positions:readonly IndoorPosition[],itemId:number|null=null,shapes:Readonly<Record<string,SourceObjectShape>>={}){
  const groups=new Map<string,{x:number;y:number;count:number;selected:number}>();
+ const footprints:{x:number;y:number;itemId:number;path:string}[]=[];
  let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
  for(const p of positions){
   const k=p.x+':'+p.y,point=groups.get(k)??{x:p.x,y:p.y,count:0,selected:0};point.count++;if(p.itemId===itemId)point.selected++;groups.set(k,point);
-  left=Math.min(left,p.x);right=Math.max(right,p.x);top=Math.min(top,p.y);bottom=Math.max(bottom,p.y);
+  const shape=p.orientationCode===null?undefined:shapes[p.itemId+":"+p.orientationCode];
+  if(shape){footprints.push({x:p.x,y:p.y,itemId:p.itemId,path:shape.path});}
+  left=Math.min(left,p.x);right=Math.max(right,p.x+(shape?.width??0));top=Math.min(top,p.y);bottom=Math.max(bottom,p.y+(shape?.height??0));
  }
  if(!groups.size)return null;
  const width=right-left+2,height=bottom-top+2;
- return {points:[...groups.values()],viewBox:[left-1,top-1,width,height].join(' '),markerRadius:Math.max(.16,Math.max(width,height)/250)};
+ return {footprints,points:[...groups.values()],viewBox:[left-1,top-1,width,height].join(' '),markerRadius:Math.max(.16,Math.max(width,height)/250)};
 }
 export const positionWords={
  ja:['配置位置','一覧','記録された配置位置のみ（部屋の境界・占有マスは未確認）','位置不明','同じ位置の家具','家具を選択すると位置を強調表示','表示上限を超えています。'],
@@ -76,3 +80,5 @@ export const positionWords={
  'zh-CN':['放置位置','列表','仅显示记录的锚点，房间边界及占用格尚未验证。','未知位置','此位置的物品','选择物品以突出显示位置','超出显示上限。'],
  'pt-BR':['Posições','Lista','Somente âncoras registradas; limites e células não verificados.','Posições desconhecidas','Itens nesta posição','Selecione um item para destacar suas posições','Limite de exibição excedido.']
 } as const;
+
+export const indoorShapeWords={ja:'原本の家具形状（実際の占有状態・部屋境界は未確認）',en:'Source item shapes; actual occupancy and room bounds unverified',fr:'Formes originales ; occupation et limites non vérifiées',it:'Forme originali; occupazione e limiti non verificati',de:'Originalformen; Belegung und Raumgrenzen ungeprüft','es-ES':'Formas originales; ocupación y límites sin verificar','zh-CN':'原始家具形状；实际占用及房间边界未验证','pt-BR':'Formas originais; ocupação e limites não verificados'} as const;
