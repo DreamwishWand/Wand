@@ -104,7 +104,7 @@
  let furnitureOpen=false,furniturePlacing=false,furnitureGhost:StockCandidate|null=null,furnitureTools:SaveFurniturePalette;
  let pasteTools:GroupPasteControls,pasteActive=false,pasteGhost:GroupPasteCandidate|null=null,pasteAxis:WorldSymmetryAxis|null=null;
  $: pasteWords=groupPasteWords[locale];$: sy=groupSymmetryWords[locale];$: sceneText=sceneWords[locale];
- $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureFurnitureGroup(pasteSelection);$: cutWords=groupCutWords[locale];
+ $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureFurnitureGroup(pasteSelection,true)&&(!pasteSelection.some(p=>p.object.subgrid)||pasteSelection.length<=32);$: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
  $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection);
  $: canCopyFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection);
