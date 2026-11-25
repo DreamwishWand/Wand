@@ -8,8 +8,8 @@
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
  */
-import {createItemFieldReader,type ItemFieldReader} from './item-field-reader.ts';
-export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch} from './item-field-reader.ts';
+import {createItemFieldReader,type ItemFieldReader,type ItemFieldFilter,type ItemFieldValue} from './item-field-reader.ts';
+export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch,ItemFieldFilter} from './item-field-reader.ts';
 
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
 export const ITEM_MASTER_INDEX_PATH =
@@ -416,8 +416,36 @@ export interface ConfiguredItemPriceOverride {
   readonly currentRepurchasePriceVerified:false;
   readonly currentSellPriceVerified:false;
 }
+/** Product release is independent of the version in which bytes first appeared. */
+export type ItemContentReleaseKind='free_update'|'paid_dlc';
+export type ItemContentDlcType='expansion'|'adventure_pack';
+export interface ItemContentOrigin {
+  readonly itemId:number;
+  readonly attribution:'confirmed'|'candidate'|'unassigned'|'not_indexed';
+  readonly firstObservedVersion:string|null;
+  readonly introducedVersion:string|null;
+  readonly introducedAfterVersion:string|null;
+  readonly sourceReleaseId:string|null;
+  readonly contentReleaseId:string|null;
+  readonly contentReleaseKind:ItemContentReleaseKind|null;
+  readonly contentDlcType:ItemContentDlcType|null;
+  /** null means the candidate column was not published; [] means no indexed evidence. */
+  readonly candidateReleaseIds:readonly string[]|null;
+}
+export type ItemContentFilter=
+  |{readonly kind:'confirmed_release'|'unconfirmed_candidate'|'source_release';readonly releaseId:string}
+  |{readonly kind:'introduced_version'|'first_observed_version';readonly version:string}
+  |{readonly kind:'release_kind';readonly releaseKind:ItemContentReleaseKind}
+  |{readonly kind:'unassigned_release'|'unknown_introduction'};
+export interface ItemContentQueryResult {
+  readonly status:'indexed'|'not_indexed';
+  readonly itemIds:readonly number[];
+}
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
+  getItemContentOrigins(itemIds:readonly number[]):Promise<readonly (Readonly<ItemContentOrigin>|null)[]>;
+  /** Additional canonical filters are ANDed with the explicit origin filter. */
+  findItemIdsByContent(filter:ItemContentFilter,additionalFilters?:readonly ItemFieldFilter[]):Promise<Readonly<ItemContentQueryResult>>;
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
@@ -1000,9 +1028,77 @@ export async function openPublicItemMaster(
       return deepFreeze(value as unknown as readonly ItemReferenceOccurrence[]);
     }));
   }
+  const contentFields=[
+    'firstObservedVersion','introducedVersion','introducedAfterVersion','sourceReleaseId',
+    'contentReleaseId','contentReleaseKind','contentDlcType','contentCandidateReleaseIds'
+  ].map(k=>'history.'+k);
+  const releaseIdPattern=/^[A-Za-z0-9_.-]{1,128}$/;
+  function nullableText(v:ItemFieldValue|undefined,pattern?:RegExp):string|null{
+    if(v===undefined||v===null)return null;
+    assert(typeof v==='string'&&(!pattern||pattern.test(v)),'INVALID_CONTENT_ORIGIN');
+    return v;
+  }
   return Object.freeze({
     ...common,
     ...fieldReader,
+    async getItemContentOrigins(ids:readonly number[]){
+      const catalog=new Set((await fieldReader.getFieldCatalog()).map(f=>f.field));
+      const fields=contentFields.filter(f=>catalog.has(f));
+      const rows=await fieldReader.getItemFields(ids,fields);
+      return Object.freeze(rows.map(row=>{
+        if(!row)return null;
+        const value=(k:string)=>row.values['history.'+k];
+        const contentReleaseId=nullableText(value('contentReleaseId'),releaseIdPattern);
+        const contentReleaseKind=nullableText(value('contentReleaseKind'));
+        const contentDlcType=nullableText(value('contentDlcType'));
+        assert(contentReleaseKind===null||contentReleaseKind==='paid_dlc'||contentReleaseKind==='free_update','INVALID_CONTENT_KIND');
+        assert(contentDlcType===null||contentDlcType==='expansion'||contentDlcType==='adventure_pack','INVALID_CONTENT_DLC_TYPE');
+        const candidates=value('contentCandidateReleaseIds');
+        assert(candidates===undefined||Array.isArray(candidates)&&candidates.every(id=>typeof id==='string'&&releaseIdPattern.test(id)),'INVALID_CONTENT_CANDIDATES');
+        const candidateReleaseIds=catalog.has('history.contentCandidateReleaseIds')
+          ?Object.freeze([...(candidates as readonly string[]|undefined??[])]) :null;
+        const attribution:ItemContentOrigin['attribution']=contentReleaseId?'confirmed':
+          candidateReleaseIds?.length?'candidate':
+          catalog.has('history.contentReleaseId')?'unassigned':'not_indexed';
+        return Object.freeze({
+          itemId:row.itemId,attribution,contentReleaseId,contentReleaseKind,contentDlcType,
+          firstObservedVersion:nullableText(value('firstObservedVersion'),GAME_VERSION),
+          introducedVersion:nullableText(value('introducedVersion'),GAME_VERSION),
+          introducedAfterVersion:nullableText(value('introducedAfterVersion'),GAME_VERSION),
+          sourceReleaseId:nullableText(value('sourceReleaseId'),releaseIdPattern),candidateReleaseIds
+        });
+      }));
+    },
+    async findItemIdsByContent(filter:ItemContentFilter,additionalFilters:readonly ItemFieldFilter[]=[]){
+      assert(isObject(filter)&&Array.isArray(additionalFilters),'INVALID_CONTENT_FILTER');
+      const filters:ItemFieldFilter[]=[];
+      const equals=(field:string,value:string|null)=>filters.push({field:'history.'+field,anyOf:[{kind:'equals',value}]});
+      switch(filter.kind){
+        case 'confirmed_release':
+        case 'unconfirmed_candidate':
+        case 'source_release':
+          assert(typeof filter.releaseId==='string'&&releaseIdPattern.test(filter.releaseId),'INVALID_CONTENT_RELEASE_ID');
+          if(filter.kind==='unconfirmed_candidate'){
+            filters.push({field:'history.contentCandidateReleaseIds',anyOf:[{kind:'contains',value:filter.releaseId}]});
+            equals('contentReleaseId',null);
+          }else equals(filter.kind==='confirmed_release'?'contentReleaseId':'sourceReleaseId',filter.releaseId);
+          break;
+        case 'introduced_version':
+        case 'first_observed_version':
+          assert(typeof filter.version==='string'&&GAME_VERSION.test(filter.version),'INVALID_CONTENT_VERSION');
+          equals(filter.kind==='introduced_version'?'introducedVersion':'firstObservedVersion',filter.version);
+          break;
+        case 'release_kind':
+          assert(filter.releaseKind==='paid_dlc'||filter.releaseKind==='free_update','INVALID_CONTENT_KIND');
+          equals('contentReleaseKind',filter.releaseKind);break;
+        case 'unassigned_release':equals('contentReleaseId',null);break;
+        case 'unknown_introduction':equals('introducedVersion',null);break;
+        default:throw Error('ITEM_MASTER_INVALID_CONTENT_FILTER');
+      }
+      const available=new Set((await fieldReader.getFieldCatalog()).map(f=>f.field));
+      if(filters.some(f=>!available.has(f.field)))return Object.freeze({status:'not_indexed' as const,itemIds:Object.freeze([] as number[])});
+      return Object.freeze({status:'indexed' as const,itemIds:await fieldReader.findItemIdsByFields([...filters,...additionalFilters])});
+    },
     async getItemReferences(id:number,direction:ItemReferenceDirection){
       return (await itemReferences([id],direction))[0];
     },
