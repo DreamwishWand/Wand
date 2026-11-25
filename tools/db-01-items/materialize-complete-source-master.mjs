@@ -14,6 +14,7 @@ import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
+import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1015,7 +1016,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1055,6 +1056,15 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.storeDisplayScreen',row.itemId,storeScreen);
       add('acquisition.storeDisplayScreenStatus',row.itemId,storeScreen.status);
     }
+    const layout=storeLayout.candidates.get(row.itemId);
+    if(layout){
+      add('acquisition.storeLayoutCandidates',row.itemId,layout);
+      if(layout.matchingAreaKeys.length)add('acquisition.storeLayoutAreaKeys',row.itemId,layout.matchingAreaKeys);
+    }
+    const display=storeLayout.displayDefinitions.get(row.itemId);
+    if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
+    const sequences=storeLayout.sequenceLinks.get(row.itemId);
+    if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
     const purchaseCurrency=catalogFacts.purchaseCurrencies.get(row.itemId);
     if(purchaseCurrency){
       add('acquisition.purchaseCurrencySelection',row.itemId,purchaseCurrency);
@@ -1379,6 +1389,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
   const catalogFacts=buildCatalogFacts(source,rows);
+  const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
     source.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'&&
     source.sourceFilesSha256.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196';
@@ -1432,7 +1443,8 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       schema:'wand.item-master.complete-source-relations@1',release:e.release,
       collectionMenus:source.collectionMenus,collectionSelectors:source.collectionSelectors,
       ignoredSentinels:source.ignoredSentinels,universeTags:source.universeTags,worldTags:source.worldTags,
-      sourceFieldDeclarations:source.sourceFieldDeclarations,gameRuntimeMembershipVerified:false
+      sourceFieldDeclarations:source.sourceFieldDeclarations,
+      ...(storeLayout.areas.length?{storeLayoutAreas:storeLayout.areas}:{}),gameRuntimeMembershipVerified:false
     },source.collectionSelectors.length);
     if(localizations)for(const locale of LOCALES){
       const entries=Object.entries(localizations.translations[locale]);
@@ -1448,7 +1460,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
