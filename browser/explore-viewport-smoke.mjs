@@ -41,6 +41,9 @@ try{
  await page.waitForFunction(n=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<n,firstColumns);
  await page.getByRole('button',{name:/閉じる|Close/,exact:true}).last().click();
  await page.locator('[data-scope="all"]').click();
+ await page.locator('[data-browse-type="buildings"]').click();
+ await page.locator('[data-explore-universe="type:building:1"]').waitFor();
+ await page.locator('[data-browse-type="furniture"]').click();
  // Both special universes use the same one-grid layout as ordinary universes.
  for(const id of ['2000500023','2000500017']){
   await page.getByRole('button',{name:/フィルター|Filters/,exact:true}).click();
@@ -69,6 +72,7 @@ try{
  const ownedButton=page.getByRole('button',{name:/所有済みのみ|Owned only/});
  await page.waitForFunction(()=>{const b=document.querySelector('.explore-service-toolbar button[aria-label="所有済みのみ"],.explore-service-toolbar button[aria-label="Owned only"]');return b&&!b.disabled;});
  await page.locator('[data-scope="all"]').click();
+ await page.locator('[data-browse-type="allTypes"]').click();
  await ownedButton.click();
  await page.waitForFunction(()=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))>0&&Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))<10);
  await cards.first().waitFor();

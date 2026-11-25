@@ -3,8 +3,9 @@
   import {registerServiceToolbar} from '$lib/ui/service-toolbar';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
-  import {CATEGORY_KEYS,categoriesOf,matchesScope,readDecorationScope,DECORATION_SCOPE_KEY,type DecorationScope,type ExploreCategory} from '$lib/explore/scope';
+  import {CATEGORY_KEYS,categoriesOf,matchesScope,readDecorationScope,DECORATION_SCOPE_KEY,type DecorationScope,type ExploreCategory,BROWSE_TYPES,browseType,browseSection,type BrowseType} from '$lib/explore/scope';
   import {exploreLabel,CATEGORY_ICONS} from '$lib/explore/copy';
+  import ExploreItemDetails from '$lib/explore/ExploreItemDetails.svelte';
   import type {ItemMasterTagLabel} from '$lib/items/public-item-master';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
@@ -26,6 +27,8 @@
   let boardsOpen=$state(false),search=$state(''),favorites=$state(false),ownedOnly=$state(false),ownershipAvailable=$state(false);
   let ownedIds=$state.raw<ReadonlySet<number>>(new Set());
   let scope=$state<DecorationScope>('outdoor');
+  let browse=$state<BrowseType|'allTypes'>('furniture');
+  let tagLabels=$state.raw<Record<string,Record<string,string>>>({});
   const label=(key:string)=>exploreLabel(locale,key);
   let newName=$state(''),rename=$state(''),groupName=$state(''),selected=$state<ExploreItem|null>(null);
   const t=(ja:string,en:string)=>locale==='ja'?ja:en;
@@ -48,24 +51,27 @@
   function sortUniverse(a:string,b:string){
     return universeRank(a)-universeRank(b)||(universeNames.get(a)?.sort??a).localeCompare(universeNames.get(b)?.sort??b,locale);
   }
-  const allGroups=$derived(groupItems(items));
+  const allGroups=$derived(groupItems(items.filter(i=>browseType(i)==='furniture')));
   const universeOptions=$derived([...new Set([...universeNames.keys(),...allGroups.keys()])].sort(sortUniverse));
   const scopedItems=$derived(items.filter(i=>matchesScope(i,scope)));
+  const browseTypes=$derived(BROWSE_TYPES.filter(type=>scopedItems.some(i=>browseType(i)===type)));
+  const browseItems=$derived(browse==='allTypes'?scopedItems:scopedItems.filter(i=>browseType(i)===browse));
+  const tagName=(key:string)=>tagLabels[key]?.[locale]??tagLabels[key]?.en??collectionDb01TagLabel(locale,key);
   const scopedUniverses=$derived(new Set(scopedItems.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])));
-  const scopeCategories=$derived(new Set(scopedItems.flatMap(categoriesOf)));
+  const scopeCategories=$derived(new Set(browseItems.flatMap(categoriesOf)));
   const categoryOptions=$derived(CATEGORY_KEYS.filter(key=>scopeCategories.has(key)||filters.categories?.includes(key)));
   const worldOptions=$derived(sourceWorlds.map(w=>({key:w.key,label:w.names[locale]??w.names.en??w.key})));
   const worldName=(key:string)=>worldOptions.find(w=>w.key===key)?.label??key;
   const facetOptions=$derived.by(()=>{
     const sets:Record<Facet,Set<string>>={furnitureKind:new Set(),color:new Set(),furnitureStyle:new Set()};
-    for(const item of items)for(const [key,value] of item.tags)sets[key]?.add(value);
+    for(const item of browseItems)for(const [key,value] of item.tags)sets[key]?.add(value);
     return Object.fromEntries(facets.map(key=>[key,[...sets[key]].sort()])) as Record<Facet,string[]>;
   });
   const filtered=$derived.by(()=>{
     const q=search.trim().toLocaleLowerCase();
-    return scopedItems.filter(i=>matches(i,filters)&&(!favorites||favoriteIds.has(i.itemId))&&(!ownedOnly||ownedIds.has(i.itemId))&&(!q||nameOf(i).toLocaleLowerCase().includes(q)));
+    return browseItems.filter(i=>matches(i,filters)&&(!favorites||favoriteIds.has(i.itemId))&&(!ownedOnly||ownedIds.has(i.itemId))&&(!q||nameOf(i).toLocaleLowerCase().includes(q)));
   });
-  const grouped=$derived(groupItems(filtered,filters.universes));
+  const grouped=$derived(groupItems(filtered.filter(i=>browseType(i)==='furniture'),filters.universes));
   const shelves=$derived([...grouped.entries()].sort(([a],[b])=>sortUniverse(a,b)));
   // Build the series index once against the full catalog. Filters select
   // members but never change their stable group identity.
@@ -83,8 +89,36 @@
     return isLargeUniverse(key)?orderedSeriesDesigns(visibleSeries.get(key)??[]):ordinaryDesigns(list);
   }
   const sections=$derived.by(():[string,DesignTile[]][]=>{
-    return shelves.map(([key,list])=>[key,universeDesigns(key,list)]);
+    const result:[string,DesignTile[]][]=shelves.map(([key,list])=>[key,universeDesigns(key,list)]);
+    const groups=new Map<string,ExploreItem[]>();
+    for(const item of filtered){
+      if(browseType(item)==='furniture')continue;
+      const key=browseSection(item),group=groups.get(key)??[];
+      group.push(item);groups.set(key,group);
+    }
+    for(const [key,list] of [...groups].sort(([a],[b])=>a.localeCompare(b,'en'))){
+      // Order related designs by original set, native key and exact Item ID.
+      list.sort((a,b)=>(a.sourceSetItemId??Number.MAX_SAFE_INTEGER)-(b.sourceSetItemId??Number.MAX_SAFE_INTEGER)||
+        (a.nativeKey??'').localeCompare(b.nativeKey??'','en')||a.itemId-b.itemId);
+      result.push([key,ordinaryDesigns(list)]);
+    }
+    return result;
   });
+  function sectionName(key:string,designs:DesignTile[]){
+    if(key.startsWith('tag:')){
+      const value=key.slice(4);
+      return tagName('F_'+value)===collectionDb01TagLabel(locale,'F_'+value)?tagName(value):tagName('F_'+value);
+    }
+    if(key.startsWith('type:building:')||key.startsWith('type:skin:')){
+      const first=designs[0]?.items[0];
+      if(first?.nativeCategory==='Building'&&first.subtype===1)return t('店舗・売店','Stalls');
+      if(first?.nativeCategory==='Building'&&first.subtype===0)return t('住宅','Houses');
+      if(first?.nativeCategory==='Skin'&&first.subtype===1)return t('売店の外観','Stall skins');
+      if(first?.nativeCategory==='Skin'&&first.subtype===6)return t('住宅の外観','House skins');
+      return first?.nativeSubtypeName??label(first?browseType(first):'buildings');
+    }
+    return key.startsWith('type:')?label(key.slice(5)):universeName(key);
+  }
   const total=$derived(sections.reduce((n,[,list])=>n+list.length,0));
   // Keep the scroll extent stable; all section geometry is computed from
   // a single measured catalog width, independently of card mounting.
@@ -108,7 +142,8 @@
 
   const filterCount=$derived((filters.categories?.length??0)+(filters.worlds?.length??0)+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
   function resetBrowse(){layoutEpoch++;window.scrollTo({top:0,behavior:'instant'});}
-  function setScope(next:DecorationScope){scope=next;try{localStorage.setItem(DECORATION_SCOPE_KEY,next);}catch{}resetBrowse();}
+  function setBrowse(next:BrowseType|'allTypes'){browse=next;filters.categories=[];resetBrowse();}
+  function setScope(next:DecorationScope){scope=next;browse='furniture';filters.categories=[];try{localStorage.setItem(DECORATION_SCOPE_KEY,next);}catch{}resetBrowse();}
   function toggleCategory(key:ExploreCategory){const list=filters.categories??[];filters.categories=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
   function toggleWorld(key:string){const list=filters.worlds??[];filters.worlds=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
   function clearFilters(){filters=emptyFilters();resetBrowse();}
@@ -150,7 +185,7 @@
     });
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
     const w=new Worker(new URL('../../../lib/explore/catalog.worker.ts',import.meta.url),{type:'module'});
-    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];releases=e.data.releases??[];}else failed=true;loading=false;};
+    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];tagLabels?:Record<string,Record<string,string>>;error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];tagLabels=e.data.tagLabels??{};releases=e.data.releases??[];}else failed=true;loading=false;};
     w.onerror=()=>{failed=true;loading=false;};
     w.postMessage({base});
     void fetch(base+'/ddv/collection/item-images-r39.json').then(r=>r.ok?r.json():null).then(d=>{if(d?.schema==='wand.collection.item-images.r39@1'&&d.items)images=d.items;}).catch(()=>{});
@@ -182,7 +217,7 @@
         <div class="chips universe-chips">{#each universeOptions as key}<button data-universe-filter={key} title={universeName(key)} aria-pressed={filters.universes.includes(key)} class:no-match={!scopedUniverses.has(key)} onclick={()=>toggleUniverse(key)}>{universeName(key)}</button>{/each}</div>
         {#each facets as facet}
           {#if facetOptions[facet].length}<h3>{collectionDb01FacetLabel(locale,facet)}</h3><div class="chips">{#each facetOptions[facet] as key}
-            <button aria-pressed={filters.tags[facet].includes(key)} title={collectionDb01TagLabel(locale,key)} aria-label={collectionDb01TagLabel(locale,key)} onclick={()=>toggleFacet(facet,key)}>{#if facet==='color'&&COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}<span class="swatch" style:background={COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}></span>{:else}{collectionDb01TagLabel(locale,key)}{/if}</button>
+            <button aria-pressed={filters.tags[facet].includes(key)} title={tagName(key)} aria-label={tagName(key)} onclick={()=>toggleFacet(facet,key)}>{#if facet==='color'&&COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}<span class="swatch" style:background={COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}></span>{:else}{tagName(key)}{/if}</button>
           {/each}</div>{/if}
         {/each}
         {#if worldOptions.length}<h3>{label('world')}</h3><div class="chips">{#each worldOptions as world}<button data-world-filter={world.key} aria-pressed={filters.worlds?.includes(world.key)??false} onclick={()=>toggleWorld(world.key)}><WandIcon name="world" size={18}/>{world.label}</button>{/each}</div>{/if}
@@ -195,11 +230,16 @@
   {#if storageFailed}<p role="alert">{t('保存できません。再読み込みしてください。','Storage unavailable. Reload before editing.')}</p>{/if}
   <div class="workspace" class:withBoards={boardsOpen}>
   <div class="catalog" bind:this={catalogNode} bind:clientWidth={catalogWidth} data-explore-total={total}>
+    <div class="browse-types" role="group" aria-label={label('category')}>
+      {#each ['allTypes',...browseTypes] as type}
+        <button data-browse-type={type} aria-pressed={browse===type} onclick={()=>setBrowse(type as BrowseType|'allTypes')}><WandIcon name={type==='allTypes'?'grid':type==='furniture'?'chair':CATEGORY_ICONS[type as Exclude<BrowseType,'furniture'>]} size={18}/><span>{label(type)}</span></button>
+      {/each}
+    </div>
     {#if filterCount}
       <div class="active-filters">
         {#each filters.categories??[] as key}<button onclick={()=>toggleCategory(key)}>{label(key)} <WandIcon name="close" size={12}/></button>{/each}
         {#each filters.universes as key}<button onclick={()=>toggleUniverse(key)}>{universeName(key)} <WandIcon name="close" size={12}/></button>{/each}
-        {#each facets as facet}{#each filters.tags[facet] as key}<button onclick={()=>toggleFacet(facet,key)}>{collectionDb01TagLabel(locale,key)} <WandIcon name="close" size={12}/></button>{/each}{/each}
+        {#each facets as facet}{#each filters.tags[facet] as key}<button onclick={()=>toggleFacet(facet,key)}>{tagName(key)} <WandIcon name="close" size={12}/></button>{/each}{/each}
         {#each filters.worlds??[] as key}<button onclick={()=>toggleWorld(key)}>{worldName(key)} <WandIcon name="close" size={12}/></button>{/each}
         <button aria-label={label('clear')} onclick={clearFilters}><WandIcon name="close" size={15}/></button>
       </div>
@@ -207,7 +247,7 @@
     {#if loading}<p>{t('読み込み中…','Loading…')}</p>{:else if failed}<p role="alert">{t('家具データを読み込めません。','Decoration catalog could not be loaded.')}</p>{:else}
       {#each sections as [key,designs] (key)}
         <section class="shelf" data-explore-universe={key}>
-          <h2 class="universe-heading">{universeName(key)}</h2>
+          <h2 class="universe-heading">{sectionName(key,designs)}</h2>
           <VirtualCatalogGrid items={designs} tile={designTile} width={catalogWidth}/>
         </section>
       {/each}
@@ -268,6 +308,7 @@
       <button onclick={()=>selected=null}>{t('閉じる','Close')}</button>
       <div class="large"><ItemArtwork itemId={selected.itemId} sourcePath={images[String(selected.itemId)]??null} large/></div>
       <h2>{nameOf(selected)}</h2>
+      {#key selected.itemId}<ExploreItemDetails itemId={selected.itemId} {locale}/>{/key}
       {#if variantReview.length>1}<div class="variant-grid">{#each variantReview as variant (variant.itemId)}<button aria-label={nameOf(variant)} title={nameOf(variant)} aria-pressed={selected.itemId===variant.itemId} onclick={()=>{if(reviewDesign)pickVariant(reviewDesign,variant);}}><ItemArtwork itemId={variant.itemId} sourcePath={images[String(variant.itemId)]??null}/></button>{/each}</div>{/if}
       <button disabled={!active||storageFailed} onclick={()=>selected&&toggle(selected.itemId)}>{active?.entries.some(e=>e.itemId===selected?.itemId)?t('ボードから削除','Remove from board'):t('ボードへ追加','Add to board')}</button>
     </aside>
@@ -295,7 +336,7 @@
   .board-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px;margin-bottom:16px}
   .board-card{display:grid;gap:6px;overflow-wrap:anywhere}.cover{display:grid;grid-template-columns:repeat(2,1fr);min-height:94px;grid-auto-rows:47px}
   .cover span{min-height:0}.note{display:grid;gap:4px;margin:10px 0}.note textarea{min-height:70px;resize:vertical}
-  .review{position:fixed;right:12px;bottom:12px;z-index:40;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:12px;max-width:min(310px,95vw);box-shadow:0 8px 30px #0008}
+  .review{position:fixed;right:12px;bottom:12px;z-index:40;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:12px;max-width:min(340px,95vw);max-height:calc(100dvh - var(--shell-height,60px) - 16px);overflow:auto;box-shadow:0 8px 30px #0008}
   .large{height:170px}
   .spacer{flex:1}.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:36px;min-height:36px;padding:5px;border:0;background:transparent;color:var(--wand-text);text-decoration:none;cursor:pointer}
   .icon-button:hover,.icon-button[aria-pressed=true],.icon-button[aria-expanded=true],.icon-button.activeTab{background:var(--wand-pill-bg);color:var(--wand-accent-strong)}
@@ -315,7 +356,10 @@
   .category-chip{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;padding:6px 2px}
   .category-chip[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
   .chips .no-match:not([aria-pressed=true]){opacity:.45}
-  .active-filters{position:sticky;top:var(--shell-height,60px);z-index:12;display:flex;flex-wrap:wrap;gap:4px;padding:3px 0;background:var(--wand-bg)}
+  .browse-types{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;position:sticky;top:var(--shell-height,60px);z-index:13;background:var(--wand-bg);padding:4px 0}
+  .browse-types button{display:flex;align-items:center;gap:4px;font-size:.8rem;padding:4px 7px}
+  .browse-types button[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  .active-filters{position:relative;z-index:12;display:flex;flex-wrap:wrap;gap:4px;padding:3px 0;background:var(--wand-bg)}
   .active-filters button{font-size:.75rem;display:flex;align-items:center;gap:3px;padding:3px 6px}
   @media(max-width:1500px){.scope-switch span{display:none}.explore-service-toolbar .active-name{max-width:75px}}
   @media(max-width:1250px){.explore-service-toolbar .active-name{display:none}}

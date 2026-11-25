@@ -4,6 +4,10 @@ export interface ExploreItem {
   names:Readonly<Record<string,string|null>>;
   nativeCategory:'Furniture'|'Trimming'|'Building'|'Skin'|'Environment';
   subtype:number;
+  nativeSubtypeName?:string|null;
+  sourcePlacement?:Readonly<{floorClass:'terrain_and_floor_wall'|'terrain_only'|'floor_wall_only'|'surface_or_special'|'zero'|null;acceptedFloorMask:number|null;surface:boolean|null;scene:unknown;placementLegalityVerified:false}>;
+  originalUniverseStatus?:ExploreItem['universeStatus'];
+  universeAssociation?:unknown;
   tags:readonly (readonly ['color'|'furnitureStyle'|'furnitureKind',string])[];
   universes:readonly number[];
   universeStatus?:'source_linked'|'unresolved_source'|'no_universe_in_verified_tag_fields';

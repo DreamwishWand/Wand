@@ -16,6 +16,8 @@ const words:Record<string,readonly string[]>={
   clear:['クリア','Clear','Effacer','Cancella','Zurücksetzen','Borrar','清除','Limpar'],
   close:['閉じる','Close','Fermer','Chiudi','Schließen','Cerrar','关闭','Fechar'],
   select:['複数選択','Multi-select','Sélection multiple','Selezione multipla','Mehrfachauswahl','Selección múltiple','多选','Seleção múltipla'],
+  furniture:['家具','Furniture','Meubles','Mobili','Möbel','Muebles','家具','Móveis'],
+  allTypes:['全種類','All types','Tous les types','Tutti i tipi','Alle Arten','Todos los tipos','所有类别','Todos os tipos'],
   seating:['椅子・ソファ','Seating','Sièges','Sedute','Sitzmöbel','Asientos','座椅','Assentos'],
   table:['テーブル','Tables','Tables','Tavoli','Tische','Mesas','桌子','Mesas'],
   bed:['ベッド','Beds','Lits','Letti','Betten','Camas','床','Camas'],
