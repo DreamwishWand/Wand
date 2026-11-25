@@ -6,7 +6,7 @@ import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
 export const ROAD_COPY_LIMIT=256;
-export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect';
+export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline';
 export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
  if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
@@ -21,6 +21,7 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=2*g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
+ if(tool==='connect-line'||tool==='connect-outline')return null;
  const start=snap(a),end=snap(b),stroke=roadStroke([start,end],tool,pitch);if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
  const erase=tool.startsWith('erase'),cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  const roadByCell=new Map<string,MainlandSavedObject[]>();
@@ -42,16 +43,16 @@ export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
  return fencePitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
 export interface CardinalFenceCandidate{
- plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number;erase?:true;seed?:[number,number]};
+ plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number;erase?:boolean;seed?:[number,number];replacement?:number};
  ghosts:CardinalRoadCandidate['ghosts'];
 }
 export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalFenceCandidate|null{
- if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect'].includes(tool))return null;
- const erase=tool.startsWith('erase');
+ if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline'].includes(tool))return null;
+ const erase=tool.startsWith('erase'),connect=tool.startsWith('connect');
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
- const stroke=roadStroke([snap(a),snap(b)],tool,pitch);if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
+ const stroke=roadStroke([snap(a),snap(b)],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool,pitch);if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
  const fences=objects.filter(p=>p.area===g.key&&p.object.layer==='fence');
  if(fences.some(p=>!p.shape||p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
  const nodes:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
@@ -60,11 +61,27 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
   for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   // Must remain separate from every current native fence footprint and
   // the Rust writer's conservative eight-logical-cell isolation radius.
-  if(!erase&&fences.some(f=>{const dx=p.x-f.object.x,dy=p.y-f.object.y;return Math.abs(dx)<=8*pitch&&Math.abs(dy)<=8*pitch||dx>=-pitch&&dx<=f.shape!.width&&dy>=-pitch&&dy<=f.shape!.height;}))return null;
+  if(!erase&&!connect&&fences.some(f=>{const dx=p.x-f.object.x,dy=p.y-f.object.y;return Math.abs(dx)<=8*pitch&&Math.abs(dy)<=8*pitch||dx>=-pitch&&dx<=f.shape!.width&&dy>=-pitch&&dy<=f.shape!.height;}))return null;
   nodes.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:1});
  }
- return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId),...(erase?{erase:true as const,seed:[seed.object.x,seed.object.y] as [number,number]}:{})},ghosts};
+ return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId),...(erase||connect?{erase,seed:[seed.object.x,seed.object.y] as [number,number]}:{})},ghosts};
 }
+export function fenceReplacementCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],replacement:number):CardinalFenceCandidate|null{
+ if(!fenceSeedEligible(seed)||replacement===Number(seed.object.itemId)||![40700246,40700268].includes(replacement))return null;
+ const g=grids.find(g=>g.key===seed.area);if(!g||g.factor!==seed.factor)return null;
+ const point:[number,number]=[seed.object.x,seed.object.y];
+ return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes:[point],base:Number(seed.object.itemId),erase:false,seed:point,replacement},ghosts:[]};
+}
+export const fenceMutationWords={
+ ja:['直線接続','枠で接続','選択した接続全体のスタイルを変更','置換先','原本形状の一致を確認できた場合のみ置換できます。'],
+ en:['Connect line','Connect outline','Replace selected network style','Replacement','Replacement requires matching source geometry.'],
+ fr:['Relier par ligne','Relier par contour','Remplacer le style du réseau sélectionné','Remplacement','Géométrie source identique requise.'],
+ it:['Collega linea','Collega contorno','Sostituisci stile della rete selezionata','Sostituzione','Richiesta geometria originale identica.'],
+ de:['Linie verbinden','Umriss verbinden','Stil des gewählten Netzes ersetzen','Ersatz','Gleiche Quellgeometrie erforderlich.'],
+ 'es-ES':['Conectar línea','Conectar contorno','Sustituir estilo de la red seleccionada','Sustitución','Se requiere geometría original idéntica.'],
+ 'zh-CN':['连接直线','连接边框','替换所选网络的样式','替换为','需要匹配原始形状。'],
+ 'pt-BR':['Conectar linha','Conectar contorno','Trocar estilo da rede selecionada','Substituição','Geometria original compatível necessária.']
+} as const;
 export const isolatedFenceWords={
  ja:['既存の直交フェンスを編集','直線・枠を独立配置、または選択した接続内を撤去します。','フェンスの原本形状を確認中'],
  en:['Edit cardinal fence','Place an isolated line/outline or erase within the selected network.','Checking original fence geometry'],
