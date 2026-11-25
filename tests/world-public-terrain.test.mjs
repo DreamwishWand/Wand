@@ -140,3 +140,68 @@ test('actual mainland terrain resolves two distinct native areas in one local de
  const modified={...f,owners:f.owners.slice()};modified.owners[a.y*w+a.x+1]=255;
  assert.equal(resolveMainlandDesign(modified,a.x,a.y,boundaryShape),null);
 });
+
+import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedDraft} from '../src/lib/world/mainland-saved-objects.ts';
+test('mainland saved objects preserve exact grid identity, staged coordinates and shape holes',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
+ const p={localOrdinal:1,localGridOrdinal:3,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',subgrid:null};
+ const shape={width:2,height:2,runs:[{x:0,y:0,width:2},{x:1,y:1,width:1}],cellCount:3,path:'M0 0h2v1H0Z'};
+ const o={...p,shapeKey:p.itemId+':8',name:'Fixture',orientationCode:8,layer:'furniture',surfaceCapable:false};
+ const m={layoutId:g.layoutId,gridIdNative:g.gridIdNative,gridDataPath:g.gridDataPath,sourceGridFactor:g.factor,objects:[o],shapes:{[o.shapeKey]:shape},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
+ const receipt={viewKey:g.key,points:[p],rowsWithoutCoordinates:0},sessions=[{receipt,verifiedGridOrdinals:[3]}],maps=new Map([[g.key,m]]);
+ const a=projectMainlandSaved(grids,sessions,maps,[]);assert.equal(a.objects.length,1);
+ const v=a.objects[0];assert.deepEqual({x:v.x,y:v.y},mainlandMapAnchor(g,p.x,p.y));
+ assert.equal(mainlandSavedAt(a.objects,v.x+.25,v.y-.25).length,1);
+ assert.equal(mainlandSavedAt(a.objects,v.x+.25,v.y-1.25).length,0);
+ assert.equal(visibleMainlandSaved(a.objects,{x:v.x-2,y:v.y-2,w:4,h:4}).length,1);
+ const edit={plan:{localOrdinal:1,itemId:p.itemId,expectedX:4,expectedY:6,expectedOrientation:p.orientation,replacementX:8,replacementY:9,replacementOrientation:null},gridOrdinal:3,name:'Fixture',warning:''};
+ assert.deepEqual(projectMainlandSaved(grids,sessions,maps,[edit]).objects.map(p=>({x:p.x,y:p.y})),[mainlandMapAnchor(g,8,9)]);
+ assert.equal(projectMainlandSaved(grids,[{receipt,verifiedGridOrdinals:[]}],maps,[]).omitted,1);
+ assert.equal(projectMainlandSaved(grids,[{receipt:{...receipt,points:[p,{...p,localOrdinal:2,localGridOrdinal:4}]},verifiedGridOrdinals:[3,4]}],maps,[]).objects.length,0);
+ assert.equal(projectMainlandSaved(grids,sessions,new Map([[g.key,{...m,sourceGridFactor:2}]]),[]).objects.length,0);
+});
+
+import {emptyWorldTimeline,currentWorldEdits} from '../src/lib/world/saved-map-batch.ts';
+test('mainland save move drafts remain native same-grid and reject overlaps or other areas',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(bundle.grids),g=grids.find(g=>g.key==='Meadow');
+ const rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]));
+ const r=rasters.get(g.key);r.nativeFloorValues[6*r.sizeX+4]=4;r.nativeFloorValues[9*r.sizeX+8]=4;
+ const shape={width:1,height:1,runs:[{x:0,y:0,width:1}],cellCount:1,path:'M0 0h1v1H0Z'};
+ const o={localOrdinal:1,localGridOrdinal:3,itemId:'40005160',x:4,y:6,orientation:'GridOrientation_Down',shapeKey:'40005160:8',orientationCode:8,name:'Fixture',layer:'furniture',surfaceCapable:false};
+ const m={layoutId:g.layoutId,gridIdNative:g.gridIdNative,gridDataPath:g.gridDataPath,sourceGridFactor:g.factor,objects:[o],shapes:{[o.shapeKey]:shape},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
+ const a={area:g.key,object:o,shape,factor:g.factor,...mainlandMapAnchor(g,o.x,o.y)},maps=new Map([[g.key,m]]),timeline=emptyWorldTimeline();
+ const b=mainlandMapAnchor(g,8.5,9.5),draft=mainlandSavedDraft(a,grids,rasters,maps,timeline,b.x,b.y,o.orientation);
+ assert(draft?.valid);assert.equal(currentWorldEdits(draft.next)[0].plan.replacementX,8);assert.equal(currentWorldEdits(draft.next)[0].plan.replacementY,9);
+ const outside=mainlandMapAnchor(g,50.5,50.5);assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,outside.x,outside.y,o.orientation)?.valid,false);
+ const other=grids.find(g=>g.key==='Forest'),far=mainlandMapAnchor(other,4.5,6.5);
+ assert.equal(mainlandSavedDraft(a,grids,rasters,maps,timeline,far.x,far.y,o.orientation)?.valid,false);
+});
+
+import {mainlandNetworkScope,mergeMainlandAreaDrafts} from '../src/lib/world/mainland-design-frame.ts';
+import {roadComponent,floodRoadRegion} from '../src/lib/world/road-design.ts';
+import {fenceDesignEdges,fenceComponent} from '../src/lib/world/fence-design.ts';
+import {commitRoadDesign,replaceDesignNetwork} from '../src/lib/world/design-layout.ts';
+test('mainland network scope separates adjacent source areas without splitting the design history',()=>{
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:'M0 0h2v2H0Z'};
+ const a={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}},b={...a,itemId:40100035,name:'Path_Brick',shapes:{'40100035:8':shape}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]),scope=p=>p.x<4?'A':'B';
+ const next=commitRoadDesign(emptyDesign(),a,[{x:0,y:0},{x:2,y:0},{x:4,y:0}],1,12,12);
+ assert.deepEqual(roadComponent(currentDesign(next),defs,1,1,scope),[1,2]);
+ const changed=replaceDesignNetwork(next,1,b,defs,1,12,12,scope);
+ assert.deepEqual(currentDesign(changed).map(p=>p.itemId),[b.itemId,b.itemId,a.itemId]);
+ const r={sizeX:8,sizeY:4,nativeFloorValues:new Uint32Array(32).fill(1)};
+ assert.equal(floodRoadRegion({x:0,y:0},a,{raster:r,factor:1,verifiedGridOrdinals:[]},[],scope).length,4);
+ const fence={itemId:40700000,name:'Fence_IronBricks_Base',layer:'fence',surfaceCapable:false,shapes:{'40700000:8':{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z'}}};
+ const nodes=[{id:1,itemId:fence.itemId,x:2,y:0,orientation:2},{id:2,itemId:fence.itemId,x:3,y:0,orientation:2},{id:3,itemId:fence.itemId,x:4,y:0,orientation:2}],fd=new Map([[fence.itemId,fence]]);
+ assert.equal(fenceDesignEdges(nodes,fd,1,scope).length,1);assert.deepEqual(fenceComponent(nodes,fd,1,1,scope),[1,2]);
+});
+
+test('area drafts copy into mainland atomically with new IDs and leave the source unchanged',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
+ const rasters=new Map(bundle.grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:Uint32Array.from(inflateSync(Buffer.from(g.data,'base64')),i=>g.palette[i])}]));
+ const f=composeMainlandDesignFrame(bundle.grids,rasters),g=f.grids.find(g=>g.key==='Meadow'),i=f.grids.indexOf(g)+1,w=f.raster.sizeX,at=f.owners.indexOf(i),x=at%w,y=Math.floor(at/w),off=mainlandFrameOffset(f,g);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z'},item={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{'40005160:8':shape}},defs=new Map([[item.itemId,item]]);
+ const local=placeDesign(emptyDesign(),item,x-off.x,y-off.y,2,g.sizeX,g.sizeY),world=emptyDesign(),next=mergeMainlandAreaDrafts(f,world,{[g.key]:local},defs);
+ assert(next);assert.equal(currentDesign(next).length,1);assert.equal(currentDesign(next)[0].x,x);assert.equal(currentDesign(next)[0].y,y);assert.equal(currentDesign(local)[0].x,x-off.x);
+ assert.equal(mergeMainlandAreaDrafts(f,next,{[g.key]:local},defs),next);assert.equal(currentDesign(travelDesign(next,-1)).length,0);
+});

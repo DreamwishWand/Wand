@@ -4,7 +4,7 @@
  * No derived Ext/DiagExt IDs are generated or exposed in the palette. */
 import type {DesignItemGeometry,DesignPlacement} from './design-layout.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-import type {RoadPoint} from './road-design.ts';
+import {localNetworkScope,type RoadPoint,type NetworkScope} from './road-design.ts';
 const priorBases=new Map<number,string>([
  [40700000,'IronBricks'],[40700007,'BambooFence01'],[40700014,'BambooFence02'],
  [40700021,'ChainFence01'],[40700028,'ChainFence02'],[40700035,'DarkMountainFence'],
@@ -33,24 +33,24 @@ export function fencePitch(g:DesignItemGeometry|null|undefined,factor:number):nu
 export interface FenceDesignEdge {readonly key:string;readonly from:RoadPoint;readonly to:RoadPoint;readonly a:number;readonly b:number;readonly itemId:number;readonly pitch:number}
 /** Same-family adjacent cardinal vertices define the local design graph.
  * Never apply this to native Save records (Ext and diagonal state matter). */
-export function fenceDesignEdges(placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number):FenceDesignEdge[]{
+export function fenceDesignEdges(placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,scope:NetworkScope=localNetworkScope):FenceDesignEdge[]{
  const nodes=new Map<string,DesignPlacement>(),out:FenceDesignEdge[]=[];
  const key=(itemId:number,x:number,y:number)=>itemId+':'+x+':'+y;
- for(const p of placements){const pitch=fencePitch(defs.get(p.itemId),factor);if(pitch&&p.orientation===2&&p.x%pitch===0&&p.y%pitch===0)nodes.set(key(p.itemId,p.x,p.y),p);}
+ for(const p of placements){const pitch=fencePitch(defs.get(p.itemId),factor);if(pitch&&p.orientation===2&&p.x%pitch===0&&p.y%pitch===0&&scope(p)!==null)nodes.set(key(p.itemId,p.x,p.y),p);}
  for(const a of nodes.values()){
   const pitch=fencePitch(defs.get(a.itemId),factor)!;
   for(const [dx,dy] of [[pitch,0],[0,pitch]]){
    const b=nodes.get(key(a.itemId,a.x+dx,a.y+dy));
-   if(b)out.push({key:key(a.itemId,a.x,a.y)+':'+dx+':'+dy,from:{x:a.x+pitch/2,y:a.y+pitch/2},to:{x:b.x+pitch/2,y:b.y+pitch/2},a:a.id,b:b.id,itemId:a.itemId,pitch});
+   if(b&&scope(a)===scope(b))out.push({key:key(a.itemId,a.x,a.y)+':'+dx+':'+dy,from:{x:a.x+pitch/2,y:a.y+pitch/2},to:{x:b.x+pitch/2,y:b.y+pitch/2},a:a.id,b:b.id,itemId:a.itemId,pitch});
   }
  }
  return out;
 }
-export function fenceComponent(placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,seed:number):number[]{
+export function fenceComponent(placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,seed:number,scope:NetworkScope=localNetworkScope):number[]{
  const ids=new Set<number>(),root=placements.find(p=>p.id===seed);
- if(!root||!fencePitch(defs.get(root.itemId),factor)||root.orientation!==2||root.x%factor!==0||root.y%factor!==0)return [];
+ if(!root||!fencePitch(defs.get(root.itemId),factor)||root.orientation!==2||root.x%factor!==0||root.y%factor!==0||scope(root)===null)return [];
  const adjacency=new Map<number,number[]>();
- for(const e of fenceDesignEdges(placements,defs,factor)){const a=adjacency.get(e.a)??[],b=adjacency.get(e.b)??[];a.push(e.b);b.push(e.a);adjacency.set(e.a,a);adjacency.set(e.b,b);}
+ for(const e of fenceDesignEdges(placements,defs,factor,scope)){const a=adjacency.get(e.a)??[],b=adjacency.get(e.b)??[];a.push(e.b);b.push(e.a);adjacency.set(e.a,a);adjacency.set(e.b,b);}
  const queue=[seed];ids.add(seed);for(let i=0;i<queue.length;i++)for(const id of adjacency.get(queue[i])??[])if(!ids.has(id)){ids.add(id);queue.push(id);}
  return [...ids];
 }

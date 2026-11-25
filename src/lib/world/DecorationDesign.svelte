@@ -1,5 +1,5 @@
 <script lang="ts">
- import {mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,type MainlandDesignFrame} from './mainland-design-frame.ts';
+ import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
  import NetworkStyleControls from './NetworkStyleControls.svelte';
  import RoadDesignControls from './RoadDesignControls.svelte';
  import {roadComponent,roadPitch,roadStroke,snapRoadPoint,roadErase,roadFreehand,floodRoadRegion,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
@@ -42,7 +42,14 @@
  export let raster:TerrainRaster|null=null;
  export let worldFrame:MainlandDesignFrame|null=null;
  $: contextKey=worldFrame?'@mainland-1.26.2':grid?.key??'';
- const worldCatalogEligible=(o:DesignCatalogItem|DesignItemGeometry)=>o.layer!=='ground'&&o.layer!=='fence'&&o.layer!=='surface';
+ export let areaLabel:(key:string)=>string=key=>key;
+ const areaWords={ja:['エリアへ移動','エリア設計を追加','エリア設計を追加できません。地形範囲または重複を確認してください。'],en:['Jump to area','Add area designs','Unable to add area designs. Check terrain bounds or duplicates.'],fr:['Aller à la zone','Ajouter les plans de zones','Impossible d’ajouter les plans de zones.'],it:['Vai alla zona','Aggiungi progetti delle zone','Impossibile aggiungere i progetti.'],de:['Zum Bereich','Bereichsentwürfe hinzufügen','Bereichsentwürfe konnten nicht hinzugefügt werden.'],'es-ES':['Ir a zona','Añadir diseños de zonas','No se pudieron añadir los diseños.'],'zh-CN':['前往区域','添加区域设计','无法添加区域设计，请检查地形或重复物品。'],'pt-BR':['Ir à área','Adicionar projetos de áreas','Não foi possível adicionar os projetos.']} as const;
+ $: aw=areaWords[locale]??areaWords.en;
+ $: hasAreaDrafts=!!worldFrame&&worldFrame.grids.some(g=>layouts[g.key]&&currentDesign(layouts[g.key]).length>0);
+ function jumpArea(key:string){if(!worldFrame)return;const g=worldFrame.grids.find(g=>g.key===key);if(!g)return;const o=mainlandFrameOffset(worldFrame,g),zoom=Math.max(1,Math.min(maxZoom,width/(g.sizeX*1.15),height/(g.sizeY*1.15))),clamp=(n:number)=>Math.max(.5/zoom,Math.min(1-.5/zoom,n));camera={zoom,x:clamp((o.x+g.sizeX/2)/width),y:clamp(1-(o.y+g.sizeY/2)/height)};}
+ function addAreaDrafts(){if(!worldFrame||busyImport)return;const next=mergeMainlandAreaDrafts(worldFrame,timeline,layouts,definitions);if(!next){error=aw[2];return;}cancel();selected=null;groupIds=[];save(next);}
+ const worldCatalogEligible=(o:DesignCatalogItem|DesignItemGeometry)=>o.layer!=='surface';
+ $: networkScope=mainlandNetworkScope(worldFrame);
  export let worker:Worker|null=null;
  export let nextRequest:()=>number;
  export let locale:WandLanguage='ja';
@@ -66,17 +73,18 @@
  $: pitch=roadPitch(placing,grid?.factor??0)??fencePitch(placing,grid?.factor??0);
  $: roadEnabled=Boolean(pitch&&!symmetry);
  $: if(fenceDrawing&&(roadTool==='fill'||roadTool==='flood'))roadTool='brush';
- $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow&&placing?networkStroke(roadDrag.points,roadTool,pitch,placing,binding,placements,definitions):null;
- function networkStroke(points:readonly RoadPoint[],tool:RoadTool,step:number,g:DesignItemGeometry,terrain:TerrainBinding|null,old:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>){
+ $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow&&placing?networkStroke(roadDrag.points,roadTool,pitch,placing,binding,placements,definitions,networkScope):null;
+ function networkStroke(points:readonly RoadPoint[],tool:RoadTool,step:number,g:DesignItemGeometry,terrain:TerrainBinding|null,old:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,scope=networkScope){
   if(tool!=='flood')return roadStroke(points,tool,step);
   if(!terrain||old.some(p=>exclusiveAnchorClass(String(p.itemId))==='ground'&&roadPitch(defs.get(p.itemId),terrain.factor)!==step))return null;
-  return floodRoadRegion(points[0],g,terrain,old);
+  return floodRoadRegion(points[0],g,terrain,old,scope);
  }
  $: legacyFence=placements.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&!fencePitch(definitions.get(p.itemId),grid?.factor??0));
- $: roadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadErase(roadTool)):null;
- $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor):[];
- $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?previewEdges(placements,roadPlan,definitions,grid.factor):null;
- function previewEdges(old:readonly DesignPlacement[],plan:NonNullable<typeof roadPlan>,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number){const remove=new Set(plan.remove);return fenceDesignEdges([...old.filter(p=>!remove.has(p.id)),...plan.add],defs,factor);}
+ $: rawRoadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadErase(roadTool)):null;
+ $: roadPlan=rawRoadPlan&&mainlandItemsValid(worldFrame,rawRoadPlan.add,definitions)?rawRoadPlan:null;
+ $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor,networkScope):[];
+ $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?previewEdges(placements,roadPlan,definitions,grid.factor,networkScope):null;
+ function previewEdges(old:readonly DesignPlacement[],plan:NonNullable<typeof roadPlan>,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,scope:typeof networkScope){const remove=new Set(plan.remove);return fenceDesignEdges([...old.filter(p=>!remove.has(p.id)),...plan.add],defs,factor,scope);}
  $: fenceDrawEdges=previewFenceEdges??fenceEdges;
  $: originalFenceEdgeKeys=new Set(fenceEdges.map(e=>e.key));
  $: previewFenceEdgeKeys=new Set(previewFenceEdges?.map(e=>e.key)??[]);
@@ -85,12 +93,12 @@
  let networkSeed:number|null=null,networkTarget=0,networkRequest=0,networkLoading=false;
  $: networkRoot=networkSeed===null?null:placements.find(p=>p.id===networkSeed)??null;
  $: networkSource=networkRoot?definitions.get(networkRoot.itemId):null;
- $: networkIds=networkRoot&&networkSource&&grid?(networkSource.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,networkRoot.id):[];
+ $: networkIds=networkRoot&&networkSource&&grid?(networkSource.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,networkRoot.id,networkScope):[];
  $: networkOptions=networkSource?catalog.filter(o=>o.itemId!==networkSource?.itemId&&o.layer===networkSource?.layer&&layerSelectable(layerState,o)):[];
  $: networkGeometry=definitions.get(networkTarget);
- $: networkPlan=networkRoot&&networkGeometry&&grid&&networkSource&&layerSelectable(layerState,networkSource)&&layerSelectable(layerState,networkGeometry)?replaceDesignNetwork(timeline,networkRoot.id,networkGeometry,definitions,grid.factor,width,height):null;
+ $: networkPlan=networkRoot&&networkGeometry&&grid&&networkSource&&layerSelectable(layerState,networkSource)&&layerSelectable(layerState,networkGeometry)?validatedMainlandPlan(worldFrame,timeline,replaceDesignNetwork(timeline,networkRoot.id,networkGeometry,definitions,grid.factor,width,height,networkScope),definitions):null;
  function closeNetworkStyle(){networkSeed=null;networkTarget=0;networkRequest=0;networkLoading=false;}
- function selectNetwork(openStyle=false){if(!grid||selected===null||!chosenGeometry)return;const seed=selected,ids=(chosenGeometry.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,seed);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id),g=p?definitions.get(p.itemId):null;return !g||!layerSelectable(layerState,g);}))return;cancel();groupIds=ids.length>1?ids:[];selected=ids.length===1?ids[0]:null;if(openStyle){networkSeed=seed;alignmentOpen=false;layersOpen=false;symmetryOpen=false;}}
+ function selectNetwork(openStyle=false){if(!grid||selected===null||!chosenGeometry)return;const seed=selected,ids=(chosenGeometry.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,seed,networkScope);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id),g=p?definitions.get(p.itemId):null;return !g||!layerSelectable(layerState,g);}))return;cancel();groupIds=ids.length>1?ids:[];selected=ids.length===1?ids[0]:null;if(openStyle){networkSeed=seed;alignmentOpen=false;layersOpen=false;symmetryOpen=false;}}
  function changeNetworkTarget(id:number){networkTarget=id;networkRequest=0;networkLoading=false;if(!id||definitions.has(id)||!worker||!grid)return;networkRequest=nextRequest();networkLoading=true;worker.postMessage({command:'design-shape',requestId:networkRequest,key:grid.key,itemId:id});}
  function confirmNetworkStyle(){if(!networkPlan)return;save(networkPlan);closeNetworkStyle();}
  function sampleNetwork(){const id=chosen?.itemId;if(id===undefined)return;cancel();chooseItem(id);}
@@ -190,11 +198,11 @@
      if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
      const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(worldFrame&&(!pending.sourceAreas||!mainlandImportMatches(worldFrame,pending.placements,incoming,pending.sourceAreas))){error=words[3];return;}
-     const next=validatedMainlandPlan(worldFrame,timeline,restoreDesign(timeline,pending.placements,incoming,width,height),incoming);
+     const next=restoreDesign(timeline,pending.placements,incoming,width,height);
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;groupIds=[];cancel();save(next,incoming);return;
+     selected=null;groupIds=[];cancel();layouts={...layouts,[contextKey]:next};error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -321,7 +329,7 @@
  }
  function placeAt(x:number,y:number){
   if(!placing)return;
-  if(placing.layer==='fence'&&!roadEnabled){save(null);return;}
+  if((placing.layer==='fence'||worldFrame&&placing.layer==='ground')&&!roadEnabled){save(null);return;}
   if(roadEnabled&&pitch&&grid){const points=networkStroke([snapRoadPoint({x,y},pitch)],roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);return;}
   if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
  }
@@ -420,7 +428,7 @@
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
-    {#each (worldFrame?['all','furniture','landscape']:['all','furniture','surface','landscape','ground','fence']) as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
+    {#each (worldFrame?['all','furniture','landscape','ground','fence']:['all','furniture','surface','landscape','ground','fence']) as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
    <div class="design-catalog" on:scroll={more}>
@@ -438,6 +446,7 @@
     <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
+    {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
@@ -530,7 +539,7 @@
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{/if}
     {#if warnings.length}<span>地形属性不一致候補</span>{/if}
-    {#if worldFrame}<small>{locale==='ja'?'本島全体の家具設計 · 道・フェンスはエリア編集':'Mainland furniture design · paths and fences in area editing'}</small>{/if}
+    
     <small>ゲーム内の配置可否は未確認</small>
    </div>
    {#if showCounts}

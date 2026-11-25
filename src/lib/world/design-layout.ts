@@ -1,7 +1,7 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import {fencePitch,knownFenceBaseId,fenceComponent} from './fence-design.ts';
-import {roadPitch,roadComponent,type RoadPoint} from './road-design.ts';
+import {roadPitch,roadComponent,localNetworkScope,type RoadPoint,type NetworkScope} from './road-design.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,exclusiveAnchorClass} from './saved-map-transform.ts';
@@ -236,16 +236,16 @@ export function commitFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:r
 /** Full component style replacement preserves every cell and connection.
  * Refuse a replacement that would merge with a neighboring target family,
  * or any unknown/off-lattice representation in the affected layer. */
-export function replaceDesignNetwork(t:DesignTimeline,seed:number,target:DesignItemGeometry,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,width:number,height:number):DesignTimeline|null{
+export function replaceDesignNetwork(t:DesignTimeline,seed:number,target:DesignItemGeometry,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,width:number,height:number,scope:NetworkScope=localNetworkScope):DesignTimeline|null{
  const old=currentDesign(t),root=old.find(p=>p.id===seed),source=root?defs.get(root.itemId):null;
  if(!root||!source||target.itemId===root.itemId||source.layer!==target.layer||nativeActionBlocked(source.editRestrictions,'remove'))return null;
  const kind=source.layer;if(kind!=='ground'&&kind!=='fence')return null;
  const getPitch=kind==='ground'?roadPitch:fencePitch,pitch=getPitch(source,factor);
  if(!pitch||getPitch(target,factor)!==pitch)return null;
- const ids=new Set((kind==='ground'?roadComponent:fenceComponent)(old,defs,factor,seed));
+ const ids=new Set((kind==='ground'?roadComponent:fenceComponent)(old,defs,factor,seed,scope));
  if(!ids.size)return null;
  const chosen=old.filter(p=>ids.has(p.id)),rest=old.filter(p=>!ids.has(p.id));
- const targetAnchors=new Set(rest.filter(p=>p.itemId===target.itemId).map(p=>p.x+':'+p.y));
+ const targetAnchors=new Set(rest.filter(p=>p.itemId===target.itemId&&scope(p)===scope(root)).map(p=>p.x+':'+p.y));
  const occupied=new Set<string>();
  for(const p of old)if(exclusiveAnchorClass(String(p.itemId))===kind){
   if(getPitch(defs.get(p.itemId),factor)!==pitch||p.orientation!==2||p.x%pitch!==0||p.y%pitch!==0)return null;
