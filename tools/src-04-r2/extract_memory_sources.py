@@ -18,7 +18,7 @@ from resolve_shop_catalog import resolve
 from resolve_shop_objects import dependency_path, exact_readers, file_sha
 
 MASK_TYPE = "Mdl.Activities.MemoryShardMaskData"
-IMAGE_TYPES = ("UnityEngine.Sprite", "UnityEngine.Texture2D")
+IMAGE_TYPES = ("UnityEngine.Texture2D",)
 FIELDS = {"ImageAddress": "string", "MaskDataAddress": "string", "NumberOfShards": "int"}
 GUID = re.compile(r"guid:([0-9a-f]{32})")
 SHA = re.compile(r"[0-9a-f]{64}")
@@ -218,6 +218,8 @@ def materialize(obj, bundles, existing, output, mask=False):
 
 def run(parts,aa,root,out,index_only=False):
     source,rows=read_memory_rows(parts)
+    # Source location is Steam ddv_Data/StreamingAssets/aa. The caller must
+    # use the catalog for the DB-01 version; all references must resolve.
     expected=targets(rows)
     locs,pins=resolve(aa,set(expected),IMAGE_TYPES+(MASK_TYPE,))
     locs={g:[v for v in locs[g] if v["class"] in classes] for g,classes in expected.items()}
