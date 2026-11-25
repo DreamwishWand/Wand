@@ -180,8 +180,23 @@ export async function openPublicItemDetails(
   fetcher: typeof fetch = fetch,
   options: ItemMasterOpenOptions = {},
 ): Promise<PublicItemDetailsClient> {
-  const master = await openPublicItemMaster(basePath, fetcher, options);
-  const acquisitionStatus=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION
+  // The normal current reader must pin one immutable complete manifest.
+  // Reopening the registry lazily can select a different revision even when
+  // the game version is unchanged (for example an in-version DLC release).
+  const currentMaster=options.gameVersion==='current'&&options.scope===undefined
+    ?await openCurrentItemDatabase(basePath,fetcher):null;
+  let legacyTask:Promise<Awaited<ReturnType<typeof openPublicItemMaster>>>|null=null;
+  function legacyMaster(){
+    if(legacyTask)return legacyTask;
+    const task=openPublicItemMaster(basePath,fetcher,currentMaster
+      ?{gameVersion:currentMaster.release.target.gameVersion}:options);
+    legacyTask=task;
+    void task.catch(()=>{if(legacyTask===task)legacyTask=null;});
+    return task;
+  }
+  const master=currentMaster??await legacyMaster();
+  const legacyAcquisitionCompatible=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION;
+  const acquisitionStatus=(currentMaster?Boolean(currentMaster.release.acquisitionProjection):legacyAcquisitionCompatible)
     ?'current' as const:'pending_update' as const;
   // Compatibility-only explicit historical reads retain their strict contract.
   // Current product reads may still use the canonical attributes during a
@@ -193,7 +208,7 @@ export async function openPublicItemDetails(
   let sidecarTask: Promise<Db01ItemAcquisitionIndex> | null = null;
   let sourcesTask: Promise<Db01ItemSourceRelations> | null = null;
   let allSourceItemIds: readonly number[] | null = null;
-  let completeTask: Promise<PublicCompleteItemMaster>|null=null;
+  let completeTask: Promise<PublicCompleteItemMaster>|null=currentMaster?Promise.resolve(currentMaster):null;
   const combined = new Map<number, Readonly<PublicItemDetails>>();
   const combinedWithSources = new Map<number, Readonly<PublicItemDetailsWithSources>>();
   const idLists = new Map<GameNativeItemCategory | undefined, readonly number[]>();
@@ -241,7 +256,7 @@ export async function openPublicItemDetails(
     }));
   }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
-    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
+    if(!legacyAcquisitionCompatible||acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sidecarTask) return sidecarTask;
     const task = loadDb01ItemAcquisitionHandoff(publicBase, fetcher)
       .then(index => {
@@ -257,7 +272,7 @@ export async function openPublicItemDetails(
     return task;
   }
   function sources(): Promise<Db01ItemSourceRelations> {
-    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
+    if(!legacyAcquisitionCompatible||acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sourcesTask) return sourcesTask;
     const task = loadDb01ItemSourceRelations(publicBase, fetcher)
       .then(index => {
@@ -312,12 +327,12 @@ export async function openPublicItemDetails(
     release: master.release,
     acquisitionStatus,
     async getItem(itemId: number) {
-      const definition = await master.getItem(itemId);
+      const definition = await (await legacyMaster()).getItem(itemId);
       if (!definition) return null;
       return combine(definition, await sidecar());
     },
     async getItems(itemIds: readonly number[]) {
-      const definitions = await master.getItems(itemIds);
+      const definitions = await (await legacyMaster()).getItems(itemIds);
       if (!definitions.some(Boolean)) return definitions.map(() => null);
       const origins = await sidecar();
       return definitions.map(definition =>
@@ -438,13 +453,13 @@ export async function openPublicItemDetails(
     },
     getLocalizedCompleteItems:localizedCompleteItems,
     async getItemWithSources(itemId: number) {
-      const definition = await master.getItem(itemId);
+      const definition = await (await legacyMaster()).getItem(itemId);
       if (!definition) return null;
       const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
       return combineWithSourceLinks(combine(definition, acquisition), sourceIndex);
     },
     async getItemsWithSources(itemIds: readonly number[]) {
-      const definitions = await master.getItems(itemIds);
+      const definitions = await (await legacyMaster()).getItems(itemIds);
       if (!definitions.some(Boolean)) return definitions.map(() => null);
       const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
       return definitions.map(definition =>
