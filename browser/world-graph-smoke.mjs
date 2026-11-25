@@ -1552,7 +1552,7 @@ try{
   // Indoor room identity is taken only from explicit Save room references.
   const indoorSave=structuredClone(worldSave);
   indoorSave.World.PlayerHouses=[{Floors:[{Rooms:{'0':{Name:'Fixture room',FloorGridID:3001,WallGridIDs:{'0':3002,'1':3003},Flooring:40005160,Wallpapers:{'0':40005160,'1':0}}}}]}];
-  indoorSave.World.GridCollection.Grids['3001']={ID:3001,GridDefaultLayoutPath:'SceneLayouts/Houses/Fixture.json',GridDataPath:'GridData/Houses/FixtureFloor.json',Objects:{'1':{ID:1,ItemID:40005160,X:1,Y:2,Orientation:'GridOrientation_Down'},'2':{ID:2,ItemID:40005160,X:3,Y:2,Orientation:'GridOrientation_Down'}}};
+  indoorSave.World.GridCollection.Grids['3001']={ID:3001,GridDefaultLayoutPath:'SceneLayouts/Houses/Fixture.json',GridDataPath:'GridData/Houses/FixtureFloor.json',TessellationFactor:1,Objects:{'1':{ID:1,ItemID:40005160,X:1,Y:2,Orientation:'GridOrientation_Down'},'2':{ID:2,ItemID:40005160,X:3,Y:2,Orientation:'GridOrientation_Down'}}};
   indoorSave.World.GridCollection.Grids['3002']={ID:3002,GridDefaultLayoutPath:'SceneLayouts/Houses/Fixture.json',GridDataPath:'GridData/Houses/FixtureWall.json',Objects:{}};
   await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
   await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'indoor-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(indoorSave))});
@@ -1562,6 +1562,12 @@ try{
   await indoor.getByRole('button',{name:/Fixture room/}).waitFor({timeout:30000});
   assert.equal(await indoor.locator('.room-item').count(),1);
   assert.match(await indoor.locator('.room-item').innerText(),/×2/);
+  await indoor.locator('.room-item').click();
+  assert.equal(await indoor.locator('.position-map svg circle.highlighted').count(),2);
+  await indoor.locator('.finish-card').nth(1).click();
+  assert.equal(await indoor.locator('.position-map svg circle').count(),0);
+  await indoor.locator('.finish-card').nth(0).click();
+
   assert.equal(await indoor.locator('.finish-card').count(),4);
   await indoor.locator('.finish-card').nth(1).click();
   assert.equal(await indoor.locator('.room-item').count(),0);
