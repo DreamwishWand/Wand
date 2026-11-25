@@ -20,7 +20,7 @@ scope.onmessage=async({data})=>{
    if(!Number.isSafeInteger(length)||length<1||length>32*1024*1024)throw Error('copy size');
    copy=new Uint8Array(length);
    for(let i=0;i<length;i+=1048576){const n=Math.min(1048576,length-i),part=wasm.take_copy_chunk(n);if(part.byteLength!==n){part.fill(0);throw Error('copy chunk');}copy.set(part,i);part.fill(0);}
-   scope.postMessage({kind:'furniture-stock-copy',bytes:copy,receipt:{contract:'wand.db05.experimental-copy@1',copyBytes:length,originalUnchanged:true,independentReopenVerified:true,experimentalCopyOnly:true,productionWriterAuthorized:false}},[copy.buffer]);copy=null;return;
+   scope.postMessage({kind:'furniture-stock-copy',replay:{command:data.command,plan:data.plan,...(data.command==='furniture-stock-export'?{destination:data.destination??null}:{})},bytes:copy,receipt:{contract:'wand.db05.experimental-copy@1',copyBytes:length,originalUnchanged:true,independentReopenVerified:true,experimentalCopyOnly:true,productionWriterAuthorized:false}},[copy.buffer]);copy=null;return;
   }
   const r=JSON.parse(wasm.preview_furniture_stock_structure(JSON.stringify(data.plan),JSON.stringify(data.destination??null)));
   if(r?.contract!=='wand.db05.furniture-stock-preview@1'||r.changed!==true||r.lexicalBytesPreserved!==true||r.structureValidated!==true||r.reopenVerified!==true||r.exportAuthorized!==false||r.runtimeReferencesVerified!==false||
