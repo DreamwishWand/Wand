@@ -83,7 +83,7 @@ export async function readDesignDraft(key:string):Promise<StoredDraft|undefined>
 }
 /** Revision check and mutation occur within one read/write transaction, so
  * another tab's newer draft is never silently replaced or discarded. */
-async function changeDraft(key:string,expected:string|null,draft:DesignDraft|null):Promise<string|null>{
+export async function changeLocalWorldDraft(key:string,expected:string|null,draft:unknown):Promise<string|null>{
  const db=await openDraftDb();
  try{return await new Promise((resolve,reject)=>{
   const tx=db.transaction(STORE,'readwrite'),store=tx.objectStore(STORE),get=store.get(key);
@@ -96,5 +96,5 @@ async function changeDraft(key:string,expected:string|null,draft:DesignDraft|nul
   tx.oncomplete=()=>resolve(revision);tx.onabort=()=>reject(conflict?Error('DRAFT_CONFLICT'):tx.error??Error('DRAFT_WRITE'));tx.onerror=()=>reject(tx.error??Error('DRAFT_WRITE'));
  });}finally{db.close();}
 }
-export const writeDesignDraft=(key:string,expected:string|null,draft:DesignDraft)=>changeDraft(key,expected,draft);
-export const discardDesignDraft=(key:string,expected:string|null)=>changeDraft(key,expected,null);
+export const writeDesignDraft=(key:string,expected:string|null,draft:DesignDraft)=>changeLocalWorldDraft(key,expected,draft);
+export const discardDesignDraft=(key:string,expected:string|null)=>changeLocalWorldDraft(key,expected,null);

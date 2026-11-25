@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {saveDraftIdentity,saveDraftKey,makeSaveSessionDraft,parseSaveSessionDraft} from '../src/lib/world/save-session-draft.ts';
+const id=saveDraftIdentity('a'.repeat(64),'json'),other=saveDraftIdentity('b'.repeat(64),'json');
+const p={localOrdinal:1,localGridOrdinal:2,itemId:'40005160',x:4,y:5,orientation:'GridOrientation_Down',subgrid:null};
+const sessions=[{receipt:{viewKey:'Meadow',points:[p]},verifiedGridOrdinals:[2]}];
+const edit={gridOrdinal:2,name:'Furniture',warning:'',plan:{localOrdinal:1,itemId:p.itemId,recordKind:'full',expectedX:4,expectedY:5,replacementX:6,replacementY:7,expectedOrientation:null,replacementOrientation:null}};
+const timeline={snapshots:[{edits:[],title:'',warning:''},{edits:[edit],title:'Furniture',warning:''}],cursor:0};
+test('Save draft preserves redo history and exact input identity',()=>{
+ const d=makeSaveSessionDraft(id,timeline,{area:'Meadow',overview:true});
+ assert.deepEqual(parseSaveSessionDraft(structuredClone(d),id,sessions),d);
+ assert.notEqual(saveDraftKey(id),saveDraftKey(other));
+ assert.throws(()=>parseSaveSessionDraft(d,other,sessions),/IDENTITY/);
+ assert.throws(()=>parseSaveSessionDraft(d,saveDraftIdentity(id.fingerprint,'p1g'),sessions),/IDENTITY/);
+ assert.throws(()=>parseSaveSessionDraft(d,id,[{receipt:{viewKey:'Meadow',points:[{...p,x:9}]}}]),/STALE/);
+ assert.throws(()=>parseSaveSessionDraft(d,id,[{receipt:{viewKey:'Meadow',points:[p,p]}}]),/STALE/);
+ const stale=structuredClone(d);stale.timeline.snapshots[1].edits[0].plan.replacementX=1.5;
+ assert.throws(()=>parseSaveSessionDraft(stale,id,sessions),/PLAN/);
+ const unsafe=structuredClone(d);unsafe.timeline.snapshots[1].edits.push(edit);
+ assert.throws(()=>parseSaveSessionDraft(unsafe,id,sessions),/PLAN/);
+ const wrong=structuredClone(d);wrong.identity.source='old';
+ assert.throws(()=>parseSaveSessionDraft(wrong,id,sessions),/IDENTITY/);
+});
