@@ -15,6 +15,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
+import {buildPlacementContexts} from './placement-context.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
@@ -1022,7 +1023,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1114,6 +1115,21 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       imageReferences.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
       add('media.sourceImageReferences',row.itemId,imageReferences);
       add('media.sourceImageGuids',row.itemId,[...new Set(imageReferences.map(r=>r[1]))].sort());
+    }
+    const context=placementContexts.get(row.itemId);
+    if(context){
+      add('placement.sourceContext',row.itemId,context);
+      if(context.floor){
+        add('placement.sourceFloorClass',row.itemId,context.floor.kind);
+        add('placement.sourceFloorTypeNames',row.itemId,context.floor.floorTypes);
+        add('placement.sourceSupportsSurface',row.itemId,context.floor.surface);
+      }
+      if(context.scene){
+        add('placement.sourceCanPlaceKind',row.itemId,context.scene.kind);
+        if(context.scene.sceneItemId!==null)add('placement.sourceCanPlaceSceneId',row.itemId,context.scene.sceneItemId);
+        if(context.scene.sceneTypeCode!==null)add('placement.sourceCanPlaceSceneType',row.itemId,context.scene.sceneTypeCode);
+        if(context.scene.sceneTagItemId!==null)add('placement.sourceCanPlaceSceneTagId',row.itemId,context.scene.sceneTagItemId);
+      }
     }
     const g=row.sourceAttributes?.GridAreaData;
     if(g){
@@ -1424,6 +1440,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     universeTags:source.universeTags,worldTags:source.worldTags,
     gameRuntimeMembershipVerified:false};
   const explore=[];
+  const placementContexts=buildPlacementContexts(source,rows);
   const stallRelations=loadStallCharacterRelations(project,source,byId);
   const skinRelations=loadBuildingSkinRelations(project,source,byId);
   const names={};
@@ -1484,6 +1501,12 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         universeStatus:association?.applied?'source_linked':r.universeSourceStatus,
         ...(association?.applied?{universeAssociation:association.candidate,
           originalUniverseStatus:r.universeSourceStatus}:{}),iconGuid:r.iconGuid,
+        ...(placementContexts.has(i)?{sourcePlacement:{
+          floorClass:placementContexts.get(i).floor?.kind??null,
+          acceptedFloorMask:placementContexts.get(i).floor?.mask??null,
+          surface:placementContexts.get(i).floor?.surface??null,
+          scene:placementContexts.get(i).scene,
+          placementLegalityVerified:false}}:{}),
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
         prefabGuid:r.artwork.prefabGuid??null,nativeKey:r.nativeKey,
@@ -1602,7 +1625,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
