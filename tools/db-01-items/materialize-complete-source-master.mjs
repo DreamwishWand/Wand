@@ -845,7 +845,7 @@ function loadLinkedLocalizations(project,e,version,source,byId,legacy){
 // Project only explicit result/reward occurrences, never generic condition,
 // ingredient, tag, exclusion or spawn references. Source roles are candidates
 // independent of DB-02's six acquisition categories and runtime availability.
-function nativeAcquisitionRole(category,path,sourceClass){
+function nativeAcquisitionRole(category,path,sourceClass,attributes){
   if(sourceClass==='CritterItemData'&&path==='source.BefriendingPetRewardItemID')return 'critter_befriending_reward';
   if(sourceClass==='FurnitureBlockerItemData'&&path==='source.DefaultRewardItemID')return 'blocker_default_reward';
   if(sourceClass==='FurnitureAncientMachineItemData'&&path==='source.BeeHouse.ProducedItemID')return 'machine_produced_item';
@@ -854,7 +854,21 @@ function nativeAcquisitionRole(category,path,sourceClass){
   if(category==='Story'&&path==='source.Reward.ItemID')return 'story_reward';
   if(category==='BoardGame'&&/^source\.AdditionalRewardItemIDs\[\d+\]$/.test(path))return 'board_game_reward';
   if(category==='DutyAch'&&/^source\.(?:Milestones\[\d+\]\.RewardItem|CompletionRewards\[\d+\]\.Id|StepDifficultyLayers\[\d+\]\.Rewards\[\d+\]\.Id)$/.test(path))return 'duty_reward';
-  if(category==='ConditionalEvent'&&/^source\.GiveItem\.Items\[\d+\]\.ItemID$/.test(path))return 'conditional_grant';
+  if(category==='ConditionalEvent'){
+    // GiveItem uses signed amounts. Negative entries remove items; neither
+    // those nor unspecified quantities may be reported as a grant.
+    const give=/^source\.GiveItem\.Items\[(\d+)\]\.ItemID$/.exec(path);
+    const mail=/^source\.SendMailbox\.Attachments\[(\d+)\]\.Attachment\.ItemID$/.exec(path);
+    const swap=/^source\.SwapItem\.ItemsToGive\[(\d+)\]\.ItemID$/.exec(path);
+    const amount=give?attributes?.GiveItem?.Items?.[Number(give[1])]?.Amount:
+      mail?attributes?.SendMailbox?.Attachments?.[Number(mail[1])]?.Amount:
+      swap?attributes?.SwapItem?.ItemsToGive?.[Number(swap[1])]?.Amount:null;
+    if(Number.isSafeInteger(amount)&&amount>0){
+      if(give)return 'conditional_grant';
+      if(mail)return 'conditional_mail_attachment';
+      if(swap)return 'conditional_swap_grant';
+    }
+  }
   if(category==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path))return 'quest_currency_reward';
   if(category==='Mission'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(path))return 'quest_additional_loot_candidate';
   if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Items\[\d+\])\.ItemID$/.test(path))return 'loot_table_candidate';
@@ -1279,7 +1293,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   for(const row of rows){
     const candidates=(refs.incoming.get(row.itemId)??[]).flatMap(([sourceId,path])=>{
       const source=sourceDefinitions.get(sourceId);
-      const role=nativeAcquisitionRole(source?.nativeCategory,path,source?.sourceClass);
+      const role=nativeAcquisitionRole(source?.nativeCategory,path,source?.sourceClass,source?.sourceAttributes);
       return role===null?[]:[[sourceId,role,path]];
     });
     if(candidates.length){
