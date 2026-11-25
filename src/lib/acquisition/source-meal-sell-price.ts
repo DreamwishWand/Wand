@@ -18,6 +18,8 @@ export interface MealIngredientFacts {
   readonly knownCookingClass:boolean;
   readonly cookingTypeId:number|null;
   readonly directTagIds:readonly number[]|null;
+  /** Explicit source-snapshot assumption; generic callers default to unknown. */
+  readonly assumeDirectTagMembershipComplete?:boolean;
 }
 export interface MealSlotMatch {
   readonly itemId:number;
@@ -43,7 +45,9 @@ function matches(slot:MealSlot,ingredient:MealIngredientFacts):boolean|null {
   if(slot.kind==='fixed')return slot.id===ingredient.itemId;
   if(slot.kind==='type')return ingredient.cookingTypeId===null?null:slot.id===ingredient.cookingTypeId;
   if(slot.kind==='alternatives')return slot.ids.includes(ingredient.itemId);
-  return ingredient.directTagIds&&slot.ids.every(v=>ingredient.directTagIds!.includes(v))?true:null;
+  if(!ingredient.directTagIds)return null;
+  if(slot.ids.every(v=>ingredient.directTagIds!.includes(v)))return true;
+  return ingredient.assumeDirectTagMembershipComplete===true?false:null;
 }
 export function matchNativeMealSlots(slots:readonly MealSlot[],ingredients:readonly MealIngredientFacts[]):readonly MealSlotMatch[] {
   check(Array.isArray(slots)&&slots.length<=32&&Array.isArray(ingredients)&&ingredients.length<=32,'LIMIT');
@@ -83,6 +87,7 @@ export interface SourceMealPriceEstimate {
   readonly nativeSlotMatchingSteam1262:true;
   readonly recipeSelectedByCaller:true;
   readonly allNativeTagFallbacksResolved:false;
+  readonly tagMatchingBasis:'original_direct_tags_only';
 }
 function sourceUnit(known:boolean,price:Readonly<OriginalItemPriceFacts>|null){
   if(!known||!price||price.status==='not_indexed')return {amount:null,conditional:null,kind:'unknown' as const};
@@ -137,7 +142,9 @@ export async function getSourceMealRecipeIds(db:PublicCompleteItemMaster,mealIte
  * Native iterator preserves repeated slots and caches the minimum tuple for
  * each Any selector. Its typed predicate excludes mission items except the
  * Quests type. Direct fixed IDs do not use this predicate.
- * Tag selectors and empty candidate sets are deliberately unresolved.
+ * TagsList uses all direct source tags. The original three cooking classes
+ * do not implement IHasSet; native inherited-tag lookup is not asserted
+ * for arbitrary types. Empty candidate sets remain unresolved.
  */
 export async function estimateSourceLowestMealSellPrice(db:PublicCompleteItemMaster,mealItemId:number,recipeItemId:number):Promise<Readonly<SourceLowestMealEstimate>>{
   check(id(mealItemId)&&id(recipeItemId),'INPUT');checkLowestSource(db);
@@ -151,13 +158,17 @@ export async function estimateSourceLowestMealSellPrice(db:PublicCompleteItemMas
   // snapshot has exactly 469 ICookingIngredient definitions (3 classes).
   const types=[...new Set(slots.flatMap(s=>s.kind==='type'?[s.id]:[]))];
   const fixed=slots.flatMap(s=>s.kind==='fixed'?[s.id]:s.kind==='alternatives'?[...s.ids]:[]);
+  const hasTags=slots.some(s=>s.kind==='all_tags');
   const typeMembers=types.length?await db.findItemIdsByFields([
     {field:'sourceClass',anyOf:[...CLASSES].map(value=>({kind:'equals' as const,value}))},
     {field:'source.CookingIngredientType',anyOf:types.map(value=>({kind:'equals' as const,value}))}
   ]):[];
-  const ids=[...new Set([...fixed,...typeMembers])].sort((a,b)=>a-b);
+  const tagMembers=hasTags?await db.findItemIdsByField('sourceClass',{kind:'equals',value:'CropItemData'}):[];
+  const allTagMembers=hasTags?await db.findItemIdsByFields([{field:'sourceClass',anyOf:[...CLASSES].map(value=>({kind:'equals' as const,value}))}]):[];
+  if(hasTags)check(allTagMembers.length===469&&tagMembers.length===165,'TAG_CLASS_CENSUS');
+  const ids=[...new Set([...fixed,...typeMembers,...allTagMembers])].sort((a,b)=>a-b);
   const [rows,prices]=await Promise.all([
-    db.getItemFields(ids,['sourceClass','source.CookingIngredientType','source.IsMissionItem']),
+    db.getItemFields(ids,hasTags?['sourceClass','source.CookingIngredientType','source.IsMissionItem','tags']:['sourceClass','source.CookingIngredientType','source.IsMissionItem']),
     db.getOriginalItemPrices(ids)
   ]);
   const byId=new Map(ids.map((itemId,i)=>{
@@ -165,14 +176,17 @@ export async function estimateSourceLowestMealSellPrice(db:PublicCompleteItemMas
     const known=typeof cls==='string'&&CLASSES.has(cls);
     // The original protobuf bool field defaults to false in these 3 classes.
     check(!known||mission===undefined||typeof mission==='boolean','MISSION_FIELD');
-    return [itemId,{known,type,mission:mission===true,unit:sourceUnit(known,prices[i]).conditional}] as const;
+    const tags=row?.values.tags;
+    if(hasTags&&known)check(Array.isArray(tags)&&tags.every(t=>object(t)&&id(t.id)),'TAG_FIELD');
+    return [itemId,{known,type,mission:mission===true,unit:sourceUnit(known,prices[i]).conditional,
+      directTags:Array.isArray(tags)?tags.filter(t=>object(t)&&id(t.id)).map(t=>(t as {id:number}).id):[]}] as const;
   }));
   const chosen:number[]=[];
   const facts:SourceLowestMealSlot[]=slots.map((slot,recipeSlotIndex)=>{
     const make=(status:SourceLowestMealSlot['status'],candidates:readonly number[],min:number|null,ties:readonly number[]):SourceLowestMealSlot=>
       Object.freeze({recipeSlotIndex,slot,status,candidateCount:candidates.length,minimumUnitAmount:min,tiedItemIds:Object.freeze([...ties])});
-    if(slot.kind==='all_tags')return make('unresolved_selector',[],null,[]);
     const candidates=slot.kind==='fixed'?[slot.id]:slot.kind==='alternatives'?slot.ids.filter(i=>byId.get(i)?.known):
+      slot.kind==='all_tags'?allTagMembers.filter(i=>{const r=byId.get(i);return r?.known&&slot.ids.every(t=>r.directTags.includes(t));}):
       typeMembers.filter(i=>{const r=byId.get(i);return r?.known&&r.type===slot.id&&(!r.mission||slot.id===QUEST_TYPE);});
     if(!candidates.length)return make('no_source_candidate',[],null,[]);
     const values=candidates.map(i=>({id:i,value:byId.get(i)?.unit??null}));
@@ -184,9 +198,9 @@ export async function estimateSourceLowestMealSellPrice(db:PublicCompleteItemMas
     chosen.push(tied[0]);
     return make(slot.kind==='fixed'?'fixed':'source_minimum',candidates,min,tied);
   });
-  // Alternative-list overlap can change greedy adjustment with tied IDs.
-  // No such slots occur in this version; refuse to infer their total.
-  const complete=chosen.length===slots.length&&slots.every(s=>s.kind==='fixed'||s.kind==='type');
+  // There are no alternative-list slots in the authenticated source recipe
+  // set. Preserve the existing boundary for hypothetical overlaps.
+  const complete=chosen.length===slots.length&&slots.every(s=>s.kind!=='alternatives');
   const estimate=complete?await estimateSourceMealSellPrice(db,mealItemId,recipeItemId,chosen):null;
   return Object.freeze({mealItemId,recipeItemId,slots:Object.freeze(facts),
     selectedIngredientIds:complete?Object.freeze(chosen):null,estimate,actualSellPrice:null,
@@ -198,7 +212,7 @@ export async function estimateSourceMealSellPrice(db:PublicCompleteItemMaster,me
   check(id(mealItemId)&&id(recipeItemId)&&Array.isArray(ingredientIds)&&ingredientIds.length>0&&ingredientIds.length<=32&&ingredientIds.every(id),'INPUT');
   const release=db.release;
   check(release.target.platform==='Steam'&&release.target.gameVersion==='1.26.2'&&
-    release.sourceIl2cppDumpSha256===DUMP_SHA&&release.originalPriceProjection?.sourceProtoDbSha256===PROTO_SHA&&
+    release.sourceIl2cppDumpSha256===DUMP_SHA&&release.sourceFilesSha256?.ActivityItem===ACTIVITY_ITEM_SHA&&release.sourceFilesSha256?.ActivityData===ACTIVITY_DATA_SHA&&release.originalPriceProjection?.sourceProtoDbSha256===PROTO_SHA&&
     release.originalPriceProjection.dynamicCacheItems===8549,'SOURCE_VERSION');
   const [meal,recipe]=await db.getItemFields([mealItemId,recipeItemId],
     ['sourceClass','source.StarRating','source.ResultItemID','source.Ingredients']);
@@ -216,6 +230,7 @@ export async function estimateSourceMealSellPrice(db:PublicCompleteItemMaster,me
     const cls=row?.values.sourceClass,type=row?.values['source.CookingIngredientType'],tags=row?.values.tags;
     return {itemId:ingredientIds[i],knownCookingClass:typeof cls==='string'&&CLASSES.has(cls),
       cookingTypeId:id(type)?type:null,
+      assumeDirectTagMembershipComplete:typeof cls==='string'&&CLASSES.has(cls),
       directTagIds:Array.isArray(tags)&&tags.every(t=>object(t)&&id(t.id))?tags.map(t=> (t as {id:number}).id):null};
   });
   const percentage=PERCENT[star-1],matches=matchNativeMealSlots(slots,facts);
@@ -231,5 +246,5 @@ export async function estimateSourceMealSellPrice(db:PublicCompleteItemMaster,me
   return Object.freeze({mealItemId,recipeItemId,starRating:star,ingredientPercentage:percentage,
     ingredients:Object.freeze(ingredients),sourceSnapshotEstimate:complete?total:null,actualSellPrice:null,
     runtimePriceVerified:false,runtimeProviderSelectionVerified:false,nativeSlotMatchingSteam1262:true,
-    recipeSelectedByCaller:true,allNativeTagFallbacksResolved:false});
+    recipeSelectedByCaller:true,allNativeTagFallbacksResolved:false,tagMatchingBasis:'original_direct_tags_only'});
 }
