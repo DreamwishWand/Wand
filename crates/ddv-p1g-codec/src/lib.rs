@@ -1801,13 +1801,10 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_ROAD_PLAN_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>16384{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|(5..=7).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"destination"|"cells"|"erase"|"itemId"|"seed"|"diagonal"|"replacement"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(4..=7).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"destination"|"cells"|"erase"|"itemId"|"seed"|"diagonal"|"replacement"))).ok_or_else(invalid)?;
             let diagonal=match o.get("diagonal"){None=>false,Some(v)=>v.as_bool().ok_or_else(invalid)?};
             let replacement=match o.get("replacement"){None=>None,Some(v)=>Some(v.as_u64().filter(|n|n/100_000==401).ok_or_else(invalid)?)};
             let item=o.get("itemId").and_then(|v|v.as_u64()).filter(|n|n/100_000==401).ok_or_else(invalid)?;
-            let seed=o.get("seed").and_then(|v|v.as_array()).filter(|a|a.len()==2).ok_or_else(invalid)?;
-            let sx=seed[0].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid)?;
-            let sy=seed[1].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid)?;
             let erase=o.get("erase").and_then(|v|v.as_bool()).ok_or_else(invalid)?;
             let cells=o.get("cells").and_then(|v|v.as_array()).filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_CARDINAL_ROAD_CELLS).ok_or_else(invalid)?;
             let mut xy=Vec::new();
@@ -1823,10 +1820,15 @@ mod browser_amount_preview {
             let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&dest.grid_id)).ok_or_else(invalid)?;
             let next=grid.get("NextGridObjectID").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
             let objects=grid.get("Objects").and_then(|v|v.as_object()).ok_or_else(invalid)?;
+            if let Some(seed)=o.get("seed"){
+                let seed=seed.as_array().filter(|a|a.len()==2).ok_or_else(invalid)?;
+                let sx=seed[0].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid)?;
+                let sy=seed[1].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid)?;
             let mut seeds=objects.values().filter(|v|v.get("ItemID").and_then(|v|v.as_u64())==Some(item)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(sx))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(sy)));
             let seed=seeds.next().ok_or_else(invalid)?;
             let pitch=2*dest.tessellation as i32;
             if seeds.next().is_some()||sx<0||sy<0||sx%pitch!=0||sy%pitch!=0||seed.get("Orientation").and_then(|v|v.as_str())!=Some("GridOrientation_Down")||ddv_save_patch::road_mode(seed).is_none()||seed.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(invalid());}
+            }else if erase||replacement.is_some(){return Err(invalid());}
             let mut ids=Vec::new();
             if erase||replacement.is_some(){
                 let objects=grid.get("Objects").and_then(|v|v.as_object()).ok_or_else(invalid)?;
