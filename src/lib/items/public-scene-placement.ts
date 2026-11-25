@@ -119,21 +119,21 @@ export function createScenePlacementReader(db:PublicCompleteItemMaster){
       const task=(async()=>{
         if(!pinned)return null;
         const c=new Set((await db.getFieldCatalog()).map(x=>x.field));
-        if(!['source.SceneType','source.GridEditRestriction','source.GridAreaData.AcceptedFloorTypesFlag','tags','nativeCategory','sourceClass'].every(f=>c.has(f)))return null;
+        if(!['source.SceneType','source.GridEditRestriction','source.GridAreaData.AcceptedFloorTypesFlag','source.Tags','nativeCategory','sourceClass'].every(f=>c.has(f)))return null;
         const ids=await db.findItemIdsByField('nativeCategory',{kind:'equals',value:'Scene'});
-        const rows=await db.getItemFields(ids,['nativeCategory','source.SceneType','tags']);
+        const rows=await db.getItemFields(ids,['nativeCategory','source.SceneType','source.Tags']);
         if(rows.length!==194)return null;
         const result=new Map<number,Readonly<NativeSceneIdentity>>();
         let explicitType=0,tagged=0;
         for(const row of rows){
           check(row?.values.nativeCategory==='Scene','SCENE_ID');
-          const rawType=row.values['source.SceneType'],tags=row.values.tags;
-          check((rawType===undefined||code(rawType))&&Array.isArray(tags)&&tags.every(t=>obj(t)&&id(t.id)&&t.sourceField===17),'SCENE_FACTS');
+          const rawType=row.values['source.SceneType'],tags=row.values['source.Tags']??[];
+          check((rawType===undefined||code(rawType))&&Array.isArray(tags)&&tags.every(id),'SCENE_FACTS');
           const sceneTypeCode=rawType??0;
           if(rawType!==undefined)explicitType++;
           if(tags.length)tagged++;
           result.set(row.itemId,Object.freeze({sceneItemId:row.itemId,sceneTypeCode,sceneTypeName:NATIVE_SCENE_TYPES[sceneTypeCode],
-            sceneTypeFieldPresent:rawType!==undefined,directTagIds:Object.freeze(tags.map(t=>(t as Obj).id as number))}));
+            sceneTypeFieldPresent:rawType!==undefined,directTagIds:Object.freeze([...tags] as number[])}));
         }
         // Original Scene.json complete scan: 194 rows; 193 explicit enum,
         // five scene tag rows. Refuse a partial attribute projection.
