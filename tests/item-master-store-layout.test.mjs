@@ -240,3 +240,38 @@ test('approved original purchase and sale prices match every sanitized source ro
   assert.deepEqual(matches,rows.filter(r=>r[3].some(([currency,amount])=>currency===80000000&&amount===70)).map(r=>r[0]));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+test('native meal recipe slot matching consumes fixed slots before selectors and preserves recorded duplicates',async()=>{
+  const {matchNativeMealSlots}=await import('../src/lib/acquisition/source-meal-sell-price.ts');
+  const member=(itemId,type=2001400000,tags=[])=>({itemId,knownCookingClass:true,cookingTypeId:type,directTagIds:tags});
+  const slots=[{kind:'type',id:2001400000},{kind:'fixed',id:30200045}];
+  const matches=matchNativeMealSlots(slots,[member(30200045),member(30200045),member(30200045)]);
+  assert.deepEqual(matches.map(x=>[x.recipeSlotIndex,x.adjusted]),[[1,true],[0,true],[null,false]]);
+  const tagSlots=[{kind:'all_tags',ids:[2001200001,2001200002]},{kind:'alternatives',ids:[30200045]}];
+  assert.deepEqual(matchNativeMealSlots(tagSlots,[member(30200045,2001400000,[2001200001,2001200002]),member(30200045)]).map(x=>x.adjusted),[true,true]);
+  assert.deepEqual(matchNativeMealSlots(tagSlots,[member(30200045,2001400000,[2001200001]),member(30200045)]).map(x=>x.adjusted),[null,null]);
+});
+test('actual original fixed cooking recipe joins recorded material occurrences and original sell price fields',async()=>{
+  const {estimateSourceMealSellPrice}=await import('../src/lib/acquisition/source-meal-sell-price.ts');
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const recipeId=2050000004;
+  const [recipe]=await db.getItemFields([recipeId],['source.ResultItemID','source.Ingredients']);
+  const mealId=recipe.values['source.ResultItemID'];
+  const ingredients=recipe.values['source.Ingredients'].map(x=>x.ItemID);
+  assert.deepEqual(ingredients,[31100053,31100001,30200045,30200090]);
+  const result=await estimateSourceMealSellPrice(db,mealId,recipeId,[...ingredients,ingredients[0]]);
+  assert.equal(result.ingredients.length,5);
+  assert.deepEqual(result.ingredients.map(x=>x.adjusted),[true,true,true,true,false]);
+  const prices=await db.getOriginalItemPrices([...ingredients,ingredients[0]]);
+  for(const [i,row] of result.ingredients.entries()){
+    const sell=prices[i].sellCosts.find(x=>x.currencyItemId===80000000);
+    assert.equal(row.sourceUnitSellAmount,sell?.amount??null);
+    assert.equal(row.conditionalUnitSellAmount,sell?sell.amount??0:1);
+    assert.equal(row.conditionalContribution,i===4?row.conditionalUnitSellAmount:Math.trunc(Math.imul(row.conditionalUnitSellAmount,result.ingredientPercentage)/100));
+  }
+  assert.equal(result.sourceSnapshotEstimate,result.ingredients.reduce((sum,x)=>(sum+x.conditionalContribution)|0,0));
+  assert.equal(result.actualSellPrice,null);
+  assert.equal(result.runtimePriceVerified,false);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
