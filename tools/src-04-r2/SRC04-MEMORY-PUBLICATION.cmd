@@ -19,14 +19,14 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'memory-source-report.json'))) { throw 'Existing memory-source-report.json not found.' }
     $work=Join-Path $env:TEMP ('wand-memory-publish-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/cef0748af87d371ee1d90da30848bfc49c2bb9b1/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/6e3d2357d60320f98ecc4e420f1d1f63f6b5d7ca/'
     foreach ($name in @('publish_memory_sources.py','publish_bundle_thumbnails.py','extract_memory_sources.py','resolve_shop_catalog.py','resolve_shop_objects.py','bundle_thumbnails.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+'tools/src-04-r2/'+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
     $part='reviewed-root-scalars-steam-1.26.2.part7.json'
     Invoke-WebRequest -UseBasicParsing -Uri ($base+'data/ddv/item-master/'+$part) -OutFile (Join-Path $work $part) -TimeoutSec 60
-    Write-Host 'No image generation. No overwrite, delete, copy or private bucket operations.'
-    $mode=Read-Host 'Type PLAN for local index only, or R2 for public bucket inventory and optional upload'
+    Write-Host 'Generate only missing 512px memory thumbnails. Existing originals and masks remain unchanged. No overwrite, delete, copy or private bucket operations.'
+    $mode=Read-Host 'Type PLAN for local thumbnail generation/index, or R2 for generation, inventory and optional upload'
     if ($mode -eq 'PLAN') {
         & py -3 -u (Join-Path $work 'publish_memory_sources.py') --root $root --db01 (Join-Path $work $part)
     } elseif ($mode -eq 'R2') {

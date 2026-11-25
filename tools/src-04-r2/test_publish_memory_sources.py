@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
-from publish_memory_sources import prepare, split
+from publish_memory_sources import prepare, split, add_thumbnails
 
 class MemoryPublicationTests(unittest.TestCase):
     def test_independent_sources_and_dedup(self):
@@ -43,5 +43,30 @@ class MemoryPublicationTests(unittest.TestCase):
                 (root/"memory-source-report.json").write_text(json.dumps(doc))
                 with self.assertRaises(ValueError):
                     prepare(root,[])
+    def test_thumbnail_only_resizes_completed_image(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/"images").mkdir()
+            def original(size,color):
+                p=root/"images"/"tmp.webp"
+                Image.new("RGB",size,color).save(p,format="WEBP",lossless=True)
+                raw=p.read_bytes()
+                sha=hashlib.sha256(raw).hexdigest()
+                p.rename(root/"images"/(sha+".webp"))
+                return {"sha256":sha,"bytes":len(raw),"width":size[0],"height":size[1]}
+            image=original((1024,576),(9,42,87))
+            mask=original((1024,576),(1,0,0))
+            tiny=original((265,246),(5,4,3))
+            objects={"images/"+v["sha256"]+".webp":v for v in (image,mask,tiny)}
+            index={"references":{"a":{"Image":image["sha256"]},"b":{"Mask":mask["sha256"],"Outline":mask["sha256"]},"c":{"Image":tiny["sha256"]}}}
+            self.assertEqual(add_thumbnails(root,objects,index),2)
+            self.assertEqual(len(objects),4)
+            self.assertEqual(index["schema"],"wand.media.memory-index@2")
+            self.assertEqual(index["references"]["b"],{"Mask":mask["sha256"],"Outline":mask["sha256"]})
+            thumb=index["images"][index["references"]["a"]["Thumbnail"]]
+            self.assertEqual((thumb["width"],thumb["height"]),(512,288))
+            self.assertEqual(index["references"]["c"]["Thumbnail"],tiny["sha256"])
+            with patch("publish_memory_sources.resize",side_effect=AssertionError("must reuse cache")):
+                add_thumbnails(root,objects,index)
 if __name__=="__main__":
     unittest.main()
