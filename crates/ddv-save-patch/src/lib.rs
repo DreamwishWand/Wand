@@ -977,6 +977,16 @@ mod cardinal_road_tests{
   let erased=preview_cardinal_road_cells(&add.patched_json,&destination(),&[(8,4),(12,4)],true).unwrap();let after:serde_json::Value=serde_json::from_str(&erased.patched_json).unwrap();
   assert_eq!(after["Player"],old["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["Objects"],old["World"]["GridCollection"]["Grids"]["7"]["Objects"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
  }
+ #[test]fn other_cardinal_style_and_large_stroke_preserve_player(){
+  let source=SOURCE.replace("40100068","40100038");
+  let cells:Vec<_>=(0..8).flat_map(|y|(0..8).map(move |x|(12+x*4,12+y*4))).collect();
+  let mut d=destination();d.size=(40,40);
+  let changed=preview_cardinal_road_style(&source,&d,40100038,&cells,false).unwrap();
+  let old:serde_json::Value=serde_json::from_str(&source).unwrap();let actual:serde_json::Value=serde_json::from_str(&changed.patched_json).unwrap();
+  assert_eq!(old["Player"],actual["Player"]);let grid=&actual["World"]["GridCollection"]["Grids"]["7"];
+  assert_eq!(grid["NextGridObjectID"],67);assert_eq!(grid["Objects"]["3"]["ItemID"],40100038);
+  assert!(preview_cardinal_road_style(&source,&d,40000001,&cells,false).is_err());
+ }
  #[test]fn rejects_duplicate_off_lattice_and_unknown_neighbor(){
   for cells in [vec![(8,4),(8,4)],vec![(5,4)],vec![(4,4)],vec![(80,4)]]{assert!(preview_cardinal_road_cells(SOURCE,&destination(),&cells,false).is_err());}
   let unknown=SOURCE.replace("\"State\":null","\"State\":{\"FenceMode\":{\"Diagonal\":true}}");
