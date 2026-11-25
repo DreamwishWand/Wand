@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {captureFurnitureGroup,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -22,4 +22,14 @@ test('group placement is atomic, rejects bad terrain, occupied cells and insuffi
  assert.equal(groupPasteCandidate(clip,[grid],rasters,defs,stock,[],0,19.1,-2.1),null);
  assert.equal(groupPasteCandidate(clip,[grid],rasters,defs,stock,[saved(4,10,-2)],0,8.1,-2.1),null);
  assert.equal(groupPasteCandidate(clip,[grid],rasters,defs,new Map([[item,1]]),[],0,8.1,-2.1),null);
+});
+
+test('cut witness must match every original furniture pose and keeps each source identity in plan',()=>{
+ const items=[saved(2,4,-3),saved(3,6,-3)],cut=captureCutWitness(items);
+ assert.equal(cutWitnessMatches(cut,items),true);
+ assert.equal(cutWitnessMatches(cut,[items[0],saved(3,7,-3)]),false);
+ const clip=captureFurnitureGroup(items),candidate=groupPasteCandidate(clip,[grid],rasters,defs,new Map([[item,2]]),[],0,8.1,-2.1);
+ const plan=groupCutPlan(cut,candidate);
+ assert.deepEqual(plan.map(p=>[p.localOrdinal,p.expectedX,p.x]),[[2,4,8],[3,6,10]]);
+ assert.equal(groupCutPlan(cut.slice(0,1),candidate),null);
 });
