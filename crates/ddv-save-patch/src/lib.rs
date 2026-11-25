@@ -819,13 +819,29 @@ pub fn preview_plain_grid_transfer(
     destination:&PlainGridDestination,replacement:(i32,i32),
     orientation:&str,
 )->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,false)
 }
 /// Only for an exact owned support hierarchy resolved by the codec.
 pub fn preview_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false)
 }
-fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool)->Result<GridCoordinateDraft,PatchError>{
+/// Only for ordinary, state-free furniture in a source-backed outdoor world.
+/// The codec must prove the exact old/new identities and reject references.
+/// The older same-scope and support-parent APIs remain unchanged.
+pub fn preview_plain_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,true)
+}
+fn outdoor_world_path(scope:&str,path:&str)->bool{
+    if path.contains("..")||path.contains('\\')||!path.ends_with(".json"){return false;}
+    match scope{
+        "Village04"=>path.starts_with("GridData/Villages/Village04-"),
+        "VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"=>{
+            path.strip_prefix("GridData/Villages/").and_then(|s|s.strip_prefix(scope)).and_then(|s|s.strip_prefix('/')).is_some_and(|s|s.starts_with(scope)&&s.as_bytes().get(scope.len())==Some(&b'-')&&!s.contains('/'))
+        },
+        _=>false
+    }
+}
+fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
        target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
        destination.grid_id.starts_with('0')||
@@ -845,8 +861,12 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     let to=grids.get(&destination.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from_layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::MissingTarget)?;
     let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
+    let from_scope=full_grid_scope(from_layout).ok_or(PatchError::InvalidTarget)?;
+    let same_world=from_scope==to_scope;
+    if !same_world&&(!allow_world_change||support_parent||target.item_id/100_000!=400||
+       !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|path|outdoor_world_path(from_scope,path))||
+       !outdoor_world_path(to_scope,&destination.data_path)){return Err(PatchError::InvalidTarget);}
     if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
-       full_grid_scope(from_layout)!=Some(to_scope)||
        !destination.data_path.starts_with("GridData/")||
        !destination.data_path.ends_with(".json")||destination.data_path.contains("..")||destination.data_path.contains('\\')||
        (from_layout==destination.layout_path&&from.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str()))||
