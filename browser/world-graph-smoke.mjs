@@ -1496,11 +1496,19 @@ try{
   await capturePanel.waitFor({timeout:30000});
   // A previous design may be offered by the local recovery store.
   const resumeDesign=publicWorld.locator('.design-workspace').getByRole('button',{name:'作業を再開',exact:true});
-  if(await resumeDesign.isVisible())await resumeDesign.click();
   const addCapture=capturePanel.getByRole('button',{name:'装飾設計に追加',exact:true});
+  // Do not race the asynchronous IndexedDB draft offer.
+  await page.waitForFunction(()=>Boolean(document.querySelector('.design-workspace .draft-offer'))||[...document.querySelectorAll('.design-capture button')].some(b=>b.textContent==='装飾設計に追加'&&!b.disabled),{},{timeout:30000});
+  if(await resumeDesign.isVisible())await resumeDesign.click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('.design-capture button')].some(b=>b.textContent==='装飾設計に追加'&&!b.disabled),{},{timeout:30000});
+  const beforeCapture=await publicWorld.locator('.design-coordinate-space .design-object').count();
   await addCapture.click({timeout:30000});
   await capturePanel.waitFor({state:'detached',timeout:30000});
   await publicWorld.locator('.design-coordinate-space .design-object').first().waitFor({timeout:30000});
+  assert.ok(await publicWorld.locator('.design-coordinate-space .design-object').count()>=beforeCapture);
+  await publicWorld.locator('.design-workspace').getByLabel('設計を取り消す').click();
+  assert.equal(await publicWorld.locator('.design-coordinate-space .design-object').count(),beforeCapture);
+  await publicWorld.locator('.design-workspace').getByLabel('設計をやり直す').click();
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();

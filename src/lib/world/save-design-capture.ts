@@ -24,7 +24,7 @@ export function captureSaveDesign(grids:readonly PublicTerrainGridRef[],rasters:
      map.layoutId!==g.layoutId||map.gridDataPath!==g.gridDataPath||map.sourceGridFactor!==g.factor){omitted++;continue;}
    const orientation=CARDINAL_ORIENTATIONS.indexOf(o.orientation),key=id+':'+orientation*4,shape=map.shapes[key];
    if(!shape||shape!==p.shape){omitted++;continue;}
-   const existing=defs.get(id),shapes=Object.fromEntries(Object.entries(map.shapes).filter(([k])=>k.startsWith(id+':')));
+   const existing=defs.get(id),shapes=Object.fromEntries([0,4,8,12].map(code=>id+':'+code).filter(key=>map.shapes[key]).map(key=>[key,map.shapes[key]]));
    if(existing&&(existing.layer!==o.layer||existing.surfaceCapable!==o.surfaceCapable||Object.entries(shapes).some(([k,s])=>existing.shapes[k]&&(existing.shapes[k].path!==s.path||existing.shapes[k].width!==s.width||existing.shapes[k].height!==s.height))))return null;
    const def:DesignItemGeometry={itemId:id,name:o.name,layer:o.layer,surfaceCapable:o.surfaceCapable,editRestrictions:o.editRestrictions,shapes:{...existing?.shapes,...shapes}};
    const offset=mainlandFrameOffset(frame,g),placement={id:placements.length+1,itemId:id,x:o.x+offset.x,y:o.y+offset.y,orientation};
