@@ -3,7 +3,7 @@
  import {base} from '$app/paths';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
- import {stockToolWords,ordinaryFurniture,stockSourceEligible,stockPickup,stockPlacement,type StockCandidate} from './save-furniture-placement.ts';
+ import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,stockSourceEligible,stockPickup,stockPlacement,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
@@ -13,6 +13,7 @@
  export let open=false,file:File|null=null,worker:Worker|null=null,grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map(),chosen:MainlandSavedObject|null=null;
  export let locale:WandLanguage='ja',blocked=false,canStart=true,nextRequest:()=>number,onBegin:()=>void=()=>{},onClose:()=>void=()=>{};
  export let placing=false,ghost:StockCandidate|null=null;
+ export let objects:readonly MainlandSavedObject[]=[],omitted=0;
  let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
  let ownStock:Worker|null=null,ownPreview:Worker|null=null,seenFile:File|null=null,subscribed:Worker|null=null,catalogRequest=0,catalogLocale:WandLanguage|null=null;
@@ -20,6 +21,8 @@
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
  let artwork=new Map<number,string>(),asked=new Set<number>();
  $: w=stockToolWords[locale]??stockToolWords.en;
+ $: ow=stockFootprintWords[locale]??stockFootprintWords.en;
+ $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
  $: if(file!==seenFile)resetFile(file);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);catalogRequest=0;catalogLocale=null;catalogState='idle';cancel();}
  $: if(open&&file&&stockState==='idle')loadStock(file);
@@ -81,6 +84,7 @@
     <div class="palette-actions">{#if placing&&!source}<button type="button" aria-label={w[14]} disabled={!rotationAllowed} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} disabled={!rotationAllowed} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
     {#if candidate&&candidate.plan.action!=='remove'}<button type="button" disabled={status==='working'} on:click={validate}>{candidate.plan.action==='duplicate'?w[4]:w[3]}</button>{:else if placing}<small>{w[6]}</small>{/if}
    {/if}
+   {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
    {#if stockState==='loading'||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if stockState==='error'||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
@@ -94,6 +98,6 @@
 {/if}
 <style>
  .save-furniture-palette{position:absolute;z-index:8;left:6px;top:56px;bottom:52px;width:min(250px,65%);display:flex;flex-direction:column;gap:5px;padding:6px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;overflow:hidden}
- .palette-head,.palette-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.palette-head strong{flex:1}.stock-items{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));align-content:start;gap:3px;min-height:0;flex:1}.stock-item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;overflow-wrap:anywhere}.stock-item img{width:48px;height:48px;object-fit:contain}.stock-item small{color:var(--wand-muted)}
+ .footprint-feedback{display:flex;flex-direction:column;gap:2px;font-size:12px;border:1px solid var(--wand-line);border-radius:4px;padding:4px}.footprint-feedback small{color:var(--wand-muted)}.palette-head,.palette-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.palette-head strong{flex:1}.stock-items{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));align-content:start;gap:3px;min-height:0;flex:1}.stock-item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;overflow-wrap:anywhere}.stock-item img{width:48px;height:48px;object-fit:contain}.stock-item small{color:var(--wand-muted)}
  button,input{font:inherit;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:4px;padding:5px}button:disabled{opacity:.45}button[aria-pressed=true]{outline:2px solid var(--wand-accent)}small{font-size:12px}
 </style>

@@ -41,6 +41,46 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  }
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan,destination:witness(g)};
 }
+/** Geometric intersection only, not a game collision or support verdict.
+ * Compare exact occupied runs on a shared half-cell lattice, including
+ * hidden/locked objects. Roads are context, not furniture blockers. */
+export function stockFootprintFeedback(candidate:StockCandidate,objects:readonly MainlandSavedObject[],omitted=0):{overlaps:number;unknown:boolean}{
+ if(candidate.plan.action==='remove')return {overlaps:0,unknown:false};
+ const rows=new Map<number,{left:number;right:number}[]>();
+ const step=2/candidate.factor,ox=candidate.x*2,oy=-candidate.y*2;
+ if(!Number.isSafeInteger(ox)||!Number.isSafeInteger(oy))return {overlaps:0,unknown:true};
+ for(const r of candidate.shape.runs)for(let dy=0;dy<step;dy++){
+  const y=oy+r.y*step+dy,list=rows.get(y)??[];
+  list.push({left:ox+r.x*step,right:ox+(r.x+r.width)*step});rows.set(y,list);
+ }
+ let overlaps=0,unknown=omitted>0;
+ for(const p of objects){
+  if(p.object.layer==='ground')continue;
+  if(!p.shape){unknown=true;continue;}
+  const s=2/p.factor,x=p.x*2,y=-p.y*2;
+  if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)){unknown=true;continue;}
+  if(x>=ox+candidate.shape.width*step||x+p.shape.width*s<=ox||y>=oy+candidate.shape.height*step||y+p.shape.height*s<=oy)continue;
+  let hit=false;
+  outer:for(const r of p.shape.runs)for(let dy=0;dy<s;dy++){
+   const list=rows.get(y+r.y*s+dy);if(!list)continue;
+   const left=x+r.x*s,right=left+r.width*s;
+   if(list.some(q=>left<q.right&&right>q.left)){hit=true;break outer;}
+  }
+  if(hit)overlaps++;
+ }
+ return {overlaps,unknown};
+}
+export const stockFootprintWords={
+ ja:['占有マスが重なる物','配置情報が未確認の物があります。','占有マスの重なりなし','ゲーム内の衝突・上下関係は未判定'],
+ en:['Objects with overlapping cells','Some placement information is unknown.','No footprint overlap','Game collision and support not verified'],
+ fr:['Objets aux cases superposées','Certaines positions sont inconnues.','Aucun chevauchement','Collision et support non vérifiés'],
+ it:['Oggetti con celle sovrapposte','Alcune posizioni sono sconosciute.','Nessuna sovrapposizione','Collisioni e supporto non verificati'],
+ de:['Objekte mit überlappenden Zellen','Einige Platzierungen sind unbekannt.','Keine überlappenden Zellen','Kollision und Auflage ungeprüft'],
+ 'es-ES':['Objetos con celdas superpuestas','Algunas posiciones son desconocidas.','Sin celdas superpuestas','Colisión y soporte sin verificar'],
+ 'zh-CN':['占用格重叠的物品','部分放置信息未知。','占用格无重叠','游戏碰撞及支撑关系未验证'],
+ 'pt-BR':['Objetos com células sobrepostas','Algumas posições são desconhecidas.','Sem sobreposição de células','Colisão e suporte não verificados']
+} as const;
+
 export const stockToolWords={
  ja:['家具パレット','家具を検索','在庫','配置を検証','複製を検証','回収を検証','配置先を選択','取消','閉じる','検証中…','検証成功。セーブには反映されません。','在庫または構造を確認できません。','先に配置変更を出力するか取り消してください。','対象家具なし','左回転','右回転'],
  en:['Furniture palette','Find furniture','Stock','Validate placement','Validate duplicate','Validate pickup','Choose a destination','Cancel','Close','Checking…','Validated. Save unchanged.','Stock or structure could not be verified.','Export or undo staged transforms first.','No eligible furniture','Rotate left','Rotate right'],
