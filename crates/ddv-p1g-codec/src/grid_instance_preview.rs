@@ -1136,6 +1136,60 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
 /// Place a clipboard group atomically. All destinations, new identities and
 /// stock requirements resolve on the immutable source before staging.
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    if plan.len()>65536{return Err(CodecError::Bounds);}
+    let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    if value.as_array().is_some_and(|rows|rows.iter().any(|r|r.get("scene").is_some())){
+        return mixed_scene_candidate(profile,&value);
+    }
+    plain_group_paste_candidate(profile,plan)
+}
+/// One private staging transaction. Reuse the same exact destination and
+/// allocator checks for each root and never expose a partially placed scene.
+fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
+    use zeroize::{Zeroize,Zeroizing};
+    let bad=CodecError::Json;
+    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=32).ok_or(bad)?;
+    let mut total=0usize;
+    let mut anchors=HashSet::new();
+    fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
+        if depth>8{return Err(CodecError::Bounds);}
+        for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{
+            *total+=1;if *total>32{return Err(CodecError::Bounds);}
+            let child=o.get("child").ok_or(CodecError::Json)?;
+            if !child.is_null(){descendants(child,total,depth+1)?;}
+        }Ok(())
+    }
+    for row in rows{
+        let o=row.as_object().filter(|o|o.len()==(if o.contains_key("scene"){6}else{5})&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"))).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+        let xy=(int("x")?,int("y")?);
+        let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
+        if !anchors.insert((d.grid_id,xy)){return Err(bad);}
+        total+=1;if total>32{return Err(CodecError::Bounds);}
+        if let Some(scene)=o.get("scene"){
+            descendants(checked_support_scene(item,scene)?,&mut total,0)?;
+        }
+    }
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+    for row in rows{
+        if let Some(scene)=row.get("scene"){
+            let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
+            let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let orientation=row["orientation"].as_str().ok_or(bad)?;
+            let mut draft=support_scene_place_candidate(working.as_bytes(),item,(x,y),&row["destination"],orientation,scene)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }else{
+            let plan=serde_json::to_string(&[row]).map_err(|_|bad)?;
+            let draft=plain_group_paste_candidate(working.as_bytes(),&plan)?;
+            working.zeroize();*working=draft;
+        }
+    }
+    Ok(std::mem::take(&mut *working))
+}
+fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
