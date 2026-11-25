@@ -101,7 +101,7 @@
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length)return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;sceneAnchor=sceneDoc?.anchor??'corner';
-  if(supportDoc){supportRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:supportRequest,scene:supportDoc});}
+  if(supportDoc){supportRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:supportRequest,scene:supportDoc,locale});}
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
   const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
@@ -111,7 +111,7 @@
   pending=new Map(pending);for(const id of (supportDoc?[...supportSceneRootCounts(supportDoc).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;
  }
- function receive(e:MessageEvent){const d=e.data;if(supportRequest&&d?.requestId===supportRequest){supportRequest=0;supportValid=d.kind==='support-scene-geometry'&&d.valid===true;if(!supportValid)error=true;return;}const req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
+ function receive(e:MessageEvent){const d=e.data;if(supportRequest&&d?.requestId===supportRequest){supportRequest=0;supportValid=d.kind==='support-scene-geometry'&&d.valid===true;if(!supportValid)error=true;else if(Array.isArray(d.names))sceneNames=new Map([...sceneNames,...d.names.filter((v:unknown)=>Array.isArray(v)&&v.length===2&&Number.isSafeInteger(v[0])&&typeof v[1]==='string')]);return;}const req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
   if(d.kind!=='design-shapes'||d.key!==req.key||!Array.isArray(d.result)){error=true;return;}
   const expected=new Set(clip.map(p=>p.itemId));
   if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||g.layer!=='furniture'||g.surfaceCapable&&g.itemId!==supportScene?.ownerItemId&&!cutRows?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
