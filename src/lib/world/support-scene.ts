@@ -1,4 +1,4 @@
-import {sceneFromClip} from './scene-preset.ts';
+import {parseScene} from './scene-preset.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import {parseSupportTree,supportStockPlacement,type SupportTree,type SupportStockPlan} from './subgrid-local.ts';
 import {isCardinal} from './saved-map-transform.ts';
@@ -102,10 +102,10 @@ export function parseMixedScene(raw:string):MixedScenePreset{
  if(raw.length>262144)throw Error('SCENE_LIMIT');
  const v:unknown=JSON.parse(raw);
  if(!rec(v)||Object.keys(v).length!==5||v.schema!=='wand.preset.mixed-scene@1'||v.gameVersion!=='1.26.2'||v.factor!==2||!(v.anchor==='corner'||v.anchor==='center')||!Array.isArray(v.items)||!v.items.length||v.items.length>32)throw Error('SCENE_INVALID');
- const flat=sceneFromClip(v.items.map(p=>{
-  if(!rec(p)||Object.keys(p).length!==5||!furniture(p.itemId)||!Object.hasOwn(p,'support'))throw Error('SCENE_ITEM');
+ const flat=parseScene(JSON.stringify({schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items:v.items.map(p=>{
+  if(!rec(p)||Object.keys(p).length!==5||!furniture(p.itemId)||!Object.prototype.hasOwnProperty.call(p,'support'))throw Error('SCENE_ITEM');
   const {support,...pose}=p;return pose;
- }) as DesignClipItem[],2,v.anchor);
+ })}),2);
  const rows=v.items as Record<string,unknown>[];
  const items=flat.items.map((p,i)=>{
   const support=rows[i].support===null?null:parseSupportScene(JSON.stringify(rows[i].support));
