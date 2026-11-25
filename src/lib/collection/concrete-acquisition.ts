@@ -10,6 +10,7 @@ import type {NativeAcquisitionRole} from '../items/public-item-master.ts';
 import type {LootReferrerRole} from '../items/public-loot-sources.ts';
 
 export interface CollectionConcreteAcquisition {
+  readonly itemId:number;
   readonly locale:ItemMasterLocale;
   readonly configuredNames:readonly string[];
   readonly candidateNames:readonly string[];
@@ -46,5 +47,5 @@ export async function readCollectionConcreteAcquisition(db:PublicCompleteItemMas
   // A named candidate must not be upgraded into a configured grant or live
   // offer, even if another independent source has the same display name.
   const sort=(set:Set<string>)=>Object.freeze([...set].sort((a,b)=>a.localeCompare(b,locale)));
-  return Object.freeze({locale,configuredNames:sort(configured),candidateNames:sort(candidates)});
+  return Object.freeze({itemId,locale,configuredNames:sort(configured),candidateNames:sort(candidates)});
 }
