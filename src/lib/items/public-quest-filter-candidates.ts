@@ -12,12 +12,16 @@ const obj=(v:unknown):v is Obj=>v!==null&&typeof v==='object'&&!Array.isArray(v)
 const id=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 const int=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 const MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
+const CRITTER_SHA='62008c61bf0b407c40d0adf417db043ab058f4ec0ca2764355e176a3532c2219';
+const ITEM_SHA='4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2';
 const DUMP_SHA='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08';
 function check(v:unknown,why:string):asserts v{if(!v)throw new TypeError('DB01_QUEST_FILTER_'+why);}
 export interface QuestFilterFacts {
   readonly itemTypeCode:number;
   readonly activitySubtypeCode:number|null;
   readonly minimumMealStars:number|null;
+  /** CropTypeCondition: 0 any, 1 fruit, 2 vegetable. Distinct from CropType. */
+  readonly cropTypeCondition:0|1|2|null;
   readonly tagCondition:'all'|'any'|'any_by_type';
   readonly directTagGroups:readonly Readonly<{tagTypeCode:number;tagIds:readonly number[];random:boolean}>[];
   readonly ingredientTypeReferences:readonly number[];
@@ -28,6 +32,7 @@ export interface QuestFilterCandidate {
   readonly itemId:number;
   readonly directTagMatch:boolean|null;
   readonly starRatingMatch:boolean|null;
+  readonly cropTypeMatch:boolean|null;
   /** Match of only the reviewed source-definition predicates, never a live requirement. */
   readonly reviewedDefinitionMatch:boolean|null;
   /** Additional source evidence, not folded into native eligibility. */
@@ -53,6 +58,8 @@ export function readQuestFilterFacts(raw:unknown):Readonly<QuestFilterFacts>{
     check(Array.isArray(tags)&&tags.every(id),'TAG_IDS');
     return Object.freeze({tagTypeCode:g.TagType as number|undefined??0,tagIds:Object.freeze([...tags] as number[]),random:g.UseRandom===true});
   });
+  const cropCode=raw.CropType??0;
+  const cropTypeCondition=cropCode===0||cropCode===1||cropCode===2?cropCode:null;
   const tagCode=raw.TagCondition??0;
   check(tagCode===0||tagCode===1||tagCode===2,'TAG_CONDITION');
   const ingredientTypes=raw.IngredientsType??[];
@@ -68,6 +75,7 @@ export function readQuestFilterFacts(raw:unknown):Readonly<QuestFilterFacts>{
     }else if(!obj(star)||Object.keys(star).length)other.add('MinMealStarRating');
   }
   const simple=new Set(['Type','ActivityItemType','Tags','TagCondition','MinMealStarRating']);
+  if(cropTypeCondition!==null)simple.add('CropType');
   const optional=new Set(['Complexity','Mood','Sturdiness','Normality','FishLocation','FishRarity']);
   for(const [key,value] of Object.entries(raw)){
     if(simple.has(key))continue;
@@ -80,7 +88,7 @@ export function readQuestFilterFacts(raw:unknown):Readonly<QuestFilterFacts>{
   }
   if(directTagGroups.some(g=>g.random))other.add('Tags.UseRandom');
   return Object.freeze({itemTypeCode:raw.Type,activitySubtypeCode:raw.Type===3?(raw.ActivityItemType as number|undefined??0):null,
-    minimumMealStars,tagCondition:tagCode===0?'all':tagCode===1?'any':'any_by_type',
+    minimumMealStars,cropTypeCondition,tagCondition:tagCode===0?'all':tagCode===1?'any':'any_by_type',
     directTagGroups:Object.freeze(directTagGroups),ingredientTypeReferences:Object.freeze([...ingredientTypes] as number[]),
     otherConfiguredFields:Object.freeze([...other].sort()),originalFilter:raw});
 }
@@ -95,11 +103,13 @@ function matchDirectTags(facts:QuestFilterFacts,tags:readonly number[]|null):boo
   for(const g of groups){const t=byType.get(g.tagTypeCode)??[];t.push(...g.tagIds);byType.set(g.tagTypeCode,t);}
   return [...byType.values()].every(g=>g.some(t=>set.has(t)));
 }
-export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
-  const verified=db.release.target.platform==='Steam'&&db.release.sourceFilesSha256?.Mission===MISSION_SHA&&
-    db.release.sourceIl2cppDumpSha256===DUMP_SHA;
+export function createItemFilterCandidateReader(db:PublicCompleteItemMaster,source:'quest'|'critter'){
+  const verified=db.release.target.platform==='Steam'&&db.release.sourceIl2cppDumpSha256===DUMP_SHA&&
+    (source==='quest'?db.release.sourceFilesSha256?.Mission===MISSION_SHA:
+      db.release.sourceFilesSha256?.Companion===CRITTER_SHA);
+  const cropVerified=verified&&db.release.sourceFilesSha256?.ActivityItem===ITEM_SHA;
   const activity=createCurrentActivityEvidenceReader(db);
-  type PoolRow={itemId:number;tagIds:readonly number[]|null;stars:number|null};
+  type PoolRow={itemId:number;tagIds:readonly number[]|null;stars:number|null;cropType:0|1|null};
   const pools=new Map<string,Promise<readonly PoolRow[]>>();
   function pool(type:number,subtype:number|null){
     const key=type+':'+subtype;
@@ -109,13 +119,17 @@ export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
       if(subtype!==null)filters.push({field:'itemType.subtypeCode',anyOf:[{kind:'equals',value:subtype}]});
       const ids=await db.findItemIdsByFields(filters);
       const rows:PoolRow[]=[];
+      const cropIndexed=cropVerified&&type===3&&subtype===2&&(await db.getFieldCatalog()).some(f=>f.field==='source.CropType');
       for(let i=0;i<ids.length;i+=10000){
-        for(const r of await db.getItemFields(ids.slice(i,i+10000),['tags','source.StarRating'])){
+        for(const r of await db.getItemFields(ids.slice(i,i+10000),['tags','source.StarRating',...(cropIndexed?['source.CropType']:[])])){
           if(!r)continue;
           const raw=r.values.tags;
           const tags=Array.isArray(raw)&&raw.every(t=>obj(t)&&id(t.id))?raw.map(t=>(t as Obj).id as number):null;
           const stars=r.values['source.StarRating'];
-          rows.push({itemId:r.itemId,tagIds:tags,stars:int(stars)?stars:null});
+          const crop=r.values['source.CropType'];
+          // Original CropItemData.CropType enum: omitted = Fruit (0).
+          const cropType=cropIndexed?(crop===undefined||crop===0?0:crop===1?1:null):null;
+          rows.push({itemId:r.itemId,tagIds:tags,stars:int(stars)?stars:null,cropType});
         }
       }
       return Object.freeze(rows);
@@ -147,9 +161,11 @@ export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
       const starRatingMatch=facts.minimumMealStars===null?true:r.stars===null?null:r.stars>=facts.minimumMealStars;
       // A direct-tag non-match is NOT proof of native exclusion. Do not
       // discard any type-matched item from the source pool on that basis.
-      const reviewedDefinitionMatch=directTagMatch===false||starRatingMatch===false?false:
-        directTagMatch===true&&starRatingMatch===true?true:null;
-      return Object.freeze({itemId:r.itemId,directTagMatch,starRatingMatch,reviewedDefinitionMatch,
+      const cropTypeMatch=facts.cropTypeCondition===0?true:facts.cropTypeCondition===null||r.cropType===null?null:
+        r.cropType===facts.cropTypeCondition-1;
+      const predicates=[directTagMatch,starRatingMatch,cropTypeMatch];
+      const reviewedDefinitionMatch=predicates.includes(false)?false:predicates.every(v=>v===true)?true:null;
+      return Object.freeze({itemId:r.itemId,directTagMatch,starRatingMatch,cropTypeMatch,reviewedDefinitionMatch,
         ingredientEvidence:ingredientRows.get(r.itemId)??null,fishingEvidence:fishingRows.get(r.itemId)??null});
     });
     return Object.freeze({facts,status:indexed?'source_definition_candidates' as const:'not_indexed' as const,
@@ -165,4 +181,9 @@ export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
     return resolve(filter);
   }
   return Object.freeze({release:db.release,resolve,resolveObjectiveSelector});
+}
+
+/** Compatibility entry point for existing quest consumers. */
+export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
+  return createItemFilterCandidateReader(db,'quest');
 }

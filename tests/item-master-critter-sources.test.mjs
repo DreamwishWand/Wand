@@ -58,3 +58,43 @@ test('all 125 original critter definitions preserve schedules, feeding selectors
   assert.equal(noncritter.status,'not_critter');assert.equal(missing,null);assert.deepEqual(a,b);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
 });
+
+test('126 original critter food filters reuse the shared definition evidence and preserve all type-matched candidates',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{
+    requests.push(url);return new Response(await readFile('static'+url),{status:200});
+  });
+  const reader=createCritterSourceReader(db);
+  const ids=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'CritterItemData'});
+  const rows=await reader.getFoodFilterCandidates(ids);
+  const all=rows.flatMap(r=>[r.like,r.favorite].filter(Boolean));
+  assert.equal(all.length,126);
+  assert(all.every(r=>r.status==='source_definition_candidates'&&r.nativeFilterVerified===false));
+  const unique=new Set(all.map(f=>f));
+  assert(unique.size<=26);
+  const counts=new Map();
+  for(const f of all)counts.set(f.facts.activitySubtypeCode,(counts.get(f.facts.activitySubtypeCode)??0)+1);
+  assert.deepEqual([...counts].sort((a,b)=>a[0]-b[0]),[[2,16],[3,31],[8,14],[10,27],[11,33],[16,5]]);
+  assert.equal(all.filter(f=>f.facts.directTagGroups.length>0).length,53);
+  assert.equal(all.filter(f=>f.facts.minimumMealStars!==null).length,26);
+  assert.equal(all.filter(f=>f.facts.ingredientTypeReferences.length>0).length,16);
+  for(const [condition,expected,definitions] of [[1,40,5],[2,125,11]]){
+    const crops=all.filter(f=>f.facts.cropTypeCondition===condition);
+    assert.equal(crops.length,definitions);
+    for(const f of crops){
+      assert.equal(f.candidates.length,165);
+      assert.equal(f.candidates.filter(c=>c.cropTypeMatch===true).length,expected);
+      assert.equal(f.candidates.filter(c=>c.cropTypeMatch===false).length,165-expected);
+    }
+  }
+  const rabbit=rows.find(r=>r.critterItemId===120100000);
+  assert.equal(rabbit.favorite,null);
+  assert.equal(rabbit.like.facts.cropTypeCondition,2);
+  const [carrot,missing,duplicate]=await reader.getForFoodFilterCandidates([30200000,99999999,30200000]);
+  assert.equal(carrot.status,'indexed');assert.equal(missing,null);assert.deepEqual(carrot,duplicate);
+  assert(carrot.references.some(r=>r.critterItemId===120100000&&r.preference==='like'&&r.evidence.cropTypeMatch===true));
+  for(const ref of carrot.references){
+    assert.deepEqual(ref.evidence,rows.find(r=>r.critterItemId===ref.critterItemId)[ref.preference].candidates.find(r=>r.itemId===30200000));
+  }
+  assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
+});

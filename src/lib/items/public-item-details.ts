@@ -42,7 +42,7 @@ import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-ta
 import {createProductionSourceReader,type ProductionItemEvidence} from './public-production-sources.ts';
 import {createLootSourceReader,type LootItemEvidence} from './public-loot-sources.ts';
 import {createStallLootReader,type StallItemEvidence,type StallLootEvidence} from './public-stall-loot.ts';
-import {createCritterSourceReader,type CritterSourceResult,type CritterFoodResult} from './public-critter-sources.ts';
+import {createCritterSourceReader,type CritterSourceResult,type CritterFoodResult,type CritterFoodFilterResult,type CritterFoodFilterInverse} from './public-critter-sources.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
@@ -171,6 +171,8 @@ export interface PublicItemDetailsClient {
   getStallLootDetails(stallIds:readonly number[]):Promise<readonly (Readonly<StallLootEvidence>|null)[]>;
   getCritterSourceDetails(critterIds:readonly number[]):Promise<readonly (Readonly<CritterSourceResult>|null)[]>;
   getItemCritterFoodReferences(itemIds:readonly number[]):Promise<readonly (Readonly<CritterFoodResult>|null)[]>;
+  getCritterFoodFilterCandidates(critterIds:readonly number[]):Promise<readonly (Readonly<CritterFoodFilterResult>|null)[]>;
+  getItemCritterFoodFilterCandidates(itemIds:readonly number[]):Promise<readonly (Readonly<CritterFoodFilterInverse>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
   getSelectedItems(itemIds:readonly number[],fields:readonly string[],
     options?:PublicItemSelectionOptions):Promise<readonly (Readonly<PublicSelectedItem>|null)[]>;
@@ -398,6 +400,12 @@ export async function openPublicItemDetails(
     },
     async getCritterSourceDetails(critterIds:readonly number[]){
       return createCritterSourceReader(await complete()).getForCritters(critterIds);
+    },
+    async getCritterFoodFilterCandidates(critterIds:readonly number[]){
+      return createCritterSourceReader(await complete()).getFoodFilterCandidates(critterIds);
+    },
+    async getItemCritterFoodFilterCandidates(itemIds:readonly number[]){
+      return createCritterSourceReader(await complete()).getForFoodFilterCandidates(itemIds);
     },
     async getItemCritterFoodReferences(itemIds:readonly number[]){
       return createCritterSourceReader(await complete()).getForFood(itemIds);
