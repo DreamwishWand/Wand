@@ -981,6 +981,135 @@ pub fn preview_furniture_stock_transaction(source:&str,expected_stock:u32,action
     Ok(draft)
 }
 
+/// Bounded native room finish contract inherited from Switch 1.25 runtime
+/// acceptance (Flooring and All Walls). Current-build acceptance and the
+/// item definition witness are caller responsibilities, not implied here.
+#[derive(Clone,Copy)]
+pub struct RoomFinishTarget{pub house_index:usize,pub house_item_id:u32,pub floor_index:usize,pub room_slot:u8}
+#[derive(Clone,Copy)]
+pub enum RoomFinishAction{Flooring{expected:u32},Wallpaper{wall:Option<u8>,expected:[Option<u32>;4]}}
+fn room_value<'a>(root:&'a serde_json::Value,target:RoomFinishTarget)->Option<&'a serde_json::Value>{
+ let h=root.get("World")?.get("PlayerHouses")?.get(target.house_index)?;
+ if h.get("HouseItemID")?.as_u64()!=Some(u64::from(target.house_item_id)){return None;}
+ h.get("Floors")?.get(target.floor_index)?.get("Rooms")?.get(target.room_slot.to_string().as_str())
+}
+fn room_path(t:RoomFinishTarget)->Vec<Segment>{
+ vec![k("World"),k("PlayerHouses"),Segment::Index(t.house_index),k("Floors"),Segment::Index(t.floor_index),k("Rooms"),k(&t.room_slot.to_string())]
+}
+fn room_lexical_map_edit(source:&str,parent:Vec<Segment>,key:&str,replacement:Option<u32>)->Result<String,PatchError>{
+ let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mut member=parent.clone();member.push(k(key));locator.capture.insert(parent.clone(),None);locator.capture.insert(member.clone(),None);locator.walk_complete()?;
+ let map_range=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let old:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&source[map_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
+ let found=locator.capture.get(&member).and_then(|v|v.clone());
+ let (range,value)=if let Some(n)=replacement{
+  if let Some(r)=found{(r,n.to_string())}
+  else{if old.contains_key(key){return Err(PatchError::AmbiguousTarget);}
+   let member=format!("{}\"{}\":{}",if old.is_empty(){""}else{","},key,n);
+   (map_range.end-1..map_range.end-1,member)}
+ }else{
+  if found.is_none(){return Err(PatchError::MissingTarget);}
+  locator.capture.clear();locator.pos=map_range.start;locator.expect(b'{')?;let mut comma=None;
+  let removed=loop{
+   locator.space();let start=locator.pos;let current=locator.string()?;locator.expect(b':')?;
+   let mut p=parent.clone();p.push(k(&current));locator.value(&mut p)?;let end=locator.pos;locator.space();
+   if current==key{break if locator.bytes.get(locator.pos)==Some(&b','){start..locator.pos+1}else if let Some(c)=comma{c..end}else{start..end};}
+   if locator.bytes.get(locator.pos)!=Some(&b','){return Err(PatchError::MissingTarget);}
+   comma=Some(locator.pos);locator.pos+=1;
+  };
+  (removed,String::new())
+ };
+ let mut result=String::with_capacity(source.len()+value.len());result.push_str(&source[..range.start]);result.push_str(&value);result.push_str(&source[range.end..]);
+ if result.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+ validate_json_without_edit(&result)?;Ok(result)
+}
+/// Applies only the exact existing room scalar or wallpaper entries and
+/// obsolete offsets. Owned trimming items are never consumed. All unknown
+/// state remains byte-exact; independent semantic verification is included.
+pub fn preview_room_finish(source:&str,target:RoomFinishTarget,item:u32,action:RoomFinishAction)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::Value;
+ if target.house_index>=128||target.floor_index>=128||target.room_slot>3||target.house_item_id==0||source.is_empty()||source.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidTarget);}
+ let subtype=if matches!(action,RoomFinishAction::Flooring{..}){1601}else{1600};
+ if item/100000!=subtype{return Err(PatchError::InvalidTarget);}
+ validate_json_without_edit(source)?;
+ let mut expected_root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ // Resolve the unique compatible ownership route, not merely inventory 4.
+ let inventory=expected_root.get("Player").and_then(|p|p.get("ListInventories")).and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let mut routes=inventory.iter().filter(|(_,v)|v.get("CompatibleItemType").and_then(Value::as_str)==Some("ItemType_Trimming"));
+ let (route_key,route)=routes.next().ok_or(PatchError::MissingTarget)?;
+ if routes.next().is_some()||route.get("ID").and_then(Value::as_u64).is_none_or(|id|id.to_string()!=*route_key)||
+    route.as_object().is_none_or(|o|o.keys().any(|k|k.starts_with("Compatible")&&k!="CompatibleItemType"))||
+    route.get("Inventory").and_then(|v|v.get(item.to_string().as_str())).and_then(|v|v.get("Amount")).and_then(Value::as_u64).is_none_or(|a|a==0||a>i32::MAX as u64){
+  return Err(PatchError::InvalidTarget);
+ }
+ let room=room_value(&expected_root,target).ok_or(PatchError::MissingTarget)?;
+ let walls=room.get("WallGridIDs").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let floor=room.get("FloorGridID").and_then(Value::as_u64).filter(|n|*n<=u32::MAX as u64).ok_or(PatchError::InvalidTarget)?;
+ let mut ids=HashSet::from([floor]);if walls.len()!=4{return Err(PatchError::InvalidTarget);}
+ for pos in 0..4{
+  let n=walls.get(&pos.to_string()).and_then(Value::as_u64).filter(|n|*n<=u32::MAX as u64).ok_or(PatchError::InvalidTarget)?;
+  if !ids.insert(n){return Err(PatchError::AmbiguousTarget);}
+ }
+ let base=room_path(target);let mut candidate=source.to_owned();
+ let pointer=format!("/World/PlayerHouses/{}/Floors/{}/Rooms/{}",target.house_index,target.floor_index,target.room_slot);
+ match action{
+  RoomFinishAction::Flooring{expected}=>{
+   if room.get("Flooring").and_then(Value::as_u64)!=Some(u64::from(expected))||expected==item{return Err(PatchError::ItemMismatch);}
+   candidate=room_lexical_map_edit(&candidate,base,"Flooring",Some(item))?;
+   *expected_root.pointer_mut(&(pointer+"/Flooring")).ok_or(PatchError::MissingTarget)?=Value::from(item);
+  }
+  RoomFinishAction::Wallpaper{wall,expected}=>{
+   if wall.is_some_and(|w|w>3){return Err(PatchError::InvalidTarget);}
+   let papers=room.get("Wallpapers").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+   let offsets=room.get("WallpaperOffsetById").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+   if papers.keys().any(|k|!matches!(k.as_str(),"0"|"1"|"2"|"3"))||offsets.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|id|id.to_string()!=*k)||v.as_f64().is_none_or(|n|!n.is_finite())){return Err(PatchError::InvalidTarget);}
+   let mut next=expected;let mut displaced=HashSet::new();let mut changes=Vec::new();
+   for pos in 0..4{
+    let key=pos.to_string();let actual=match papers.get(&key){Some(v)=>Some(v.as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n<=i32::MAX as u32).ok_or(PatchError::InvalidTarget)?),None=>None};
+    if actual!=expected[pos]{return Err(PatchError::ItemMismatch);}
+    if wall.is_none_or(|w|usize::from(w)==pos)&&actual!=Some(item){next[pos]=Some(item);displaced.insert(actual.unwrap_or(0));changes.push(pos);}
+   }
+   if changes.is_empty(){return Err(PatchError::InvalidTarget);}
+   let mut stale:Vec<u32>=displaced.into_iter().filter(|id|!next.contains(&Some(*id))&&offsets.contains_key(&id.to_string())).collect();stale.sort_unstable();
+   let mut p=base.clone();p.push(k("Wallpapers"));let mut o=base;o.push(k("WallpaperOffsetById"));
+   for pos in changes{
+    let key=pos.to_string();candidate=room_lexical_map_edit(&candidate,p.clone(),&key,Some(item))?;
+    expected_root.pointer_mut(&(pointer.clone()+"/Wallpapers")).and_then(Value::as_object_mut).ok_or(PatchError::MissingTarget)?.insert(key,Value::from(item));
+   }
+   for old in stale{
+    let key=old.to_string();candidate=room_lexical_map_edit(&candidate,o.clone(),&key,None)?;
+    expected_root.pointer_mut(&(pointer.clone()+"/WallpaperOffsetById")).and_then(Value::as_object_mut).ok_or(PatchError::MissingTarget)?.remove(&key);
+   }
+  }
+ }
+ let actual:Value=serde_json::from_str(&candidate).map_err(|_|PatchError::InvalidDocument)?;
+ if actual!=expected_root||room_value(&actual,target).is_none(){return Err(PatchError::InvalidDocument);}
+ Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+#[cfg(test)]
+mod room_finish_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"Player":{"ListInventories":{"4":{"ID":4,"CompatibleItemType":"ItemType_Trimming","Inventory":{"160000003":{"Amount":1},"160100005":{"Amount":1}}}}},"World":{"PlayerHouses":[{"HouseItemID":120000001,"Floors":[{"Rooms":{"0":{"FloorGridID":10,"WallGridIDs":{"0":11,"1":12,"2":13,"3":14},"Flooring":160100004,"Wallpapers":{"0":160000001,"1":160000001,"2":160000002,"3":160000003},"WallpaperOffsetById":{"160000001":1e-1,"160000002":0.5,"160000003":0.25,"160000009":1e2},"Ceiling":160200001,"Unknown":1e2}}}]}]}}"#;
+ const TARGET:RoomFinishTarget=RoomFinishTarget{house_index:0,house_item_id:120000001,floor_index:0,room_slot:0};
+ const EXPECTED:[Option<u32>;4]=[Some(160000001),Some(160000001),Some(160000002),Some(160000003)];
+ #[test]fn floor_exact_and_ownership_unchanged(){
+  let d=preview_room_finish(SOURCE,TARGET,160100005,RoomFinishAction::Flooring{expected:160100004}).unwrap();
+  assert_eq!(d.patched_json,SOURCE.replace("\"Flooring\":160100004","\"Flooring\":160100005"));assert!(!d.export_authorized);
+  assert!(preview_room_finish(SOURCE,TARGET,160100005,RoomFinishAction::Flooring{expected:0}).is_err());
+ }
+ #[test]fn wallpaper_offsets_only_removed_after_last_wall(){
+  let d=preview_room_finish(SOURCE,TARGET,160000003,RoomFinishAction::Wallpaper{wall:Some(0),expected:EXPECTED}).unwrap();
+  assert!(d.patched_json.contains("\"160000001\":1e-1"));
+  let d=preview_room_finish(SOURCE,TARGET,160000003,RoomFinishAction::Wallpaper{wall:None,expected:EXPECTED}).unwrap();
+  let j:serde_json::Value=serde_json::from_str(&d.patched_json).unwrap();let room=room_value(&j,TARGET).unwrap();
+  assert_eq!(room["Wallpapers"],serde_json::json!({"0":160000003,"1":160000003,"2":160000003,"3":160000003}));
+  assert_eq!(room["WallpaperOffsetById"],serde_json::json!({"160000003":0.25,"160000009":100.0}));
+  assert!(d.patched_json.contains("\"160000009\":1e2"));assert!(d.patched_json.contains("\"Unknown\":1e2"));
+  assert!(preview_room_finish(SOURCE,TARGET,160000004,RoomFinishAction::Wallpaper{wall:None,expected:EXPECTED}).is_err());
+ }
+}
+
 /// One optimistic-concurrency checked change to an existing GridObject.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct GridCoordinateEdit {
