@@ -7,7 +7,7 @@
  import type {SourceObjectShape} from './source-object-map.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
- import {parseSupportTree,supportItems,supportExtent,supportShapeKey,supportParentCandidate,supportParentEligible,supportWords,supportChildEdits,childEditWords,supportFreeEdit,supportFreeWords,supportStockPlacement,supportStockPickup,supportStockWords,supportHitIndices,supportPlacementFits,supportTransferWords,type SupportObject,type SupportStockPlan,type SupportChildEdit,type SupportTree,type SupportParentCandidate} from './subgrid-local.ts';
+ import {parseSupportTree,supportItems,supportExtent,supportShapeKey,supportParentCandidate,supportParentEligible,supportWords,supportChildEdits,childEditWords,supportFreeEdit,supportFreeWords,supportStockPlacement,supportStockPickup,supportStockWords,supportHitIndices,supportPlacementFits,supportDragDestination,supportTransferWords,type SupportObject,type SupportStockPlan,type SupportChildEdit,type SupportTree,type SupportParentCandidate} from './subgrid-local.ts';
  import {testSaveWords} from './test-save-export.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
@@ -19,7 +19,11 @@
  export let grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map();
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
  export let canMove=false,nextRequest:()=>number,onClose:()=>void;
- export let placing=false,ghost:SupportParentCandidate|null=null;
+ export let placing=false,ghost:SupportParentCandidate|null=null,preview:SupportParentCandidate|null=null;
+ export let initialParentPoint:{x:number;y:number}|null=null,onInitialConsumed:()=>void=()=>{};
+ let parentPoint:{x:number;y:number}|null=null;
+ $: preview=placing&&parentPoint&&parent&&canMove?supportParentCandidate(parent,grids,rasters,parentPoint.x,parentPoint.y,parentOrientation??parent.object.orientation,parentShapes):null;
+ export function hoverParent(point:{x:number;y:number}|null){parentPoint=placing?point:null;}
  export let supports:readonly MainlandSavedObject[]=[];
  export let saveMaps:ReadonlyMap<string,SavedShapeMap>=new Map();
  let parentOrientation:string|null=null;
@@ -29,6 +33,10 @@
  let stack:SupportTree[]=[],path:number[]=[],owners:number[]=[],selected=-1,swap=false,free=false,freeDraft=false,edits:SupportChildEdit[]|null=null,editable=new Set<number>(),terrain:TerrainRaster|null=null;
  let supportSvg:SVGSVGElement;
  let hoverCell:{x:number;y:number}|null=null;
+ type ChildDrag={pointer:number;tree:SupportTree;file:File;index:number;start:{x:number;y:number};clientX:number;clientY:number;destination:{x:number;y:number};moved:boolean};
+ let childDrag:ChildDrag|null=null,suppressChildClick=false;
+ $: dragPreview=childDrag?.moved&&mapInteractive&&canMove&&tree===childDrag.tree&&file===childDrag.file&&terrain?previewAt(tree,shapes,editable,terrain,childDrag.destination,true,childDrag.index,false,0,stockOrientation,counts,false,removable):null;
+ $: childPreview=dragPreview??hoverPreview;
  type TransferSource={index:number;object:SupportObject;path:number[]};
  type TransferDraft={index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;destination:{localOrdinal:number;itemId:number;expectedX:number;expectedY:number;terrainPath:string};x:number;y:number;orientation:string};
  let transferSource:TransferSource|null=null,transferTarget:MainlandSavedObject|null=null,transferDraft:TransferDraft|null=null,transferQuery='';
@@ -58,17 +66,17 @@
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
  function stopOwn(){own?.terminate();own=null;}
  function clearCopy(){if(copy)URL.revokeObjectURL(copy.url);copy=null;}
- export function cancel(){parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
+ export function cancel(){childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
  function refresh(show:boolean,source:File|null,p:MainlandSavedObject|null){
   cancel();request=0;activeOpen=show;activeFile=source;activeOrdinal=p?.object.localOrdinal??0;stack=[];path=[];owners=[];selected=-1;tree=null;terrain=null;shapes={};editable=new Set();removable=new Set();counts=new Map();stockCatalog=[];catalogRequest=0;images=new Map();imageEpoch++;
   if(!show||!source||!p?.object.subgrid)return;
   loading=true;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
-  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==p.object.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}stack=[root];owners=[Number(p.object.itemId)];showTree(root);}catch{error=true;}};
+  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==p.object.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}stack=[root];owners=[Number(p.object.itemId)];showTree(root);if(initialParentPoint){const point=initialParentPoint;onInitialConsumed();if(canMove){ghost=supportParentCandidate(p,grids,rasters,point.x,point.y,p.object.orientation,saveMaps.get(p.area)?.shapes??{});error=!ghost;}}}catch{onInitialConsumed();error=true;}};
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);
   session.postMessage({command:'inspect-subgrid',file:source,parent:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}});
  }
- function showTree(t:SupportTree){hoverCell=null;selected=-1;swap=false;free=false;freeDraft=false;edits=null;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stockCatalog=[];catalogRequest=0;tree=t;terrain=null;shapes={};editable=new Set();removable=new Set();requestShapes(t);requestCatalog(t);const epoch=++imageEpoch;images=new Map();for(const id of new Set(t.objects.map(o=>o.itemId))){void worldArtwork(base,id).then(url=>{if(url&&epoch===imageEpoch)images=new Map(images).set(id,url);}).catch(()=>{});}}
+ function showTree(t:SupportTree){childDrag=null;suppressChildClick=false;hoverCell=null;selected=-1;swap=false;free=false;freeDraft=false;edits=null;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stockCatalog=[];catalogRequest=0;tree=t;terrain=null;shapes={};editable=new Set();removable=new Set();requestShapes(t);requestCatalog(t);const epoch=++imageEpoch;images=new Map();for(const id of new Set(t.objects.map(o=>o.itemId))){void worldArtwork(base,id).then(url=>{if(url&&epoch===imageEpoch)images=new Map(images).set(id,url);}).catch(()=>{});}}
  function requestShapes(t:SupportTree){request=0;if(!worker)return;const items=supportItems(t);if(stockId)for(const orientationCode of [0,4,8,12])items.push({itemId:stockId,orientationCode});if(!items.length&&!t.sourcePath)return;request=nextRequest();worker.postMessage({command:'support-shapes',requestId:request,factor:t.factor,items,sourcePath:t.sourcePath,ownerItemId:owners[owners.length-1]});}
  function requestCatalog(t:SupportTree){catalogRequest=0;if(!worker||!t.sourcePath||!counts.size)return;catalogRequest=nextRequest();worker.postMessage({command:'support-catalog',requestId:catalogRequest,sourcePath:t.sourcePath,ownerItemId:owners[owners.length-1],locale,itemIds:[...counts].filter(([,n])=>n>0).map(([id])=>id)});}
  function chooseStock(id:number,orientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down'){if(!tree||!terrain||!canMove||loading||copy||!stockCatalog.some(o=>o.itemId===id)||!(counts.get(id)!>0))return;stockId=id;stockOrientation=orientation;stockDraft=null;stockPlacing=true;stockOpen=false;selected=-1;free=false;swap=false;edits=null;error=false;requestShapes(tree);const epoch=imageEpoch;void worldArtwork(base,id).then(url=>{if(url&&epoch===imageEpoch)images=new Map(images).set(id,url);}).catch(()=>{});}
@@ -98,10 +106,10 @@
  function selectChild(index:number){if(!mapInteractive||stockPlacing||free)return;if(swap&&tree){const next=supportChildEdits(tree,shapes,editable,selected,index,1);if(next){edits=next;swap=false;}return;}selected=index;edits=null;free=false;freeDraft=false;}
  function turnCandidate(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,e:ReadonlySet<number>,r:TerrainRaster|null,i:number,turn:-1|1){const exact=supportChildEdits(t,s,e,i,null,turn);if(exact)return exact;const o=t.objects[i];if(!r||!o||!isCardinal(o.orientation))return null;return supportFreeEdit(t,s,e,r,i,o.x,o.y,CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4]);}
  function beginChild(next:SupportChildEdit[]|null){if(!canMove||!next||loading||copy||placing||ghost)return;freeDraft=!!terrain&&!!tree&&next.length===1&&!supportChildEdits(tree,shapes,editable,selected,null,-1)?.some(e=>e.orientation===next[0].orientation)&&!supportChildEdits(tree,shapes,editable,selected,null,1)?.some(e=>e.orientation===next[0].orientation);edits=next;swap=false;free=false;error=false;}
- function pointerCell(e:MouseEvent){
+ function pointerCell(e:MouseEvent,unbounded=false){
   const m=supportSvg?.getScreenCTM();if(!m)return null;
   const q=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
-  if(!Number.isFinite(q.x)||!Number.isFinite(q.y)||q.x<extent.x||q.y<extent.y||q.x>=extent.x+extent.w||q.y>=extent.y+extent.h)return null;
+  if(!Number.isFinite(q.x)||!Number.isFinite(q.y)||!unbounded&&(q.x<extent.x||q.y<extent.y||q.x>=extent.x+extent.w||q.y>=extent.y+extent.h))return null;
   return {x:Math.floor(q.x),y:Math.floor(q.y)};
  }
  function previewAt(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,r:TerrainRaster,p:{x:number;y:number},moving:boolean,index:number,placingStock:boolean,id:number,orientation:typeof CARDINAL_ORIENTATIONS[number],stock:ReadonlyMap<number,number>,transferring:boolean,canRemove:ReadonlySet<number>){
@@ -110,8 +118,39 @@
   const valid=placingStock?(transferring?allowed.has(id)&&canRemove.has(id)&&supportPlacementFits(t,s,r,id,p.x,p.y,orientation):!!supportStockPlacement(t,s,r,id,stock.get(id)??0,p.x,p.y,orientation)):moving&&!!o&&!!supportFreeEdit(t,s,allowed,r,index,p.x,p.y,o.orientation);
   return {...p,shape,itemId:placingStock?id:o.itemId,valid};
  }
- function hoverChild(e:PointerEvent){hoverCell=mapInteractive&&(free||stockPlacing)?pointerCell(e):null;}
+ function startChildDrag(e:PointerEvent){
+  suppressChildClick=false;childDrag=null;
+  if(e.button!==0||e.pointerType==='touch'||!mapInteractive||!canMove||!tree||!terrain||!file||free||swap||stockPlacing||transferSource)return;
+  const p=pointerCell(e);if(!p)return;
+  const hits=supportHitIndices(tree,shapes,p.x,p.y);
+  const i=hits.includes(selected)?selected:hits[hits.length-1],o=tree.objects[i];
+  if(!o||o.child||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!isCardinal(o.orientation))return;
+  childDrag={pointer:e.pointerId,tree,file,index:i,start:p,clientX:e.clientX,clientY:e.clientY,destination:{x:o.x,y:o.y},moved:false};
+ }
+ function updateChildDrag(e:PointerEvent){
+  const d=childDrag;if(!d||d.pointer!==e.pointerId)return false;
+  if(!mapInteractive||!canMove||tree!==d.tree||file!==d.file||!terrain){childDrag=null;return true;}
+  if(!d.moved&&Math.hypot(e.clientX-d.clientX,e.clientY-d.clientY)<4)return true;
+  const p=pointerCell(e,true),o=tree.objects[d.index],destination=p&&o?supportDragDestination(o,d.start,p):null;
+  if(!destination)return true;
+  if(!d.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* pointer ended */}selected=d.index;error=false;}
+  childDrag={...d,destination,moved:true};hoverCell=null;e.preventDefault();return true;
+ }
+ function finishChildDrag(e:PointerEvent,commit:boolean){
+  if(childDrag?.pointer!==e.pointerId)return;
+  if(commit)updateChildDrag(e);
+  const d=childDrag;childDrag=null;
+  if(!d?.moved)return;
+  suppressChildClick=true;
+  if(!commit||!mapInteractive||!canMove||!tree||!terrain||tree!==d.tree||file!==d.file)return;
+  const o=tree.objects[d.index];
+  if(d.destination.x===o.x&&d.destination.y===o.y)return;
+  const next=supportFreeEdit(tree,shapes,editable,terrain,d.index,d.destination.x,d.destination.y,o.orientation);
+  error=!next;if(next){edits=next;freeDraft=true;free=false;hoverCell=null;}
+ }
+ function hoverChild(e:PointerEvent){if(updateChildDrag(e))return;hoverCell=mapInteractive&&(free||stockPlacing)?pointerCell(e):null;}
  function pickChild(e:MouseEvent){
+  if(suppressChildClick){suppressChildClick=false;return;}
   if(!mapInteractive||!tree||e.detail===0)return;const q=pointerCell(e);if(!q)return;
   if(!free&&!stockPlacing){
    const hits=supportHitIndices(tree,shapes,q.x,q.y).filter(i=>!swap||partners.includes(i));
@@ -138,10 +177,11 @@
    if(transferSource||stockPlacing||stockDraft)cancelStock();
    else if(edits||swap||free){edits=null;swap=false;free=false;freeDraft=false;}
    else selected=-1;
-   hoverCell=null;error=false;e.preventDefault();return;
+   childDrag=null;hoverCell=null;error=false;e.preventDefault();return;
   }
   if(!canMove)return;
   if(action==='confirm'&&(edits||stockDraft||transferDraft)){e.preventDefault();validateChild();return;}
+  if(action==='delete'&&pickup&&mapInteractive&&!free&&!swap&&!stockPlacing&&!transferSource){e.preventDefault();beginPickup();return;}
   const turn=action==='rotate-left'?-1:action==='rotate-right'?1:0;
   if(turn&&stockPlacing){stockOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(stockOrientation)+turn+4)%4];e.preventDefault();return;}
   const delta=NUDGE[action],o=tree.objects[selected];
@@ -162,7 +202,7 @@
   const finish=(d:any)=>{session.terminate();if(own!==session||activeFile!==source||edits!==chosen||stockDraft!==stock||transferDraft!==transfer){d?.bytes?.fill(0);return;}own=null;loading=false;try{if(d?.kind!=='support-child-copy')throw Error('copy');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-child-copy',file:source,allowExperimentalCopy:true,plan:{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),expectedX:parent.object.x,expectedY:parent.object.y,path:transfer?from!.path:path,...(transfer?{transfer}:stock?{stock,...(stock.action==='place'&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})}:{edits:chosen,...(freeDraft&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})})}});
  }
- function begin(){if(!canMove||!supportParentEligible(parent)||!tree||loading)return;clearCopy();cancelStock();edits=null;swap=false;free=false;freeDraft=false;ghost=null;error=false;parentOrientation=parent.object.orientation;placing=true;}
+ function begin(){if(!canMove||!supportParentEligible(parent)||!tree||loading)return;clearCopy();cancelStock();edits=null;swap=false;free=false;freeDraft=false;ghost=null;error=false;parentOrientation=parent.object.orientation;parentPoint=null;placing=true;}
  export function turnParent(delta:-1|1){
   if(!canMove||!parentRotate||!parent||loading||copy||transferSource||edits||stockDraft||stockPlacing||stockOpen||swap||free||!tree)return;
   const previous=parentOrientation??parent.object.orientation;if(!isCardinal(previous))return;
@@ -172,7 +212,7 @@
   const candidate=supportParentCandidate(parent,grids,rasters,x+.25/factor,y-.25/factor,orientation,parentShapes);
   if(!candidate){error=true;return;}parentOrientation=orientation;ghost=candidate;error=false;
  }
- export function pick(point:{x:number;y:number}){if(!placing||!parent||!canMove)return;ghost=supportParentCandidate(parent,grids,rasters,point.x,point.y,parentOrientation??parent.object.orientation,parentShapes);error=!ghost;if(ghost)placing=false;}
+ export function pick(point:{x:number;y:number}){if(!placing||!parent||!canMove)return;ghost=supportParentCandidate(parent,grids,rasters,point.x,point.y,parentOrientation??parent.object.orientation,parentShapes);error=!ghost;if(ghost){placing=false;parentPoint=null;}}
  function validate(){
   if(!canMove||!ghost||!file||file!==activeFile||own||!open)return;
   const source=file,plan=ghost;loading=true;error=false;clearCopy();
@@ -192,21 +232,21 @@
    {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
    <div class="support-heading">{#if stack.length>1}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={back}>{words[11]}</button>{/if}<strong>{words[1]}</strong></div>
    {#if tree.objects.length||terrain}
-    <button type="button" class="support-map-button" disabled={!mapKeyboard} aria-label={free||stockPlacing?sw[1]:cw[6]} aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown R Shift+R Escape Enter" on:keydown={mapKeys} on:click={pickChild} on:pointermove={hoverChild} on:pointerleave={()=>hoverCell=null}><svg bind:this={supportSvg} class="support-map" viewBox={extent.x+' '+extent.y+' '+extent.w+' '+extent.h} aria-label={words[1]} role="img">
+    <button type="button" class="support-map-button" disabled={!mapKeyboard} aria-label={free||stockPlacing?sw[1]:cw[6]} aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown R Shift+R Delete Escape Enter" on:keydown={mapKeys} on:click={pickChild} on:pointerdown={startChildDrag} on:pointermove={hoverChild} on:pointerup={e=>finishChildDrag(e,true)} on:pointercancel={e=>finishChildDrag(e,false)} on:lostpointercapture={e=>finishChildDrag(e,false)} on:pointerleave={()=>{hoverCell=null;if(childDrag&&!childDrag.moved)childDrag=null;}}><svg bind:this={supportSvg} class="support-map" viewBox={extent.x+' '+extent.y+' '+extent.w+' '+extent.h} aria-label={words[1]} role="img">
      {#if terrain}{#each Array.from(terrain.nativeFloorValues) as cell,i}<rect x={(i%terrain.sizeX)*tree.factor} y={Math.floor(i/terrain.sizeX)*tree.factor} width={tree.factor} height={tree.factor} fill={cell?'#6ba98b':'#8b5555'} fill-opacity=".35" stroke="currentColor" stroke-opacity=".3" vector-effect="non-scaling-stroke"/>{/each}{/if}
      {#each tree.objects as o,i}
       {@const change=edits?.find(e=>e.index===i)}
       {@const effective=change?{...o,x:change.x,y:change.y,orientation:change.orientation}:o}
       {@const key=supportShapeKey(effective)}
       {@const shape=key?shapes[key]:null}
-      <g transform={'translate('+effective.x+' '+effective.y+')'} opacity={stockDraft?.action==='pickup'&&stockDraft.index===i||free&&hoverPreview&&selected===i?0.3:1}>
+      <g transform={'translate('+effective.x+' '+effective.y+')'} opacity={stockDraft?.action==='pickup'&&stockDraft.index===i||(free||childDrag?.moved)&&childPreview&&selected===i?0.3:1}>
        {#if shape}<path d={shape.path} fill={selected===i||change?'#4bddcd':'var(--wand-menu)'} stroke="currentColor" stroke-width="1" vector-effect="non-scaling-stroke"/>{#if images.has(o.itemId)}<image href={images.get(o.itemId)} width={shape.width} height={shape.height} preserveAspectRatio="xMidYMid meet"/>{/if}{:else}<rect width="1" height="1" fill="none" stroke="currentColor" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>{/if}
        {#if o.child}<circle cx={(shape?.width??1)/2} cy={(shape?.height??1)/2} r=".2" fill="#b98bd6"/>{/if}
       </g>
      {/each}
      {#if transferDraft&&stockShape}<g transform={'translate('+transferDraft.x+' '+transferDraft.y+')'}><path d={stockShape.path} fill="#4bddcd" stroke="currentColor" vector-effect="non-scaling-stroke"/><image href={images.get(transferDraft.itemId)} width={stockShape.width} height={stockShape.height} preserveAspectRatio="xMidYMid meet"/></g>{/if}
      {#if stockDraft?.action==='place'&&stockShape}<g transform={'translate('+stockDraft.x+' '+stockDraft.y+')'}><path d={stockShape.path} fill="#4bddcd" stroke="currentColor" vector-effect="non-scaling-stroke"/><image href={images.get(stockDraft.itemId)} width={stockShape.width} height={stockShape.height} preserveAspectRatio="xMidYMid meet"/></g>{/if}
-     {#if hoverPreview}<g transform={'translate('+hoverPreview.x+' '+hoverPreview.y+')'} pointer-events="none" opacity=".8"><path d={hoverPreview.shape.path} fill={hoverPreview.valid?'#4bddcd':'#c45b5b'} fill-opacity=".55" stroke={hoverPreview.valid?'#4bddcd':'#c45b5b'} stroke-width="2" vector-effect="non-scaling-stroke" stroke-dasharray={hoverPreview.valid?'none':'3 2'}/>{#if images.has(hoverPreview.itemId)}<image href={images.get(hoverPreview.itemId)} width={hoverPreview.shape.width} height={hoverPreview.shape.height} preserveAspectRatio="xMidYMid meet" opacity=".55"/>{/if}</g>{/if}
+     {#if childPreview}<g transform={'translate('+childPreview.x+' '+childPreview.y+')'} pointer-events="none" opacity=".8"><path d={childPreview.shape.path} fill={childPreview.valid?'#4bddcd':'#c45b5b'} fill-opacity=".55" stroke={childPreview.valid?'#4bddcd':'#c45b5b'} stroke-width="2" vector-effect="non-scaling-stroke" stroke-dasharray={childPreview.valid?'none':'3 2'}/>{#if images.has(childPreview.itemId)}<image href={images.get(childPreview.itemId)} width={childPreview.shape.width} height={childPreview.shape.height} preserveAspectRatio="xMidYMid meet" opacity=".55"/>{/if}</g>{/if}
     </svg></button>
     <div class="support-list">{#each tree.objects as o,i}
      <div class="support-row" class:selected-row={selected===i}>{#if images.has(o.itemId)}<img src={images.get(o.itemId)} alt="" loading="lazy"/>{/if}<button class="child-select" type="button" aria-pressed={selected===i} disabled={!mapInteractive||free||stockPlacing||swap&&!partners.includes(i)} on:click={()=>selectChild(i)}>{names.get(o.itemId)??'—'}</button>{#if o.child}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={()=>descend(o.child!,i)}>{words[0]} · {o.child.objects.length}</button>{/if}</div>
@@ -223,7 +263,7 @@
     {#if placing}<small role="status">{words[3]}</small>{:else if !ghost&&!edits&&!swap&&!copy&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<button type="button" disabled={loading} on:click={begin}>{words[2]}</button>{/if}
     {#if parentRotate&&!copy&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft}<div class="child-actions"><button type="button" disabled={loading} aria-label={words[2]+' · '+cw[0]} on:click={()=>turnParent(-1)}>⟲ {cw[0]}</button><button type="button" disabled={loading} aria-label={words[2]+' · '+cw[1]} on:click={()=>turnParent(1)}>⟳ {cw[1]}</button></div>{/if}
     {#if ghost&&!copy}<button type="button" disabled={loading} on:click={validate}>{words[4]}</button>{/if}
-    {#if (ghost||placing)&&!copy}<button type="button" disabled={loading} on:click={()=>{ghost=null;placing=false;parentOrientation=null;error=false;}}>{words[11]}</button>{/if}
+    {#if (ghost||placing)&&!copy}<button type="button" disabled={loading} on:click={()=>{ghost=null;placing=false;parentPoint=null;parentOrientation=null;error=false;}}>{words[11]}</button>{/if}
    {/if}
    {#if (transferDraft||stockDraft||edits||ghost||copy)&&canMove}<small>{tw[1]}</small>{/if}
    {#if copy&&canMove}<button type="button" on:click={apply}>{words[5]}</button><a href={copy.url} download={copy.name}>{words[6]}</a>{/if}
@@ -234,7 +274,7 @@
 <style>
  .support-panel{position:absolute;top:52px;right:8px;z-index:8;width:min(320px,90%);max-height:calc(100% - 100px);overflow:auto;display:grid;gap:7px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}
  header,.support-heading,.support-row{display:flex;align-items:center;gap:6px;justify-content:space-between}
- .stock-image{width:40px;height:40px;object-fit:contain}.support-map-button{padding:0;display:block;border:0;width:100%;background:none}.support-map-button:not(:disabled){cursor:crosshair}.support-map-button:disabled{opacity:1;cursor:default}.support-map{display:block;width:100%;height:180px;background:var(--wand-menu);border:1px solid var(--wand-line)}
+ .stock-image{width:40px;height:40px;object-fit:contain}.support-map-button{padding:0;display:block;border:0;width:100%;background:none}.support-map-button:not(:disabled){cursor:crosshair;user-select:none}.support-map-button:disabled{opacity:1;cursor:default}.support-map{display:block;width:100%;height:180px;background:var(--wand-menu);border:1px solid var(--wand-line)}
  .support-list{display:grid;gap:3px;max-height:180px;overflow:auto}.support-row{justify-content:flex-start}.support-row img{width:32px;height:32px;object-fit:contain}.support-row .child-select{flex:1;text-align:left}.selected-row{outline:1px solid var(--wand-line)}.child-actions{display:flex;flex-wrap:wrap;gap:4px}
  button,a{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);padding:5px;border-radius:4px}small{font-size:.8em}
 </style>

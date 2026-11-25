@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import SubgridInspector from './SubgridInspector.svelte';
- import {supportWords,type SupportParentCandidate} from './subgrid-local.ts';
+ import {supportWords,supportParentEligible,supportParentCandidate,type SupportParentCandidate} from './subgrid-local.ts';
  import SaveFurniturePalette from './SaveFurniturePalette.svelte';
  import GroupPickupControls from './GroupPickupControls.svelte';
  import GroupPasteControls from './GroupPasteControls.svelte';
@@ -93,12 +93,14 @@
  let saveRevision=-1;
  $: if($localSaveSession.revision!==saveRevision){saveRevision=$localSaveSession.revision;resetSaveSelection();}
  function resetSaveSelection(){resetEditSymmetry();pasteTools?.cancel();closeSupport();closeRoad();selected=null;clearGroup();stopMove();preciseOpen=false;multiMode=false;overlaps=[];furnitureTools?.cancel();}
- let supportOpen=false,supportPlacing=false,supportGhost:SupportParentCandidate|null=null,supportInspector:SubgridInspector;
+ let supportOpen=false,supportPlacing=false,supportGhost:SupportParentCandidate|null=null,supportPreview:SupportParentCandidate|null=null,supportInspector:SubgridInspector;
+ let initialSupportPoint:{x:number;y:number}|null=null;
+ $: supportDisplay= supportGhost??supportPreview??directParentPreview;
  $: supportText=supportWords[locale];
  $: supportCanMove=!!chosen&&testExport&&furnitureReady&&!furnitureBlocked&&layerSelectable(layerState,chosen.object);
  $: if(supportOpen&&(!saveMode||!chosen?.object.subgrid))closeSupport();
- function closeSupport(){supportInspector?.cancel();supportOpen=false;supportPlacing=false;supportGhost=null;}
- function openSupport(){if(!chosen?.object.subgrid)return;resetEditSymmetry();pasteTools?.cancel();closeRoad();closeFurniture();stopMove();searchOpen=false;layersOpen=false;preciseOpen=false;supportOpen=true;}
+ function closeSupport(){supportInspector?.cancel();supportOpen=false;supportPlacing=false;supportGhost=null;supportPreview=null;initialSupportPoint=null;}
+ function openSupport(p:MainlandSavedObject|null=chosen){if(!p?.object.subgrid)return;initialSupportPoint=null;resetEditSymmetry();pasteTools?.cancel();closeRoad();closeFurniture();stopMove();searchOpen=false;layersOpen=false;preciseOpen=false;supportOpen=true;}
  let furnitureOpen=false,furniturePlacing=false,furnitureGhost:StockCandidate|null=null,furnitureTools:SaveFurniturePalette;
  let pasteTools:GroupPasteControls,pasteActive=false,pasteGhost:GroupPasteCandidate|null=null,pasteAxis:WorldSymmetryAxis|null=null;
  $: pasteWords=groupPasteWords[locale];$: sy=groupSymmetryWords[locale];$: sceneText=sceneWords[locale];
@@ -248,7 +250,7 @@
 
  let root:HTMLElement,preciseOpen=false,preciseX:number|undefined,preciseZ:number|undefined,preciseSeen='',moveError=false;
  let spacePan=false,suppressClick=false;
- type ObjectDrag={pointer:number;target:MainlandSavedObject;members:readonly MainlandSavedObject[];baseline:WorldEditTimeline;start:{x:number;y:number};cell:{x:number;z:number};clientX:number;clientY:number;end:{x:number;z:number};moved:boolean};
+ type ObjectDrag={pointer:number;target:MainlandSavedObject;members:readonly MainlandSavedObject[];baseline:WorldEditTimeline;start:{x:number;y:number};cell:{x:number;z:number};clientX:number;clientY:number;end:{x:number;z:number};moved:boolean;support:boolean};
  let objectDrag:ObjectDrag|null=null;
  const editWords={ja:['移動','左回転','右回転','取消','元に戻す','やり直す','同じエリア内に移動してください'],en:['Move','Rotate left','Rotate right','Cancel','Undo','Redo','Move within the same area'],fr:['Déplacer','Rotation gauche','Rotation droite','Annuler','Annuler','Rétablir','Déplacez dans la même zone'],it:['Sposta','Ruota a sinistra','Ruota a destra','Annulla','Annulla','Ripeti','Sposta nella stessa zona'],de:['Verschieben','Links drehen','Rechts drehen','Abbrechen','Rückgängig','Wiederholen','Im selben Bereich verschieben'],'es-ES':['Mover','Girar a la izquierda','Girar a la derecha','Cancelar','Deshacer','Rehacer','Mueve dentro de la misma zona'],'zh-CN':['移动','向左旋转','向右旋转','取消','撤销','重做','请在同一区域内移动'],'pt-BR':['Mover','Girar à esquerda','Girar à direita','Cancelar','Desfazer','Refazer','Mova na mesma área']} as const;
  $: ew=editWords[locale]??editWords.en;
@@ -263,7 +265,8 @@
  $: canMove=!!chosen&&!!nativeCell&&layerSelectable(layerState,chosen.object)&&mainlandSavedMoveEligible(chosen)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
  $: preciseChanged=typeof preciseX==='number'&&typeof preciseZ==='number'&&Number.isSafeInteger(preciseX)&&Number.isSafeInteger(preciseZ)&&!!nativeCell&&(preciseX!==nativeCell.x||preciseZ!==nativeCell.z);
  $: dragGroup=objectDrag?.moved&&bound&&editAxis?savedSymmetryDraft(objectDrag.members,projection.objects,linkedEligible,editAxis,{dx:(objectDrag.end.x-objectDrag.cell.x)/objectDrag.target.factor,dz:(objectDrag.end.z-objectDrag.cell.z)/objectDrag.target.factor},bound,rasters,saveMaps,timeline):objectDrag?.moved&&bound&&objectDrag.members.length>1?mainlandSavedGroupDraft(objectDrag.members,bound,rasters,saveMaps,timeline,(objectDrag.end.x-objectDrag.cell.x)*mainlandGroupFactor(objectDrag.members)/objectDrag.target.factor,(objectDrag.end.z-objectDrag.cell.z)*mainlandGroupFactor(objectDrag.members)/objectDrag.target.factor):null;
- $: draggedDraft=!editAxis&&objectDrag?.moved&&bound&&objectDrag.members.length===1?mainlandSavedDraftAtCell(objectDrag.target,bound,rasters,saveMaps,timeline,objectDrag.end.x,objectDrag.end.z,objectDrag.target.object.orientation):null;
+ $: directParentPreview=objectDrag?.moved&&objectDrag.support&&bound&&furnitureReady&&!furnitureBlocked?parentDragCandidate(objectDrag,bound,rasters,saveMaps):null;
+ $: draggedDraft=!editAxis&&objectDrag?.moved&&!objectDrag.support&&bound&&objectDrag.members.length===1?mainlandSavedDraftAtCell(objectDrag.target,bound,rasters,saveMaps,timeline,objectDrag.end.x,objectDrag.end.z,objectDrag.target.object.orientation):null;
  function applyCell(x:number,z:number){
   if(!canMove||!chosen||!bound)return false;
   if(editAxis){const c=mainlandSavedCell(chosen);return !!c&&applyLinked([chosen],{dx:(x-c.x)/chosen.factor,dz:(z-c.z)/chosen.factor});}
@@ -273,6 +276,10 @@
  }
  function applyPrecise(){if(preciseChanged&&typeof preciseX==='number'&&typeof preciseZ==='number')applyCell(preciseX,preciseZ);}
  function pointerPoint(e:MouseEvent){const matrix=svg?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
+ function parentDragPoint(d:ObjectDrag){return {x:(d.end.x+.5)/d.target.factor,y:-(d.end.z+.5)/d.target.factor};}
+ function parentDragCandidate(d:ObjectDrag,grids:readonly MainlandGrid[],r:typeof rasters,m:typeof saveMaps){
+  const p=parentDragPoint(d);return supportParentCandidate(d.target,grids,r,p.x,p.y,d.target.object.orientation,m.get(d.target.area)?.shapes??{});
+ }
  function startPointer(e:PointerEvent){
   suppressClick=false;clearTransfer();
   if(editSymmetryPicking){gesture.begin(e,camera.zoom>1&&(e.button===1||spacePan||e.shiftKey||e.pointerType==='touch'));return;}
@@ -280,9 +287,10 @@
   if(roadSeed||networkOpen||supportOpen||pasteActive||groupPickupActive){gesture.begin(e,camera.zoom>1&&(e.button!==0||spacePan));return;}
   if(saveMode&&!furniturePlacing&&!furnitureGhost&&!moving&&!spacePan&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.button===0&&e.pointerType!=='touch'&&!pending.size&&!failed&&!saveLoading&&!saveFailed){
    const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
-   if(p&&hit&&cell&&mainlandSavedMoveEligible(hit)){
+   const support=!!hit&&testExport&&furnitureReady&&!furnitureBlocked&&!editAxis&&supportParentEligible(hit)&&!(groupSet.has(hit.object.localOrdinal)&&group.length>1);
+   if(p&&hit&&cell&&(mainlandSavedMoveEligible(hit)||support)){
     const members=groupSet.has(hit.object.localOrdinal)?group:[hit];
-    objectDrag={pointer:e.pointerId,target:hit,members,baseline:timeline,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false};return;
+    objectDrag={pointer:e.pointerId,target:hit,members,baseline:timeline,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false,support};return;
    }
    if(p&&!hit){range={pointer:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,moved:false};return;}
   }
@@ -306,6 +314,10 @@
   if(!d?.moved)return;
   suppressClick=true;
   if(!commit||d.baseline!==timeline||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
+  if(d.support){
+   if(!testExport||!furnitureReady||furnitureBlocked||editAxis||!parentDragCandidate(d,bound,rasters,saveMaps)){moveError=true;return;}
+   selected=d.target.object.localOrdinal;openSupport(d.target);initialSupportPoint=parentDragPoint(d);return;
+  }
   if(editAxis){applyLinked(d.members,{dx:(d.end.x-d.cell.x)/d.target.factor,dz:(d.end.z-d.cell.z)/d.target.factor});return;}
   if(d.members.length>1){if(d.members.some(p=>!layerSelectable(layerState,p.object)))return;const f=mainlandGroupFactor(d.members);const q=mainlandSavedGroupDraft(d.members,bound,rasters,saveMaps,timeline,(d.end.x-d.cell.x)*f/d.target.factor,(d.end.z-d.cell.z)*f/d.target.factor);if(q.next){timeline=q.next;groupX=0;groupZ=0;stopMove();}else moveError=true;return;}
   const q=mainlandSavedDraftAtCell(d.target,bound,rasters,saveMaps,timeline,d.end.x,d.end.z,d.target.object.orientation);
@@ -347,7 +359,7 @@
  function stopMove(){clearTransfer();moving=false;hover=null;moveError=false;objectDrag=null;}
  function rotate(delta:number){if(!chosen||!bound||!isCardinal(chosen.object.orientation)||!layerSelectable(layerState,chosen.object)||!mainlandSavedRotateEligible(chosen)||pending.size||failed||saveLoading||saveFailed)return;if(editAxis){applyLinked([chosen],{turn:-delta});return;}const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(chosen.object.orientation)+delta+4)%4];const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,chosen.x+.25/chosen.factor,chosen.y-.25/chosen.factor,orientation);if(q?.next){timeline=q.next;stopMove();}}
  function travel(delta:-1|1){alignment=null;stopMove();const next=travelWorldTimeline(timeline,delta);if(next!==timeline){timeline=next;return;}if(!currentWorldEdits(timeline).length&&testExport&&!saveLoading&&!saveFailed&&$localSaveSession.file&&$localSaveSession.worldCheckpoint)travelWorldCheckpoint($localSaveSession.file,delta);}
- function follow(e:PointerEvent){if(roadPointer===e.pointerId){const p=pointerPoint(e);if(p)sampleRoadStroke(p);e.preventDefault();return;}if(range?.pointer===e.pointerId){const p=pointerPoint(e);if(p&&(range.moved||Math.hypot(e.clientX-range.clientX,e.clientY-range.clientY)>=5)){if(!range.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{}}range={...range,end:p,moved:true};e.preventDefault();}return;}if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(pasteActive){pasteTools?.hover(pointerPoint(e));return;}if(furniturePlacing){furnitureTools?.hover(pointerPoint(e));return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
+ function follow(e:PointerEvent){if(roadPointer===e.pointerId){const p=pointerPoint(e);if(p)sampleRoadStroke(p);e.preventDefault();return;}if(range?.pointer===e.pointerId){const p=pointerPoint(e);if(p&&(range.moved||Math.hypot(e.clientX-range.clientX,e.clientY-range.clientY)>=5)){if(!range.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{}}range={...range,end:p,moved:true};e.preventDefault();}return;}if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(supportPlacing){supportInspector?.hoverParent(pointerPoint(e));return;}if(pasteActive){pasteTools?.hover(pointerPoint(e));return;}if(furniturePlacing){furnitureTools?.hover(pointerPoint(e));return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: chosen=allObjects.find(p=>p.object.localOrdinal===selected)??null;
  $: adjacentIds=chosen&&(chosen.object.layer==='ground'||chosen.object.layer==='fence')?savedAdjacentNetwork(chosen,projection.objects):[];
@@ -440,7 +452,7 @@
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={startPointer} on:pointermove={follow}
- on:pointerup={e=>finishPointer(e,true)} on:pointercancel={e=>finishPointer(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;furnitureTools?.hover(null);}}>
+ on:pointerup={e=>finishPointer(e,true)} on:pointercancel={e=>finishPointer(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;furnitureTools?.hover(null);supportInspector?.hoverParent(null);}}>
   <svg bind:this={svg} {viewBox} aria-hidden="true">
    <rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="#27313a"/>
    {#each [...(bound??[])].sort((a,b)=>a.origin.position[1]-b.origin.position[1]) as g (g.key)}
@@ -458,7 +470,7 @@
    {/each}
    {#if range?.moved}<rect x={Math.min(range.start.x,range.end.x)} y={Math.min(range.start.y,range.end.y)} width={Math.abs(range.end.x-range.start.x)} height={Math.abs(range.end.y-range.start.y)} fill="#b9c7d6" fill-opacity=".15" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#each (dragGroup??linkedClickDraft??alignmentPlan??groupPlan)?.ghosts??[] as g (g.object.object.localOrdinal)}{#if g.object.shape}<path class="mainland-group-ghost" d={g.draft?.shape.path??g.object.shape.path} transform={'translate('+g.x+' '+g.y+') scale('+1/g.object.factor+' '+(-1/g.object.factor)+')'} fill={(dragGroup??linkedClickDraft??alignmentPlan??groupPlan)?.next?'#4bddcd':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}
-   {#if supportGhost}<path d={supportGhost.shape.path} transform={'translate('+supportGhost.x+' '+supportGhost.y+') scale('+1/supportGhost.factor+' '+(-1/supportGhost.factor)+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
+   {#if supportDisplay}<path d={supportDisplay.shape.path} transform={'translate('+supportDisplay.x+' '+supportDisplay.y+') scale('+1/supportDisplay.factor+' '+(-1/supportDisplay.factor)+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
    {#if displayAxis}
     {#if displayAxis.mode==='vertical'}<path d={'M'+displayAxis.x+' '+extent.y+'V'+(extent.y+extent.h)} stroke="#f5cf70" stroke-width="1.5" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"/>
     {:else if displayAxis.mode==='horizontal'}<path d={'M'+extent.x+' '+displayAxis.y+'H'+(extent.x+extent.w)} stroke="#f5cf70" stroke-width="1.5" stroke-dasharray="6 4" vector-effect="non-scaling-stroke" pointer-events="none"/>
@@ -474,7 +486,7 @@
  </button>
  <MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
- {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} bind:placing={supportPlacing} bind:ghost={supportGhost}/>{/if}
+ {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
  {#if saveMode}<GroupPasteControls bind:this={pasteTools} bind:active={pasteActive} bind:ghost={pasteGhost} bind:axis={pasteAxis} items={pasteSelection} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} omitted={projection.omitted} {locale} blocked={!furnitureReady||furnitureBlocked||!!roadSeed||networkOpen||supportOpen||furniturePlacing||groupPickupActive} {nextRequest} onBegin={beginPaste}/>{/if}
  {#if saveMode}<SaveFurniturePalette bind:this={furnitureTools} open={furnitureOpen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {chosen} objects={projection.objects} omitted={projection.omitted} {locale} blocked={furnitureBlocked} canStart={furnitureReady} {nextRequest} onBegin={beginFurniture} onClose={closeFurniture} bind:placing={furniturePlacing} bind:ghost={furnitureGhost}/>{/if}
  {#if saveMode&&searchOpen&&!furnitureOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" data-support={p.object.subgrid?.status} on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}
