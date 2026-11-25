@@ -324,7 +324,7 @@ test('same-style cardinal road cells select only their source grid and translate
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
 
-import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits} from '../src/lib/world/subgrid-local.ts';
+import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits,supportDragDestination} from '../src/lib/world/subgrid-local.ts';
 test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
  const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
  assert.equal(catalog.grids.length,47);
@@ -342,6 +342,11 @@ test('support cells use original L-shaped shelf raster, masks, factors and sibli
  const cell={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1h-1z',acceptedFloorTypesFlag:4096};
  const shapes={'40000001:8':cell,'40000001:12':{...cell,width:2,cellCount:2,runs:[{x:0,y:0,width:2}]},'40000002:8':cell};
  const allowed=new Set([40000001,40000002]);
+ const drag=supportDragDestination(tree.objects[0],{x:0,y:0},{x:2,y:0});
+ assert.deepEqual(drag,{x:2,y:0});
+ assert.ok(supportFreeEdit(tree,shapes,allowed,raster,0,drag.x,drag.y,'GridOrientation_Down'));
+ const invalidDrag=supportDragDestination(tree.objects[0],{x:0,y:0},{x:2,y:2});
+ assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,invalidDrag.x,invalidDrag.y,'GridOrientation_Down'),null);
  assert.ok(supportFreeEdit(tree,shapes,allowed,raster,0,2,0,'GridOrientation_Down'));
  assert.ok(supportFreeEdit(tree,shapes,allowed,raster,0,2,0,'GridOrientation_Left'));
  assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,2,2,'GridOrientation_Down'),null);
@@ -403,4 +408,14 @@ test('new path and fence styles create plans without any saved network seed',()=
  assert.deepEqual(f.plan.nodes,[[2,2],[3,2],[4,2]]);
  assert.equal(f.plan.seed,undefined);
  assert.equal(cardinalFenceCandidate(fence,[grid],rasters,[],a,b,'connect-line'),null);
+});
+
+test('support direct drag preserves grab offset on native cells',()=>{
+ const o={x:4,y:7};
+ assert.deepEqual(supportDragDestination(o,{x:5,y:8},{x:3,y:4}),{x:2,y:3});
+ assert.deepEqual(supportDragDestination(o,{x:5,y:8},{x:5,y:8}),o);
+ assert.deepEqual(supportDragDestination(o,{x:5,y:8},{x:-1,y:-1}),{x:-2,y:-2});
+ assert.equal(supportDragDestination(o,{x:.5,y:0},{x:1,y:1}),null);
+ assert.equal(supportDragDestination(o,{x:0,y:0},{x:Infinity,y:1}),null);
+ assert.equal(supportDragDestination(o,{x:0,y:0},{x:2147483647,y:1}),null);
 });
