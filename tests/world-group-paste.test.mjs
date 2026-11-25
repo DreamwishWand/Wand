@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {groupSceneOrigin,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -32,4 +32,17 @@ test('cut witness must match every original furniture pose and keeps each source
  const plan=groupCutPlan(cut,candidate);
  assert.deepEqual(plan.map(p=>[p.localOrdinal,p.expectedX,p.x]),[[2,4,8],[3,6,10]]);
  assert.equal(groupCutPlan(cut.slice(0,1),candidate),null);
+});
+
+import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor} from '../src/lib/world/scene-preset.ts';
+test('Save and decoration design Scene files share exact physical offsets',()=>{
+ const clip=captureFurnitureGroup([saved(2,4,-3),saved(3,6,-3)]);
+ const half=sceneFromClip(clip,2),unit=convertSceneFactor(half,1);
+ assert.deepEqual(unit.items.map(p=>[p.dx,p.dy]),[[0,0],[2,0]]);
+ assert.deepEqual(convertSceneFactor(parseSceneAnyFactor(JSON.stringify(unit)),2),half);
+ const odd=sceneFromClip([{itemId:item,dx:0,dy:0,orientation:2},{itemId:item,dx:1,dy:0,orientation:2}],2);
+ assert.equal(convertSceneFactor(odd,1),null);
+ const center=groupSceneOrigin(clip,defs,[grid],rasters,{x:9.1,y:-2.1},'center');
+ const candidate=groupPasteCandidate(clip,[grid],rasters,defs,new Map([[item,2]]),[],0,center.x,center.y);
+ assert.deepEqual(candidate.rows.map(p=>[p.x,p.y]),[[8,2],[10,2]]);
 });
