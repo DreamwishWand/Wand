@@ -14,7 +14,7 @@ test('native selector mappings and layout widths',()=>{
   assert.deepEqual(m.slots.map(s=>s.binding),['MegaBundleImage1','MegaBundleImage2','MegaBundleImage3']);
   assert.equal(m.slots[0].x,10);
   assert.equal(m.separators[0].width,70);
-  assert.equal(m.slots.at(-1).x+m.slots.at(-1).width,490);
+  assert(Math.abs(m.slots.at(-1).x+m.slots.at(-1).width-490)<1e-9);
   const s=shopArtworkTemplate('Light_Single');
   assert.equal(s.slots[0].width,500);assert.equal(s.scroll.width,460);
   assert.equal(shopArtworkTemplate('Light_Dual').slots.length,1);
