@@ -1,6 +1,8 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
+ import {browser} from '$app/environment';
+ import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,stockSourceEligible,stockPickup,stockPlacement,type StockCandidate} from './save-furniture-placement.ts';
@@ -20,6 +22,10 @@
  let shapeRequests=new Map<number,{factor:1|2;key:string}>(),definitions=new Map<number,DesignItemGeometry>(),itemId=0,source:MainlandSavedObject|null=null,orientation:Cardinal='GridOrientation_Down';
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
  let artwork=new Map<number,string>(),asked=new Set<number>();
+ const testExport=browser&&testSaveExportEnabled(window.location);
+ let copyUrl='',copyName='';
+ $: tw=testSaveWords[locale]??testSaveWords.en;
+ function clearCopy(){if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';copyName='';}
  $: w=stockToolWords[locale]??stockToolWords.en;
  $: ow=stockFootprintWords[locale]??stockFootprintWords.en;
  $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
@@ -47,7 +53,7 @@
   if(d.kind!=='design-shape'||d.key!==request.key||d.result?.itemId!==itemId){cancel();status='error';return;}
   definitions=new Map(definitions).set(request.factor,d.result as DesignItemGeometry);
  }
- export function cancel(){ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
+ export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
   if(blocked||!canStart||!open||!file||!worker||!ordinaryFurniture(id)||(counts?.get(id)??0)<1)return;
   cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
@@ -57,17 +63,29 @@
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
  export function pick(p:{x:number;y:number}){if(!placing||blocked||!canStart||shapeRequests.size||status==='working')return;
   const q=stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source);if(!q){status='error';return;}
-  candidate=q;point=p;status='idle';stockChange=null;
+  clearCopy();candidate=q;point=p;status='idle';stockChange=null;
  }
  $: rotationAllowed=definitions.size>0&&[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional');
- export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
- export function validate(){
-  if(!candidate||!file||blocked||!canStart||status==='working')return;
-  const q=candidate,f=file;ownPreview?.terminate();status='working';stockChange=null;
+ export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
+ export function validate(){run(false);}
+ function run(exporting:boolean){
+  if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||status!=='valid'||!stockChange))return;
+  const q=candidate,f=file;ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
-  const finish=(data:unknown)=>{own.terminate();if(ownPreview!==own||file!==f||candidate!==q)return;ownPreview=null;const d=data as {kind?:string;validated?:boolean;stockBefore?:number;stockAfter?:number}|null;
-   if(d?.kind==='furniture-stock-preview'&&d.validated===true&&typeof d.stockBefore==='number'&&typeof d.stockAfter==='number'&&Number.isSafeInteger(d.stockBefore)&&Number.isSafeInteger(d.stockAfter)&&d.stockAfter-d.stockBefore===(q.plan.action==='remove'?1:-1)){stockChange={before:d.stockBefore,after:d.stockAfter};status='valid';}else status='error';};
-  own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'furniture-stock-preview',file:f,destination:q.destination,plan:q.plan});
+  const finish=(data:unknown)=>{
+   own.terminate();const d=data as {kind?:string;validated?:boolean;stockBefore?:number;stockAfter?:number;bytes?:Uint8Array;receipt?:Record<string,unknown>}|null;
+   if(ownPreview!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}ownPreview=null;
+   if(exporting){
+    const r=d?.receipt,b=d?.bytes;
+    if(d?.kind==='furniture-stock-copy'&&b instanceof Uint8Array&&b.byteLength>0&&b.byteLength<=32*1024*1024&&r?.contract==='wand.db05.experimental-copy@1'&&r.copyBytes===b.byteLength&&r.originalUnchanged===true&&r.independentReopenVerified===true&&r.experimentalCopyOnly===true&&r.productionWriterAuthorized===false){
+     try{copyUrl=URL.createObjectURL(new Blob([b.slice().buffer as ArrayBuffer],{type:'application/octet-stream'}));const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
+    }
+    b?.fill(0);status='error';return;
+   }
+   if(d?.kind==='furniture-stock-preview'&&d.validated===true&&typeof d.stockBefore==='number'&&typeof d.stockAfter==='number'&&Number.isSafeInteger(d.stockBefore)&&Number.isSafeInteger(d.stockAfter)&&d.stockAfter-d.stockBefore===(q.plan.action==='remove'?1:-1)){stockChange={before:d.stockBefore,after:d.stockAfter};status='valid';}else status='error';
+  };
+  own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);
+  own.postMessage({command:exporting?'furniture-stock-export':'furniture-stock-preview',file:f,destination:q.destination,plan:q.plan,...(exporting?{allowExperimentalCopy:true}:{})});
  }
  $: duplicateEligible=stockSourceEligible(chosen)&&!nativeMoveBlocked(chosen)&&(counts?.get(Number(chosen.object.itemId))??0)>0;
  function nativeMoveBlocked(p:MainlandSavedObject){return p.object.editRestrictions?.move==='denied'||p.object.editRestrictions?.move==='conditional';}
@@ -86,6 +104,7 @@
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
+   {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
    {#if stockState==='loading'||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if stockState==='error'||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
     <div class="stock-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-100)limit=Math.min(items.length,limit+80);}}>
@@ -99,5 +118,5 @@
 <style>
  .save-furniture-palette{position:absolute;z-index:8;left:6px;top:56px;bottom:52px;width:min(250px,65%);display:flex;flex-direction:column;gap:5px;padding:6px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;overflow:hidden}
  .footprint-feedback{display:flex;flex-direction:column;gap:2px;font-size:12px;border:1px solid var(--wand-line);border-radius:4px;padding:4px}.footprint-feedback small{color:var(--wand-muted)}.palette-head,.palette-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.palette-head strong{flex:1}.stock-items{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));align-content:start;gap:3px;min-height:0;flex:1}.stock-item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;overflow-wrap:anywhere}.stock-item img{width:48px;height:48px;object-fit:contain}.stock-item small{color:var(--wand-muted)}
- button,input{font:inherit;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:4px;padding:5px}button:disabled{opacity:.45}button[aria-pressed=true]{outline:2px solid var(--wand-accent)}small{font-size:12px}
+ .stock-copy{display:block;text-align:center;padding:5px;color:var(--wand-accent);border:1px solid var(--wand-line);border-radius:4px}.test-warning{color:var(--wand-muted)}button,input{font:inherit;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:4px;padding:5px}button:disabled{opacity:.45}button[aria-pressed=true]{outline:2px solid var(--wand-accent)}small{font-size:12px}
 </style>
