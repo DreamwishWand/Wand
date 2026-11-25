@@ -7,6 +7,8 @@ import {mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinate
 import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {writable} from 'svelte/store';
+import {reflectedDesignItem,type SymmetryMode} from './design-symmetry.ts';
+import type {SourceObjectShape} from './source-object-map.ts';
 /** Half-cell coordinates and canonical item IDs only. No native Save IDs,
  * bytes, state, or system clipboard. Remains in this tab across world views. */
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
@@ -66,10 +68,19 @@ export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonl
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
+ const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
+ if(clip.some(p=>![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3))return null;
+ return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted);
+}
+export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
+export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
+/** All poses share map coordinates; each independently resolves its exact
+ * source Grid. The bounding rectangle's empty corner need not be on land. */
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number):GroupPasteCandidate|null{
+ if(!poses.length||poses.length>WORLD_BATCH_LIMIT||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
- for(const p of clip){
-  if(![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3)return null;
-  const x=baseX+p.dx/2,y=baseY-p.dy/2,geo=defs.get(p.itemId);if(!geo)return null;
+ for(const p of poses){
+  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3)return null;
   const target=mainlandTerrainHits(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
@@ -87,6 +98,42 @@ export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonl
   rows.push({itemId:q.plan.itemId,x:lx,y:ly,orientation:q.plan.orientation,destination:q.destination});ghosts.push(q);
  }
  return {rows,ghosts};
+}
+/** Compare exact occupied cells after normalization to half-map-unit cells.
+ * This is only footprint/orientation symmetry, not a mirrored mesh. */
+function physicalRuns(shape:SourceObjectShape,factor:number){
+ const scale=2/factor;
+ return shape.runs.flatMap(r=>Array.from({length:scale},(_,i)=>[r.y*scale+i,r.x*scale,r.width*scale])).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(r=>r.join(':')).join(';');
+}
+export function savedWorldGroupPoses(items:readonly MainlandSavedObject[]):WorldGroupPose[]|null{
+ if(!captureFurnitureGroup(items))return null;
+ return items.map(p=>({itemId:Number(p.object.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal)}));
+}
+export function symmetricWorldCandidate(original:readonly WorldGroupPose[],axis:WorldSymmetryAxis,includeOriginal:boolean,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number):GroupPasteCandidate|null{
+ if(!original.length||original.length>WORLD_BATCH_LIMIT||!Number.isSafeInteger(axis.x*4)||!Number.isSafeInteger(axis.y*4))return null;
+ const out:WorldGroupPose[]=[],poses=new Set<string>(),anchors=new Map<string,string>();
+ const key=(p:WorldGroupPose)=>p.itemId+':'+p.x+':'+p.y+':'+p.orientation;
+ const anchor=(p:WorldGroupPose)=>p.x+':'+p.y;
+ const existing=new Set(objects.map(p=>key({itemId:Number(p.object.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal)})));
+ function add(p:WorldGroupPose){
+  const k=key(p),a=anchor(p);if(existing.has(k)||poses.has(k))return true;
+  if(anchors.has(a))return false;anchors.set(a,k);poses.add(k);out.push(p);return true;
+ }
+ if(includeOriginal)for(const p of original)if(!add(p))return null;
+ for(const p of original){
+  const source=mainlandTerrainHits(grids,rasters,p.x+.001,p.y-.001);if(source.length!==1)return null;
+  const g=source[0],def=defs.get(p.itemId)?.get(g.factor);if(!def)return null;
+  const native=reflectedDesignItem({itemId:p.itemId,x:p.x*g.factor,y:-p.y*g.factor,orientation:p.orientation},def,{mode:axis.mode,x2:axis.x*2*g.factor,y2:-axis.y*2*g.factor});
+  if(!native)return null;
+  const next={...native,x:native.x/g.factor,y:-native.y/g.factor};
+  const dest=mainlandTerrainHits(grids,rasters,next.x+.001,next.y-.001);if(dest.length!==1)return null;
+  const a=def.shapes[p.itemId+':'+native.orientation*4],b=defs.get(p.itemId)?.get(dest[0].factor)?.shapes[p.itemId+':'+native.orientation*4];
+  if(!a||!b||a.width/g.factor!==b.width/dest[0].factor||a.height/g.factor!==b.height/dest[0].factor||physicalRuns(a,g.factor)!==physicalRuns(b,dest[0].factor)||!add(next))return null;
+ }
+ return groupAbsoluteCandidate(out,grids,rasters,defs,stock,objects,omitted);
+}
+export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPose[]{
+ return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(candidate.rows[i].orientation)}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
  if(cut.length!==candidate.rows.length)return null;
