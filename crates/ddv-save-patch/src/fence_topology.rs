@@ -98,6 +98,20 @@ pub fn cardinal_fence_graph(nodes:&[Point],factor:u32)->Result<Vec<(Point,Point)
  let mut edges=Vec::new();for &(x,y) in &points{for p in [(x+q,y),(x,y+q)]{if points.contains(&p){edges.push(((x,y),p));}}}
  Ok(edges)
 }
+/// Return the logical endpoint pair, not the rectangular native anchor.
+pub fn part_endpoints(base:u32,factor:u32,p:&FencePart)->Option<(Point,Point)>{
+ if !matches!(factor,1|2)||p.x<0||p.y<0||p.x>131072||p.y>131072{return None;}
+ let q=factor as i32;
+ let key=part_key(base,p.diagonal,p.item)? as i32;
+ if key==0{return Some(((p.x,p.y),(p.x,p.y)));}
+ let (a,step)=match (p.diagonal,p.left){
+  (false,false)=>((p.x-q,p.y),(q,0)),
+  (false,true)=>((p.x,p.y-q),(0,q)),
+  (true,false)=>((p.x-q,p.y-q),(q,q)),
+  (true,true)=>((p.x-q,p.y+key*q),(q,-q))
+ };
+ Some((a,(a.0+step.0*(key+1),a.1+step.1*(key+1))))
+}
 /// Decompile exact supported homogeneous native records into their logical
 /// lattice. Existing representation posts are retained as explicit parts;
 /// caller must not regenerate them implicitly when only reading.
@@ -113,13 +127,8 @@ pub fn decompile_fence(base:u32,factor:u32,diagonal:bool,parts:&[FencePart])->Re
  let mut points=posts.clone();let mut edges=BTreeSet::new();
  for p in parts.iter().filter(|p|p.item!=base){
   let key=part_key(base,diagonal,p.item).filter(|k|*k>0).ok_or(bad)? as i32;
-  let (a,step)=match (diagonal,p.left){
-   (false,false)=>((p.x-q,p.y),(q,0)),
-   (false,true)=>((p.x,p.y-q),(0,q)),
-   (true,false)=>((p.x-q,p.y-q),(q,q)),
-   (true,true)=>((p.x-q,p.y+key*q),(q,-q))
-  };
-  let b=(a.0+step.0*(key+1),a.1+step.1*(key+1));
+  let (a,b)=part_endpoints(base,factor,p).ok_or(bad)?;
+  let step=((b.0-a.0)/(key+1),(b.1-a.1)/(key+1));
   if !posts.contains(&a)||!posts.contains(&b){return Err(bad);}
   let mut prev=a;
   for i in 1..=key+1{
