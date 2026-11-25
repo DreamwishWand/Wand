@@ -75,16 +75,17 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:'mainland-design-terrain',requestId:id,worldScope:region.scope,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
       return;
     }
-    if(data.command==='indoor-shapes'){
+    if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
       const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:await loadGeometry()},data.factor);
-      const keys=new Set<string>();
+      const keys=new Set<string>(),editable=new Set<number>();
       for(const row of data.items){
         if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||![0,4,8,12].includes(row.orientationCode))throw Error('indoor item');
         const key=row.itemId+':'+row.orientationCode;if(keys.has(key))continue;keys.add(key);
-        cache.resolve(row.itemId,row.orientationCode);
+        const obj=cache.resolve(row.itemId,row.orientationCode);
+        if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'move')&&!nativeActionBlocked(obj.editRestrictions,'rotate'))editable.add(row.itemId);
       }
-      scope.postMessage({kind:'indoor-shapes',requestId:id,shapes:cache.shapes});return;
+      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable]}:{})});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
     const grid=region?.grids.find(g=>g.key===data.key);
