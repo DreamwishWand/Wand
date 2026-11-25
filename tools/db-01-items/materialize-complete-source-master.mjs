@@ -13,6 +13,7 @@ import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
+import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 
@@ -1016,7 +1017,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1158,6 +1159,18 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(display)add('acquisition.storeDisplayDefinition',row.itemId,display);
     const sequences=storeLayout.sequenceLinks.get(row.itemId);
     if(sequences?.length)add('acquisition.storeDisplaySequenceLinks',row.itemId,sequences);
+    const originalPrice=originalPrices.items.get(row.itemId);
+    if(originalPrice){
+      add('price.sourceProviderKind',row.itemId,originalPrice.providerKind);
+      add('price.sourceRecordIndex',row.itemId,originalPrice.sourceRecordIndex);
+      for(const [direction,values] of [['purchase',originalPrice.purchaseCosts],['sell',originalPrice.sellCosts]]){
+        if(!values.length)continue;
+        add('price.'+direction+'Costs',row.itemId,values);
+        add('price.'+direction+'CurrencyIds',row.itemId,values.map(v=>v.currencyItemId).sort((a,b)=>a-b));
+        const keys=values.filter(v=>v.amountFieldPresent).map(v=>JSON.stringify([v.currencyItemId,v.amount])).sort();
+        if(keys.length)add('price.'+direction+'AmountKeys',row.itemId,keys);
+      }
+    }
     const costs=costEntries(row);
     if(costs.length){
       add('cost.configuredOccurrences',row.itemId,costs);
@@ -1500,6 +1513,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   exploreThemeCensus(explore,byId);
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
+  const originalPrices=loadOriginalPriceFacts(project,source,byId);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
@@ -1513,6 +1527,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
+    ...(originalPrices.metadata?{originalPriceProjection:originalPrices.metadata}:{}),
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
     ...(e.introductionHistorySha256?{introductionHistorySha256:e.introductionHistorySha256}:{}),
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
@@ -1572,7 +1587,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
