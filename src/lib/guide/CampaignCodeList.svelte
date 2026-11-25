@@ -8,11 +8,12 @@
  export let language:WandLanguage;
  export let community:readonly Announcement[]=[];
  export let share:()=>void;
+ export let threadHref:((id:string)=>string)|undefined=undefined;
  let now=0,showEnded=false,copied='',copyError=false;
  onMount(()=>{now=Date.now();const timer=setInterval(()=>now=Date.now(),60000);return ()=>clearInterval(timer);});
  const labels:Record<WandLanguage,readonly string[]>={
  ja:['コピー','コピー済み','コピー失敗','公式発表','利用者報告','公式発表では無期限','公開期間内','開始前','掲載期限経過','有効性未確認','終了済みを表示','公式発表・利用者報告を表示しています。実際の引き換え可否は未確認です。'],
- en:['Copy','Copied','Copy failed','Official publication','Community report','No expiry stated by publisher','Within published period','Scheduled','Published deadline passed','Validity unverified','Show ended','Official publications and community reports; actual redemption is unverified.'],
+ en:['Copy','Copied','Copy failed','Official publication','Community report','Publisher states no expiry','Within published period','Scheduled','Published deadline passed','Validity unverified','Show ended','Official publications and community reports; actual redemption is unverified.'],
  fr:['Copier','Copié','Échec de copie','Publication officielle','Signalement communautaire','Sans expiration annoncée','Dans la période publiée','À venir','Date limite passée','Validité non vérifiée','Afficher les codes terminés','Publications officielles et signalements ; utilisation non vérifiée.'],
  it:['Copia','Copiato','Copia non riuscita','Pubblicazione ufficiale','Segnalazione community','Nessuna scadenza annunciata','Nel periodo pubblicato','In arrivo','Scadenza superata','Validità non verificata','Mostra scaduti','Pubblicazioni e segnalazioni; riscatto non verificato.'],
  de:['Kopieren','Kopiert','Kopieren fehlgeschlagen','Offizielle Meldung','Community-Meldung','Offiziell ohne Ablauf','Im veröffentlichten Zeitraum','Geplant','Frist abgelaufen','Gültigkeit ungeprüft','Abgelaufene anzeigen','Offizielle Meldungen und Community-Berichte; Einlösung ungeprüft.'],
@@ -43,6 +44,8 @@
     {#if entry.rewards.length}
      <ul>{#each entry.rewards as reward}<li>{reward.name}{#if reward.quantity!==null} × {reward.quantity}{/if}</li>{/each}</ul>
     {/if}
+    {#if entry.report&&entry.sourceKind==='official'&&entry.report.rewards.length}<small>{words[4]} · {copy.rewards}</small><ul>{#each entry.report.rewards as reward}<li>{reward.name}{#if reward.quantity!==null} × {reward.quantity}{/if}</li>{/each}</ul>{/if}
+    {#if entry.report&&threadHref}<a href={threadHref(entry.report.id)}>{copy.supplement}</a>{/if}
     {#if entry.sourceUrl}<a href={entry.sourceUrl} target="_blank" rel="noopener noreferrer">{copy.source}</a>{/if}
    </article>
   {/each}
