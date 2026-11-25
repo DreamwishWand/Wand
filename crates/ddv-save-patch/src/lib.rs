@@ -722,7 +722,7 @@ pub fn preview_plain_grid_structure(
     let old:serde_json::Value=serde_json::from_str(&source[object_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     let obj=old.as_object().ok_or(PatchError::InvalidTarget)?;
     let id=target.object_id.parse::<u32>().map_err(|_|PatchError::InvalidTarget)?;
-    if id==0||obj.len()!=5||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"))||
+    if id==0||!(obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null()))||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        old.get("ID").and_then(|v|v.as_u64())!=Some(id as u64)||
        old.get("ItemID").and_then(|v|v.as_u64())!=Some(target.item_id){
         return Err(PatchError::InvalidTarget);
@@ -1193,6 +1193,28 @@ pub fn preview_plain_grid_place(
         return Err(PatchError::AmbiguousTarget);
     }
     insert_plain_grid_record(source,destination,item_id,xy,orientation)
+}
+
+/// Insert an ordinary leaf into an existing owned support Grid. The caller
+/// has resolved its exact parent chain and verified the original support
+/// footprint. Unlike terrain grids, multiple supports may share a data path.
+pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ if item_id/100_000!=400||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||
+    !d.data_path.starts_with("GridData/Furniture/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
+    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
+    xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
+    !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let g=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
+ if g.get("ID").and_then(|v|v.as_u64())!=d.grid_id.parse::<u64>().ok()||
+    g.get("GridDataPath").and_then(|v|v.as_str())!=Some(d.data_path.as_str())||
+    g.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
+    c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|v|v.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
+ let objects=g.get("Objects").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+ if objects.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1))){return Err(PatchError::AmbiguousTarget);}
+ let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
+ insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }
 
 /// One atomic stock+placement candidate. Never create an absent stock entry:
