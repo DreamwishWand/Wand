@@ -250,15 +250,26 @@ def materialize(obj, bundles, existing, output, mask=False):
             f.write(raw)
     return {**image_info(raw,sha),"localSource":str(path),"unityAssetId":identity,"reused":False}
 
+def verify_game_version(aa, expected):
+    marker=aa.parents[2]/"FullVersion.txt"
+    if not marker.is_file():
+        raise ValueError("Missing Steam FullVersion.txt")
+    value=marker.read_text(encoding="utf-8-sig").strip()
+    if not re.search(r"(?:^|-)v"+re.escape(expected)+r"(?:-|$)",value):
+        raise ValueError("Steam version does not match DB-01")
+    return value
+
 def run(parts,aa,root,out,index_only=False):
     source,rows=read_memory_rows(parts)
     # Source location is Steam ddv_Data/StreamingAssets/aa. The caller must
     # use the catalog for the DB-01 version; all references must resolve.
+    version=verify_game_version(aa,source[0])
     expected=targets(rows)
     locs,pins=resolve(aa,set(expected),IMAGE_TYPES+(MASK_TYPE,))
     locs={g:[v for v in locs[g] if v["class"] in classes] for g,classes in expected.items()}
     report={"schema":"wand.media.private-memory-sources@1","gameVersion":source[0],
         "sourceItemsSha256":source[1],"sourceIl2cppDumpSha256":source[2],
+        "sourceFullVersion":version,
         "catalogSha256":pins,"publicationAuthorized":False,"pieceBitMappingVerified":False,
         "items":rows,"locations":locs,"assets":{},"errors":{}}
     if not index_only:
@@ -287,6 +298,8 @@ def run(parts,aa,root,out,index_only=False):
     report["summary"]={"itemCount":len(rows),"targetGuids":len(expected),
         "catalogMatched":sum(bool(v) for v in locs.values()),
         "resolvedGuids":len(report["assets"]),"errorGuids":len(report["errors"]),
+        "uniqueOutputImages":len({v["sha256"] for a in report["assets"].values() for v in a["images"].values()}),
+        "reusedSourceImages":len({v["sha256"] for a in report["assets"].values() for v in a["images"].values() if v["reused"]}),
         "unresolvedGuids":[g for g in sorted(expected) if g not in report["assets"] or g in report["errors"]]}
     report["complete"]=not report["summary"]["unresolvedGuids"]
     write_json(out/"memory-source-report.json",report)
@@ -305,7 +318,10 @@ def main():
     aa=a.aa.resolve()
     if any((x/".git").exists() for x in [out,*out.parents]) or out.is_relative_to(aa) or out==root or out.is_relative_to(root/"images") or out.is_relative_to(root/"manifests"):
         raise ValueError("Use a separate private output outside Git and original sources")
-    print(json.dumps(run(a.db01,aa,root,out,a.index_only),indent=2))
+    summary=run(a.db01,aa,root,out,a.index_only)
+    print(json.dumps(summary,indent=2))
+    if (a.index_only and summary["catalogMatched"]!=summary["targetGuids"]) or (not a.index_only and summary["unresolvedGuids"]):
+        raise SystemExit(2)
 
 if __name__=="__main__":
     main()
