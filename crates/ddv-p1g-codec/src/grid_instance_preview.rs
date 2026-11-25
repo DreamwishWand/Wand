@@ -1726,6 +1726,35 @@ mod terrain_session_tests{
         moved["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=Value::from(4);
         assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),moved);
         assert!(support_parent_move_candidate(&bytes,1,40005160,(4,6),(4,6),&dest,None,None).is_err());
+        // A mixed support/ordinary group retains the full nested hierarchy,
+        // including unknown descendant bytes, and rejects unmarked parents.
+        let mut group:Value=serde_json::from_slice(save).unwrap();
+        group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40000001,"X":12,"Y":6,"Orientation":"GridOrientation_Down"});
+        group["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
+        let raw=serde_json::to_vec(&group).unwrap();
+        let mut plan=serde_json::json!([
+         {"localOrdinal":1,"itemId":"40005160","expectedX":4,"expectedY":6,"expectedOrientation":"GridOrientation_Down","destination":witness.clone(),"x":8,"y":10,"orientation":"GridOrientation_Left","supportFactor":2},
+         {"localOrdinal":2,"itemId":"40000001","expectedX":12,"expectedY":6,"expectedOrientation":"GridOrientation_Down","destination":witness.clone(),"x":16,"y":10,"orientation":"GridOrientation_Down"}
+        ]);
+        let result:Value=serde_json::from_str(&group_cut_candidate(&raw,&plan.to_string()).unwrap()).unwrap();
+        let grids=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(grids["7"]["Objects"]["1"]["State"],group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(grids["7"]["Objects"]["1"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(grids["7"]["Objects"]["2"]["X"],16);
+        assert_eq!(grids["8"],group["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(grids["9"],group["World"]["GridCollection"]["Grids"]["9"]);
+        group["World"]["GridCollection"]["Grids"]["10"]=cross["World"]["GridCollection"]["Grids"]["10"].clone();
+        let raw=serde_json::to_vec(&group).unwrap();
+        plan[0]["destination"]=dest.clone();plan[1]["destination"]=dest.clone();
+        // Plain cross-grid transfer requires outdoor scope paths, so leave
+        // the ordinary record on its original Grid in this synthetic fixture.
+        plan[1]["destination"]=witness.clone();
+        let result:Value=serde_json::from_str(&group_cut_candidate(&raw,&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"],group["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["8"],group["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["9"],group["World"]["GridCollection"]["Grids"]["9"]);
+        plan[0]["supportFactor"]=Value::from(1);assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
+        plan[0].as_object_mut().unwrap().remove("supportFactor");assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
         let mut alias:Value=serde_json::from_slice(save).unwrap();
         let mut duplicate=alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"].clone();duplicate["ID"]=Value::from(2);alias["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]=duplicate;
         alias["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"]=Value::from(3);
