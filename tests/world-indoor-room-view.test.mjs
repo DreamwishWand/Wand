@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorPlace} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorPlace,indoorTransferPlace} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -46,4 +46,15 @@ test('source-bound room raster enables exact free placement and rejects blocked 
  const wire={...full,terrain:{sizeX:4,sizeY:3,values:[...terrain.nativeFloorValues]}};
  assert.deepEqual(parseIndoorRooms(report([{...room,surfaces:[wire]}]))[0].surfaces[0].terrain,terrain);
  assert.throws(()=>parseIndoorRooms(report([{...room,surfaces:[{...wire,terrain:{...wire.terrain,values:[1024]}}]}])));
+});
+
+test('cut furniture placement requires source room floor but no inventory',()=>{
+ const terrain={sizeX:3,sizeY:2,nativeFloorValues:Uint32Array.from([0,1024,1024,1024,1024,1024])};
+ const full={...face,items:[{itemId:40000002,quantity:1}],positions:[{itemId:40000002,x:1,y:0,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'};
+ const shapes={'40000001:8':shape,'40000002:8':shape},allowed=new Set([40000001,40000002]);
+ assert.deepEqual(indoorTransferPlace(full,shapes,allowed,40000001,2,1,'GridOrientation_Down'),{itemId:40000001,x:2,y:1,orientation:'GridOrientation_Down'});
+ for(const [x,y] of [[0,0],[1,0],[3,1]])assert.equal(indoorTransferPlace(full,shapes,allowed,40000001,x,y,'GridOrientation_Down'),null);
+ assert.equal(indoorTransferPlace({...full,kind:'wall'},shapes,allowed,40000001,2,1,'GridOrientation_Down'),null);
+ assert.equal(indoorTransferPlace(full,shapes,new Set(),40000001,2,1,'GridOrientation_Down'),null);
 });
