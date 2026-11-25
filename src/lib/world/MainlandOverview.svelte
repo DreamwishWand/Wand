@@ -9,7 +9,7 @@
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {localSaveSession} from '../ui/local-save-session';
- import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {projectMainlandSaved,mainlandSavedAt,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
  import {currentWorldEdits,emptyWorldTimeline,travelWorldTimeline,WORLD_BATCH_LIMIT,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -119,7 +119,7 @@
  $: group=allObjects.filter(p=>groupSet.has(p.object.localOrdinal)&&layerSelectable(layerState,p.object));
  $: pruneGroup(group,groupIds);
  function pruneGroup(items:readonly MainlandSavedObject[],ids:readonly number[]){if(items.length!==ids.length){groupIds=items.map(p=>p.object.localOrdinal);if(items.length<2){selected=items[0]?.object.localOrdinal??null;groupIds=[];groupOpen=false;}}}
- $: groupReady=group.length>1&&group.every(mainlandSavedMoveEligible)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
+ $: groupReady=group.length>1&&group.every(mainlandSavedGroupMoveEligible)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
  let alignment:MapAlignment|null=null;
  $: uniformGroup=groupReady&&group.every(p=>p.factor===group[0].factor);
  $: alignmentPlan=uniformGroup&&alignment&&bound?mainlandSavedAdvancedDraft(group,bound,rasters,saveMaps,timeline,alignment):null;
