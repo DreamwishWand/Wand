@@ -343,6 +343,6 @@ test('source sale flags distinguish mission/unsellable from missing price on all
     {field:'sourceClass',anyOf:[{kind:'equals',value:'IngredientItemData'}]},
     {field:'source.CookingIngredientType',anyOf:[{kind:'equals',value:2001400020}]}
   ]);
-  assert.equal(puzzle.length,53);
+  assert.equal(puzzle.length,54);
   assert((await db.getOriginalItemSaleFlags(puzzle)).every(f=>f.isMissionItem));
 });
