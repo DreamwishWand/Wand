@@ -16,6 +16,7 @@ export function experimentalCopyDownload(data:unknown,source:File){
  try{
   if(b.byteLength<1||b.byteLength>MAX_COPY||r?.contract!=='wand.db05.experimental-copy@1'||r.copyBytes!==b.byteLength||r.originalUnchanged!==true||r.independentReopenVerified!==true||r.experimentalCopyOnly!==true||r.productionWriterAuthorized!==false)throw Error('copy receipt');
   const dot=source.name.lastIndexOf('.'),name=dot>0?source.name.slice(0,dot)+'-world-test'+source.name.slice(dot):source.name+'-world-test';
-  return {url:URL.createObjectURL(new Blob([b.slice().buffer as ArrayBuffer],{type:'application/octet-stream'})),name};
+  const file=new File([b.slice().buffer as ArrayBuffer],source.name,{type:source.type||'application/octet-stream'});
+  return {url:URL.createObjectURL(file),name,file};
  }finally{b.fill(0);}
 }

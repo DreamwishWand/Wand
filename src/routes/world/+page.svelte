@@ -95,8 +95,8 @@
   $: recoveryText=recoveryWords[locale]??recoveryWords.en;
   $: recoveryBlocked=Boolean(sourceFile)&&recovery.phase!=='ready';
   $: persistCommitted(timeline,recovery,sourceFile,key,overviewOpen);
-  function resetRecovery(file:File|null){
-   indoorOpen=false;
+  function resetRecovery(file:File|null,keepIndoor=false){
+   if(!keepIndoor)indoorOpen=false;
    capturedLayout=null;
    recoveryEpoch++;baseline=timeline=emptyWorldTimeline();pendingWrites=0;writeFailed=false;writeChain={revision:null,blocked:false};
    recovery={phase:file?'loading':'idle',identity:null,revision:null,writable:false};
@@ -157,7 +157,7 @@
   $: selected=grids.find(g=>g.key===key)??null;
   $: if($localSaveSession.revision!==seenRevision){
     seenRevision=$localSaveSession.revision;
-    resetRecovery($localSaveSession.file);if($localSaveSession.worldCheckpoint)recovery={phase:'ready',identity:null,revision:null,writable:false};openSaveSession($localSaveSession.file,grids);if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)));
+    resetRecovery($localSaveSession.file,Boolean($localSaveSession.worldCheckpoint));if($localSaveSession.worldCheckpoint)recovery={phase:'ready',identity:null,revision:null,writable:false};openSaveSession($localSaveSession.file,grids);if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)));
   }
   const english:Record<string,string>={Beach:'Dazzle Beach',Cliff:'Frosted Heights',DarkMountains:'Forgotten Lands',Forest:'Forest of Valor',Meadow:'Peaceful Meadow',Savannah:'Sunlit Plateau',Urban:'Plaza',Wetland:'Glade of Trust'};
   // English display names are UI labels; original path identity is separate.
@@ -274,7 +274,7 @@
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'ワールドの地形を読み込めませんでした。':'Unable to load world terrain.'):(locale==='ja'?'ワールドの地形読み込み中…':'Loading world terrain…')}</p>{/if}
   <DecorationDesign bind:layerState {capturedLayout} onDismissCapture={()=>capturedLayout=null} active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope+':'+$localSaveSession.revision}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
+  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
   {#if indoorOpen&&sourceFile}<IndoorRoomView file={sourceFile} {locale} terrainWorker={worker} nextRequest={nextDesignRequest} blocked={currentWorldEdits(timeline).length>0} onClose={()=>indoorOpen=false}/>{/if}
 </section>
 <style>
