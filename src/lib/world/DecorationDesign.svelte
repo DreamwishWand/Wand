@@ -1,4 +1,6 @@
 <script lang="ts">
+ import {localSaveSession} from '../ui/local-save-session';
+ import {parseFurnitureStock,furnitureStockWords} from './furniture-stock-view.ts';
  import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
  import {snapWorldRoad,worldRoadStroke,worldRoadPlan,worldRoadComponent,replaceWorldRoad} from './world-road-lattice.ts';
@@ -154,6 +156,18 @@
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
  let paletteOpen=true,root:HTMLDivElement;
+ let stockFile:File|null=null,stockWorker:Worker|null=null,stockCounts:Map<number,number>|null=null,stockStatus:'idle'|'loading'|'ready'|'error'='idle',stockOnly=false;
+ $: stockWords=furnitureStockWords[locale]??furnitureStockWords.en;
+ $: if($localSaveSession.file!==stockFile)resetStock($localSaveSession.file);
+ $: if(active&&(paletteOpen||showCounts)&&stockFile&&stockStatus==='idle')loadStock(stockFile);
+ function resetStock(file:File|null){stockWorker?.terminate();stockWorker=null;stockCounts=null;stockStatus='idle';stockOnly=false;stockFile=file;}
+ function loadStock(file:File){
+  if(typeof window==='undefined')return;stockStatus='loading';
+  const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=own;
+  function finish(result:unknown){own.terminate();if(stockWorker!==own||stockFile!==file)return;stockWorker=null;try{stockCounts=parseFurnitureStock(result);stockStatus='ready';}catch{stockCounts=null;stockStatus='error';stockOnly=false;}}
+  own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file});
+ }
+ onDestroy(()=>stockWorker?.terminate());
  type Cell={x:number;y:number};
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
  let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false,spaceUsed=false;
@@ -299,7 +313,7 @@
  }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
- $: filtered=catalog.filter(o=>(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
+ $: filtered=catalog.filter(o=>(!stockOnly||(stockCounts?.get(o.itemId)??0)>0)&&(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
  $: visibleCatalog=filtered.slice(0,limit);
  $: if(active&&paletteOpen)loadImages(visibleCatalog);
  async function loadImages(items:readonly {itemId:number}[]){
@@ -592,12 +606,13 @@
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
     {#each (worldFrame?['all','furniture','landscape','ground','fence']:['all','furniture','surface','landscape','ground','fence']) as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
+   {#if stockFile}<div class="stock-filter" title={stockWords[4]}>{#if stockStatus==='ready'}<label><input type="checkbox" bind:checked={stockOnly} on:change={()=>limit=80}/> {stockWords[1]}</label>{:else if stockStatus==='loading'}<small role="status">{stockWords[2]}</small>{:else if stockStatus==='error'}<small>{stockWords[3]}</small>{/if}</div>{/if}
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
    <div class="design-catalog" on:scroll={more}>
     {#each visibleCatalog as item (item.itemId)}
      <button type="button" class="design-item" data-item-id={item.itemId} aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
       {#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}
-      <span>{item.name}</span>
+      <span>{item.name}</span>{#if stockCounts?.has(item.itemId)}<small class="furniture-stock-count" title={stockWords[0]}>{stockWords[0]} {stockCounts.get(item.itemId)}</small>{/if}
      </button>
     {/each}
     {#if !catalogLoading&&!filtered.length}<p>該当する家具なし</p>{/if}
@@ -717,7 +732,7 @@
    {#if showCounts}
     <div class="design-counts" aria-label={words[2]}>
      {#each [...counts.entries()].sort((a,b)=>(names.get(a[0])??'').localeCompare(names.get(b[0])??'',locale)) as [itemId,count] (itemId)}
-      <div class="count-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>
+      <div class="count-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong>{#if stockCounts?.has(itemId)}<small title={stockWords[4]}>{stockWords[0]} {stockCounts.get(itemId)}</small>{/if}</div>
      {/each}
     </div>
    {/if}
@@ -727,6 +742,7 @@
 {/if}
 <style>
  .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
+ .stock-filter{font-size:12px;color:var(--wand-muted)}.stock-filter label{display:flex;align-items:center;gap:4px}.furniture-stock-count{font-size:10px;color:var(--wand-muted)}
  .file-input{display:none}
  .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
  .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}

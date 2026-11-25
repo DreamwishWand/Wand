@@ -1127,6 +1127,40 @@ mod browser_amount_preview {
         })).map_err(|_|CodecError::Json)
     }
 
+    /// Exact saved ordinary-furniture stock, including retained zero entries.
+    /// This is separate from the generic positive editable-slot projection:
+    /// route zero is a valid native Catalog inventory. No marker, raw route,
+    /// player identity or state is emitted. Variation canonicalization is
+    /// not inferred; clients must present these as exact saved item counts.
+    pub(super) fn furniture_catalog_stock_json(source:&[u8])->Result<String,CodecError>{
+        let root:serde_json::Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+        let route=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.as_object()).ok_or(CodecError::Json)?;
+        if route.get("ID").and_then(|v|v.as_u64())!=Some(0)||route.get("CompatibleItemType").and_then(|v|v.as_str())!=Some("ItemType_Furniture")||
+           route.keys().any(|k|k.starts_with("Compatible")&&!matches!(k.as_str(),"CompatibleItemType"|"CompatibleFurnitureTypes")){
+            return Err(CodecError::Json);
+        }
+        let restriction=route.get("CompatibleFurnitureTypes").and_then(|v|v.as_object()).ok_or(CodecError::Json)?;
+        let types=restriction.get("List").and_then(|v|v.as_array()).ok_or(CodecError::Json)?;
+        let mut distinct=std::collections::HashSet::new();
+        if restriction.len()!=1||types.len()>16{return Err(CodecError::Json);}
+        for value in types{
+            let s=value.as_str().ok_or(CodecError::Json)?;
+            if !matches!(s,"FurnitureItemType_Default"|"FurnitureItemType_GroundAlteration"|"FurnitureItemType_Door"|"FurnitureItemType_Request"|"FurnitureItemType_Blocker"|"FurnitureItemType_Fence"|"FurnitureItemType_AncientMachine"|"FurnitureItemType_SnippetTrap")||!distinct.insert(s){return Err(CodecError::Json);}
+        }
+        if !distinct.contains("FurnitureItemType_Default"){return Err(CodecError::Json);}
+        let items=route.get("Inventory").and_then(|v|v.as_object()).ok_or(CodecError::Json)?;
+        let mut rows=Vec::new();
+        for (key,value) in items{
+            let Ok(id)=key.parse::<u32>()else{continue;};
+            if id/100_000!=400{continue;}
+            if id.to_string()!=*key{return Err(CodecError::Json);}
+            let amount=value.get("Amount").and_then(|v|v.as_u64()).filter(|n|*n<=i32::MAX as u64).ok_or(CodecError::Json)?;
+            if rows.len()>=20000{return Err(CodecError::Bounds);}
+            rows.push(serde_json::json!({"itemId":id,"amount":amount}));
+        }
+        serde_json::to_string(&serde_json::json!({"contract":"wand.db05.furniture-catalog-stock@1","rows":rows,"exactStoredCounts":true,"canonicalVariationVerified":false,"writerAuthorized":false})).map_err(|_|CodecError::Json)
+    }
+
     const MAX_EDITABLE_ROWS:usize=20000;
     /// Extraction is strictly read-only. Missing/custom player fields are
     /// valid: user-modified saves need not contain every game's section.
@@ -1342,6 +1376,14 @@ mod browser_amount_preview {
             };
             saved_grid_references_json(source)
                 .map_err(|_|fail("DB05_GRID_INDEX_INVALID"))
+        }
+        pub fn list_furniture_catalog_stock(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_FURNITURE_STOCK_NOT_OPEN"));}
+            let source=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_FURNITURE_STOCK_NOT_OPEN"))?.profile.as_slice()
+            };
+            furniture_catalog_stock_json(source).map_err(|_|fail("DB05_FURNITURE_CATALOG_UNAVAILABLE"))
         }
         pub fn list_existing_slots(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
@@ -2211,6 +2253,19 @@ mod tests{
         assert_eq!(value["entries"].as_array().unwrap().len(),1);
     }
 
+    #[cfg(feature="wasm")]
+    #[test]
+    fn furniture_catalog_stock_reads_zero_route_and_retained_zero_without_private_values(){
+        let raw=br#"{"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default","FurnitureItemType_Fence"]},"Inventory":{"40000001":{"Amount":2,"Marker":"private marker"},"40000002":{"Amount":0},"40700001":{"Amount":8}}},"1":{"Inventory":{"40000001":{"Amount":100}}}}},"World":{}}"#;
+        let projection=browser_amount_preview::furniture_catalog_stock_json(raw).unwrap();
+        let report:serde_json::Value=serde_json::from_str(&projection).unwrap();
+        assert_eq!(report["rows"],serde_json::json!([{"itemId":40000001,"amount":2},{"itemId":40000002,"amount":0}]));
+        assert!(!projection.contains("private marker"));
+        assert_eq!(report["canonicalVariationVerified"],false);
+        assert_eq!(report["writerAuthorized"],false);
+        let invalid=std::str::from_utf8(raw).unwrap().replace("FurnitureItemType_Default","FurnitureItemType_Door");
+        assert!(browser_amount_preview::furniture_catalog_stock_json(invalid.as_bytes()).is_err());
+    }
     #[cfg(feature="wasm")]
     #[test]
     fn editable_slot_index_selects_only_positive_known_shape_and_ignores_unknown_fields(){
