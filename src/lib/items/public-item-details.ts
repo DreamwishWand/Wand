@@ -19,6 +19,7 @@ import {
   type ItemFieldProjection,
 } from './public-item-master.ts';
 import {readItemPriceDetails,type ItemPriceDetails} from './public-item-price-details.ts';
+import {createCanonicalRecipeReader,type CanonicalRecipe} from '../acquisition/canonical-recipes.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
   type Db01ItemAcquisition,
@@ -69,6 +70,7 @@ export interface PublicItemSelectionOptions {
   readonly sourceRelations?: boolean;
   /** Localized configured price details, only when explicitly requested. */
   readonly priceLocale?:ItemMasterLocale;
+  readonly recipes?:boolean;
 }
 /** Exact configured source facts, not proof of a current grant or stock.
  * Source-specific friendship rewards are distinct from default rewards. */
@@ -123,6 +125,7 @@ export interface StoreDisplayScreen {
 }
 export interface PublicSelectedItem extends ItemFieldProjection {
   readonly priceDetails?:Readonly<ItemPriceDetails>;
+  readonly recipes?:readonly Readonly<CanonicalRecipe>[];
   readonly storeDisplayScreen?:Readonly<StoreDisplayScreen>;
   /** Original catalog predicates, not proof of store membership or live stock. */
   readonly catalogFacts?:Readonly<CatalogAcquisitionFacts>;
@@ -369,7 +372,10 @@ export async function openPublicItemDetails(
       const reader=await complete();
       const projected=await reader.getItemFields(itemIds,fields);
       if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
-      const priceDetails=selection.priceLocale!==undefined?await readItemPriceDetails(reader,itemIds,selection.priceLocale):null;
+      const [priceDetails,recipes]=await Promise.all([
+        selection.priceLocale!==undefined?readItemPriceDetails(reader,itemIds,selection.priceLocale):null,
+        selection.recipes?createCanonicalRecipeReader(reader).getResultRecipes(itemIds):null
+      ]);
       // Current services use the same canonical content-addressed revision
       // for Item fields and acquisition. No whole acquisition sidecar is
       // fetched, even when both source relations and summary are requested.
@@ -420,7 +426,7 @@ export async function openPublicItemDetails(
           const additionalSources=selection.sourceRelations&&selectedFields.includes('acquisition.additionalSources')
             ?(values?.['acquisition.additionalSources'] as unknown as readonly AdditionalItemSource[]|undefined)??Object.freeze([])
             :undefined;
-          return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(acquisition?{acquisition}:{}),
+          return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(recipes?.[i]?{recipes:recipes[i]}:{}),...(acquisition?{acquisition}:{}),
             ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
             ...(additionalSources?{additionalSources}:{}),
             ...(selection.sourceRelations&&values?.['acquisition.storeDisplayScreen']?{
@@ -445,7 +451,7 @@ export async function openPublicItemDetails(
           acquisition.categories.length===sourceRelations.categories.length&&
           sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
           'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
-        return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(acquisition?{acquisition}:{}),
+        return Object.freeze({...row,...(price?{priceDetails:price}:{}),...(recipes?.[i]?{recipes:recipes[i]}:{}),...(acquisition?{acquisition}:{}),
           ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus,currentAvailabilityVerified:false as const});
       }));
     },

@@ -4,7 +4,7 @@
  * objects. Projection is read-only; existing local Rust edit route remains
  * authoritative. */
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
-import {projectWorldEdits,stageWorldEdit,currentWorldEdits,WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,groupTargets,type GroupTarget,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
+import {projectWorldEdits,stageWorldEdit,currentWorldEdits,WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,stageWorldTargets,groupTargets,type GroupTarget,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
@@ -74,18 +74,22 @@ import {CARDINAL_ORIENTATIONS,isCardinal,worldMoveEligible,worldRotateEligible,e
 export function mainlandSavedMoveEligible(p:MainlandSavedObject|null){
  return !!p?.shape&&p.object.layer!=='surface'&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object);
 }
+/** Position-only network group editing. Native state stays untouched. */
+export function mainlandSavedGroupMoveEligible(p:MainlandSavedObject|null){
+ return !!p?.shape&&p.object.layer!=='surface'&&worldMoveEligible(p.object)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
+}
 export function mainlandSavedRotateEligible(p:MainlandSavedObject|null){
  return !!p?.shape&&p.object.layer!=='surface'&&worldRotateEligible(p.object);
 }
 export interface MainlandSavedDraft{readonly x:number;readonly y:number;readonly shape:SourceObjectShape;readonly valid:boolean;readonly next:WorldEditTimeline|null}
-export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null):MainlandSavedDraft|null{
+export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null,geometryOnly=false):MainlandSavedDraft|null{
  const g=grids.find(g=>g.key===p.area),m=maps.get(p.area),r=rasters.get(p.area);
  if(!g||!m||!r||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  const shape=m.shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];if(!shape)return null;
  const moved=x!==p.object.x||y!==p.object.y,turned=orientation!==p.object.orientation;
  const anchor=mainlandMapAnchor(g,x,y);
- let valid=(moved||turned)&&(!moved||mainlandSavedMoveEligible(p))&&(!turned||mainlandSavedRotateEligible(p))&&
+ let valid=(moved||turned)&&(!moved||(geometryOnly?mainlandSavedGroupMoveEligible(p):mainlandSavedMoveEligible(p)))&&(!turned||mainlandSavedRotateEligible(p))&&
  x>=0&&y>=0&&x+shape.width<=g.sizeX*g.factor&&y+shape.height<=g.sizeY*g.factor&&shape.cellCount<=65536;
  if(valid){
   outer:for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
@@ -94,6 +98,7 @@ export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly Mainland
    if(hits.length!==1||hits[0].key!==g.key){valid=false;break outer;}
   }
  }
+ if(geometryOnly)return {...anchor,shape,valid,next:null};
  const next=valid?stageWorldEdit(m,timeline,p.object.localOrdinal,x,y,orientation,terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length?'原本地形属性不一致候補・衝突未判定':'衝突・上下関係未判定'):null;
  return {...anchor,shape,valid:!!next,next};
 }
@@ -124,6 +129,22 @@ export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],gri
  const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
  const invalid={ghosts,next:null};
  if(items.length<2||items.length>WORLD_BATCH_LIMIT||!Number.isSafeInteger(dx)||!Number.isSafeInteger(dz)||(!dx&&!dz)||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return invalid;
+ // Same native Grid: validate geometry separately and stage all final
+ // destinations together. This permits a road strip to move by one cell
+ // even when a target is occupied by another member of the same strip.
+ const first=items[0],scope=maps.get(first.area);
+ if(scope&&items.every(p=>p.area===first.area&&p.factor===first.factor&&p.object.localGridOrdinal===first.object.localGridOrdinal)){
+  const targets:GroupTarget[]=[];
+  let valid=true;
+  for(const p of items){
+   const x=p.x+dx/factor,y=p.y-dz/factor;
+   const q=mainlandSavedGroupMoveEligible(p)?mainlandSavedDraft(p,grids,rasters,maps,timeline,x+.5/p.factor,y-.5/p.factor,p.object.orientation,true):null;
+   ghosts.push({object:p,draft:q,x,y});
+   if(!q?.valid){valid=false;continue;}
+   targets.push({ordinal:p.object.localOrdinal,x:p.object.x+dx*p.factor/factor,y:p.object.y+dz*p.factor/factor,orientation:p.object.orientation,shapeKey:p.object.shapeKey});
+  }
+  return {ghosts,next:valid?stageWorldTargets(scope,timeline,targets,'衝突・上下関係・接続未判定'):null};
+ }
  let working=timeline,valid=true;
  for(const p of items){
   const pos=mainlandSavedCell(p),x=p.x+dx/factor,y=p.y-dz/factor;
