@@ -361,3 +361,18 @@ test('support map selection uses exact occupied cells, including holes and overl
  assert.deepEqual(supportHitIndices(tree,shapes,1,3),[]);
  assert.deepEqual(supportHitIndices(tree,shapes,2.5,3),[]);
 });
+
+import {appendSavedStroke,savedNetworkFreehand} from '../src/lib/world/cardinal-road-save.ts';
+test('saved network freehand samples use native logical cells and fail closed at bounds or limit',()=>{
+ const g={origin:{position:[0,0,0]},factor:2,sizeX:8,sizeY:8};
+ let p=appendSavedStroke([],{x:.1,y:-.1},g,4,2);
+ assert.equal(p.length,1);
+ p=appendSavedStroke(p,{x:1.9,y:-1.9},g,4,2);
+ assert.equal(p.length,1);
+ p=appendSavedStroke(p,{x:2.1,y:-.1},g,4,2);
+ assert.equal(p.length,2);
+ assert.equal(appendSavedStroke(p,{x:4.1,y:-.1},g,4,2),null);
+ assert.equal(appendSavedStroke([],{x:-.1,y:0},g,4,2),null);
+ assert.equal(appendSavedStroke([],{x:8,y:0},g,4,2),null);
+ assert.ok(savedNetworkFreehand('connect-brush'));assert.ok(savedNetworkFreehand('erase-brush'));assert.equal(savedNetworkFreehand('line'),false);
+});
