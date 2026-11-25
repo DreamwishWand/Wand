@@ -50,6 +50,18 @@ export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGe
  }
  return rotateDesignClipboard(clip,scaled,turn);
 }
+/** Physical bounds on the common half-cell lattice, used for Scene anchor
+ * snapping. A target factor must have source-derived geometry. */
+export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeometry,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:{x:number;y:number},anchor:'corner'|'center'){
+ if(anchor==='corner')return p;
+ const hits=mainlandTerrainHits(grids,rasters,p.x,p.y);if(hits.length!==1)return null;
+ const g=hits[0];let width=0,height=0;
+ for(const item of clip){const s=defs.get(item.itemId)?.get(g.factor)?.shapes[item.itemId+':'+item.orientation*4];if(!s)return null;width=Math.max(width,item.dx/2+s.width/g.factor);height=Math.max(height,item.dy/2+s.height/g.factor);}
+ if(!width||!height)return null;
+ const x=2*g.origin.position[0]+Math.floor((p.x-2*g.origin.position[0])*g.factor)/g.factor;
+ const y=-2*g.origin.position[2]-Math.floor((-p.y-2*g.origin.position[2])*g.factor)/g.factor;
+ return {x:x-Math.floor((width*g.factor-1)/2)/g.factor+.001,y:y+Math.floor((height*g.factor-1)/2)/g.factor-.001};
+}
 export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number):GroupPasteCandidate|null{
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
@@ -90,6 +102,16 @@ export const groupCutWords={
  'es-ES':['Cortar','Cortado (originales hasta pegar)','Mover muebles','Origen no disponible.'],
  'zh-CN':['剪切','已剪切（粘贴前保留原物品）','移动家具','无法确认原物品。'],
  'pt-BR':['Recortar','Recortado (originais mantidos até colar)','Mover móveis','Origem indisponível.']
+} as const;
+export const groupSceneWords={
+ ja:['必要アイテム','所持数不足','Sceneを開けません。','現在の編集では一度に配置可能な家具数を超えています。'],
+ en:['Required items','Insufficient stock','Cannot open this Scene.','This Scene exceeds the current single-placement limit.'],
+ fr:['Objets requis','Stock insuffisant','Impossible d’ouvrir la scène.','La scène dépasse la limite de placement.'],
+ it:['Oggetti richiesti','Scorte insufficienti','Impossibile aprire la scena.','La scena supera il limite di posizionamento.'],
+ de:['Benötigte Objekte','Bestand nicht ausreichend','Szene kann nicht geöffnet werden.','Szene überschreitet das Platzierungslimit.'],
+ 'es-ES':['Objetos necesarios','Inventario insuficiente','No se puede abrir la escena.','La escena supera el límite de colocación.'],
+ 'zh-CN':['所需物品','库存不足','无法打开场景。','场景超过单次放置上限。'],
+ 'pt-BR':['Itens necessários','Estoque insuficiente','Não é possível abrir a cena.','A cena excede o limite de posicionamento.']
 } as const;
 export const groupPasteWords={
  ja:['家具をコピー','貼り付け','複製','コピー済み','配置先をクリック','在庫または配置先を確認できません。','形状・在庫を確認中…','配置を確認','取消','左回転','右回転'],
