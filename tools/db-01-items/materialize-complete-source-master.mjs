@@ -688,6 +688,14 @@ function buildReferenceColumns(rows){
         check(categories.get(value)==='Tag','CRAFTING_STATION_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='Furniture'&&/^source\.(?:AutoCooker|Gardener)\.ActionCost\.Id$/.test(path)){
         check(categories.get(value)==='Currency','MACHINE_COST_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Story'&&/^source\.UnlockCost\[\d+\]\.Id$/.test(path)){
+        // ItemAmount.Id is a typed reference, unlike generic numeric Id fields.
+        // The source path denotes a consumption requirement, not a reward.
+        if(value!==0){check(categories.get(value)==='ActivityItem','STORY_UNLOCK_COST_REFERENCE');emit(value,path);}
+      }else if(row.nativeCategory==='Building'&&/^source\.(?:SpecificUnlockCost|UnlockCost\[\d+\])\.Id$/.test(path)){
+        if(value!==0){check(categories.get(value)==='Currency','BUILDING_UNLOCK_COST_REFERENCE');emit(value,path);}
+      }else if(row.nativeCategory==='DutyAch'&&/^source\.CompletionRewards\[\d+\]\.Id$/.test(path)){
+        if(value!==0){check(ID(value)&&ids.has(value),'DUTY_COMPLETION_REWARD_REFERENCE');emit(value,path);}
       }else if(row.nativeCategory==='DutyAch'&&/^source\.StepDifficultyLayers\[\d+\]\.Rewards\[\d+\]\.Id$/.test(path)){
         check(categories.get(value)==='Currency','DUTY_REWARD_REFERENCE');emit(value,path);
       }else if(row.sourceClass==='RecipeItemData'&&/^source\.Ingredients\[\d+\]\.(?:Any|TagsList\.List\[\d+\])$/.test(path)){
