@@ -41,11 +41,12 @@ export function fenceSeedEligible(p:MainlandSavedObject|null):boolean{
  return fencePitch({itemId:id,name:p.object.name,layer:p.object.layer,surfaceCapable:p.object.surfaceCapable,editRestrictions:p.object.editRestrictions,shapes:{[id+':8']:p.shape}},p.factor)!==null;
 }
 export interface CardinalFenceCandidate{
- plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number};
+ plan:{destination:CardinalRoadCandidate['plan']['destination'];nodes:readonly [number,number][];base:number;erase?:true;seed?:[number,number]};
  ghosts:CardinalRoadCandidate['ghosts'];
 }
 export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalFenceCandidate|null{
- if(!fenceSeedEligible(seed)||!seed.shape||tool!=='line'&&tool!=='outline')return null;
+ if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect'].includes(tool))return null;
+ const erase=tool.startsWith('erase');
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
@@ -54,24 +55,24 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
  if(fences.some(p=>!p.shape||p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
  const nodes:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  for(const p of stroke){
-  if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
+  if(p.x<0||p.y<0||p.x+pitch>g.sizeX*g.factor||p.y+pitch>g.sizeY*g.factor||!erase&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,p.x+run.x+dx+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   // Must remain separate from every current native fence footprint and
   // the Rust writer's conservative eight-logical-cell isolation radius.
-  if(fences.some(f=>{const dx=p.x-f.object.x,dy=p.y-f.object.y;return Math.abs(dx)<=8*pitch&&Math.abs(dy)<=8*pitch||dx>=-pitch&&dx<=f.shape!.width&&dy>=-pitch&&dy<=f.shape!.height;}))return null;
+  if(!erase&&fences.some(f=>{const dx=p.x-f.object.x,dy=p.y-f.object.y;return Math.abs(dx)<=8*pitch&&Math.abs(dy)<=8*pitch||dx>=-pitch&&dx<=f.shape!.width&&dy>=-pitch&&dy<=f.shape!.height;}))return null;
   nodes.push([p.x,p.y]);ghosts.push({...mainlandMapAnchor(g,p.x,p.y),size:1});
  }
- return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId)},ghosts};
+ return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes,base:Number(seed.object.itemId),...(erase?{erase:true as const,seed:[seed.object.x,seed.object.y] as [number,number]}:{})},ghosts};
 }
 export const isolatedFenceWords={
- ja:['独立したフェンスを設置','既存フェンスに接続しない直線・枠を描画します。','フェンスの原本形状を確認中'],
- en:['Place isolated fence','Draw a line or outline without joining existing fences.','Checking original fence geometry'],
- fr:['Placer une clôture isolée','Tracez une ligne ou un contour sans joindre les clôtures existantes.','Vérification des formes originales'],
- it:['Posiziona recinzione isolata','Traccia linea o contorno senza collegare recinzioni esistenti.','Verifica delle forme originali'],
- de:['Separaten Zaun setzen','Linie oder Umriss ohne Anschluss an vorhandene Zäune zeichnen.','Originalformen werden geprüft'],
- 'es-ES':['Colocar valla aislada','Dibuja línea o contorno sin unir vallas existentes.','Comprobando geometría original'],
- 'zh-CN':['放置独立围栏','绘制不与现有围栏连接的直线或边框。','正在验证原始围栏形状'],
- 'pt-BR':['Colocar cerca isolada','Desenhe linha ou contorno sem unir cercas existentes.','Verificando formas originais']
+ ja:['既存の直交フェンスを編集','直線・枠を独立配置、または選択した接続内を撤去します。','フェンスの原本形状を確認中'],
+ en:['Edit cardinal fence','Place an isolated line/outline or erase within the selected network.','Checking original fence geometry'],
+ fr:['Modifier la clôture','Placez une ligne ou un contour isolé, ou effacez dans le réseau choisi.','Vérification des formes originales'],
+ it:['Modifica recinzione','Posiziona una linea o contorno isolato, oppure cancella nella rete selezionata.','Verifica delle forme originali'],
+ de:['Zaun bearbeiten','Separaten Zaun zeichnen oder im gewählten Netz löschen.','Originalformen werden geprüft'],
+ 'es-ES':['Editar valla','Dibuja una valla aislada o borra dentro de la red elegida.','Comprobando geometría original'],
+ 'zh-CN':['编辑直角围栏','放置独立直线或边框，或删除所选网络中的格子。','正在验证原始围栏形状'],
+ 'pt-BR':['Editar cerca','Desenhe cerca isolada ou apague na rede selecionada.','Verificando formas originais']
 } as const;
 export const cardinalRoadWords={
  ja:['直交道路を編集','直線','枠','塗りつぶし','直線撤去','範囲撤去','始点と終点をクリック','対象セル','変更を検証してコピーを作成','対象範囲またはセーブ構造を確認できません。','閉じる','在庫・コレクションは変更しません。'],
