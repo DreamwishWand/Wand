@@ -2,6 +2,7 @@
  * The exact source SHA-256 binds all ordinals to one original input. The
  * source geometry release and the Rust receipt/plan schema are versioned. */
 import {WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
+import {parseCheckpointJournal,type CheckpointJournal} from './checkpoint-journal.ts';
 import {isCardinal} from './saved-map-transform.ts';
 import {PUBLIC_TERRAIN_ROOT} from './public-terrain-projection.ts';
 import {readDesignDraft,changeLocalWorldDraft} from './design-draft.ts';
@@ -51,5 +52,24 @@ export function parseSaveSessionDraft(value:unknown,identity:SaveDraftIdentity,s
  return {schema:'wand.local-save-world-draft@1',identity,timeline:{snapshots,cursor:t.cursor},context:{area:context.area,overview:context.overview}};
 }
 export const readSaveDraft=(id:SaveDraftIdentity)=>readDesignDraft(saveDraftKey(id));
-export const writeSaveDraft=(id:SaveDraftIdentity,revision:string|null,draft:SaveSessionDraft)=>changeLocalWorldDraft(saveDraftKey(id),revision,draft);
+export const writeSaveDraft=(id:SaveDraftIdentity,revision:string|null,draft:SaveSessionDraft|CheckpointSaveDraft)=>changeLocalWorldDraft(saveDraftKey(id),revision,draft);
 export const discardSaveDraft=(id:SaveDraftIdentity,revision:string|null)=>changeLocalWorldDraft(saveDraftKey(id),revision,null);
+
+/** A structural draft is an envelope around the existing transform draft.
+ * Its identity remains the ORIGINAL file fingerprint, never a regenerated
+ * (possibly non-deterministically encrypted) checkpoint fingerprint. */
+export interface CheckpointSaveDraft{schema:'wand.local-save-world-checkpoints@1';draft:SaveSessionDraft;journal:CheckpointJournal}
+export function makeCheckpointSaveDraft(draft:SaveSessionDraft,journal:CheckpointJournal):CheckpointSaveDraft{
+ return {schema:'wand.local-save-world-checkpoints@1',draft,journal:parseCheckpointJournal(journal)};
+}
+export function isCheckpointSaveDraft(value:unknown):boolean{
+ return rec(value)&&value.schema==='wand.local-save-world-checkpoints@1';
+}
+export function parseCheckpointSaveDraft(value:unknown,identity:SaveDraftIdentity):{journal:CheckpointJournal;draft:unknown}{
+ if(!rec(value)||value.schema!=='wand.local-save-world-checkpoints@1'||Object.keys(value).length!==3||!rec(value.draft)||value.draft.schema!=='wand.local-save-world-draft@1'||!rec(value.draft.identity)||
+ value.draft.identity.fingerprint!==identity.fingerprint||value.draft.identity.format!==identity.format||value.draft.identity.source!==identity.source)throw Error('WORLD_CHECKPOINT_DRAFT_IDENTITY');
+ return {journal:parseCheckpointJournal(value.journal),draft:value.draft};
+}
+const originalIdentities=new WeakMap<File,SaveDraftIdentity>();
+export function rememberOriginalSaveIdentity(file:File,id:SaveDraftIdentity){originalIdentities.set(file,id);}
+export function originalSaveIdentity(file:File):SaveDraftIdentity|undefined{return originalIdentities.get(file);}
