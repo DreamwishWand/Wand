@@ -1720,17 +1720,23 @@ mod browser_amount_preview {
         }
         pub fn prepare_support_parent_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_SUPPORT_PARENT_MOVE_INVALID");
-            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|(7..=11).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"|"expectedOrientation"|"orientation"|"source"|"duplicate"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(7..=12).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"|"expectedOrientation"|"orientation"|"source"|"duplicate"|"scene"))).ok_or_else(invalid)?;
             let duplicate=match o.get("duplicate"){None=>false,Some(v)=>v.as_bool().filter(|b|*b).ok_or_else(invalid)?};
             let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|n|usize::try_from(n).ok()).ok_or_else(invalid)?;
             let item=o.get("itemId").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
             let int=|k:&str|o.get(k).and_then(|v|v.as_i64()).and_then(|n|i32::try_from(n).ok()).ok_or_else(invalid);
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let turn=match (o.get("expectedOrientation"),o.get("orientation")){(None,None)=>None,(Some(a),Some(b))=>Some((a.as_str().ok_or_else(invalid)?,b.as_str().ok_or_else(invalid)?)),_=>return Err(invalid())};
-            let operation=if duplicate{grid_instance_preview::support_parent_duplicate_candidate}else{grid_instance_preview::support_parent_move_candidate};
-            let draft=operation(source,ordinal,item,(int("expectedX")?,int("expectedY")?),(int("x")?,int("y")?),o.get("destination").ok_or_else(invalid)?,turn,o.get("source")).map_err(|_|invalid())?;
+            let expected=(int("expectedX")?,int("expectedY")?);let replacement=(int("x")?,int("y")?);let destination=o.get("destination").ok_or_else(invalid)?;
+            let draft=if let Some(scene)=o.get("scene"){
+                if !duplicate{return Err(invalid());}
+                grid_instance_preview::support_parent_scene_candidate(source,ordinal,item,expected,replacement,destination,turn,o.get("source"),scene)
+            }else{
+                let operation=if duplicate{grid_instance_preview::support_parent_duplicate_candidate}else{grid_instance_preview::support_parent_move_candidate};
+                operation(source,ordinal,item,expected,replacement,destination,turn,o.get("source"))
+            }.map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
         pub fn prepare_fence_erase_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
