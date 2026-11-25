@@ -454,3 +454,16 @@ test('portable support Scene keeps native coordinates, validates stock and refus
  assert.throws(()=>parseSupportScene(JSON.stringify({...scene,tree:{...tree,sourcePath:'../private.json'}})));
  assert.throws(()=>parseSupportScene(JSON.stringify({...scene,tree:{...tree,objects:[{...child,gridId:42}]}})));
 });
+
+import {supportSceneTemplateCompatible,supportSceneRootCounts} from '../src/lib/world/support-scene.ts';
+test('portable support Scene can change positions and quantities using observed native templates',()=>{
+ const leaf={itemId:40000002,x:0,y:0,orientation:'GridOrientation_Down',child:null};
+ const nested={factor:1,sourcePath:'GridData/Furniture/Nested.json',objects:[leaf]};
+ const source={factor:2,sourcePath:'GridData/Furniture/Example.json',objects:[{...leaf,itemId:40000003,child:nested}]};
+ const scene=captureSupportScene(40000001,{...source,objects:[{...source.objects[0],x:2,child:{...nested,objects:[leaf,{...leaf,x:1}]}}]});
+ assert.equal(supportSceneTemplateCompatible(scene,40000001,source),true);
+ assert.deepEqual([...supportSceneRootCounts(scene)],[[40000003,1],[40000002,2],[40000001,1]]);
+ assert.equal(supportSceneTemplateCompatible(scene,40000001,{...source,objects:[]}),false);
+ assert.equal(supportSceneTemplateCompatible(scene,40000001,{...source,objects:[{...source.objects[0],child:{...nested,sourcePath:'GridData/Furniture/Other.json'}}]}),false);
+ assert.equal(supportSceneTemplateCompatible({...scene,tree:{...scene.tree,objects:[{...leaf,itemId:40000003}]}},40000001,source),false);
+});
