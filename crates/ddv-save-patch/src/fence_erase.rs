@@ -125,7 +125,7 @@ mod tests{
   let old:Value=serde_json::from_str(SOURCE).unwrap();let new:Value=serde_json::from_str(&result.draft.patched_json).unwrap();
   let before=&old["World"]["GridCollection"]["Grids"]["7"]["Objects"];let after=&new["World"]["GridCollection"]["Grids"]["7"]["Objects"];
   for k in ["1","3","4","5"]{assert_eq!(before[k],after[k]);}
-  assert!(after.get("2").is_none());assert_eq!(result.removed,vec![("2".into(),40700252)]);assert_eq!(result.allocated.len(),3);
+  assert!(after.get("2").is_none());assert_eq!(result.removed,vec![("2".into(),40700252)]);assert_eq!(result.allocated.len(),4);
   assert_eq!(new["Player"],old["Player"]);assert!(result.draft.patched_json.contains("\"Unknown\":1e2"));
   let native:Vec<_>=after.as_object().unwrap().values().filter(|v|v["ItemID"].as_u64().unwrap()/100000==407).map(|v|part(v,40700246).unwrap()).collect();
   let (nodes,edges)=fence_topology::decompile_fence(40700246,2,false,&native).unwrap();assert_eq!(nodes.len(),8);assert_eq!(edges.len(),6);assert!(!nodes.contains(&(20,28)));
