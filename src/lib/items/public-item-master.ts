@@ -526,6 +526,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   findItemIdsByContent(filter:ItemContentFilter,additionalFilters?:readonly ItemFieldFilter[]):Promise<Readonly<ItemContentQueryResult>>;
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
+  /** Verified compact decoration projection from the same current release. */
+  getDecorationBrowse():Promise<Readonly<{schema:'wand.explore.catalog@2';release:string;items:readonly unknown[];universeTags:readonly ItemMasterTagLabel[]}>>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
   /** Resolve description and other original text fields for one ItemID.
    * Loads only the requested language, never the full eight-language corpus. */
@@ -1321,6 +1323,12 @@ export async function openPublicItemMaster(
           typeof v[2]==='string'&&v[2].startsWith('source.')),'INVALID_NATIVE_ACQUISITION_CANDIDATE');
         return deepFreeze(value as unknown as readonly NativeAcquisitionCandidate[]);
       }));
+    },
+    async getDecorationBrowse(){
+      const path='explore.json',value=await asset(path);
+      assert(isObject(value)&&value.schema==='wand.explore.catalog@2'&&Array.isArray(value.items)&&
+        value.items.length===m.assets?.[path]?.count&&Array.isArray(value.universeTags),'INVALID_DECORATION_BROWSE');
+      return value as unknown as Readonly<{schema:'wand.explore.catalog@2';release:string;items:readonly unknown[];universeTags:readonly ItemMasterTagLabel[]}>;
     },
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');

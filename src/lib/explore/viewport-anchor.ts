@@ -4,7 +4,7 @@ import {GRID_GAP} from './viewport-grid.ts';
 export interface CatalogAnchor{universe:string;index:number;offset:number}
 function viewportTop(catalog:HTMLElement):number{
   const header=document.querySelector('.site-header');
-  const filter=catalog.querySelector('.active-filters');
+  const filter=catalog.querySelector('.browse-types');
   return Math.max(0,header?.getBoundingClientRect().bottom??0,filter?.getBoundingClientRect().bottom??0);
 }
 export function captureCatalogAnchor(catalog:HTMLElement):CatalogAnchor|null{

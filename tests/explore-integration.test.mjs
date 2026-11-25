@@ -33,4 +33,6 @@ test('Explore uses the shared toolbar, flat filters, and noninteractive headings
  assert.match(explore,/matchesScope\(i,scope\)/);
  assert.match(explore,/<h2 class="universe-heading">/);
  assert.doesNotMatch(explore,/<details|showUniverse|searchOpen|allGrid/);
+ assert.match(explore,/data-browse-type/);
+ assert.match(explore,/<ExploreItemDetails /);
 });
