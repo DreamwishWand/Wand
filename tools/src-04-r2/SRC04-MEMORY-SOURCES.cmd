@@ -10,7 +10,14 @@ exit /b %RESULT%
 # __POWERSHELL_PAYLOAD__
 $ErrorActionPreference = 'Stop'
 $work = $null
+$transcript = $false
 try {
+    $logdir = Join-Path $env:USERPROFILE 'Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2\memory-sources'
+    New-Item -ItemType Directory -Path $logdir -Force | Out-Null
+    $log = Join-Path $logdir ('memory-extraction-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+    Start-Transcript -LiteralPath $log | Out-Null
+    $transcript = $true
+    Write-Host "Log: $log"
     Write-Host 'Dreamwish Wand - memory image extraction (local only)' -ForegroundColor Cyan
     Write-Host 'No R2 operations, save modifications or game-file changes.'
     $game = Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Steam\steamapps\common\Disney Dreamlight Valley'
@@ -29,7 +36,7 @@ try {
     $existing = Join-Path $root 'shared-ui-media'
     $work = Join-Path $env:TEMP ('wand-memory-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work,$out -Force | Out-Null
-    $ref = '5e6643f1e27b682581c303a6adca071d90d5e67a'
+    $ref = 'f10510f434f58faf8d0bd1d59f3fe67cbc5bf6c8'
     $base = 'https://raw.githubusercontent.com/DreamwishWand/Wand/' + $ref + '/'
     foreach ($name in @('extract_memory_sources.py','resolve_shop_catalog.py','resolve_shop_objects.py','bundle_thumbnails.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base + 'tools/src-04-r2/' + $name) -OutFile (Join-Path $work $name) -TimeoutSec 60
@@ -39,11 +46,13 @@ try {
     Write-Host "Extracting verified source images into $out"
     & py -3 -u (Join-Path $work 'extract_memory_sources.py') --db01 (Join-Path $work $part) --aa $aa --existing-root $existing --out $out
     $result = $LASTEXITCODE
-    Write-Host "Report: $out\memory-source-report.json"
+    if (Test-Path -LiteralPath (Join-Path $out "memory-source-report.json")) { Write-Host "Report: $out\memory-source-report.json" }
+    else { Write-Host "No report generated. See log: $log" }
     exit $result
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
 } finally {
+    if ($transcript) { Stop-Transcript | Out-Null }
     if ($work -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
 }
