@@ -30,7 +30,17 @@ export function categoriesOf(i:ExploreItem):ExploreCategory[]{
  * Unknown and multipurpose records remain visible in both modes. */
 export function dedicatedScope(i:ExploreItem):'indoor'|'outdoor'|'unknown'{
   if(i.placementScope==='indoor'||i.placementScope==='outdoor')return i.placementScope;
-  if(i.placementScope==='both')return 'unknown';
+  if(i.placementScope==='both'||i.placementScope==='unknown')return 'unknown';
+  const source=i.sourcePlacement?.ordinaryScope;
+  if(source){
+    // A source hint describes the ordinary decoration contexts, not every
+    // special realm or a legal grid cell. Keep unknown/special and shared
+    // items in both views instead of falling back to a furniture-kind guess.
+    if(source.scopeHint==='indoor'&&source.roomFloorWallCandidate===true&&source.terrainCandidate===false)return 'indoor';
+    if(source.scopeHint==='outdoor'&&source.roomFloorWallCandidate===false&&source.terrainCandidate===true)return 'outdoor';
+    return 'unknown';
+  }
+  // Compatibility for catalogs which predate the source scope projection.
   if(i.nativeCategory==='Trimming'||i.nativeCategory==='Furniture'&&i.subtype===3)return 'indoor';
   if(i.nativeCategory==='Furniture'&&[1,2,7].includes(i.subtype))return 'outdoor';
   if(i.nativeCategory==='Furniture'&&kinds(i).some(k=>['Wall','CeilingDecoration','Window','Door'].includes(k)))return 'indoor';
