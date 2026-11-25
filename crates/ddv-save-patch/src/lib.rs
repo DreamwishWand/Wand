@@ -1067,6 +1067,18 @@ mod isolated_fence_tests{
  use super::*;
  const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"Inventory":{"40700246":{"Amount":17,"Marker":"Favorite"}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2}}}}}}}"#;
  fn destination()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(40,40)}}
+ #[test]fn diagonal_fence_uses_exact_noncontiguous_catalog_ids_and_mode(){
+  for (nodes,orientation) in [(vec![(20,20),(22,22),(24,24)],"GridOrientation_Down"),(vec![(20,24),(22,22),(24,20)],"GridOrientation_Left")]{
+   let edges=nodes.windows(2).map(|p|(p[0],p[1])).collect::<Vec<_>>();
+   let draft=preview_isolated_fence(SOURCE,&destination(),40700000,true,&nodes,&edges).unwrap();
+   let actual:serde_json::Value=serde_json::from_str(&draft.patched_json).unwrap();
+   let old:serde_json::Value=serde_json::from_str(SOURCE).unwrap();
+   assert_eq!(actual["Player"],old["Player"]);assert!(draft.patched_json.contains("\"Unknown\":1e2"));
+   let grid=&actual["World"]["GridCollection"]["Grids"]["7"];assert_eq!(grid["NextGridObjectID"],5);
+   let ext=grid["Objects"].as_object().unwrap().values().find(|v|v["ItemID"]==40700171).unwrap();
+   assert_eq!(ext["Orientation"],orientation);assert_eq!(ext["State"]["FenceMode"]["Diagonal"],true);
+  }
+ }
  #[test]fn fence_writer_compiles_exact_parts_and_preserves_original_state(){
   let nodes=vec![(20,20),(20,22),(20,24)];let edges=fence_topology::cardinal_fence_graph(&nodes,2).unwrap();
   let draft=preview_isolated_fence(SOURCE,&destination(),40700246,false,&nodes,&edges).unwrap();
