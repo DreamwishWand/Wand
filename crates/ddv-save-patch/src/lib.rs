@@ -1225,8 +1225,11 @@ pub fn preview_plain_grid_place(
 /// has resolved its exact parent chain and verified the original support
 /// footprint. Unlike terrain grids, multiple supports may share a data path.
 fn validate_support_grid_destination(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str)->Result<(),PatchError>{
+ validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Furniture/")
+}
+fn validate_local_grid_destination(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,prefix:&str)->Result<(),PatchError>{
  if item_id/100_000!=400||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||
-    !d.data_path.starts_with("GridData/Furniture/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
+    !d.data_path.starts_with(prefix)||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
     xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
     !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
@@ -1243,6 +1246,12 @@ fn validate_support_grid_destination(source:&str,d:&PlainGridDestination,item_id
 }
 pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
  validate_support_grid_destination(source,d,item_id,xy,orientation)?;
+ let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
+ insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
+}
+/// Exact room ownership and source raster are resolved by the codec first.
+pub fn preview_indoor_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Rooms/")?;
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }

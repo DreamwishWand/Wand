@@ -4,9 +4,10 @@ export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
 import type {SourceObjectShape} from "./source-object-map.ts";
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
-import {supportChildEdits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
+import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
-export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number}
+import type {TerrainRaster} from './terrain-binding.ts';
+export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
@@ -17,13 +18,18 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  return value.rooms.map((room,i)=>{
   if(!record(room)||Object.keys(room).length!==6||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
-   if(!record(s)||Object.keys(s).length!==9||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
+   if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
    const items:IndoorItem[]=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
    const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||Object.keys(p).length!==4||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode']};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
-   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions};
+   let terrain:TerrainRaster|undefined;
+   if(s.terrain!==undefined){
+    const t=s.terrain;if(s.gridStatus!=='full'||!s.factor||!record(t)||!integer(t.sizeX,1,256)||!integer(t.sizeY,1,256)||!Array.isArray(t.values)||t.values.length!==t.sizeX*t.sizeY||!t.values.every(v=>integer(v,0,0xffffffff)))throw Error('INDOOR_TERRAIN_INVALID');
+    terrain={sizeX:t.sizeX,sizeY:t.sizeY,nativeFloorValues:Uint32Array.from(t.values)};
+   }
+   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{})};
   });
   return {ordinal:i+1,house:room.house,floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
  });
@@ -108,7 +114,11 @@ function indoorClear(t:SupportTree,shapes:Readonly<Record<string,SourceObjectSha
 export function indoorFurnitureEdits(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number,second:number|null,turn:-1|1):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face);if(!tree)return null;
  const edits=supportChildEdits(tree,shapes,allowed,first,second,turn);
- return edits&&edits.every(e=>indoorClear(tree,shapes,e.index))?edits:null;
+ if(edits&&edits.every(e=>indoorClear(tree,shapes,e.index)))return edits;
+ if(second!==null||!face?.terrain)return null;
+ const o=tree.objects[first];if(!o)return null;
+ const i=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number]);if(i<0)return null;
+ return supportFreeEdit(tree,shapes,allowed,face.terrain,first,o.x,o.y,CARDINAL_ORIENTATIONS[(i+turn+4)%4]);
 }
 export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number):number[]{
  const t=indoorEditableTree(face);if(!t||!t.objects[first]||!indoorClear(t,shapes,first))return [];
@@ -128,4 +138,22 @@ export const indoorEditWords={
  'es-ES':['Editar muebles','Selecciona un objeto','Giros e intercambios con la misma ocupación. La colocación libre requiere el terreno original.','Devolver al inventario','Revisar','No se pudo crear la copia.'],
  'zh-CN':['编辑家具','选择单件家具','支持占用形状不变的旋转和交换。自由放置需要原始房间地形。','收回库存','确认编辑','无法创建编辑副本。'],
  'pt-BR':['Editar móveis','Selecionar um objeto','Rotação e troca sem mudar a ocupação. A colocação livre requer o terreno original.','Devolver ao inventário','Revisar','Não foi possível criar a cópia.']
+} as const;
+
+export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string}
+export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string){
+ const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
+}
+export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
+ const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,expectedStock:n,x,y,orientation}:null;
+}
+export const indoorTerrainWords={
+ ja:['部屋の原本地形','移動','在庫から配置','配置先をクリック','家具名を検索','空きマスへ配置できます。'],
+ en:['Original room terrain','Move','Place from stock','Click destination','Find furniture','Place on available cells.'],
+ fr:['Terrain original','Déplacer','Placer du stock','Choisir la destination','Rechercher','Placer sur les cases libres.'],
+ it:['Terreno originale','Sposta','Posiziona da scorte','Scegli destinazione','Cerca mobili','Posiziona nelle celle libere.'],
+ de:['Originalgelände','Verschieben','Aus Bestand platzieren','Ziel wählen','Möbel suchen','Freie Zellen nutzen.'],
+ 'es-ES':['Terreno original','Mover','Colocar del inventario','Elige destino','Buscar muebles','Coloca en casillas libres.'],
+ 'zh-CN':['原始房间地形','移动','从库存放置','点击目标位置','搜索家具','可放置于空闲格。'],
+ 'pt-BR':['Terreno original','Mover','Colocar do estoque','Clique no destino','Buscar móveis','Coloque nas células livres.']
 } as const;

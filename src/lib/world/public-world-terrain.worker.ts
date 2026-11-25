@@ -86,6 +86,18 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:'mainland-design-terrain',requestId:id,worldScope:region.scope,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
       return;
     }
+    if(data.command==='indoor-catalog'){
+      if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===400)||![1024,2048,3072].includes(data.mask))throw Error('indoor stock catalog');
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+      const definitions=await loadGeometry(),subgrids=await supportPaths,names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const items:{itemId:number;name:string}[]=[];
+      for(const id of new Set<number>(data.itemIds)){
+        const def=definitions.get(String(id)),shape=def?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(def);
+        if(!def||def.nativeType!=='Furniture'||!shape||!((shape.acceptedFloorTypesFlag??0)&data.mask)||subgrids.has(id)||nativeActionBlocked(rule,'select')||nativeActionBlocked(rule,'move')||nativeActionBlocked(rule,'remove'))continue;
+        items.push({itemId:id,name:names.get(id)??String(def.nativeName??'—')});
+      }
+      items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);scope.postMessage({kind:'indoor-catalog',requestId:id,items});return;
+    }
     if(data.command==='support-catalog'){
       if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===400))throw Error('stock catalog');
       const terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);if(!terrain)throw Error('support path');
