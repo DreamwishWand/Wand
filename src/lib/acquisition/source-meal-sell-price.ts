@@ -11,8 +11,8 @@ const CLASSES=new Set(['CropItemData','FishItemData','IngredientItemData']);
 const id=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0&&v<=2147483647;
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function check(ok:unknown,code:string):asserts ok {if(!ok)throw new TypeError('DB01_MEAL_PRICE_'+code);}
-export type MealSlot = Readonly<{kind:'fixed'|'type';id:number}> |
-  Readonly<{kind:'alternatives'|'all_tags';ids:readonly number[]}>;
+export type MealSlot = Readonly<{kind:'fixed';id:number}> | Readonly<{kind:'type';id:number}> |
+  Readonly<{kind:'alternatives';ids:readonly number[]}> | Readonly<{kind:'all_tags';ids:readonly number[]}>;
 export interface MealIngredientFacts {
   readonly itemId:number;
   readonly knownCookingClass:boolean;
