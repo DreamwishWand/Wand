@@ -91,19 +91,47 @@ def build(proto, archive):
             'coverage':dict(sorted(counts.items())), 'sourceCensus':census,
             'items':sorted(rows)}
 
+def verify_catalog(doc, archive):
+    """Verify every price owner and currency against the original DB-01 catalog."""
+    with zipfile.ZipFile(archive) as z:
+        manifest_raw = z.read('manifest.json')
+        require(sha(manifest_raw) == '05ed08d9f699df71976bc0927aa0c1882004a74ae6ff16f17603008b62ae2ca2', 'CATALOG_MANIFEST')
+        manifest = json.loads(manifest_raw)
+        require(manifest['sourceItemsSha256'] == 'de579d94fa10258249c9c477075110d0bcf001a0d865a15ded039efb3616c8f0' and manifest['gameVersion'] == '1.26.2', 'CATALOG_SOURCE')
+        categories = {}
+        for path, pin in manifest['files'].items():
+            if not path.startswith('category/'):
+                continue
+            raw = z.read(path)
+            require(len(raw) == pin['bytes'] and sha(raw) == pin['sha256'], 'CATALOG_MEMBER')
+            rows = json.loads(raw)
+            require(len(rows) == pin['count'], 'CATALOG_COUNT')
+            for row in rows:
+                require(valid_id(row['itemId']) and row['itemId'] not in categories, 'CATALOG_ID')
+                categories[row['itemId']] = row['nativeCategory']
+        require(len(categories) == 39067, 'CATALOG_CENSUS')
+    require(all(r[0] in categories for r in doc['items']), 'UNRESOLVED_PRICE_OWNER')
+    currencies = {v[0] for r in doc['items'] for v in r[4] + r[5]}
+    require(all(categories.get(c) == 'Currency' for c in currencies), 'UNRESOLVED_CURRENCY')
+    return {'matchedItemIds':len(doc['items']), 'currencyIds':len(currencies),
+            'priceCategories':dict(Counter(categories[r[0]] for r in doc['items'])),
+            'sellCategories':dict(Counter(categories[r[0]] for r in doc['items'] if r[5]))}
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--protodb', type=Path, required=True)
     p.add_argument('--static-zip', type=Path, required=True)
     p.add_argument('--private-out', type=Path, required=True)
+    p.add_argument('--catalog-zip', type=Path, required=True)
     a = p.parse_args()
     require(not a.private_out.exists(), 'NO_OVERWRITE')
     require(not a.private_out.resolve().is_relative_to(Path(__file__).resolve().parents[2]), 'PRIVATE_OUTPUT_PATH')
     doc = build(a.protodb.read_bytes(), a.static_zip)
+    join = verify_catalog(doc, a.catalog_zip)
     raw = (json.dumps(doc, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n').encode()
     with a.private_out.open('xb') as out:
         out.write(raw)
-    print(json.dumps({'items':len(doc['items']),'coverage':doc['coverage'],'sha256':sha(raw),'bytes':len(raw),'publicationAuthorized':False}, sort_keys=True))
+    print(json.dumps({'items':len(doc['items']),'coverage':doc['coverage'],'sha256':sha(raw),'bytes':len(raw),'catalogJoin':join,'publicationAuthorized':False}, sort_keys=True))
 
 if __name__ == '__main__':
     main()
