@@ -1530,6 +1530,27 @@ try{
   await publicWorld.locator('.design-workspace').getByLabel('設計を取り消す').click();
   assert.equal(await publicWorld.locator('.design-coordinate-space .design-object').count(),beforeCapture);
   await publicWorld.locator('.design-workspace').getByLabel('設計をやり直す').click();
+  // Indoor room identity is taken only from explicit Save room references.
+  const indoorSave=structuredClone(worldSave);
+  indoorSave.World.PlayerHouses=[{Floors:[{Rooms:{'0':{Name:'Fixture room',FloorGridID:3001,WallGridIDs:{'0':3002,'1':3003},Flooring:40005160,Wallpapers:{'0':40005160,'1':0}}}}]}];
+  indoorSave.World.GridCollection.Grids['3001']={ID:3001,GridDefaultLayoutPath:'SceneLayouts/Houses/Fixture.json',GridDataPath:'GridData/Houses/FixtureFloor.json',Objects:{'1':{ID:1,ItemID:40005160,X:1,Y:2,Orientation:'GridOrientation_Down'},'2':{ID:2,ItemID:40005160,X:3,Y:2,Orientation:'GridOrientation_Down'}}};
+  indoorSave.World.GridCollection.Grids['3002']={ID:3002,GridDefaultLayoutPath:'SceneLayouts/Houses/Fixture.json',GridDataPath:'GridData/Houses/FixtureWall.json',Objects:{}};
+  await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'indoor-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(indoorSave))});
+  const indoorMap=publicWorld.locator('.mainland-overview');
+  await indoorMap.getByRole('button',{name:'屋内',exact:true}).click({timeout:30000});
+  const indoor=publicWorld.getByRole('dialog',{name:'屋内',exact:true});
+  await indoor.getByRole('button',{name:/Fixture room/}).waitFor({timeout:30000});
+  assert.equal(await indoor.locator('.room-item').count(),1);
+  assert.match(await indoor.locator('.room-item').innerText(),/×2/);
+  assert.equal(await indoor.locator('.finish-card').count(),4);
+  await indoor.locator('.finish-card').nth(1).click();
+  assert.equal(await indoor.locator('.room-item').count(),0);
+  await indoor.locator('.finish-card').nth(2).click();
+  assert.match(await indoor.innerText(),/面の配置を確認できません/);
+  assert.ok(!(await indoor.innerText()).includes('3001'));
+  await page.keyboard.press('Escape');
+  await indoor.waitFor({state:'detached'});
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();

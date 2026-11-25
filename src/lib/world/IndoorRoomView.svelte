@@ -1,5 +1,5 @@
 <script lang="ts">
- import {onDestroy} from 'svelte';
+ import {onMount,onDestroy} from 'svelte';
  import {base} from '$app/paths';
  import {openCurrentItemDatabase,type ItemMasterRecord} from '../items/public-item-master.ts';
  import {worldArtwork} from './world-artwork.ts';
@@ -8,7 +8,9 @@
  export let file:File|null,locale:WandLanguage='ja',onClose:()=>void;
  let seen:File|null=null,own:Worker|null=null,rooms:IndoorRoom[]=[],status:'loading'|'ready'|'error'='loading',selected=0,surface=0,query='',limit=80;
  let records=new Map<number,ItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>();
- let db:ReturnType<typeof openCurrentItemDatabase>|null=null;
+ let db:ReturnType<typeof openCurrentItemDatabase>|null=null,closeButton:HTMLButtonElement,root:HTMLDivElement;
+ onMount(()=>{const previous=document.activeElement;closeButton?.focus();return ()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};});
+ function keys(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled])')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -29,8 +31,8 @@
  function choose(i:number){selected=i;surface=0;query='';limit=80;}
  onDestroy(()=>own?.terminate());
 </script>
-<div class="indoor-room-view" role="dialog" aria-label={w[0]} aria-modal="true">
- <header><strong>{w[0]}</strong><button type="button" on:click={onClose} aria-label={w[7]}>×</button></header>
+<div class="indoor-room-view" role="dialog" aria-label={w[0]} aria-modal="true" bind:this={root} on:keydown={keys}>
+ <header><strong>{w[0]}</strong><button type="button" bind:this={closeButton} on:click={onClose} aria-label={w[7]}>×</button></header>
  {#if status==='loading'}<p role="status">{w[8]}</p>{:else if status==='error'}<p role="alert">{w[10]}</p>{:else if !rooms.length}<p>{w[9]}</p>{:else if room}
  <div class="room-body">
   <nav aria-label={w[3]}>{#each rooms as r,i}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{w[1]} {r.house} / {w[2]} {r.floor} · {r.name||w[3]+' '+r.ordinal}</button>{/each}</nav>

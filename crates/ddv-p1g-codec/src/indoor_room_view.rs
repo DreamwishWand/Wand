@@ -16,14 +16,14 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
  let diffs=collection.and_then(|v|v.get("DiffGrids"));
  let mut rooms=Vec::new();let mut references=HashMap::<u64,usize>::new();
  for (h,house) in houses.iter().enumerate(){
-  let floors=house.get("Floors").and_then(Value::as_array).ok_or(CodecError::Json)?;
+  let floors=match house.get("Floors"){None=>&[][..],Some(v)=>v.as_array().ok_or(CodecError::Json)?.as_slice()};
   if floors.len()>128{return Err(CodecError::Bounds);}
   for(f,floor)in floors.iter().enumerate(){
-   let map=floor.get("Rooms").and_then(Value::as_object).ok_or(CodecError::Json)?;
+   let Some(value)=floor.get("Rooms") else{continue;};let map=value.as_object().ok_or(CodecError::Json)?;
    for(k,room)in map{
     if key_id(k).is_none()||!room.is_object()||rooms.len()>=2048{return Err(CodecError::Json);}
     let floor_id=room.get("FloorGridID").and_then(id);
-    let walls=room.get("WallGridIDs").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let empty=serde_json::Map::new();let walls=match room.get("WallGridIDs"){None=>&empty,Some(v)=>v.as_object().ok_or(CodecError::Json)?};
     if walls.len()>64{return Err(CodecError::Bounds);}
     let paper=room.get("Wallpapers").and_then(Value::as_object);
     let mut surfaces=vec![("floor",None,floor_id,finish(room.get("Flooring")))];
