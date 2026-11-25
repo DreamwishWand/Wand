@@ -3,6 +3,7 @@
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
+ import {stockToolWords} from './save-furniture-placement.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {openCurrentItemDatabase,type ItemMasterRecord,type CompleteItemMasterRecord} from '../items/public-item-master.ts';
  import {worldArtwork} from './world-artwork.ts';
@@ -10,7 +11,7 @@
  import type {SourceObjectShape} from './source-object-map.ts';
  import type {WandLanguage} from '../ui/preferences';
  export let file:File|null,locale:WandLanguage='ja',onClose:()=>void;
- export let terrainWorker:Worker|null=null,nextRequest:()=>number;
+ export let terrainWorker:Worker|null=null,nextRequest:()=>number,blocked=false;
  let seen:File|null=null,own:Worker|null=null,rooms:IndoorRoom[]=[],status:'loading'|'ready'|'error'='loading',selected=0,surface=0,query='',limit=80;
  let positionOpen=false,highlight:number|null=null;
  $: pw=positionWords[locale]??positionWords.en;
@@ -33,7 +34,7 @@
  function cancelPreview(){clearFinishCopy();preview?.terminate();preview=null;previewStatus='idle';finishChoice=0;allWalls=false;}
  function checkFinish(){runFinish(false);}
  function runFinish(exporting:boolean){
-  if(!file||!room||!face||!wallReady||!choices.includes(finishChoice)||previewStatus==='working'||exporting&&(!testExport||previewStatus!=='valid'))return;
+  if(!file||!room||!face||!wallReady||!choices.includes(finishChoice)||previewStatus==='working'||exporting&&(!testExport||blocked||previewStatus!=='valid'))return;
   const expected=surface===0?face.finish:room.surfaces.slice(1).map(s=>s.finish);
   if(surface===0&&typeof expected!=='number')return;
   const plan={roomOrdinal:room.ordinal,itemId:finishChoice,kind:surface===0?'floor':'wall',wall:surface===0||allWalls?null:face.wallPosition,expected};
@@ -81,7 +82,7 @@
     {#each room.surfaces as s,i}<button type="button" class="finish-card" aria-pressed={surface===i} on:click={()=>{cancelPreview();surface=i;query='';highlight=null;limit=80;}}><span>{i===0?w[4]:w[5]+' '+i}</span>{#if s.finish&&images.get(s.finish)}<img src={images.get(s.finish)} alt="" loading="lazy"/>{/if}<small>{s.finish===0?w[11]:name(s.finish,records,locale,w[12])}</small></button>{/each}
     <div class="finish-card"><span>{w[6]}</span>{#if room.ceiling&&images.get(room.ceiling)}<img src={images.get(room.ceiling)} alt="" loading="lazy"/>{/if}<small>{room.ceiling===0?w[11]:name(room.ceiling,records,locale,w[12])}</small></div>
    </div>
-   {#if finishOpen}<div class="finish-picker">{#if surface>0}<label><input type="checkbox" bind:checked={allWalls} disabled={previewStatus==='working'} on:change={resetFinishStatus}/> {fw[2]}</label>{/if}<select aria-label={fw[0]} bind:value={finishChoice} disabled={previewStatus==='working'} on:change={resetFinishStatus}><option value={0} disabled>{fw[0]}</option>{#each choices as id}<option value={id}>{name(id,records,locale,w[12])}</option>{/each}</select>{#if finishChoice&&images.get(finishChoice)}<img class="finish-preview-art" src={images.get(finishChoice)} alt=""/>{/if}<button type="button" disabled={!choices.includes(finishChoice)||previewStatus==='working'} on:click={checkFinish}>{fw[3]}</button>{#if itemLoadFailed}<small role="alert">{w[10]}</small>{:else if finishLoading}<small role="status">{w[8]}</small>{:else if !choices.length}<small>{fw[6]}</small>{/if}{#if previewStatus!=='idle'}<small role="status">{previewStatus==='valid'?fw[4]:previewStatus==='working'?fw[7]:fw[5]}</small>{/if}{#if testExport&&previewStatus==='valid'}<small>{copyWords[1]}</small><button type="button" on:click={()=>runFinish(true)}>{copyWords[0]}</button>{#if finishCopy}<a class="test-copy-link" href={finishCopy.url} download={finishCopy.name}>{copyWords[2]}</a>{/if}{/if}</div>{/if}
+   {#if finishOpen}<div class="finish-picker">{#if surface>0}<label><input type="checkbox" bind:checked={allWalls} disabled={previewStatus==='working'} on:change={resetFinishStatus}/> {fw[2]}</label>{/if}<select aria-label={fw[0]} bind:value={finishChoice} disabled={previewStatus==='working'} on:change={resetFinishStatus}><option value={0} disabled>{fw[0]}</option>{#each choices as id}<option value={id}>{name(id,records,locale,w[12])}</option>{/each}</select>{#if finishChoice&&images.get(finishChoice)}<img class="finish-preview-art" src={images.get(finishChoice)} alt=""/>{/if}<button type="button" disabled={!choices.includes(finishChoice)||previewStatus==='working'} on:click={checkFinish}>{fw[3]}</button>{#if itemLoadFailed}<small role="alert">{w[10]}</small>{:else if finishLoading}<small role="status">{w[8]}</small>{:else if !choices.length}<small>{fw[6]}</small>{/if}{#if previewStatus!=='idle'}<small role="status">{previewStatus==='valid'?fw[4]:previewStatus==='working'?fw[7]:fw[5]}</small>{/if}{#if testExport&&previewStatus==='valid'&&blocked}<small>{stockToolWords[locale][12]}</small>{:else if testExport&&previewStatus==='valid'}<small>{copyWords[1]}</small><button type="button" on:click={()=>runFinish(true)}>{copyWords[0]}</button>{#if finishCopy}<a class="test-copy-link" href={finishCopy.url} download={finishCopy.name}>{copyWords[2]}</a>{/if}{/if}</div>{/if}
    <div class="room-items-header"><strong>{w[13]}{#if face?.gridStatus==='full'} · {face.items.reduce((n,p)=>n+p.quantity,0)}{/if}</strong><button type="button" aria-pressed={positionOpen} on:click={()=>positionOpen=!positionOpen}>{pw[0]}</button><input type="search" aria-label={w[17]} placeholder={w[17]} bind:value={query} on:input={()=>limit=80}/></div>
    {#if face?.gridStatus!=='full'}<p>{w[16]}</p>{:else}
     {#if positionOpen}<section class="position-map" aria-label={pw[0]}><small>{plot?.footprints.length?indoorShapeWords[locale]:pw[2]}</small>{#if face.missingPositions}<small>{pw[3]}: {face.missingPositions}</small>{/if}{#if face.positions.length>5000}<small>{pw[6]}</small>{:else if plot}<svg viewBox={plot.viewBox} role="img" aria-label={pw[2]}><title>{plot.footprints.length?indoorShapeWords[locale]:pw[2]}</title>{#each plot.footprints as f}<path class="indoor-footprint" class:highlighted={highlight===f.itemId} class:dimmed={highlight!==null&&highlight!==f.itemId} d={f.path} transform={'translate('+f.x+' '+f.y+')'}/>{/each}{#each plot.points as p (p.x+':'+p.y)}<circle cx={p.x} cy={p.y} r={plot.markerRadius} class:highlighted={p.selected>0} class:dimmed={highlight!==null&&!p.selected}><title>{pw[4]}: {p.count}</title></circle>{/each}</svg><small>{pw[5]}</small>{/if}</section>{/if}
