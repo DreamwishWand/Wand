@@ -1051,7 +1051,6 @@ try{
   assert.equal(await overview.locator('.mainland-terrain').count(),8);
   assert.equal(await overview.locator('.mainland-terrain[data-area="Meadow"]').getAttribute('transform'),'translate(-122 98) scale(1 -1)');
   await overview.getByRole('button',{name:'閉じる',exact:true}).click();
-  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
   const mainland=publicWorld.locator('.design-workspace.mainland-design');
   await mainland.locator('.design-coordinate-space > image').waitFor({timeout:30000});
   assert.equal(await publicWorld.getByLabel('エリア',{exact:true}).count(),0);
@@ -1239,6 +1238,34 @@ try{
   assert.equal(await design.locator('.design-object').count(),0);
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await design.locator('.design-object').first().waitFor({timeout:20000});
+  await design.getByLabel('配置カテゴリ').selectOption('furniture');
+  await design.getByRole('button',{name:'配置済み家具を検索',exact:true}).click();
+  const placedSearch=design.locator('.design-inspector-panel');
+  await placedSearch.locator('.results button').first().click();
+  await design.getByRole('button',{name:'精密配置',exact:true}).click();
+  const inspector=design.locator('.design-inspector-panel');
+  await inspector.locator('input[type=number]').first().fill('12');
+  await inspector.getByRole('button',{name:'適用',exact:true}).click();
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(12 10)');
+  await design.getByLabel('設計を取り消す').click();
+  // Wait for the committed history cursor to reach device-local storage, not an arbitrary delay.
+  await page.waitForFunction(async()=>{
+    const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('wand-world-design-recovery',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    try{
+      if(!db.objectStoreNames.contains('drafts'))return false;
+      const entry=await new Promise((resolve,reject)=>{const r=db.transaction('drafts','readonly').objectStore('drafts').get('area:Meadow');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      const t=entry?.draft?.timeline;
+      return t?.snapshots?.[t.cursor]?.length===1&&t.snapshots[t.cursor][0].x===10&&t.snapshots[t.cursor+1]?.[0]?.x===12;
+    }finally{db.close();}
+  },{},{timeout:20000});
+  await page.reload();
+  await publicWorld.getByRole('button',{name:'装飾設計',exact:true}).click();
+  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
+  await design.getByRole('button',{name:'作業を再開',exact:true}).click({timeout:30000});
+  await design.locator('.design-object').first().waitFor({timeout:30000});
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(10 10)');
+  await design.getByLabel('設計をやり直す').click();
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(12 10)');
   await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{

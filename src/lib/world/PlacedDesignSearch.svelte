@@ -7,6 +7,7 @@
  export let results:readonly SavedShapeObject[]=[];
  export let names:ReadonlyMap<number,string>;
  export let images:ReadonlyMap<number,string>;
+ export let onVisible:(ids:number[])=>void;
  export let onQuery:(q:string)=>void;
  export let onPick:(id:number)=>void;
  export let onClose:()=>void;
@@ -14,6 +15,7 @@
  $: w=words[locale]??words.en;
  let limit=80,seen='';
  $: if(query!==seen){seen=query;limit=80;}
+ $: onVisible([...new Set(results.slice(0,limit).map(o=>Number(o.itemId)))]);
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-100)limit=Math.min(results.length,limit+80);}
 </script>
 <header><strong>{w[0]}</strong><button type="button" aria-label={w[1]} on:click={onClose}>×</button></header>

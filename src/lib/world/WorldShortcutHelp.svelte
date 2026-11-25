@@ -16,6 +16,8 @@
  $: labels=translations[locale]??translations.en;
  const keys=['Ctrl / ⌘ + C','Ctrl / ⌘ + X','Ctrl / ⌘ + V','Ctrl / ⌘ + D','Ctrl / ⌘ + A','Ctrl / ⌘ + Z','Ctrl / ⌘ + Shift + Z · Ctrl + Y','Delete / Backspace','↑ ↓ ← →','R / Shift + R','Esc','Enter','+ / −','0'];
  const unavailable=new Set([0,1,2,3,7]);
+ const navigationWords={ja:['対象を切り替える','対象を選択','パン'],en:['Cycle objects','Select object','Pan'],fr:['Parcourir les objets','Sélectionner','Déplacer la vue'],it:['Scorri gli oggetti','Seleziona oggetto','Sposta vista'],de:['Objekte durchgehen','Objekt auswählen','Ansicht verschieben'],'es-ES':['Recorrer objetos','Seleccionar objeto','Desplazar vista'],'zh-CN':['切换物品','选择物品','平移视图'],'pt-BR':['Percorrer objetos','Selecionar objeto','Mover vista']} as const;
+ $: nw=navigationWords[locale]??navigationWords.en;
 </script>
 <div class="shortcut-help">
  <button class="trigger" type="button" aria-label={labels[0]} title={labels[0]} aria-expanded={open} on:click={()=>open=!open}>
@@ -23,7 +25,7 @@
  </button>
  {#if open}<section aria-label={labels[0]} class="shortcut-panel">
   <header><strong>{labels[0]}</strong><button type="button" aria-label={labels[1]} on:click={()=>open=false}>×</button></header>
-  <dl>{#each keys as key,i}<div class:unavailable={!designMode&&unavailable.has(i)}><dt>{labels[i+2]}</dt><dd><kbd>{key}</kbd></dd></div>{/each}</dl>
+  <dl>{#each keys as key,i}<div class:unavailable={!designMode&&unavailable.has(i)}><dt>{labels[i+2]}</dt><dd><kbd>{key}</kbd></dd></div>{/each}{#if designMode}<div><dt>{nw[0]}</dt><dd><kbd>[ / ]</kbd></dd></div><div><dt>{nw[1]}</dt><dd><kbd>Enter / Space</kbd></dd></div><div><dt>{nw[2]}</dt><dd><kbd>Space + Drag / Middle Drag</kbd></dd></div>{/if}</dl>
   {#if !designMode}<p>{labels[16]}</p>{/if}
  </section>{/if}
 </div>

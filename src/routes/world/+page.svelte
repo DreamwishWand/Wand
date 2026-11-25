@@ -30,9 +30,16 @@
   const worldEditLabels={ja:'ワールド全体編集',en:'Edit world',fr:'Modifier le monde',it:'Modifica mondo',de:'Welt bearbeiten','es-ES':'Editar mundo','zh-CN':'编辑世界','pt-BR':'Editar mundo'} as const;
   $: overviewLabel=worldScope==='Village04'?overviewLabels[locale]:worldMapLabels[locale];
   $: editWorldLabel=worldScope==='Village04'?editWorldLabels[locale]:worldEditLabels[locale];
-  function toggleMainland(){
-    mainlandEditing=!mainlandEditing;overviewOpen=false;
-    if(mainlandEditing&&!mainlandFrame&&worker&&(!mainlandRequest||requestedWorld!==worldScope)){mainlandError=false;mainlandRequest=++request;requestedWorld=worldScope;worker.postMessage({command:'mainland-design-terrain',requestId:mainlandRequest,scope:worldScope});}
+  function openWorldDesign(scope:string,areas:readonly Grid[]){
+    if(!bindMainland(areas))return;
+    mainlandEditing=true;overviewOpen=false;
+    if(!worldFrames.has(scope)&&worker&&(!mainlandRequest||requestedWorld!==scope)){mainlandError=false;mainlandRequest=++request;requestedWorld=scope;worker.postMessage({command:'mainland-design-terrain',requestId:mainlandRequest,scope});}
+  }
+  function toggleMainland(){if(mainlandEditing){mainlandEditing=false;overviewOpen=false;}else openWorldDesign(worldScope,regionGrids);}
+  function setDesignMode(next:boolean){
+    if(next===designMode)return;
+    designMode=next;overviewOpen=false;
+    if(next)openWorldDesign(worldScope,regionGrids);else mainlandEditing=false;
   }
   let layerState=defaultWorldLayers();
   function nextDesignRequest(){return ++request;}
@@ -73,7 +80,7 @@
     return area+' · '+(g.gridIdNative+1);
   }
   const scopeNames:Record<string,string>={Village04:'Dreamlight Valley',VillageExpansion01:'Eternity Isle',VillageExpansion02:'Storybook Vale',VillageExpansion03:'Wishblossom Ranch',VillageExpansion04:'Expansion 4',VillageExpansion04UnderwaterAreas:'Underwater areas',VillageWinnieDLC:'Honeywood',FloatingIslands:'Floating Islands'};
-  function chooseScope(value:string){worldScope=value;const first=grids.find(g=>g.scope===value);if(first)openGrid(first);}
+  function chooseScope(value:string){worldScope=value;const areas=grids.filter(g=>g.scope===value),first=areas[0];if(first){openGrid(first);if(designMode)openWorldDesign(value,areas);}}
   function clearCompare(){mainlandSaveRequested=null;mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;focusOrdinal=null;terrainDisplayed=false;compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
   function selectSaveGrid(grid:Grid|null){
     terrainDisplayed=false;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];compareError='';
@@ -117,7 +124,7 @@
       if(value.requestId===indexRequest&&value.kind==='index'){
         grids=value.grids;
         const first=grids.find(g=>g.key===key)??grids[0];
-        openSaveSession($localSaveSession.file,grids);if(first)openGrid(first);return;
+        openSaveSession($localSaveSession.file,grids);if(first){openGrid(first);if(designMode)openWorldDesign(first.scope,grids.filter(g=>g.scope===first.scope));}return;
       }
       if(mainlandRequest&&value.requestId===mainlandRequest){mainlandRequest=0;if(value.kind==='mainland-design-terrain'&&value.worldScope===requestedWorld&&value.frame?.scope===requestedWorld&&value.frame?.owners instanceof Uint8Array&&value.frame?.raster?.nativeFloorValues instanceof Uint32Array)worldFrames=new Map(worldFrames).set(requestedWorld,value.frame);else if(requestedWorld===worldScope)mainlandError=true;return;}
       if(value.requestId===terrainRequest&&value.kind==='terrain'&&value.key===key){
@@ -143,7 +150,7 @@
 <svelte:head><title>World Editor · Dreamwish Wand</title></svelte:head>
 <section class="world-workspace">
   <div class="world-navigation"><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
-    <div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>designMode=false}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>designMode=true}>装飾設計</button></div>
+    <div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>setDesignMode(false)}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>setDesignMode(true)}>装飾設計</button></div>
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
       {#each scopes as scope}<option value={scope}>{scopeNames[scope]??scope}</option>{/each}
     </select>

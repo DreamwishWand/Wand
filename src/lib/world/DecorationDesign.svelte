@@ -10,7 +10,7 @@
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
- import {onDestroy} from 'svelte';
+ import {onDestroy,tick} from 'svelte';
  import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft,readDesignDraft,writeDesignDraft,discardDesignDraft,type DraftLocation,type DesignDraft} from './design-draft.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import type {TerrainRaster,TerrainBinding} from './terrain-binding.ts';
@@ -27,7 +27,7 @@
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
  import DesignInspector from './DesignInspector.svelte';
  import PlacedDesignSearch from './PlacedDesignSearch.svelte';
- import {objectFocus,searchSavedObjects} from './world-object-search.ts';
+ import {objectFocus,worldObjectName} from './world-object-search.ts';
  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
  import {alignDesign} from './design-layout.ts';
  import {sourceOrientationAngle} from './source-object-map.ts';
@@ -128,11 +128,12 @@
  function persistRecovery(next:DesignTimeline){
   const location=recoveryLocation,state=location?recovery[location.identity]:undefined;
   if(!location||state?.phase!=='ready'||!state.writable)return;
-  const draft=makeDesignDraft(location,next,camera,groupIds.length?groupIds:selected===null?[]:[selected]);
+  const originalCamera={...camera},originalSelection=groupIds.length?[...groupIds]:selected===null?[]:[selected];
+  const draftPromise=tick().then(()=>makeDesignDraft(location,next,recoveryLocation?.identity===location.identity?camera:originalCamera,recoveryLocation?.identity===location.identity?(groupIds.length?groupIds:selected===null?[]:[selected]):originalSelection));
   const tail=recoveryWrites.get(location.identity)??Promise.resolve();
   const write=tail.then(async()=>{
    const current=recovery[location.identity];if(!current?.writable||current.phase!=='ready')return;
-   try{const revision=await writeDesignDraft(location.key,current.revision,draft);setRecovery(location,{phase:'ready',revision,writable:true});}
+   try{const revision=await writeDesignDraft(location.key,current.revision,await draftPromise);setRecovery(location,{phase:'ready',revision,writable:true});}
    catch(e){const conflict=e instanceof Error&&e.message==='DRAFT_CONFLICT';setRecovery(location,{...current,warning:conflict?'conflict':'unavailable',writable:!conflict});}
   });
   recoveryWrites.set(location.identity,write);void write.finally(()=>{if(recoveryWrites.get(location.identity)===write)recoveryWrites.delete(location.identity);});
@@ -150,7 +151,7 @@
  let paletteOpen=true,root:HTMLDivElement;
  type Cell={x:number;y:number};
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
- let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false;
+ let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false,spaceUsed=false;
  let roadTool:RoadTool='brush',roadDrag:{id:number;points:RoadPoint[];overflow:boolean}|null=null;
  $: fenceDrawing=Boolean(fencePitch(placing,grid?.factor??0));
  $: pitch=roadPitch(placing,grid?.factor??0)??fencePitch(placing,grid?.factor??0);
@@ -221,7 +222,8 @@
  $: inspectionWords=inspectLabels[locale]??inspectLabels.en;
  $: selectableObjects=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select'));
  $: editableIds=new Set(selectableObjects.map(o=>o.localOrdinal));
- $: placedResults=searchSavedObjects(selectableObjects,names,placedQuery,'all');
+ $: placedTerms=normalize(placedQuery).split(/\s+/).filter(Boolean);
+ $: placedResults=selectableObjects.filter(o=>placedTerms.every(term=>normalize(worldObjectName(o,names)).includes(term)));
  $: selectedPlacements=placements.filter(p=>selectedIds.has(p.id));
  $: if(focusedId!==null&&!editableIds.has(focusedId))focusedId=null;
  function focusPlaced(id:number,choose:boolean){
@@ -504,7 +506,7 @@
  function startDirect(e:PointerEvent){
    suppressDirectClick=false;
    if(busyImport)return;
-   if(e.button===1||spacePan||e.pointerType==='touch'){gesture.begin(e,camera.zoom>1);return;}
+   if(e.button===1||spacePan||e.pointerType==='touch'){if(spacePan)spaceUsed=true;gesture.begin(e,camera.zoom>1);return;}
    if(e.button===0&&roadEnabled&&!symmetryPicking){startRoad(e);return;}
    if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction||symmetryPicking||networkSeed!==null)return;
    const p=cell(e);if(!p)return;
@@ -536,13 +538,13 @@
    const dx=drag.end.x-drag.start.x,dy=drag.end.y-drag.start.y;
    if((dx||dy)&&translateSelection(drag.ids,dx,dy)){groupIds=drag.ids.length>1?drag.ids:[];selected=drag.ids.length===1?drag.ids[0]:null;}
  }
- function endSpace(e:KeyboardEvent){if(e.code==='Space')spacePan=false;}
+ function endSpace(e:KeyboardEvent){if(e.code!=='Space'||!spacePan)return;const select=!spaceUsed&&active&&!busyImport&&focusedId!==null&&!placing&&!pasting.length&&!moveMode;spacePan=false;spaceUsed=false;if(select&&focusedId!==null){e.preventDefault();focusPlaced(focusedId,true);}}
 
  function keys(e:KeyboardEvent){
    if(!active||busyImport||!worldShortcutTarget(e,root))return;
    if(e.target instanceof HTMLElement&&e.target.closest('.design-plot')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     if(e.key==='['||e.key===']'){if(cyclePlaced(e.key==='['?-1:1))e.preventDefault();return;}
-    if(e.code==='Space'){e.preventDefault();if(focusedId!==null&&!placing&&!pasting.length&&!moveMode){focusPlaced(focusedId,true);}else spacePan=true;return;}
+    if(e.code==='Space'){e.preventDefault();if(!spacePan){spacePan=true;spaceUsed=false;}return;}
    }
    const action=worldShortcut(e);if(!action)return;
    if(networkSeed!==null){if(action==='cancel'){e.preventDefault();closeNetworkStyle();return;}if(action==='confirm'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();confirmNetworkStyle();return;}if(action!=='undo'&&action!=='redo'&&action!=='zoom-in'&&action!=='zoom-out'&&action!=='fit')return;}
@@ -563,7 +565,7 @@
  }
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
-<svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;direct=null;roadDrag=null;}}/>
+<svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;spaceUsed=false;direct=null;roadDrag=null;}}/>
 {#if active&&grid&&raster}
  <div class="design-workspace" class:mainland-design={Boolean(worldFrame)} bind:this={root}>
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
@@ -616,7 +618,7 @@
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
    {#if inspectorOpen&&selectedPlacements.length}<div class="design-inspector-panel"><DesignInspector {locale} placements={selectedPlacements} {definitions} originX={worldFrame?.minX??0} originY={worldFrame?.minZ??0} world={Boolean(worldFrame)} disabled={busyImport} onMove={(dx,dy)=>translateSelection([...selectedIds],dx,dy)} onClose={()=>inspectorOpen=false}/></div>{/if}
-   {#if placedSearchOpen}<div class="design-inspector-panel"><PlacedDesignSearch {locale} query={placedQuery} results={placedResults} {names} {images} onQuery={q=>placedQuery=q} onPick={id=>{focusPlaced(id,true);placedSearchOpen=false;}} onClose={()=>placedSearchOpen=false}/></div>{/if}
+   {#if placedSearchOpen}<div class="design-inspector-panel"><PlacedDesignSearch {locale} query={placedQuery} results={placedResults} {names} {images} onVisible={ids=>loadImages(ids.map(itemId=>({itemId})))} onQuery={q=>placedQuery=q} onPick={id=>{focusPlaced(id,true);placedSearchOpen=false;}} onClose={()=>placedSearchOpen=false}/></div>{/if}
    {#if networkSeed!==null}<div class="network-style-panel"><NetworkStyleControls {locale} count={networkIds.length} options={networkOptions} value={networkTarget} loading={networkLoading} valid={Boolean(networkPlan)} onChange={changeNetworkTarget} onConfirm={confirmNetworkStyle} onCancel={closeNetworkStyle}/></div>{/if}
    {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} fence={fenceDrawing} tool={roadTool} valid={!(fenceDrawing&&legacyFence)&&(!roadDrag||Boolean(roadPlan))} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
