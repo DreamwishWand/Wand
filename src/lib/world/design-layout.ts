@@ -174,12 +174,13 @@ export function translateDesignTargets(t:DesignTimeline,targets:readonly {id:num
   if((p.x!==target.x||p.y!==target.y)&&nativeActionBlocked(g.editRestrictions,'move'))return null;
   updates.set(p.id,p.x===target.x&&p.y===target.y?p:{...p,x:target.x,y:target.y});
  }
- const rest=old.filter(p=>!updates.has(p.id)),applied:DesignPlacement[]=[];
+ const anchors=new Set<string>();
+ for(const p of old){if(updates.has(p.id))continue;const kind=exclusiveAnchorClass(String(p.itemId));if(kind)anchors.add(kind+':'+p.x+':'+p.y);}
  if([...updates.values()].every(p=>byId.get(p.id)===p))return null;
  for(const p of updates.values()){
   const g=defs.get(p.itemId)!;
-  if(!designCandidateValid([...rest,...applied],p,g,width,height))return null;
-  applied.push(p);
+  if(!designCandidateValid([],p,g,width,height))return null;
+  const kind=exclusiveAnchorClass(String(p.itemId));if(kind){const k=kind+':'+p.x+':'+p.y;if(anchors.has(k))return null;anchors.add(k);}
  }
  return commit(t,old.map(p=>updates.get(p.id)??p));
 }
@@ -188,6 +189,7 @@ export function transformDesignGroup(t:DesignTimeline,ids:readonly number[],defs
  if(!chosen.length||chosen.length!==set.size||![dx,dy,turns].every(Number.isSafeInteger))return null;
  const turn=((turns%4)+4)%4;
  if(!dx&&!dy&&!turn)return null;
+ if(!turn)return translateDesignTargets(t,chosen.map(p=>({id:p.id,x:p.x+dx,y:p.y+dy})),defs,width,height);
  const left=Math.min(...chosen.map(p=>p.x)),top=Math.min(...chosen.map(p=>p.y));
  const shape=(p:DesignPlacement)=>defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
  if(chosen.some(p=>!shape(p)))return null;

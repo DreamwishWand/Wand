@@ -62,6 +62,7 @@ export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs
  }
  for(const id of new Set(ids)){
   const p=byId.get(id),g=p?defs.get(p.itemId):null;if(!p||!g||!eligible.has(id)||nativeActionBlocked(g.editRestrictions,'move'))return null;
+  if(byPose.get(key(p))?.length!==1)return null;
   const mirror=reflectedDesignItem(p,g,s),next=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,s);
   if(!mirror||!next)return null;
   const matches=byPose.get(key(mirror));if(matches?.length!==1)return null;

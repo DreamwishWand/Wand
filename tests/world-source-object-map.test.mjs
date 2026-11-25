@@ -550,6 +550,7 @@ test('linked symmetry translation is atomic, preserves identity, rejects ambigui
  assert.equal(symmetricMoveDesign(t,[1],defs,axis,-4,0,eligible,20,20),null);
  const ambiguous=placeDesign(t,g,15,4,0,20,20);
  assert.equal(symmetricMoveTargets(ambiguous,[1],defs,axis,1,0,new Set([1,2,3])),null);
+ const duplicateSource=placeDesign(t,g,3,4,0,20,20);assert.equal(symmetricMoveTargets(duplicateSource,[1],defs,axis,1,0,new Set([1,2,3])),null);
  const center=placeDesign(emptyDesign(),g,9,4,0,20,20);
  assert.ok(symmetricMoveDesign(center,[1],defs,axis,0,2,new Set([1]),20,20));
  assert.equal(symmetricMoveDesign(center,[1],defs,axis,1,0,new Set([1]),20,20),null);

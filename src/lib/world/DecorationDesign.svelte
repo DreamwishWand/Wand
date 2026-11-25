@@ -195,7 +195,7 @@
  $: dragPlan=direct?.moved&&direct.kind==='move'?movePlan(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds,worldFrame,width,height):null;
  $: dragTargets=direct?.moved&&direct.kind==='move'?moveTargets(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds):[];
  function moveTargets(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>){
-  const ordinary=currentDesign(t).filter(p=>ids.includes(p.id)).map(p=>({id:p.id,x:p.x+dx,y:p.y+dy}));
+  const idSet=new Set(ids),ordinary=currentDesign(t).filter(p=>idSet.has(p.id)).map(p=>({id:p.id,x:p.x+dx,y:p.y+dy}));
   return s?symmetricMoveTargets(t,ids,defs,s,dx,dy,eligible)??ordinary:ordinary;
  }
  function movePlan(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>,frame:MainlandDesignFrame|null,w:number,h:number){
@@ -366,6 +366,7 @@
  const empty=emptyDesign();
  $: timeline=contextKey?layouts[contextKey]??empty:empty;
  $: placements=currentDesign(timeline);
+ $: placementById=new Map(placements.map(p=>[p.id,p]));
  $: definitions=cache[String(grid?.factor)]??new Map<number,DesignItemGeometry>();
  $: map=grid?designShapeMap(placements,definitions,grid):null;
  $: objects=map?mapPainterOrder(map.objects):[];
@@ -530,7 +531,7 @@
    gesture.end(e);if(finishRoad(e,commit))return;if(direct?.id!==e.pointerId)return;
    const drag=direct;direct=null;
    if(!drag.moved)return;suppressDirectClick=true;
-   if(!commit||!cell(e))return;
+   const end=cell(e);if(!commit||!end)return;drag.end=end;
    if(drag.kind==='marquee'){
      const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
      const list=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];groupIds=list.length>1?list:[];selected=list.length===1?list[0]:null;return;
@@ -670,14 +671,14 @@
       <rect class="design-marquee" x={Math.min(direct.start.x,direct.end.x)} y={Math.min(direct.start.y,direct.end.y)} width={Math.abs(direct.end.x-direct.start.x)+1} height={Math.abs(direct.end.y-direct.start.y)+1} fill="#4bddcd" fill-opacity=".16" stroke="#4bddcd" vector-effect="non-scaling-stroke"/>
      {:else if direct?.moved&&direct.kind==='move'}
       {#each dragTargets as target (target.id)}
-       {@const p=placements.find(o=>o.id===target.id)}
+       {@const p=placementById.get(target.id)}
        {@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}
        {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
       {/each}
      {/if}
      {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
      {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&!roadErase(roadTool)?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
-     {#if moveMode&&symmetry}{#each hoverMoveTargets.filter(p=>p.id!==selected) as target (target.id)}{@const p=placements.find(o=>o.id===target.id)}{@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}{#if shape}<path class="symmetry-move-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={hoverMovePlan?'#4bddcd':'#ef5350'} fill-opacity=".6" stroke="#f5cf70" stroke-dasharray="4 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
+     {#if moveMode&&symmetry}{#each hoverMoveTargets.filter(p=>p.id!==selected) as target (target.id)}{@const p=placementById.get(target.id)}{@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}{#if shape}<path class="symmetry-move-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={hoverMovePlan?'#4bddcd':'#ef5350'} fill-opacity=".6" stroke="#f5cf70" stroke-dasharray="4 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(moveMode?Boolean(hoverMovePlan):symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
       {#if ghostGeometry&&showWorldArtwork({layer:ghostGeometry.layer,shapeKey:null},ghostShape,cellPixels)&&images.has(ghostGeometry.itemId)}<WorldObjectArtwork href={images.get(ghostGeometry.itemId)!} x={hover.x} y={hover.y} width={ghostShape.width} height={ghostShape.height} opacity={.55} flipY={Boolean(worldFrame)}/>{/if}
       {#if cellPixels>=5}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate('+(hover.x+.5)+' '+(hover.y+.5)+') rotate('+sourceOrientationAngle(ghostOrientation*4)+')'} fill="#fff" pointer-events="none"/>{/if}

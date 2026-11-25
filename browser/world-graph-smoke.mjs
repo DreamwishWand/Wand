@@ -1238,7 +1238,9 @@ try{
   assert.equal(await design.locator('.design-object').count(),0);
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await design.locator('.design-object').first().waitFor({timeout:20000});
+  await design.getByRole('button',{name:'家具パレット'}).click();
   await design.getByLabel('配置カテゴリ').selectOption('furniture');
+  await design.getByRole('button',{name:'家具パレット'}).click();
   await design.getByRole('button',{name:'配置済み家具を検索',exact:true}).click();
   const placedSearch=design.locator('.design-inspector-panel');
   await placedSearch.locator('.results button').first().click();
