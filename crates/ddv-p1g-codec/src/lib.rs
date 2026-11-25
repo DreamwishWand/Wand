@@ -1402,6 +1402,19 @@ mod browser_amount_preview {
             })();
             draft.patched_json.zeroize();result
         }
+        pub fn prepare_indoor_finish_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            if !allow_experimental_copy{return Err(fail("DB05_EXPERIMENTAL_COPY_NOT_ALLOWED"));}
+            if !self.ready||self.closed||self.copy_prepared{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
+            let source=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_INDOOR_NOT_OPEN"))?.profile.as_slice()
+            };
+            let mut draft=indoor_room_view::finish_candidate(source,plan).map_err(|_|fail("DB05_ROOM_FINISH_REJECTED"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{
+                draft.patched_json.zeroize();return Err(fail("DB05_ROOM_FINISH_REOPEN"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
             let source=match self.kind{
@@ -1648,7 +1661,7 @@ mod browser_amount_preview {
 
         /// Private transfer rehearsal. Never returns native IDs, draft bytes,
         /// or export authority. Source and destination are independently resolved.
-        pub fn preview_plain_grid_transfer(&self,plan:&str)->Result<String,JsValue>{
+        fn grid_transfer_candidate(&self,plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,JsValue>{
             if !self.ready||self.closed||self.copy_prepared||plan.len()>8192{
                 return Err(fail("DB05_GRID_TRANSFER_SESSION_INVALID"));
             }
@@ -1675,10 +1688,20 @@ mod browser_amount_preview {
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let mut draft=ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
-            let valid=validate_profile(draft.patched_json.as_bytes()).is_ok()&&draft.changed&&draft.untouched_bytes_preserved&&!draft.writer_authorized&&!draft.export_authorized;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized||validate_profile(draft.patched_json.as_bytes()).is_err(){
+                draft.patched_json.zeroize();return Err(fail("DB05_GRID_TRANSFER_INVALID_DRAFT"));
+            }
+            Ok(draft)
+        }
+        pub fn preview_plain_grid_transfer(&self,plan:&str)->Result<String,JsValue>{
+            let mut draft=self.grid_transfer_candidate(plan)?;
             draft.patched_json.zeroize();
-            if !valid{return Err(fail("DB05_GRID_TRANSFER_INVALID_DRAFT"));}
             Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
+        }
+        pub fn prepare_grid_transfer_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            if !allow_experimental_copy{return Err(fail("DB05_EXPERIMENTAL_COPY_NOT_ALLOWED"));}
+            let draft=self.grid_transfer_candidate(plan)?;
+            self.prepare_copy_from_patched(draft.patched_json,true)
         }
 
         /// Experimental 1..=16 mixed Grid edits. The same independent
