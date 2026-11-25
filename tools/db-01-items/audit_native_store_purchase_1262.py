@@ -10,6 +10,7 @@ from collections import Counter
 import hashlib
 import json
 import re
+import struct
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src-02-acquisition'))
@@ -26,6 +27,14 @@ PINS={
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
 WINDOWS=(
+ (0x410813c,48,'8155b505f5cd3d2191a43354e8c393ebd063901647f1ed5754ad93b071a89a4e'),
+ (0xf6c9d0,8,'f735d0fc9d977dae4106869f19103860041ce8fe3fcea5a380c84ac3a66f7df4'),
+ (0xff8b70,8,'b96a99bb019c6c196f2d811c580adcf2028e3696b8a30e4838ae8294f6715cb7'),
+ (0x410806a,48,'72028d492bf0938cd7f64912037fe13ab0b3c6ae2696a65092291ec0f8d447ff'),
+ (0x410810b,49,'c37d4063adc632b85c8bf905120c0de04bfd498c13d41b3d2a07fbc226037512'),
+ (0x41080a0,18,'66f834479adcf1ef9107eb480df32dc0157c5b6d877902e2d80360f211b58e49'),
+ (0x37c91f0,8,'163c95912674c5738efefaa6da090487c58957c11c975cfb8d4479259179f95f'),
+ (0xaa6440,8,'a2b9905bb83a58f4063dc0d01cb011ce0324f0b9e43ddbde411581c1192174ae'),
  (0x383ab10,10,'0d3a66f75f5697f2e94fd328359de1da1d0ec500322f901c3eeff4b1b63c49a0'),
  (0x383ab9a,4,'3b9112f85b93c8bee80d192c8f678356a68ca8d15e32b026647571265be67f6f'),
  (0x383abcd,10,'962301f6d839b4d0a1f764814453ace58a3a776a4a38aad390045e167dae28da'),
@@ -51,16 +60,45 @@ def sha(b):return hashlib.sha256(b).hexdigest()
 def authenticated(path,name):
  b=path.read_bytes();require(sha(b)==PINS[name],'SOURCE_'+name);return b
 
+def resolve_native_interfaces(raw,schema):
+ # Resolve encoded type references through the native metadata registration.
+ count,table_va=struct.unpack_from('<QQ',raw,0x8c86e80)
+ require(count==0x23eff and table_va==0x188d831b0,'TYPE_REGISTRATION')
+ table=table_va-0x180000000-0x2400
+ require(table==0x8d80db0 and table+count*8<=0x9831e00,'TYPE_TABLE_RANGE')
+ for slot,expected_index,expected_definition,name in [
+     (0x9bd90a0,69924,11069,'IIsHiddable'),
+     (0x9bd9558,68775,11029,'IAvailability'),
+     (0x9b57de8,69925,11006,'IIsMissionItem')]:
+  encoded=struct.unpack_from('<Q',raw,slot-0x3200)[0]
+  require(encoded==(0x20000001|(expected_index<<1)),'TYPE_ENCODING')
+  va=struct.unpack_from('<Q',raw,table+expected_index*8)[0]
+  offset=va-0x180000000-0x3200
+  require(0x9831e00<=offset<0xa0d7200-16,'TYPE_DESCRIPTOR_RANGE')
+  definition,bits=struct.unpack_from('<QI',raw,offset)
+  require(definition==expected_definition and bits==0x00120000,'TYPE_DESCRIPTOR')
+  require(f'public interface {name} // TypeDefIndex: {definition}' in schema,'TYPE_NAME')
+ require(re.search(r'public interface IAvailability[^\n]*\n\{.*?Slot: 0\s*public abstract bool get_IsUnavailableForGenerator\(\);',schema,re.S) is not None,
+         'AVAILABILITY_SLOT')
+
 def audit(assembly,dump,proto,itemlist):
  raw=authenticated(assembly,'GameAssembly.dll')
  require(len(raw)==176820736,'DLL_SIZE')
  schema=authenticated(dump,'dump.cs').decode('utf-8')
+ resolve_native_interfaces(raw,schema)
  for cls,n in [('FurnitureItemData',21),('ClothingItemData',23),
                ('FenceAndRoadItemData',13),('LandscapingItemData',11)]:
   match=re.search(r'^public sealed class '+cls+r'\s*:[^\n]+\n\{',schema,re.M)
   require(match is not None and 'IPriceOverrider' in match[0],'INTERFACE_'+cls)
   body=schema[match.end():schema.index('\n}',match.end())]
   require(f'public const int PriceOverrideFieldNumber = {n};' in body,'FIELD_'+cls)
+ for cls,field,generator in [('FurnitureItemData',24,50),('ClothingItemData',29,33)]:
+  match=re.search(r'^public sealed class '+cls+r'\s*:[^\n]+\n\{',schema,re.M)
+  require(match is not None and 'IIsHiddable' in match[0],'HIDDEN_INTERFACE_'+cls)
+  body=schema[match.end():schema.index('\n}',match.end())]
+  require(f'public const int IsHiddenFieldNumber = {field};' in body,'HIDDEN_FIELD_'+cls)
+  require('IAvailability' in match[0] and f'public const int IsUnavailableForGeneratorFieldNumber = {generator};' in body,'GENERATOR_FIELD_'+cls)
+ require('public abstract bool get_IsHidden();' in schema,'HIDDEN_INTERFACE_METHOD')
  for token in ['public const PriceOverride.OverrideOneofCase Price = 2;',
                'private PriceOverride.OverrideOneofCase overrideCase_; // 0x20',
                'public const ItemType Furniture = 4;',
@@ -87,10 +125,17 @@ def audit(assembly,dump,proto,itemlist):
    r=fields(row);i=one(r,1);require(i not in providers,'DUP_PROVIDER')
    providers[i]=[(one(fields(v),1),one(fields(v),2)) for n,w,v in r if n==2 and w==2]
  require(len(providers)==9537,'PROVIDER_CENSUS')
- counts=Counter();gate=Counter()
+ counts=Counter();gate=Counter();screen=Counter()
  for family,base in [('Furniture',40000000),('Clothing',50000000)]:
   for i,f in frames(authenticated(itemlist/(family+'.json'),family+'.json'),base):
    if family=='Furniture':gate[i//100000 in (400,403)]+=1
+   if family=='Furniture' and i//100000 not in (400,403):screen['excluded_by_furniture_type']+=1
+   else:
+    hidden=single(f,24 if family=='Furniture' else 29,0)
+    require(hidden in (None,0,1),'HIDDEN_WIRE')
+    unavailable=single(f,50 if family=='Furniture' else 33,0)
+    require(unavailable in (None,0,1),'GENERATOR_WIRE')
+    screen['excluded_by_hidden' if hidden else 'excluded_by_generator' if unavailable else 'not_excluded_by_reviewed_gates']+=1
    n=23 if family=='Clothing' else {400:21,403:21,401:13,407:13,402:11}.get(i//100000)
    if n is None:continue
    value=single(f,n,2)
@@ -106,9 +151,13 @@ def audit(assembly,dump,proto,itemlist):
    counts[match]+=1
  require(counts=={'amount_differs':808,'no_provider':302,'exact':25,'currency_missing':21},'OVERRIDE_CENSUS')
  require(gate=={True:5288,False:1458},'FURNITURE_GATE_CENSUS')
+ require(screen=={'excluded_by_furniture_type':1458,'excluded_by_hidden':1537,
+                 'excluded_by_generator':3344,'not_excluded_by_reviewed_gates':2448},'STORE_SCREEN_CENSUS')
  return {'gameVersion':'1.26.2','platform':'Steam','nativeWindowsVerified':len(WINDOWS),
   'nativeCallEdgesVerified':len(CALLS),'matchingCurrencyExplicitOverridePrecedesProviders':True,
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
+  'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
+  'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}
 if __name__=='__main__':

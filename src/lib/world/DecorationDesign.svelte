@@ -1,13 +1,14 @@
 <script lang="ts">
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
+ import {snapWorldRoad,worldRoadStroke,worldRoadPlan,worldRoadComponent,replaceWorldRoad} from './world-road-lattice.ts';
  import NetworkStyleControls from './NetworkStyleControls.svelte';
  import RoadDesignControls from './RoadDesignControls.svelte';
  import {roadComponent,roadPitch,roadStroke,snapRoadPoint,roadErase,roadFreehand,floodRoadRegion,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
  import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
- import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork} from './design-layout.ts';
+ import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork,commitNetworkDesign} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
- import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
+ import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
  import {onDestroy} from 'svelte';
  import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft,readDesignDraft,writeDesignDraft,discardDesignDraft,type DraftLocation,type DesignDraft} from './design-draft.ts';
@@ -42,7 +43,7 @@
  export let grid:PublicTerrainGridRef|null=null;
  export let raster:TerrainRaster|null=null;
  export let worldFrame:MainlandDesignFrame|null=null;
- $: contextKey=worldFrame?'@mainland-1.26.2':grid?.key??'';
+ $: contextKey=worldFrame?'@world-'+worldFrame.scope+'-1.26.2':grid?.key??'';
  export let areaLabel:(key:string)=>string=key=>key;
  const areaWords={ja:['エリアへ移動','エリア設計を追加','エリア設計を追加できません。地形範囲または重複を確認してください。'],en:['Jump to area','Add area designs','Unable to add area designs. Check terrain bounds or duplicates.'],fr:['Aller à la zone','Ajouter les plans de zones','Impossible d’ajouter les plans de zones.'],it:['Vai alla zona','Aggiungi progetti delle zone','Impossibile aggiungere i progetti.'],de:['Zum Bereich','Bereichsentwürfe hinzufügen','Bereichsentwürfe konnten nicht hinzugefügt werden.'],'es-ES':['Ir a zona','Añadir diseños de zonas','No se pudieron añadir los diseños.'],'zh-CN':['前往区域','添加区域设计','无法添加区域设计，请检查地形或重复物品。'],'pt-BR':['Ir à área','Adicionar projetos de áreas','Não foi possível adicionar os projetos.']} as const;
  $: aw=areaWords[locale]??areaWords.en;
@@ -152,14 +153,15 @@
  $: pitch=roadPitch(placing,grid?.factor??0)??fencePitch(placing,grid?.factor??0);
  $: roadEnabled=Boolean(pitch&&!symmetry);
  $: if(fenceDrawing&&(roadTool==='fill'||roadTool==='flood'))roadTool='brush';
- $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow&&placing?networkStroke(roadDrag.points,roadTool,pitch,placing,binding,placements,definitions,networkScope):null;
- function networkStroke(points:readonly RoadPoint[],tool:RoadTool,step:number,g:DesignItemGeometry,terrain:TerrainBinding|null,old:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,scope=networkScope){
+ $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow&&placing?networkStroke(roadDrag.points,roadTool,pitch,placing,binding,placements,definitions,networkScope,worldFrame):null;
+ function networkStroke(points:readonly RoadPoint[],tool:RoadTool,step:number,g:DesignItemGeometry,terrain:TerrainBinding|null,old:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,scope=networkScope,frame=worldFrame){
+  if(frame&&g.layer==='ground')return worldRoadStroke(frame,points,tool,step,g,old,defs);
   if(tool!=='flood')return roadStroke(points,tool,step);
   if(!terrain||old.some(p=>exclusiveAnchorClass(String(p.itemId))==='ground'&&roadPitch(defs.get(p.itemId),terrain.factor)!==step))return null;
   return floodRoadRegion(points[0],g,terrain,old,scope);
  }
  $: legacyFence=placements.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&!fencePitch(definitions.get(p.itemId),grid?.factor??0));
- $: rawRoadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadErase(roadTool)):null;
+ $: rawRoadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(worldFrame&&!fenceDrawing?worldRoadPlan(worldFrame,timeline,placing,roadPreview,roadErase(roadTool)):(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadErase(roadTool))):null;
  $: roadPlan=rawRoadPlan&&mainlandItemsValid(worldFrame,rawRoadPlan.add,definitions)?rawRoadPlan:null;
  $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor,networkScope):[];
  $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?previewEdges(placements,roadPlan,definitions,grid.factor,networkScope):null;
@@ -168,22 +170,23 @@
  $: originalFenceEdgeKeys=new Set(fenceEdges.map(e=>e.key));
  $: previewFenceEdgeKeys=new Set(previewFenceEdges?.map(e=>e.key)??[]);
  $: removedFenceEdges=previewFenceEdges?fenceEdges.filter(e=>!previewFenceEdgeKeys.has(e.key)):[];
- function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadErase(roadTool)));}
+ function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save(worldFrame&&!fenceDrawing?commitNetworkDesign(timeline,worldRoadPlan(worldFrame,timeline,placing,points,roadErase(roadTool))):(fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadErase(roadTool)));}
  let networkSeed:number|null=null,networkTarget=0,networkRequest=0,networkLoading=false;
  $: networkRoot=networkSeed===null?null:placements.find(p=>p.id===networkSeed)??null;
  $: networkSource=networkRoot?definitions.get(networkRoot.itemId):null;
- $: networkIds=networkRoot&&networkSource&&grid?(networkSource.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,networkRoot.id,networkScope):[];
+ $: networkIds=networkRoot&&networkSource&&grid?(worldFrame&&networkSource.layer==='ground'?worldRoadComponent(worldFrame,placements,definitions,networkRoot.id):(networkSource.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,networkRoot.id,networkScope)):[];
  $: networkOptions=networkSource?catalog.filter(o=>o.itemId!==networkSource?.itemId&&o.layer===networkSource?.layer&&layerSelectable(layerState,o)):[];
  $: networkGeometry=definitions.get(networkTarget);
- $: networkPlan=networkRoot&&networkGeometry&&grid&&networkSource&&layerSelectable(layerState,networkSource)&&layerSelectable(layerState,networkGeometry)?validatedMainlandPlan(worldFrame,timeline,replaceDesignNetwork(timeline,networkRoot.id,networkGeometry,definitions,grid.factor,width,height,networkScope),definitions):null;
+ $: networkPlan=networkRoot&&networkGeometry&&grid&&networkSource&&layerSelectable(layerState,networkSource)&&layerSelectable(layerState,networkGeometry)?validatedMainlandPlan(worldFrame,timeline,(worldFrame&&networkSource.layer==='ground'?replaceWorldRoad(worldFrame,timeline,networkRoot.id,networkGeometry,definitions):replaceDesignNetwork(timeline,networkRoot.id,networkGeometry,definitions,grid.factor,width,height,networkScope)),definitions):null;
  function closeNetworkStyle(){networkSeed=null;networkTarget=0;networkRequest=0;networkLoading=false;}
- function selectNetwork(openStyle=false){if(!grid||selected===null||!chosenGeometry)return;const seed=selected,ids=(chosenGeometry.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,seed,networkScope);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id),g=p?definitions.get(p.itemId):null;return !g||!layerSelectable(layerState,g);}))return;cancel();groupIds=ids.length>1?ids:[];selected=ids.length===1?ids[0]:null;if(openStyle){networkSeed=seed;alignmentOpen=false;layersOpen=false;symmetryOpen=false;}}
+ function selectNetwork(openStyle=false){if(!grid||selected===null||!chosenGeometry)return;const seed=selected,ids=(worldFrame&&chosenGeometry.layer==='ground'?worldRoadComponent(worldFrame,placements,definitions,seed):(chosenGeometry.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,seed,networkScope));if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id),g=p?definitions.get(p.itemId):null;return !g||!layerSelectable(layerState,g);}))return;cancel();groupIds=ids.length>1?ids:[];selected=ids.length===1?ids[0]:null;if(openStyle){networkSeed=seed;alignmentOpen=false;layersOpen=false;symmetryOpen=false;}}
  function changeNetworkTarget(id:number){networkTarget=id;networkRequest=0;networkLoading=false;if(!id||definitions.has(id)||!worker||!grid)return;networkRequest=nextRequest();networkLoading=true;worker.postMessage({command:'design-shape',requestId:networkRequest,key:grid.key,itemId:id});}
  function confirmNetworkStyle(){if(!networkPlan)return;save(networkPlan);closeNetworkStyle();}
  function sampleNetwork(){const id=chosen?.itemId;if(id===undefined)return;cancel();chooseItem(id);}
  function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
- function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;roadDrag={id:e.pointerId,points:[snapRoadPoint(p,pitch)],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
- function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow||roadTool==='flood')return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadFreehand(roadTool)?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
+ function networkSnap(p:RoadPoint,step:number,seed=p){return worldFrame&&!fenceDrawing?snapWorldRoad(worldFrame,p,step,seed):snapRoadPoint(p,step);}
+ function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch);if(!point){save(null);return;}roadDrag={id:e.pointerId,points:[point],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
+ function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow||roadTool==='flood')return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch,roadDrag.points[0]),last=roadDrag.points[roadDrag.points.length-1];if(!point){roadDrag={...roadDrag,overflow:true};return;}if(last?.x===point.x&&last.y===point.y)return;const points=roadFreehand(roadTool)?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
  function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=networkStroke(drag.points,roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);}return true;}
  $: dragPlan=direct?.moved&&direct.kind==='move'?validatedMainlandPlan(worldFrame,timeline,transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height),definitions):null;
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
@@ -216,7 +219,7 @@
   if(!grid)return;
   let content:string;try{content=worldFrame?serializeMainlandDesign(worldFrame,timeline,definitions):serializeDesign(timeline,grid);}catch{error=words[3];return;}
   const url=URL.createObjectURL(new Blob([content],{type:'application/json'}));
-  const a=document.createElement('a');a.href=url;a.download='wand-world-design-'+(worldFrame?'mainland':grid.key.replace(/[^a-zA-Z0-9_-]/g,'_'))+'.json';a.click();
+  const a=document.createElement('a');a.href=url;a.download='wand-world-design-'+(worldFrame?worldFrame.scope:grid.key.replace(/[^a-zA-Z0-9_-]/g,'_'))+'.json';a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function importFile(event:Event){
@@ -362,7 +365,11 @@
  function rotate(delta:number){
    if(worldFrame)delta=(4-delta)%4;
    alignmentAction=null;
-   if(pasting.length)return;
+   if(pasting.length){
+     const rotated=rotateDesignClipboard(pasting,definitions,-delta);
+     if(rotated){pasting=rotated;error='';}else save(null);
+     return;
+   }
    if(groupIds.length){save(transformDesignGroup(timeline,groupIds,definitions,0,0,-delta,width,height));return;}
    if(placing){if(!nativeActionBlocked(placing.editRestrictions,'rotate')&&!exclusiveAnchorClass(String(placing.itemId)))orientation=(orientation+delta+4)%4;return;}
    if(chosen&&chosenGeometry)save(transformDesign(timeline,chosen.id,chosenGeometry,chosen.x,chosen.y,(chosen.orientation+delta+4)%4,width,height));
@@ -419,7 +426,7 @@
  function placeAt(x:number,y:number){
   if(!placing)return;
   if((placing.layer==='fence'||worldFrame&&placing.layer==='ground')&&!roadEnabled){save(null);return;}
-  if(roadEnabled&&pitch&&grid){const points=networkStroke([snapRoadPoint({x,y},pitch)],roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);return;}
+  if(roadEnabled&&pitch&&grid){const point=networkSnap({x,y},pitch),points=point?networkStroke([point],roadTool,pitch,placing,binding,placements,definitions):null;if(points)commitNetwork(points);else save(null);return;}
   if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
  }
 
@@ -505,7 +512,7 @@
    if(action==='cancel'){e.preventDefault();if(roadDrag){roadDrag=null;return;}if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
    if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
-   if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
+   if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing||pasting.length){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
    if(action==='delete'){if(selectedIds.size){e.preventDefault();remove();}return;}
    const n=NUDGE[action];if(n&&selectedIds.size&&!placing&&!pasting.length){e.preventDefault();alignmentAction=null;save(transformDesignGroup(timeline,[...selectedIds],definitions,n[0],worldFrame?-n[1]:n[1],0,width,height));}
  }
@@ -541,8 +548,8 @@
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
     <button type="button" aria-label="設計を取り消す" disabled={busyImport||timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
     <button type="button" aria-label="設計をやり直す" disabled={busyImport||timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>
-    <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(1)}>⟲</button>
-    <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(3)}>⟳</button>
+    <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size&&!pasting.length} on:click={()=>rotate(1)}>⟲</button>
+    <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size&&!pasting.length} on:click={()=>rotate(3)}>⟳</button>
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
     <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>

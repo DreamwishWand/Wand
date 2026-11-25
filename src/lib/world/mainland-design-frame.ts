@@ -2,7 +2,7 @@
  * reverses Y for the same north-up view as MainlandOverview. The worker
  * composes the original nonzero terrain and a unique Grid owner mask.
  * No virtual GridData path is ever passed to a source or save reader. */
-import {bindMainland,mainlandExtent,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {bindMainland,mainlandExtent,sourceWorldScope,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {DesignItemGeometry,DesignPlacement,DesignTimeline} from './design-layout.ts';
@@ -13,6 +13,7 @@ import {exclusiveAnchorClass} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export interface MainlandDesignFrame {
  readonly grids:readonly MainlandGrid[];
+ readonly scope:string;
  readonly raster:TerrainRaster;
  readonly owners:Uint8Array; // 0 = no nonzero source, 255 = overlapping
  readonly minX:number;readonly minZ:number;
@@ -21,7 +22,7 @@ export function composeMainlandDesignFrame(grids:readonly PublicTerrainGridRef[]
  const bound=bindMainland(grids);
  if(!bound||bound.some(g=>g.factor!==1))throw Error('MAINLAND_FRAME_SOURCE');
  const ext=mainlandExtent(bound),minX=ext.x,minZ=-ext.y-ext.h,sizeX=ext.w,sizeY=ext.h;
- if(!Number.isSafeInteger(sizeX*sizeY)||sizeX*sizeY>2_000_000)throw Error('MAINLAND_FRAME_SIZE');
+ if(!Number.isSafeInteger(sizeX*sizeY)||sizeX*sizeY>2_500_000)throw Error('MAINLAND_FRAME_SIZE');
  const owners=new Uint8Array(sizeX*sizeY),values=new Uint32Array(sizeX*sizeY);
  for(let i=0;i<bound.length;i++){
   const g=bound[i],r=rasters.get(g.key);
@@ -33,7 +34,7 @@ export function composeMainlandDesignFrame(grids:readonly PublicTerrainGridRef[]
    if(owners[j]){owners[j]=255;values[j]=0;}else{owners[j]=i+1;values[j]=value;}
   }
  }
- return {grids:bound,minX,minZ,owners,raster:{sizeX,sizeY,nativeFloorValues:values}};
+ return {grids:bound,scope:sourceWorldScope(bound[0]),minX,minZ,owners,raster:{sizeX,sizeY,nativeFloorValues:values}};
 }
 export function mainlandFrameOffset(f:MainlandDesignFrame,g:MainlandGrid){return {x:2*g.origin.position[0]-f.minX,y:2*g.origin.position[2]-f.minZ};}
 /** Every occupied cell must resolve to one original Grid, and the entire
@@ -85,13 +86,14 @@ export function serializeMainlandDesign(f:MainlandDesignFrame,t:DesignTimeline,d
   if(!target||!mainlandItemsValid(f,[p],defs))throw Error('MAINLAND_DESIGN_INVALID');
   groups.get(target.grid.key)!.push({...p,x:target.x,y:target.y});
  }
- const text=JSON.stringify({schema:'wand.mainland-design@1',platform:'Steam',gameVersion:'1.26.2',areas:f.grids.map(g=>JSON.parse(serializeDesign({...emptyDesign(),snapshots:[groups.get(g.key)!]},g)))});
+ const identity=f.scope==='Village04'?{schema:'wand.mainland-design@1'}:{schema:'wand.world-scope-design@1',scope:f.scope};
+ const text=JSON.stringify({...identity,platform:'Steam',gameVersion:'1.26.2',areas:f.grids.map(g=>JSON.parse(serializeDesign({...emptyDesign(),snapshots:[groups.get(g.key)!]},g)))});
  if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');return text;
 }
 export function parseMainlandDesign(text:string,f:MainlandDesignFrame,sourceAreas?:Map<number,string>):DesignPlacement[]{
  if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');
  const doc=JSON.parse(text);
- if(doc?.schema!=='wand.mainland-design@1'||doc.platform!=='Steam'||doc.gameVersion!=='1.26.2'||!Array.isArray(doc.areas)||doc.areas.length!==f.grids.length)throw Error('MAINLAND_DESIGN_INVALID');
+ if((f.scope==='Village04'?doc?.schema!=='wand.mainland-design@1':doc?.schema!=='wand.world-scope-design@1'||doc.scope!==f.scope)||doc.platform!=='Steam'||doc.gameVersion!=='1.26.2'||!Array.isArray(doc.areas)||doc.areas.length!==f.grids.length)throw Error('MAINLAND_DESIGN_INVALID');
  const ids=new Set<number>(),result:DesignPlacement[]=[];
  for(const g of f.grids){
   const matches=doc.areas.filter((a:unknown)=>a!==null&&typeof a==='object'&&(a as {grid?:{key?:string}}).grid?.key===g.key);

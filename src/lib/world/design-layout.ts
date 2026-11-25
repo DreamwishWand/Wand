@@ -128,6 +128,16 @@ export function designClipboard(t:DesignTimeline,ids:readonly number[]):DesignCl
  const x=Math.min(...chosen.map(p=>p.x)),y=Math.min(...chosen.map(p=>p.y));
  return chosen.map(p=>({itemId:p.itemId,dx:p.x-x,dy:p.y-y,orientation:p.orientation}));
 }
+/** Rotate a temporary clipboard group with the same footprint and restriction
+ * checks as committed group rotation. No IDs or history escape this preview. */
+export function rotateDesignClipboard(clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,turns:number):DesignClipItem[]|null{
+ if(!clip.length||clip.length>DESIGN_LIMIT||!Number.isSafeInteger(turns)||clip.some(p=>!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3))return null;
+ if(turns%4===0)return [...clip];
+ const placements=clip.map((p,i)=>({id:i+1,itemId:p.itemId,x:p.dx,y:p.dy,orientation:p.orientation}));
+ const preview:DesignTimeline={snapshots:[placements],cursor:0,nextId:placements.length+1};
+ const rotated=transformDesignGroup(preview,placements.map(p=>p.id),defs,0,0,turns,Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER);
+ return rotated?designClipboard(rotated,placements.map(p=>p.id)):null;
+}
 function pasteCandidates(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignPlacement[]|null{
  const old=currentDesign(t);if(!clip.length||old.length+clip.length>DESIGN_LIMIT||!Number.isSafeInteger(t.nextId+clip.length))return null;
  const occupied=new Set<string>();
@@ -223,7 +233,7 @@ function planNetworkDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly
 }
 export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'ground');}
 export function planFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'fence');}
-function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
+export function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
  if(!plan)return null;
  if(!plan.add.length&&!plan.remove.length)return t;
  const removed=new Set(plan.remove);

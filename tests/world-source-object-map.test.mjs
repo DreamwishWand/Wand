@@ -327,7 +327,7 @@ test('local design recovery preserves undo and redo, identity and safe synthetic
 });
 
 
-import {designClipboard,pasteDesign,removeDesignGroup,transformDesignGroup} from '../src/lib/world/design-layout.ts';
+import {designClipboard,rotateDesignClipboard,pasteDesign,removeDesignGroup,transformDesignGroup} from '../src/lib/world/design-layout.ts';
 import {worldShortcut} from '../src/lib/world/world-shortcuts.ts';
 test('desktop shortcut mapping accepts Control and Command without swallowing unrelated modifiers or IME',()=>{
  const key=(key,more={})=>worldShortcut({key,ctrlKey:false,metaKey:false,shiftKey:false,altKey:false,isComposing:false,repeat:false,...more});
@@ -517,3 +517,18 @@ test('region fill stops at original terrain boundaries and existing paths; overs
  assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-line',2).length,3);
  assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-rect',2).length,9);
 });
+
+ test('clipboard preview rotates rectangular groups with native orientations, without mutating clipboard or history',()=>{
+ const itemId=40000001,wide={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'},tall={width:1,height:2,runs:[{x:0,y:0,width:1},{x:0,y:1,width:1}],cellCount:2,path:'M0 0h1v2h-1Z'};
+ const g={itemId,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{[itemId+':0']:wide,[itemId+':4']:tall,[itemId+':8']:wide,[itemId+':12']:tall}};
+ const defs=new Map([[itemId,g]]),clip=[{itemId,dx:0,dy:0,orientation:2},{itemId,dx:3,dy:1,orientation:1}];
+ const original=JSON.stringify(clip),rotated=rotateDesignClipboard(clip,defs,1);
+ assert.deepEqual(rotated,[{itemId,dx:2,dy:0,orientation:1},{itemId,dx:0,dy:3,orientation:0}]);
+ assert.deepEqual(rotateDesignClipboard(rotated,defs,-1),clip);assert.equal(JSON.stringify(clip),original);
+ const base=emptyDesign(),pasted=pasteDesign(base,rotated,defs,5,5,20,20);
+ assert.deepEqual(currentDesign(pasted).map(p=>[p.x,p.y,p.orientation]),[[7,5,1],[5,8,0]]);
+ assert.deepEqual(currentDesign(travelDesign(pasted,-1)),[]);assert.deepEqual(currentDesign(base),[]);
+ assert.equal(pasteDesign(base,rotated,defs,19,19,20,20),null);
+ assert.equal(rotateDesignClipboard(clip,new Map([[itemId,{...g,editRestrictions:{rotate:'denied'}}]]),1),null);
+ assert.equal(rotateDesignClipboard(clip,new Map(),1),null);
+ });

@@ -20,6 +20,7 @@
  import type {TerrainRaster} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let grids:readonly PublicTerrainGridRef[];
+ export let title='';
  export let worker:Worker|null;
  export let nextRequest:()=>number;
  export let locale:WandLanguage='ja';
@@ -123,8 +124,8 @@
  }
  onDestroy(()=>{nameEpoch++;subscribed?.removeEventListener('message',receive);});
 </script>
-<section class="mainland-overview" aria-label={words[0]}>
- <div class="overview-tools"><strong>{words[0]}</strong>{#if saveMode}<button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+<section class="mainland-overview" aria-label={title||words[0]}>
+ <div class="overview-tools"><strong>{title||words[0]}</strong>{#if saveMode}<button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={e=>gesture.begin(e,camera.zoom>1&&(!moving||e.button===1||e.shiftKey||e.pointerType==='touch'))} on:pointermove={follow}

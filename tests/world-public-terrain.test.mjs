@@ -205,3 +205,39 @@ test('area drafts copy into mainland atomically with new IDs and leave the sourc
  assert(next);assert.equal(currentDesign(next).length,1);assert.equal(currentDesign(next)[0].x,x);assert.equal(currentDesign(next)[0].y,y);assert.equal(currentDesign(local)[0].x,x-off.x);
  assert.equal(mergeMainlandAreaDrafts(f,next,{[g.key]:local},defs),next);assert.equal(currentDesign(travelDesign(next,-1)).length,0);
 });
+
+test('five DLC scene coordinate tables cover every published grid in the exact scope',()=>{
+ const release=parsePublicTerrainRelease(JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8')));
+ const expected={VillageExpansion01:34,VillageExpansion02:31,VillageExpansion03:27,VillageExpansion04:52,VillageWinnieDLC:11};
+ for(const [scope,count] of Object.entries(expected)){
+  const region=release.entries.find(e=>e.scope===scope),grids=bindMainland(region.grids);
+  assert.equal(grids.length,count);assert.equal(bindMainland(region.grids.slice(1)),null);
+  assert.equal(bindMainland([...region.grids.slice(1),region.grids[1]]),null);
+  const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/'+region.path,import.meta.url),'utf8')));
+  const rasters=new Map(bundle.grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:Uint32Array.from(inflateSync(Buffer.from(g.data,'base64')),i=>g.palette[i])}]));
+  const f=composeMainlandDesignFrame(region.grids,rasters);assert.equal(f.scope,scope);assert(f.owners.some(n=>n>0&&n<255));
+  for(const g of grids){const p=mainlandMapAnchor(g,0,0);assert.deepEqual(mainlandLocalAnchor(g,p.x,p.y),{x:0,y:0});}
+  const doc=serializeMainlandDesign(f,emptyDesign(),new Map());assert.deepEqual(parseMainlandDesign(doc,f),[]);
+  assert.throws(()=>parseMainlandDesign(doc.replace(scope,'WrongWorld'),f));
+ }
+});
+
+import {snapWorldRoad,worldRoadStroke,worldRoadPlan,worldRoadComponent,replaceWorldRoad} from '../src/lib/world/world-road-lattice.ts';
+import {commitNetworkDesign} from '../src/lib/world/design-layout.ts';
+test('road lattice follows odd source origins and preserves a single world timeline',()=>{
+ const release=parsePublicTerrainRelease(JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8')));
+ const region=release.entries.find(e=>e.scope==='VillageExpansion01'),bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/'+region.path,import.meta.url),'utf8')));
+ const rasters=new Map(bundle.grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]));
+ const f=composeMainlandDesignFrame(region.grids,rasters),g=f.grids.find(g=>{const o=mainlandFrameOffset(f,g);return o.x%2||o.y%2;}),off=mainlandFrameOffset(f,g),owner=f.grids.indexOf(g)+1,w=f.raster.sizeX;
+ for(let y=0;y<4;y++)for(let x=0;x<8;x++){const k=(off.y+y)*w+off.x+x;f.owners[k]=owner;f.raster.nativeFloorValues[k]=4;}
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:'M0 0h2v2H0Z'};
+ const a={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}},b={...a,itemId:40100035,name:'Path_Brick',shapes:{'40100035:8':shape}},defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ assert.deepEqual(snapWorldRoad(f,{x:off.x+1,y:off.y+1},2),off);
+ const points=worldRoadStroke(f,[off,{x:off.x+4,y:off.y}],'line',2,a,[],defs);assert.equal(points.length,3);
+ const start=emptyDesign(),plan=worldRoadPlan(f,start,a,points,false),next=commitNetworkDesign(start,plan);
+ assert(next);assert.equal(currentDesign(next).length,3);assert(mainlandItemsValid(f,currentDesign(next),defs));
+ assert.deepEqual(worldRoadComponent(f,currentDesign(next),defs,1),[1,2,3]);
+ const changed=replaceWorldRoad(f,next,1,b,defs);assert(changed);assert(currentDesign(changed).every(p=>p.itemId===b.itemId));
+ assert.equal(worldRoadPlan(f,start,a,[off,{x:off.x+8,y:off.y}],false),null);
+ assert.equal(currentDesign(travelDesign(next,-1)).length,0);
+});

@@ -260,7 +260,27 @@ export interface CompleteItemMasterFacets {
   readonly worldTags: readonly ItemMasterTagLabel[];
   readonly gameRuntimeMembershipVerified: false;
 }
+export interface StoreLayoutAreaSource {
+  readonly key:string;
+  readonly recordIndex:number;
+  readonly sourceRecordSha256:string;
+  readonly sourceProtoDbSha256:string;
+  readonly filter:Readonly<{
+    min:number;max:number;
+    typeCodes?:readonly number[];
+    subtypes?:readonly (readonly [number,readonly number[]])[];
+    allTags?:readonly number[];
+    anyTags?:readonly number[];
+    invertAnyTags?:boolean;
+    grid?:Readonly<{
+      minArea?:readonly [number,number];maxArea?:readonly [number,number];
+      canRotate?:boolean;sizeQualifiers?:readonly number[];
+      ignoreSizeForTags?:readonly number[];excludedLayers?:readonly number[];
+    }>;
+  }>;
+}
 export interface CompleteItemMasterRelations {
+  readonly storeLayoutAreas?:readonly Readonly<StoreLayoutAreaSource>[];
   readonly schema: 'wand.item-master.complete-source-relations@1';
   readonly release: string;
   readonly collectionMenus: readonly Readonly<{
