@@ -1718,13 +1718,11 @@ mod browser_amount_preview {
             if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
             let mut result=ddv_save_patch::fence_erase::preview_fence_erase(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy).map_err(|_|invalid())?;
-            for (id,item) in result.removed.iter().chain(result.allocated.iter()){
-                let target=ddv_save_patch::GridCoordinateTarget{kind:ddv_save_patch::GridObjectKind::Full,grid_id:dest.grid_id.clone(),object_id:id.clone(),item_id:*item};
-                let refs=match grid_instance_preview::grid_identity_dependencies(original,&target){
-                    Ok(r)=>r,Err(_)=>{result.draft.patched_json.zeroize();return Err(invalid());}
-                };
-                if refs.blocking()>0||refs.historical>0{result.draft.patched_json.zeroize();return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
-            }
+            let ids:Vec<_>=result.removed.iter().chain(result.allocated.iter()).map(|(id,_)|id.clone()).collect();
+            let refs=match grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids){
+                Ok(r)=>r,Err(_)=>{result.draft.patched_json.zeroize();return Err(invalid());}
+            };
+            if refs.blocking()>0||refs.historical>0{result.draft.patched_json.zeroize();return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
             self.prepare_copy_from_patched(result.draft.patched_json,true)
         }
         pub fn prepare_isolated_fence_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
@@ -1746,12 +1744,9 @@ mod browser_amount_preview {
             let edges=ddv_save_patch::fence_topology::cardinal_fence_graph(&xy,dest.tessellation).map_err(|_|invalid())?;
             let parts=ddv_save_patch::fence_topology::compile_fence(base,dest.tessellation,false,&xy,&edges).map_err(|_|invalid())?;
             let next=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&dest.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(|v|v.as_u64()).ok_or_else(invalid)?;
-            for (offset,p) in parts.iter().enumerate(){
-                let id=next.checked_add(offset as u64).ok_or_else(invalid)?;
-                let target=ddv_save_patch::GridCoordinateTarget{kind:ddv_save_patch::GridObjectKind::Full,grid_id:dest.grid_id.clone(),object_id:id.to_string(),item_id:u64::from(p.item)};
-                let refs=grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?;
-                if refs.blocking()>0||refs.historical>0{return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
-            }
+            let ids=(0..parts.len()).map(|offset|next.checked_add(offset as u64).map(|n|n.to_string()).ok_or_else(invalid)).collect::<Result<Vec<_>,_>>()?;
+            let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids).map_err(|_|invalid())?;
+            if refs.blocking()>0||refs.historical>0{return Err(fail("DB05_FENCE_DEPENDENCY_BLOCKED"));}
             let draft=ddv_save_patch::preview_isolated_fence(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,false,&xy,&edges).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
@@ -1782,11 +1777,8 @@ mod browser_amount_preview {
                 }
             }else{for offset in 0..xy.len(){ids.push(next.checked_add(offset as u64).ok_or_else(invalid)?.to_string());}}
             if ids.len()!=xy.len(){return Err(invalid());}
-            for id in ids{
-                let target=ddv_save_patch::GridCoordinateTarget{kind:ddv_save_patch::GridObjectKind::Full,grid_id:dest.grid_id.clone(),object_id:id,item_id:ddv_save_patch::MAIN_STREET_ROAD};
-                let refs=grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?;
-                if refs.blocking()>0||!erase&&refs.historical>0{return Err(fail("DB05_ROAD_DEPENDENCY_BLOCKED"));}
-            }
+            let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids).map_err(|_|invalid())?;
+            if refs.blocking()>0||!erase&&refs.historical>0{return Err(fail("DB05_ROAD_DEPENDENCY_BLOCKED"));}
             let draft=ddv_save_patch::preview_cardinal_road_cells(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,&xy,erase).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
