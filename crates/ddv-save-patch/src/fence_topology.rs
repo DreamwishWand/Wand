@@ -12,6 +12,10 @@ fn edge(a:Point,b:Point)->(Point,Point){if a<b{(a,b)}else{(b,a)}}
 fn dir(a:Point,b:Point)->Point{(b.0-a.0,b.1-a.1)}
 /// Exact graph, not inferred proximity. Every edge is a single native quantum.
 pub fn compile_fence(base:u32,factor:u32,diagonal:bool,nodes:&[Point],edges:&[(Point,Point)])->Result<Vec<FencePart>,PatchError>{
+ compile_fence_with_posts(base,factor,diagonal,nodes,edges,&BTreeSet::new())
+}
+/// Preserve existing representation posts when changing a component.
+pub fn compile_fence_with_posts(base:u32,factor:u32,diagonal:bool,nodes:&[Point],edges:&[(Point,Point)],posts:&BTreeSet<Point>)->Result<Vec<FencePart>,PatchError>{
  let bad=PatchError::InvalidTarget;
  if !supported_family(base)||!matches!(factor,1|2)||nodes.is_empty()||nodes.len()>MAX_FENCE_NODES||edges.len()>MAX_FENCE_NODES*4{return Err(bad);}
  let q=factor as i32;
@@ -26,8 +30,9 @@ pub fn compile_fence(base:u32,factor:u32,diagonal:bool,nodes:&[Point],edges:&[(P
   neighbors.get_mut(&a).ok_or(bad)?.insert(b);neighbors.get_mut(&b).ok_or(bad)?.insert(a);
  }
  // A semantic anchor is an endpoint, corner, junction, or isolated unit.
+ if !posts.is_subset(&points){return Err(bad);}
  let anchors:BTreeSet<_>=neighbors.iter().filter_map(|(&p,ns)|{
-  if ns.len()!=2{return Some(p);}
+  if posts.contains(&p)||ns.len()!=2{return Some(p);}
   let mut it=ns.iter();let a=dir(p,*it.next().unwrap());let b=dir(p,*it.next().unwrap());
   (a!=(-b.0,-b.1)).then_some(p)
  }).collect();
