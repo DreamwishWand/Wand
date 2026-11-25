@@ -314,7 +314,7 @@ test('same-style cardinal road cells select only their source grid and translate
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
 
-import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices} from '../src/lib/world/subgrid-local.ts';
+import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits} from '../src/lib/world/subgrid-local.ts';
 test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
  const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
  assert.equal(catalog.grids.length,47);
@@ -339,6 +339,9 @@ test('support cells use original L-shaped shelf raster, masks, factors and sibli
  assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,3,0,'GridOrientation_Left'),null);
  assert.equal(supportFreeEdit(tree,{...shapes,'40000001:8':{...cell,acceptedFloorTypesFlag:512}},allowed,raster,0,2,0,'GridOrientation_Down'),null);
  assert.equal(supportTerrainRow(catalog,'GridData/Unknown.json'),null);
+ assert.ok(supportPlacementFits(tree,shapes,raster,40000001,2,0,'GridOrientation_Down'));
+ assert.equal(supportPlacementFits(tree,shapes,raster,40000001,2,2,'GridOrientation_Down'),false);
+ assert.equal(supportPlacementFits(tree,shapes,raster,40000001,0,2,'GridOrientation_Down'),false);
  assert.ok(supportStockPlacement(tree,shapes,raster,40000001,1,2,0,'GridOrientation_Down'));
  assert.equal(supportStockPlacement(tree,shapes,raster,40000001,1,0,2,'GridOrientation_Down'),null);
  assert.equal(supportStockPlacement(tree,shapes,raster,40000001,1,2,2,'GridOrientation_Down'),null);
