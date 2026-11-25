@@ -24,12 +24,13 @@ export function parseDesignDraft(value:unknown,location:DraftLocation):DesignDra
  if(!record(value)||value.schema!=='wand.local-design-draft@1'||value.identity!==location.identity||!record(value.timeline)||!record(value.camera)||!Array.isArray(value.selection))throw Error('DESIGN_DRAFT_CONTEXT');
  const t=value.timeline,c=value.camera;
  if(!Array.isArray(t.snapshots)||!t.snapshots.length||t.snapshots.length>129||!integer(t.cursor,0,t.snapshots.length-1)||!integer(t.nextId,1,Number.MAX_SAFE_INTEGER-1))throw Error('DESIGN_DRAFT_HISTORY');
+ const nextId=t.nextId,cursor=t.cursor;
  const snapshots:DesignPlacement[][]=[];
  for(const snapshot of t.snapshots){
   if(!Array.isArray(snapshot)||snapshot.length>DESIGN_LIMIT)throw Error('DESIGN_DRAFT_LIMIT');
   const ids=new Set<number>(),placements:DesignPlacement[]=[];
   for(const p of snapshot){
-   if(!record(p)||!integer(p.id,1,t.nextId-1)||ids.has(p.id)||!integer(p.itemId,1,0xffffffff)||!integer(p.x,0,location.width-1)||!integer(p.y,0,location.height-1)||!integer(p.orientation,0,3))throw Error('DESIGN_DRAFT_PLACEMENT');
+   if(!record(p)||!integer(p.id,1,nextId-1)||ids.has(p.id)||!integer(p.itemId,1,0xffffffff)||!integer(p.x,0,location.width-1)||!integer(p.y,0,location.height-1)||!integer(p.orientation,0,3))throw Error('DESIGN_DRAFT_PLACEMENT');
    ids.add(p.id);placements.push({id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation});
   }
   snapshots.push(placements);
@@ -37,9 +38,9 @@ export function parseDesignDraft(value:unknown,location:DraftLocation):DesignDra
  const zoom=c.zoom,x=c.x,y=c.y;
  if(typeof zoom!=='number'||!Number.isFinite(zoom)||zoom<1||zoom>maxMapZoom(Math.max(location.width,location.height))||typeof x!=='number'||typeof y!=='number'||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1||y<0||y>1)throw Error('DESIGN_DRAFT_CAMERA');
  const bound=(n:number)=>Math.max(.5/zoom,Math.min(1-.5/zoom,n));
- const selected=new Set(snapshots[t.cursor].map(p=>p.id));
- if(value.selection.length>DESIGN_LIMIT||!value.selection.every(id=>integer(id,1,t.nextId as number-1)&&selected.has(id)))fail();
- return {schema:'wand.local-design-draft@1',identity:location.identity,timeline:{snapshots,cursor:t.cursor,nextId:t.nextId},camera:{zoom,x:bound(x),y:bound(y)},selection:[...new Set(value.selection as number[])]};
+ const selected=new Set(snapshots[cursor].map(p=>p.id));
+ if(value.selection.length>DESIGN_LIMIT||!value.selection.every(id=>integer(id,1,nextId-1)&&selected.has(id)))fail();
+ return {schema:'wand.local-design-draft@1',identity:location.identity,timeline:{snapshots,cursor,nextId},camera:{zoom,x:bound(x),y:bound(y)},selection:[...new Set(value.selection as number[])]};
 }
 export function draftItemIds(draft:DesignDraft):number[]{
  const ids=new Set<number>();for(const snapshot of draft.timeline.snapshots)for(const p of snapshot)ids.add(p.itemId);return [...ids];
@@ -89,8 +90,8 @@ async function changeDraft(key:string,expected:string|null,draft:DesignDraft|nul
   let revision:string|null=null,conflict=false;
   get.onsuccess=()=>{
    const existing=get.result as StoredDraft|undefined;
-   if((existing?.revision??null)!==expected){conflict=true;tx.abort();return;}
-   if(draft){revision=crypto.randomUUID();store.put({revision,draft},key);}else store.delete(key);
+   if((typeof existing?.revision==='string'?existing.revision:null)!==expected){conflict=true;tx.abort();return;}
+   try{if(draft){revision=crypto.randomUUID();store.put({revision,draft},key);}else store.delete(key);}catch(e){reject(e);tx.abort();}
   };
   tx.oncomplete=()=>resolve(revision);tx.onabort=()=>reject(conflict?Error('DRAFT_CONFLICT'):tx.error??Error('DRAFT_WRITE'));tx.onerror=()=>reject(tx.error??Error('DRAFT_WRITE'));
  });}finally{db.close();}

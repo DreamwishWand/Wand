@@ -69,6 +69,7 @@
   'zh-CN':['有未完成的设计','继续设计','丢弃草稿','正在加载草稿…','无法自动保存，请保存设计文件。','草稿与当前游戏数据不兼容。','其他标签页已修改草稿，请保存设计文件。','丢弃已保存的草稿？'],
   'pt-BR':['Há um rascunho disponível','Continuar','Descartar rascunho','Carregando rascunho…','Salvamento automático indisponível. Salve o arquivo.','Rascunho incompatível com os dados atuais.','Outra aba alterou o rascunho. Salve o arquivo.','Descartar o rascunho salvo?']
  } as const;
+ const continueWords={ja:'自動保存せずに続ける',en:'Continue without autosave',fr:'Continuer sans sauvegarde automatique',it:'Continua senza salvataggio automatico',de:'Ohne automatisches Speichern fortfahren','es-ES':'Continuar sin guardado automático','zh-CN':'继续但不自动保存','pt-BR':'Continuar sem salvamento automático'} as const;
  $: rw=recoveryWords[locale]??recoveryWords.en;
  $: recoveryLocation=grid?designDraftLocation(grid,worldFrame):null;
  $: recoveryState=recoveryLocation?recovery[recoveryLocation.identity]:undefined;
@@ -81,8 +82,9 @@
   try{
    const stored=await readDesignDraft(location.key);
    if(!stored){setRecovery(location,{phase:'ready',revision:null,writable:true});return;}
-   try{const draft=parseDesignDraft(stored.draft,location);setRecovery(location,{phase:'offer',revision:stored.revision,record:draft,writable:false});}
-   catch{setRecovery(location,{phase:'offer',revision:stored.revision,warning:'invalid',writable:false});}
+   const revision=typeof stored.revision==='string'?stored.revision:null;
+   try{const draft=parseDesignDraft(stored.draft,location);setRecovery(location,{phase:'offer',revision,record:draft,writable:false});}
+   catch{setRecovery(location,{phase:'offer',revision,warning:'invalid',writable:false});}
   }catch{setRecovery(location,{phase:'ready',revision:null,warning:'unavailable',writable:false});}
  }
  async function discardRecovery(){
@@ -90,6 +92,10 @@
   setRecovery(loc,{...state,phase:'discarding'});
   try{await discardDesignDraft(loc.key,state.revision);setRecovery(loc,{phase:'ready',revision:null,writable:true});}
   catch{setRecovery(loc,{...state,phase:'offer',warning:'conflict'});}
+ }
+ function continueWithoutRecovery(){
+  const loc=recoveryLocation,state=recoveryState;if(!loc||state?.phase!=='offer')return;
+  setRecovery(loc,{phase:'ready',revision:state.revision,warning:state.warning==='conflict'?'conflict':'unavailable',writable:false});
  }
  function resumeRecovery(){
   const location=recoveryLocation,state=recoveryState;
@@ -550,7 +556,7 @@
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
-   {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button></div>
+   {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
    {:else if recoveryBlocked}<p role="status">{rw[3]}</p>
    {:else if recoveryState?.warning}<p role="alert">{recoveryState.warning==='conflict'?rw[6]:rw[4]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
