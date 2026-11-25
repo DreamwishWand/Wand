@@ -7,7 +7,7 @@ import {fencePitch} from './fence-design.ts';
 import {roadStroke,roadPitch,type RoadPoint} from './road-design.ts';
 export const CARDINAL_ROAD_ID=40100068;
 export const ROAD_COPY_LIMIT=256;
-export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line';
+export type CardinalRoadTool='line'|'outline'|'fill'|'erase-line'|'erase-rect'|'connect-line'|'connect-outline'|'diagonal-line'|'diagonal-connect'|'diagonal-erase'|'diagonal-erase-rect';
 export function roadSeedEligible(p:MainlandSavedObject|null):boolean{
  if(!p?.shape||p.shape.acceptedFloorTypesFlag===undefined||p.object.orientationCode!==8||p.object.subgrid)return false;
  const id=Number(p.object.itemId);
@@ -22,8 +22,8 @@ export function cardinalRoadCandidate(seed:MainlandSavedObject,grids:readonly Ma
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=2*g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
- if(tool==='connect-line'||tool==='connect-outline'||tool==='diagonal-line')return null;
- const start=snap(a),end=snap(b),stroke=roadStroke([start,end],tool,pitch);if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
+ if(tool==='connect-line'||tool==='connect-outline'||tool.startsWith('diagonal-'))return null;
+ const start=snap(a),end=snap(b),stroke=roadStroke([start,end],tool as 'line'|'outline'|'fill'|'erase-line'|'erase-rect',pitch);if(!stroke||!stroke.length||stroke.length>ROAD_COPY_LIMIT)return null;
  const erase=tool.startsWith('erase'),cells:[number,number][]=[],ghosts:{x:number;y:number;size:number}[]=[];
  const roadByCell=new Map<string,MainlandSavedObject[]>();
  for(const p of objects){if(p.area!==g.key||p.object.layer!=='ground')continue;const key=p.object.x+':'+p.object.y,list=roadByCell.get(key)??[];list.push(p);roadByCell.set(key,list);}
@@ -48,18 +48,18 @@ export interface CardinalFenceCandidate{
  ghosts:CardinalRoadCandidate['ghosts'];
 }
 export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],a:RoadPoint,b:RoadPoint,tool:CardinalRoadTool):CardinalFenceCandidate|null{
- if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline','diagonal-line'].includes(tool))return null;
- const erase=tool.startsWith('erase'),connect=tool.startsWith('connect'),diagonal=tool==='diagonal-line';
+ if(!fenceSeedEligible(seed)||!seed.shape||!['line','outline','erase-line','erase-rect','connect-line','connect-outline','diagonal-line','diagonal-connect','diagonal-erase','diagonal-erase-rect'].includes(tool))return null;
+ const diagonal=tool.startsWith('diagonal-'),erase=tool.startsWith('erase')||tool==='diagonal-erase'||tool==='diagonal-erase-rect',connect=tool.startsWith('connect')||tool==='diagonal-connect';
  const g=grids.find(g=>g.key===seed.area),r=g&&rasters.get(g.key);if(!g||!r||g.factor!==seed.factor)return null;
  const pitch=g.factor,shape=seed.shape;
  const snap=(p:RoadPoint)=>({x:Math.floor((p.x-2*g.origin.position[0])*g.factor/pitch)*pitch,y:Math.floor((-p.y-2*g.origin.position[2])*g.factor/pitch)*pitch});
  const first=snap(a),last=snap(b);
  let stroke:RoadPoint[]|null;
- if(diagonal){
+ if(diagonal&&tool!=='diagonal-erase-rect'){
   const dx=last.x-first.x,dy=last.y-first.y,steps=Math.abs(dx)/pitch;
-  if(!steps||Math.abs(dx)!==Math.abs(dy)||steps>=FENCE_COPY_LIMIT)return null;
+  if((!steps&&!erase)||Math.abs(dx)!==Math.abs(dy)||steps>=FENCE_COPY_LIMIT)return null;
   stroke=Array.from({length:steps+1},(_,i)=>({x:first.x+Math.sign(dx)*i*pitch,y:first.y+Math.sign(dy)*i*pitch}));if(dx<0)stroke.reverse();
- }else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool,pitch);
+ }else stroke=roadStroke([first,last],tool==='connect-line'?'line':tool==='connect-outline'?'outline':tool==='diagonal-erase-rect'?'erase-rect':tool as 'line'|'outline'|'erase-line'|'erase-rect',pitch);
  if(!stroke||!stroke.length||stroke.length>FENCE_COPY_LIMIT)return null;
  const fences=objects.filter(p=>p.area===g.key&&p.object.layer==='fence');
  if(fences.some(p=>!p.shape||p.object.localGridOrdinal!==seed.object.localGridOrdinal))return null;
@@ -67,13 +67,24 @@ export function cardinalFenceCandidate(seed:MainlandSavedObject,grids:readonly M
  // Each generated diagonal Ext has a square bounding box of at most
  // four logical cells. Conservatively validate the whole span envelope,
  // including off-diagonal cells, rather than assuming a sparse footprint.
- if(diagonal){
+ if(diagonal&&!erase&&!connect){
   for(let at=0;at<stroke.length-1;at+=5){
    const end=Math.min(at+5,stroke.length-1),a=stroke[at],b=stroke[end];
    for(let y=Math.min(a.y,b.y);y<=Math.max(a.y,b.y);y+=pitch)for(let x=Math.min(a.x,b.x);x<=Math.max(a.x,b.x);x+=pitch){
     if(x<0||y<0||x+pitch>g.sizeX*g.factor||y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
     for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
    }
+  }
+ }
+ // A connected diagonal edit may create a span reaching four cells
+ // beyond the drawn segment. Validate the entire local envelope until
+ // exact per-part preview geometry is exposed by Rust.
+ if(diagonal&&connect){
+  const checked=new Set<string>();
+  for(const p of stroke)for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
+   const x=p.x+dx*pitch,y=p.y+dy*pitch,key=x+':'+y;if(checked.has(key))continue;checked.add(key);
+   if(x<0||y<0||x+pitch>g.sizeX*g.factor||y+pitch>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+   for(const run of shape.runs)for(let rx=0;rx<run.width;rx++){const q=mainlandMapAnchor(g,x+run.x+rx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,q.x,q.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   }
  }
  for(const p of stroke){
@@ -93,6 +104,16 @@ export function fenceReplacementCandidate(seed:MainlandSavedObject,grids:readonl
  return {plan:{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},nodes:[point],base:Number(seed.object.itemId),erase:false,seed:point,replacement},ghosts:[]};
 }
 export const diagonalFenceWords={ja:'斜め直線（45°）',en:'Diagonal line (45°)',fr:'Ligne diagonale (45°)',it:'Linea diagonale (45°)',de:'Diagonale (45°)','es-ES':'Línea diagonal (45°)','zh-CN':'对角直线（45°）','pt-BR':'Linha diagonal (45°)'} as const;
+export const diagonalMutationWords={
+ ja:['斜め接続','斜め直線撤去','斜めフェンス範囲撤去'],
+ en:['Connect diagonal','Erase diagonal line','Erase diagonal fences in area'],
+ fr:['Relier en diagonale','Effacer ligne diagonale','Effacer clôtures diagonales dans la zone'],
+ it:['Collega diagonale','Cancella linea diagonale','Cancella recinzioni diagonali nell’area'],
+ de:['Diagonal verbinden','Diagonale löschen','Diagonale Zäune im Bereich löschen'],
+ 'es-ES':['Conectar diagonal','Borrar línea diagonal','Borrar vallas diagonales en área'],
+ 'zh-CN':['斜向连接','删除斜线','删除范围内斜向围栏'],
+ 'pt-BR':['Conectar diagonal','Apagar linha diagonal','Apagar cercas diagonais na área']
+} as const;
 export const fenceMutationWords={
  ja:['直線接続','枠で接続','選択した接続全体のスタイルを変更','置換先','原本形状の一致を確認できた場合のみ置換できます。'],
  en:['Connect line','Connect outline','Replace selected network style','Replacement','Replacement requires matching source geometry.'],
