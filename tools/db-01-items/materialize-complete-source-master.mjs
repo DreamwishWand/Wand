@@ -1050,6 +1050,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const refs=[...new Set(catalog.relatedConditions.filter(r=>r.resolved).map(r=>r.targetItemId))].sort((a,b)=>a-b);
       if(refs.length)add('acquisition.catalogGateRelatedItemIds',row.itemId,refs);
     }
+    const storeScreen=catalogFacts.storeScreens.get(row.itemId);
+    if(storeScreen){
+      add('acquisition.storeDisplayScreen',row.itemId,storeScreen);
+      add('acquisition.storeDisplayScreenStatus',row.itemId,storeScreen.status);
+    }
     const purchaseCurrency=catalogFacts.purchaseCurrencies.get(row.itemId);
     if(purchaseCurrency){
       add('acquisition.purchaseCurrencySelection',row.itemId,purchaseCurrency);
