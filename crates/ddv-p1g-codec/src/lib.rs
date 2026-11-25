@@ -1702,7 +1702,8 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_FENCE_ERASE_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
-            let o=v.as_object().filter(|o|(o.len()==5||o.len()==6)&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"seed"|"erase"|"replacement"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(5..=7).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"destination"|"nodes"|"base"|"seed"|"erase"|"replacement"|"diagonal"))).ok_or_else(invalid)?;
+            let diagonal=match o.get("diagonal"){None=>false,Some(v)=>v.as_bool().ok_or_else(invalid)?};
             use ddv_save_patch::fence_erase::FenceMutation;
             let action=match (o.get("erase").and_then(|v|v.as_bool()),o.get("replacement")){
                 (Some(true),None)=>FenceMutation::Erase,
@@ -1723,7 +1724,7 @@ mod browser_amount_preview {
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
             if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(|v|v.as_u64())!=Some(643){return Err(invalid());}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?).map_err(|_|invalid())?;
-            let mut result=ddv_save_patch::fence_erase::preview_fence_mutation(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy,action).map_err(|_|invalid())?;
+            let mut result=ddv_save_patch::fence_erase::preview_fence_mutation_mode(std::str::from_utf8(original).map_err(|_|invalid())?,&dest,base,seed,&xy,action,diagonal).map_err(|_|invalid())?;
             let ids:Vec<_>=result.removed.iter().chain(result.allocated.iter()).map(|(id,_)|id.clone()).collect();
             let refs=match grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&ids){
                 Ok(r)=>r,Err(_)=>{result.draft.patched_json.zeroize();return Err(invalid());}
