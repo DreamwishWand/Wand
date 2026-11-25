@@ -767,12 +767,34 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
 }
 /// Test-only parent transform. Child grids and the exact State remain unchanged.
 pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
- support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,false)
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,false,None)
 }
 pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
- support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true)
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None)
 }
-fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
+ let tree=m.get("tree").ok_or(CodecError::Json)?;
+ let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|CodecError::Json)?;
+ fn check(tree:&Value,catalog:&Value,count:&mut usize,depth:usize)->Result<(),CodecError>{
+  let bad=CodecError::Json;if depth>8{return Err(bad);}
+  let factor=tree.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as usize;
+  let path=tree.get("sourcePath").and_then(Value::as_str).ok_or(bad)?;
+  let entry=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as usize;
+  let cells=entry[4].as_array().filter(|a|a.len()==sx*sy).ok_or(bad)?;
+  for o in tree.get("objects").and_then(Value::as_array).ok_or(bad)?{
+   *count+=1;if *count>32{return Err(bad);}
+   let x=o.get("x").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+   let y=o.get("y").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+   if x>=sx*factor||y>=sy*factor||cells[y/factor*sx+x/factor].as_u64().is_none_or(|n|n==0){return Err(bad);}
+   let child=o.get("child").ok_or(bad)?;if !child.is_null(){check(child,catalog,count,depth+1)?;}
+  }Ok(())
+ }
+ check(tree,&catalog,&mut 1,0)?;
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,Some(tree))
+}
+fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool,scene:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
  if ordinal==0||item/100_000!=400||expected==replacement&&turn.is_none()&&source_witness.is_none(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
@@ -805,10 +827,10 @@ fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i
   let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
   let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
-  let d=ddv_save_patch::support_clone::preview_support_tree_duplicate(json,target,expected,&dest,replacement,new).map_err(|_|CodecError::Patch)?;
+  let d=if let Some(scene)=scene{ddv_save_patch::support_clone::preview_support_scene_duplicate(json,target,expected,&dest,replacement,new,scene)}else{ddv_save_patch::support_clone::preview_support_tree_duplicate(json,target,expected,&dest,replacement,new)}.map_err(|_|CodecError::Patch)?;
   let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
   let next_collection=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
-  if subgrid_tree(next_collection,&dest.grid_id,&next)?!=tree||subgrid_tree(next_collection,&target.grid_id,&target.object_id)?!=tree{return Err(bad);}
+  if &subgrid_tree(next_collection,&dest.grid_id,&next)?!=scene.unwrap_or(&tree)||subgrid_tree(next_collection,&target.grid_id,&target.object_id)?!=tree{return Err(bad);}
   d
  }else if cross{
   let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
