@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {captureScene,parseScene,sceneOrigin} from '../src/lib/world/scene-preset.ts';
+import {emptyDesign,pasteDesign,currentDesign,travelDesign} from '../src/lib/world/design-layout.ts';
+test('Scene retains relative geometry, anchor and atomic paste',()=>{const s={width:2,height:1,cellCount:2,path:'',runs:[{x:0,y:0,width:2}]},defs=new Map([[40000001,{itemId:40000001,name:'fixture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':s}}]]),source={snapshots:[[{id:42,itemId:40000001,x:10,y:20,orientation:2},{id:99,itemId:40000001,x:13,y:22,orientation:2}]],cursor:0,nextId:100};
+const scene=captureScene(source,[42,99],defs,1),text=JSON.stringify(scene),parsed=parseScene(text,1);assert.equal(parsed.items[1].dx,3);assert.deepEqual(sceneOrigin({x:10,y:10},'center',parsed.items,defs),{x:8,y:9});const next=pasteDesign(emptyDesign(),parsed.items,defs,8,9,30,30);assert.deepEqual(currentDesign(next).map(p=>p.id),[1,2]);assert.equal(currentDesign(travelDesign(next,-1)).length,0);assert.throws(()=>parseScene(text,2));assert.equal(captureScene(source,[42,777],defs,1),null);});

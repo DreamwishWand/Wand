@@ -165,14 +165,16 @@ export function removeDesignGroup(t:DesignTimeline,ids:readonly number[],defs:Re
 }
 /** Apply different integer translations to existing objects as one history entry.
  * All selected and counterpart IDs must be eligible; no partial changes. */
-export function translateDesignTargets(t:DesignTimeline,targets:readonly {id:number;x:number;y:number}[],defs:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number):DesignTimeline|null{
+export function translateDesignTargets(t:DesignTimeline,targets:readonly {id:number;x:number;y:number;orientation?:number}[],defs:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number):DesignTimeline|null{
  const old=currentDesign(t),byId=new Map(old.map(p=>[p.id,p])),updates=new Map<number,DesignPlacement>();
  if(!targets.length||targets.length>old.length)return null;
  for(const target of targets){
   const p=byId.get(target.id),g=p?defs.get(p.itemId):null;
   if(!p||!g||updates.has(p.id)||!Number.isSafeInteger(target.x)||!Number.isSafeInteger(target.y)||nativeActionBlocked(g.editRestrictions,'select'))return null;
   if((p.x!==target.x||p.y!==target.y)&&nativeActionBlocked(g.editRestrictions,'move'))return null;
-  updates.set(p.id,p.x===target.x&&p.y===target.y?p:{...p,x:target.x,y:target.y});
+  const orientation=target.orientation??p.orientation;
+  if(!Number.isSafeInteger(orientation)||orientation<0||orientation>3||orientation!==p.orientation&&(nativeActionBlocked(g.editRestrictions,'rotate')||exclusiveAnchorClass(String(p.itemId))))return null;
+  updates.set(p.id,p.x===target.x&&p.y===target.y&&orientation===p.orientation?p:{...p,x:target.x,y:target.y,orientation});
  }
  const anchors=new Set<string>();
  for(const p of old){if(updates.has(p.id))continue;const kind=exclusiveAnchorClass(String(p.itemId));if(kind)anchors.add(kind+':'+p.x+':'+p.y);}

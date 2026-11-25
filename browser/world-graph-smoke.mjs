@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {chromium} from 'playwright';
 
@@ -1138,6 +1139,24 @@ try{
   await design.getByLabel('設計を取り消す').click();
   assert.equal(await design.locator('.design-object').count(),0);
   await design.getByLabel('設計をやり直す').click();
+  assert.equal(await design.locator('.design-object').count(),1);
+  await designClick(10.5,10.5);
+  // Real portable Scene export/import, independent of the browser clipboard.
+  const sceneDownloadPromise=page.waitForEvent('download');
+  await design.getByRole('button',{name:'Sceneを保存',exact:true}).click();
+  const sceneDownload=await sceneDownloadPromise;
+  assert.equal(sceneDownload.suggestedFilename(),'wand-scene.json');
+  const sceneBytes=await readFile(await sceneDownload.path());
+  const sceneDoc=JSON.parse(sceneBytes.toString('utf8'));
+  assert.equal(sceneDoc.schema,'wand.preset.scene@1');assert.equal(sceneDoc.items.length,1);
+  await design.locator('.scene-file-input').setInputFiles({name:'scene.json',mimeType:'application/json',buffer:sceneBytes});
+  await design.locator('.scene-placement').waitFor({timeout:30000});
+  assert.equal(await design.locator('.scene-required-row').count(),1);
+  await design.locator('.scene-placement').getByRole('button',{name:'角',exact:true}).click();
+  await designClick(30.5,30.5);
+  assert.equal(await design.locator('.design-object').count(),2);
+  assert.ok((await design.locator('.design-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')))).includes('translate(30 30)'));
+  await design.getByLabel('設計を取り消す').click();
   assert.equal(await design.locator('.design-object').count(),1);
   await designClick(10.5,10.5);
   await page.keyboard.press('Control+c');

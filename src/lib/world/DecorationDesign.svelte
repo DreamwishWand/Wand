@@ -1,5 +1,6 @@
 <script lang="ts">
  import {localSaveSession} from '../ui/local-save-session';
+ import {captureScene,parseScene,sceneOrigin,sceneBounds,sceneItemCounts,sceneWords,type ScenePreset} from './scene-preset.ts';
  import {parseFurnitureStock,furnitureStockWords} from './furniture-stock-view.ts';
  import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
  import {mainlandItemsValid,mainlandNetworkScope,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,mergeMainlandAreaDrafts,mainlandFrameOffset,type MainlandDesignFrame} from './mainland-design-frame.ts';
@@ -26,7 +27,7 @@
  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
  import WorldSymmetryControls from './WorldSymmetryControls.svelte';
- import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
+ import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,symmetricRotateDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
  import DesignInspector from './DesignInspector.svelte';
  import PlacedDesignSearch from './PlacedDesignSearch.svelte';
@@ -259,7 +260,17 @@
  function toggleInspector(){closeNetworkStyle();inspectorOpen=!inspectorOpen;if(inspectorOpen){placedSearchOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
  function togglePlacedSearch(){closeNetworkStyle();placedSearchOpen=!placedSearchOpen;if(placedSearchOpen){inspectorOpen=false;layersOpen=false;alignmentOpen=false;symmetryOpen=false;}}
 
- let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
+ let importInput:HTMLInputElement,sceneInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
+ let activeScene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='center',sceneReading=false;
+ $: sceneText=sceneWords[locale]??sceneWords.en;
+ $: sceneCapture=grid&&selectedIds.size?captureScene(timeline,[...selectedIds],definitions,grid.factor):null;
+ $: sceneRequired=activeScene?sceneItemCounts(activeScene.items):new Map<number,number>();
+ $: if(activeScene)loadImages([...sceneRequired.keys()].map(itemId=>({itemId})));
+ function scenePoint(p:Cell|null,clip=pasting,defs=definitions){return !p?null:activeScene?sceneOrigin(p,sceneAnchor,clip,defs):p;}
+ function setSceneAnchor(value:ScenePreset['anchor']){sceneAnchor=value;hover=scenePoint(lastPoint);}
+ function saveScene(){if(!sceneCapture||busyImport)return;try{const text=JSON.stringify(sceneCapture);parseScene(text,sceneCapture.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
+ async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file||!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const scene=parseScene(await file.text(),factor);if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste([...scene.items],scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
+
  let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
@@ -330,7 +341,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
-   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -350,11 +361,11 @@
    if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=String(grid.factor),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
    if(pasteRequest&&d?.requestId===pasteRequest){
      pasteRequest=0;const clip=pastePending;pastePending=[];
-     if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result))return;
+     if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){if(activeScene){activeScene=null;error=sceneText[5];}return;}
      const factor=String(grid.factor),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
-     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){error='配置形状を取得できませんでした。';return;}
+     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){activeScene=null;error='配置形状を取得できませんでした。';return;}
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}pasting=clip;hover=lastPoint;return;
+     if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){activeScene=null;error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}const merged=new Map([...definitions,...incoming]);if(activeScene&&!sceneBounds(clip,merged)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint,clip,merged);return;
    }
    if(pendingImport&&d?.requestId===pendingImport.id){
      const pending=pendingImport;pendingImport=null;
@@ -389,7 +400,7 @@
  }
  function chooseItem(id:number){
    if(!worker||!grid||busyImport)return;
-   closeNetworkStyle();groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
+   closeNetworkStyle();activeScene=null;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
    const g=definitions.get(id);
    if(g){if(!layerSelectable(layerState,g)||worldFrame&&!worldCatalogEligible(g))return;if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
@@ -437,28 +448,29 @@
    if(recoveryBlocked||!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)){error=worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
    if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}error='';return true;
  }
- function cancel(){closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
+ function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
    if(worldFrame)delta=(4-delta)%4;
    alignmentAction=null;
    if(pasting.length){
      const rotated=rotateDesignClipboard(pasting,definitions,-delta);
-     if(rotated){pasting=rotated;error='';}else save(null);
+     if(rotated){pasting=rotated;hover=scenePoint(lastPoint,rotated);error='';}else save(null);
      return;
    }
+   if(symmetry&&selectedIds.size&&!placing){save(symmetricRotateDesign(timeline,[...selectedIds],definitions,symmetry,-delta,editableIds,width,height));return;}
    if(groupIds.length){save(transformDesignGroup(timeline,groupIds,definitions,0,0,-delta,width,height));return;}
    if(placing){if(!nativeActionBlocked(placing.editRestrictions,'rotate')&&!exclusiveAnchorClass(String(placing.itemId)))orientation=(orientation+delta+4)%4;return;}
    if(chosen&&chosenGeometry)save(transformDesign(timeline,chosen.id,chosenGeometry,chosen.x,chosen.y,(chosen.orientation+delta+4)%4,width,height));
  }
  function duplicate(){beginPaste(designClipboard(timeline,[...selectedIds]));}
  function remove(){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(next&&save(next)){selected=null;groupIds=[];cancel();}}
- function beginPaste(clip:DesignClipItem[]){
+ function beginPaste(clip:DesignClipItem[],scene:ScenePreset|null=null){
    if(!clip.length||!grid||busyImport)return;
    if(worldFrame&&clip.some(p=>exclusiveAnchorClass(String(p.itemId)))){save(null);return;}
    if(clip.some(p=>{const g=definitions.get(p.itemId);return g&&!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}
-   cancel();selected=null;groupIds=[];
-   if(clip.every(p=>definitions.has(p.itemId))){pasting=clip;hover=lastPoint;return;}
+   cancel();selected=null;groupIds=[];activeScene=scene;sceneAnchor=scene?.anchor??'corner';
+   if(clip.every(p=>definitions.has(p.itemId))){if(scene&&!sceneBounds(clip,definitions)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint);return;}
    if(!worker)return;
    pastePending=clip;pasteRequest=nextRequest();
    worker.postMessage({command:'design-shapes',requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))]});
@@ -519,7 +531,7 @@
    if(busyImport||gesture.consumeClick()||e.detail===0)return;
    if(symmetryPicking){setSymmetryFromPointer(e);return;}
    const p=cell(e);if(!p)return;lastPoint=p;
-   if(pasting.length){commitPaste(p.x,p.y);return;}
+   if(pasting.length){const origin=scenePoint(p);if(origin)commitPaste(origin.x,origin.y);return;}
    if(placing){placeAt(p.x,p.y);return;}
    if(moveMode&&chosen&&chosenGeometry){
      if(translateSelection([chosen.id],p.x-chosen.x,p.y-chosen.y)){moveMode=false;hover=null;}return;
@@ -557,7 +569,7 @@
      if(lastPoint){direct={...direct,end:lastPoint,moved:true};e.preventDefault();}
      return;
    }
-   if(placing||moveMode||pasting.length)hover=lastPoint;
+   if(placing||moveMode||pasting.length)hover=pasting.length?scenePoint(lastPoint):lastPoint;
  }
  function endDirect(e:PointerEvent,commit:boolean){
    gesture.end(e);if(finishRoad(e,commit))return;if(direct?.id!==e.pointerId)return;
@@ -625,6 +637,7 @@
     <button type="button" aria-label={inspectionWords[1]} title={inspectionWords[1]} aria-pressed={placedSearchOpen} disabled={busyImport} on:click={togglePlacedSearch}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg></button>
     <button type="button" aria-label={inspectionWords[0]} title={inspectionWords[0]} aria-pressed={inspectorOpen} disabled={busyImport||!selectedIds.size} on:click={toggleInspector}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 17h18M7 3v18M17 3v18"/><circle cx="12" cy="12" r="2"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
+    <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={saveScene}>{sceneText[0]}</button><button type="button" disabled={busyImport||sceneReading||!worker} on:click={()=>sceneInput.click()}>{sceneText[1]}</button>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
@@ -645,6 +658,7 @@
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
+   {#if activeScene}<div class="scene-placement"><strong>Scene · {activeScene.items.length}</strong><small>{sceneText[6]}</small><div class="scene-required">{#each [...sceneRequired] as [itemId,count] (itemId)}<div class="scene-required-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>{/each}</div><div><button type="button" aria-pressed={sceneAnchor==='center'} on:click={()=>setSceneAnchor('center')}>{sceneText[2]}</button><button type="button" aria-pressed={sceneAnchor==='corner'} on:click={()=>setSceneAnchor('corner')}>{sceneText[3]}</button><button type="button" on:click={cancel}>{sceneText[4]}</button></div></div>{/if}
    {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
    {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
@@ -741,6 +755,7 @@
  </div>
 {/if}
 <style>
+ .scene-placement{position:absolute;top:52px;right:8px;z-index:8;display:grid;gap:5px;padding:8px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);color:var(--wand-text)} .scene-placement div{display:flex;gap:4px;flex-wrap:wrap}.scene-placement .scene-required{display:grid;max-height:25vh;overflow:auto}.scene-required-row{align-items:center}.scene-required-row img{width:24px;height:24px;object-fit:contain}.scene-required-row span{flex:1}
  .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
  .stock-filter{font-size:12px;color:var(--wand-muted)}.stock-filter label{display:flex;align-items:center;gap:4px}.furniture-stock-count{font-size:10px;color:var(--wand-muted)}
  .file-input{display:none}
