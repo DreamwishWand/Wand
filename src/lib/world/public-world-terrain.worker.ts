@@ -86,19 +86,33 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:'mainland-design-terrain',requestId:id,worldScope:region.scope,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
       return;
     }
+    if(data.command==='support-catalog'){
+      if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===400))throw Error('stock catalog');
+      const terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);if(!terrain)throw Error('support path');
+      const definitions=await loadGeometry(),subgrids=await supportPaths!,names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const mask=terrain.nativeFloorValues.reduce((v,n)=>v|n,0),items:{itemId:number;name:string}[]=[];
+      for(const id of new Set<number>(data.itemIds)){
+        const def=definitions.get(String(id)),shape=def?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(def);
+        if(!def||def.nativeType!=='Furniture'||!shape||!((shape.acceptedFloorTypesFlag??0)&mask)||subgrids.has(id)||nativeActionBlocked(rule,'select')||nativeActionBlocked(rule,'move')||nativeActionBlocked(rule,'remove'))continue;
+        items.push({itemId:id,name:names.get(id)??String(def.nativeName??'—')});
+      }
+      items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
+      scope.postMessage({kind:'support-catalog',requestId:id,items});return;
+    }
     if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
       const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:await loadGeometry()},data.factor);
-      const keys=new Set<string>(),editable=new Set<number>();
+      const keys=new Set<string>(),editable=new Set<number>(),removable=new Set<number>();
       for(const row of data.items){
         if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||![0,4,8,12].includes(row.orientationCode))throw Error('indoor item');
         const key=row.itemId+':'+row.orientationCode;if(keys.has(key))continue;keys.add(key);
         const obj=cache.resolve(row.itemId,row.orientationCode);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'move')&&!nativeActionBlocked(obj.editRestrictions,'rotate'))editable.add(row.itemId);
+        if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'remove'))removable.add(row.itemId);
       }
       let terrain:TerrainRaster|null=null;
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
-      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable],terrain}:{})});return;
+      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,...(data.command==='support-shapes'?{editable:[...editable],removable:[...removable],terrain}:{})});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
     const grid=region?.grids.find(g=>g.key===data.key);
