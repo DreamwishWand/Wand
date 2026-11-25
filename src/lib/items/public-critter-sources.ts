@@ -117,7 +117,18 @@ function definition(itemId:number,v:Obj,refs:readonly (readonly [number,string])
     favoriteLootTableItemId:integer(v['source.FavoriteRewardLootTableItemID']),
     befriendingPetItemId:integer(v['source.BefriendingPetRewardItemID']),currentAvailabilityVerified:false});
 }
+// Keep caches scoped to the immutable canonical reader, never to a global
+// game version. Shared-detail calls reuse the same configuration index and
+// filter resolutions without retaining old master revisions.
+const readers=new WeakMap<PublicCompleteItemMaster,ReturnType<typeof buildCritterSourceReader>>();
 export function createCritterSourceReader(db:PublicCompleteItemMaster){
+  const existing=readers.get(db);
+  if(existing)return existing;
+  const reader=buildCritterSourceReader(db);
+  readers.set(db,reader);
+  return reader;
+}
+function buildCritterSourceReader(db:PublicCompleteItemMaster){
   const release=db.release;
   const pinned=release.target.platform==='Steam'&&release.sourceFilesSha256?.Companion===SOURCE&&release.sourceIl2cppDumpSha256===DUMP;
   const filters=createItemFilterCandidateReader(db,'critter');
