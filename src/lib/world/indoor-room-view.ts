@@ -303,19 +303,19 @@ export const indoorTransferWords={
 } as const;
 
 /** Same half-cell offsets as the shared outdoor clipboard, in source index order. */
-export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,removable:ReadonlySet<number>):{rows:CutWitness[];clip:DesignClipItem[]}|null{
+export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,removable:ReadonlySet<number>,supportIndices:ReadonlySet<number>=new Set()):{rows:CutWitness[];clip:DesignClipItem[]}|null{
  const t=indoorEditableTree(face);
  if(!t||face?.kind!=='floor'||!face.terrain||!Number.isSafeInteger(roomOrdinal)||roomOrdinal<1||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
  for(const index of indices){
   const o=t.objects[index];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!indoorClear(t,shapes,index))return null;
-  rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
+  rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(supportIndices.has(index)?{supportFactor:t.factor}:{})});
   clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
-export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
+export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
 /** Check every footprint against the floor and all already staged siblings. */
 export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number):IndoorTransferRow[]|null{
  const tree=indoorEditableTree(face);
@@ -323,8 +323,8 @@ export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Reco
  const staged={...tree,objects:[...tree.objects]},out:IndoorTransferRow[]=[];
  for(let i=0;i<rows.length;i++){
   const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];
-  if(String(p.itemId)!==r.itemId||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
-  out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
+  if(String(p.itemId)!==r.itemId||r.supportFactor&&(!r.roomSource||r.supportFactor!==tree.factor)||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.supportFactor?{supportFactor:r.supportFactor}:{}),...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
   staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
  }
  return out;
