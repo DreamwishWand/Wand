@@ -1,5 +1,6 @@
 /** Exact local integer-cell symmetry. An image or bounding box is not
  * evidence that a chiral object has a representable mirrored orientation. */
+import type {DesignSupportAttachment} from './design-support-attachment.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {exclusiveAnchorClass} from './saved-map-transform.ts';
 import {currentDesign,canPasteDesign,pasteDesign,translateDesignTargets,transformDesignGroup,type DesignClipItem,type DesignTimeline,type DesignItemGeometry} from './design-layout.ts';
@@ -7,12 +8,12 @@ import type {SourceObjectShape} from './source-object-map.ts';
 export type SymmetryMode='vertical'|'horizontal'|'point';
 /** Axis/center coordinate is represented in half cells: x2=2*x. */
 export interface DesignSymmetry{readonly mode:SymmetryMode;readonly x2:number;readonly y2:number}
-export interface SymmetryItem{readonly itemId:number;readonly x:number;readonly y:number;readonly orientation:number}
+export interface SymmetryItem{readonly itemId:number;readonly x:number;readonly y:number;readonly orientation:number;readonly attachment?:DesignSupportAttachment}
 function runSignature(shape:SourceObjectShape,flipX:boolean,flipY:boolean){
  return shape.runs.map(r=>[flipY?shape.height-1-r.y:r.y,flipX?shape.width-r.x-r.width:r.x,r.width]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(r=>r.join(':')).join(';');
 }
 export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:DesignSymmetry):SymmetryItem|null{
- if(!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
+ if(p.attachment||!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
   exclusiveAnchorClass(String(p.itemId))||!['furniture','landscape'].includes(g.layer)||nativeActionBlocked(g.editRestrictions,'select'))return null;
  const a=g.shapes[p.itemId+':'+p.orientation*4];if(!a?.runs.length)return null;
  const fx=s.mode!=='horizontal',fy=s.mode!=='vertical';
@@ -39,7 +40,7 @@ export function symmetricDesignItems(original:readonly SymmetryItem[],defs:Reado
  }
  return result;
 }
-export const asDesignClip=(items:readonly SymmetryItem[]):DesignClipItem[]=>items.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
+export const asDesignClip=(items:readonly SymmetryItem[]):DesignClipItem[]=>items.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})}));
 export function symmetryPlan(t:DesignTimeline,items:readonly SymmetryItem[],defs:ReadonlyMap<number,DesignItemGeometry>,s:DesignSymmetry,includeOriginal:boolean,width:number,height:number){
  const candidates=symmetricDesignItems(items,defs,s,includeOriginal,currentDesign(t));
  return candidates&&candidates.length&&canPasteDesign(t,asDesignClip(candidates),defs,0,0,width,height)?candidates:null;
@@ -65,7 +66,7 @@ export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs
   if(byPose.get(key(p))?.length!==1)return null;
   const mirror=reflectedDesignItem(p,g,s),next=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,s);
   if(!mirror||!next)return null;
-  const matches=byPose.get(key(mirror));if(matches?.length!==1)return null;
+  const matches=byPose.get(key(mirror));if(matches?.length!==1||byId.get(matches[0])?.attachment)return null;
   if(!put(id,p.x+dx,p.y+dy)||!put(matches[0],next.x,next.y))return null;
  }
  return [...targets.values()];
@@ -99,7 +100,7 @@ export function symmetricRotateDesign(t:DesignTimeline,ids:readonly number[],def
   const before=reflectedDesignItem(p,g,s),after=reflectedDesignItem(next,g,s);
   if(!before||!after)return null;
   const matches=byPose.get(key(before));
-  if(matches?.length!==1||!put(id,next)||!put(matches[0],after))return null;
+  if(matches?.length!==1||byId.get(matches[0])?.attachment||!put(id,next)||!put(matches[0],after))return null;
  }
  return translateDesignTargets(t,[...targets.values()],defs,width,height);
 }
