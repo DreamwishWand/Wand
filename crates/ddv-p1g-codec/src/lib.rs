@@ -18,6 +18,7 @@ mod grid_instance_preview;
 mod indoor_room_view;
 #[cfg(feature="wasm")]
 mod native_preset_backup;
+mod native_preset_scene;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -447,6 +448,10 @@ mod browser_amount_preview {
     };
     use wasm_bindgen::prelude::*;
 
+    #[wasm_bindgen]
+    pub fn convert_native_decoration_to_scene(backup:&str)->Result<String,JsValue>{
+        native_preset_scene::convert(backup).map_err(|_|fail("DB05_NATIVE_SCENE_UNSUPPORTED"))
+    }
     const MAX_WORKER_CIPHERTEXT:usize=32*1024*1024;
     const CHUNK:usize=1024*1024;
     fn fail(code:&'static str)->JsValue{JsValue::from_str(code)}
