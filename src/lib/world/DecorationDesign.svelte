@@ -729,7 +729,7 @@
    <div class="design-catalog" on:scroll={more}>
     {#each visibleCatalog as item (item.itemId)}
      <button type="button" class="design-item" data-item-id={item.itemId} aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
-      {#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}
+      <span class="design-item-artwork" aria-hidden="true">{#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}</span>
       <span>{item.name}</span>{#if stockCounts?.has(item.itemId)}<small class="furniture-stock-count" title={stockWords[0]}>{stockWords[0]} {stockCounts.get(item.itemId)}</small>{/if}
      </button>
     {/each}
@@ -882,12 +882,14 @@
  button:disabled{opacity:.45}
  .design-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;overflow:auto;flex:1 1 auto;min-height:0;align-content:start}
  .design-item{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:44px;font-size:12px;overflow-wrap:anywhere}
- .design-item img{width:56px;height:56px;object-fit:contain}
+ .design-item{min-width:0;overflow:hidden}
+ .design-item-artwork{display:block;flex:none;width:56px;height:56px;max-width:100%;pointer-events:none}
+ .design-item img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
  .design-plot svg{display:block;width:100%;height:100%}.design-marquee,.design-drag-ghost{pointer-events:none}
  small,.design-status{font-size:12px;color:var(--wand-muted)}
- @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
+ @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item-artwork{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
  aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
  .network-style-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
