@@ -1,5 +1,5 @@
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
-import {captureFurnitureGroup,groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-paste.ts';
+import {captureFurnitureGroup,groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-placement.ts';
 import {parseSupportScene,supportSceneRootCounts,type SupportScene} from './support-scene.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
