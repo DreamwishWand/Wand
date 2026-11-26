@@ -189,16 +189,32 @@ struct Entry {
     discovered: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     favorite: Option<bool>,
+    #[serde(rename="memoryPieces",skip_serializing_if="Option::is_none")]
+    memory_pieces: Option<u16>,
+}
+
+// Exact published Memory definitions; no duplicate hardcoded item list.
+fn memory_complete_mask(id:&str)->Option<u16>{
+    static COUNTS:std::sync::OnceLock<HashMap<String,u16>>=std::sync::OnceLock::new();
+    let counts=COUNTS.get_or_init(||{
+        let release:Value=serde_json::from_str(include_str!("../../../data/ddv/media/memory-steam-1.26.2.json")).expect("published Memory release");
+        release["items"].as_object().expect("Memory items").iter().filter_map(|(id,row)|{
+            let count=row.get(4)?.as_u64()?;
+            (1..=10).contains(&count).then(||(id.clone(),(1u16<<count)-1))
+        }).collect()
+    });
+    counts.get(id).copied()
 }
 
 impl Entry {
     fn valid(&self) -> bool {
         self.status.as_ref().is_none_or(|s| s == "owned" || s == "missing")
             && self.quantity.is_none_or(|q| q <= 999_999)
+            && self.memory_pieces.is_none_or(|bits|bits<=1023)
     }
     fn empty(&self) -> bool {
         self.status.is_none() && self.quantity.is_none()
-            && self.discovered.is_none() && self.favorite.is_none()
+            && self.discovered.is_none() && self.favorite.is_none() && self.memory_pieces.is_none()
     }
 }
 
@@ -291,7 +307,9 @@ fn valid_state(s: &State) -> Result<(), String> {
             return Err("COLLECTION_ENTRIES_LIMIT".into());
         }
         for (id, entry) in &w.entries {
-            if !valid_item_id(id) || !entry.valid() {
+            if !valid_item_id(id) || !entry.valid() || entry.memory_pieces.is_some_and(|bits|{
+                memory_complete_mask(id).is_none_or(|full| bits>full || entry.status.as_deref()!=Some(if bits==full{"owned"}else{"missing"}))
+            }) {
                 return Err("COLLECTION_ENTRY_INVALID".into());
             }
         }
@@ -792,7 +810,7 @@ impl CollectionEngine {
         if id == 0 || id > 9_007_199_254_740_991 { return Err("COLLECTION_ITEM_ID_INVALID".into()); }
         let update: Value = serde_json::from_str(change).map_err(|_|"COLLECTION_CHANGE_INVALID")?;
         let m = update.as_object().ok_or("COLLECTION_CHANGE_INVALID")?;
-        if m.keys().any(|k| !["status","quantity","discovered","favorite"].contains(&k.as_str())) {
+        if m.keys().any(|k| !["status","quantity","discovered","favorite","memoryPieces"].contains(&k.as_str())) {
             return Err("COLLECTION_CHANGE_FIELD".into());
         }
         self.with_state(|state| {
@@ -800,14 +818,23 @@ impl CollectionEngine {
                 .ok_or("COLLECTION_WORKSPACE_NOT_FOUND")?;
             let key = id.to_string();
             let mut e = w.entries.get(&key).cloned().unwrap_or_default();
+            if m.contains_key("status"){e.memory_pieces=None;}
             for (k,v) in m {
                 match k.as_str() {
                     "status" => e.status = if v.is_null() {None} else {Some(v.as_str().ok_or("COLLECTION_STATUS_INVALID")?.to_string())},
                     "quantity" => e.quantity = if v.is_null() {None} else {Some(v.as_u64().and_then(|x|u32::try_from(x).ok()).ok_or("COLLECTION_QUANTITY_INVALID")?)},
                     "discovered" => e.discovered = if v.is_null() {None} else {Some(v.as_bool().ok_or("COLLECTION_DISCOVERED_INVALID")?)},
                     "favorite" => e.favorite = if v.is_null() {None} else {Some(v.as_bool().ok_or("COLLECTION_FAVORITE_INVALID")?)},
+                    "memoryPieces" => {
+                        let full=memory_complete_mask(&key).ok_or("COLLECTION_MEMORY_ITEM_INVALID")?;
+                        let bits=v.as_u64().and_then(|n|u16::try_from(n).ok()).filter(|n|*n<=full).ok_or("COLLECTION_MEMORY_BITS_INVALID")?;
+                        e.memory_pieces=Some(bits);
+                    },
                     _ => return Err("COLLECTION_CHANGE_FIELD".into())
                 }
+            }
+            if let Some(bits)=e.memory_pieces{
+                e.status=Some(if Some(bits)==memory_complete_mask(&key){"owned"}else{"missing"}.to_string());
             }
             if e.empty() { w.entries.remove(&key); } else { w.entries.insert(key,e); }
             Ok(())
@@ -826,6 +853,7 @@ impl CollectionEngine {
                 let key = id.to_string();
                 let mut e = w.entries.get(&key).cloned().unwrap_or_default();
                 e.status = if status == "unknown" {None} else {Some(status.to_string())};
+                e.memory_pieces=None;
                 if e.empty() { w.entries.remove(&key); } else {w.entries.insert(key,e);}
             }
             Ok(())
@@ -875,6 +903,7 @@ impl CollectionEngine {
                 let key = row.item_id.to_string();
                 let mut entry = w.entries.get(&key).cloned().unwrap_or_default();
                 entry.status = if row.status == "unknown" { None } else { Some(row.status) };
+                entry.memory_pieces=None;
                 if entry.empty() { w.entries.remove(&key); }
                 else { w.entries.insert(key, entry); }
             }
