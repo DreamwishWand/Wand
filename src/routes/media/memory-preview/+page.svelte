@@ -8,21 +8,23 @@
   let itemId=130000001;
   let source:MemorySources|null=null;
   let selected=1;
-  let showOutline=false;
+  let nativeFormula=true;
+  let artworkSlot0=false;
+  let invertFlags=true;
   let error='';
   let loading=false;
   let renderer:MaskPreview|null=null;
   let controller:AbortController|null=null;
   $: evidence=source?memoryMaskEvidence(source.mask.sha256,source.numberOfShards):null;
-  $: eligible=source!==null&&maskPreviewEligible(source.mask.sha256,source.numberOfShards);
+  $: eligible=source!==null&&memoryMaskEvidence(source.mask.sha256,source.numberOfShards)!==null;
   function redraw(){
-    try{renderer?.draw(selected,showOutline);}catch(e){error=e instanceof Error?e.message:String(e);}
+    try{renderer?.draw(selected,nativeFormula,artworkSlot0,invertFlags);}catch(e){error=e instanceof Error?e.message:String(e);}
   }
   async function load(id:number){
     controller?.abort();renderer?.dispose();renderer=null;
     const request=new AbortController();controller=request;
-    itemId=id;source=getMemorySources(id);selected=1;showOutline=false;error='';loading=false;
-    if(!source||!maskPreviewEligible(source.mask.sha256,source.numberOfShards))return;
+    itemId=id;source=getMemorySources(id);selected=1;error='';loading=false;
+    if(!source||!memoryMaskEvidence(source.mask.sha256,source.numberOfShards))return;
     loading=true;
     try{
       const next=await openMaskPreview(canvas,source,request.signal);
@@ -40,7 +42,7 @@
 </svelte:head>
 <main class="preview">
   <h1>Memory mask preview</h1>
-  <p>Development comparison only. Exact one-hot pixels are shown; amber indicates unresolved samples. Neither native shader parity nor saved-bit order is verified. No Save is loaded or modified.</p>
+  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Texture slot assignment, sampler state, tint, and saved-bit polarity are candidate inputs. No Save is loaded or modified.</p>
   <label>Representative Memory
     <select value={itemId} on:change={(event)=>void load(Number(event.currentTarget.value))}>
       {#each MASK_PREVIEW_EVIDENCE as row}
@@ -50,6 +52,7 @@
   </label>
   {#if evidence}
     <p>Exact dominant one-hot coverage: {(100*evidence[4]/evidence[5]).toFixed(3)}% · {evidence[3]} / {evidence[1]} expected dominant values</p>
+    {#if source&&!maskPreviewEligible(source.mask.sha256,source.numberOfShards)}<p role="status">Exceptional mask: native arithmetic can be inspected, but piece coverage is not verified.</p>{/if}
   {/if}
   {#if source&&eligible}
     <div class="controls">
@@ -58,17 +61,21 @@
       {/each}
       <button type="button" on:click={()=>{selected=0;redraw();}}>None</button>
       <button type="button" on:click={()=>{selected=2**(source?.numberOfShards??0)-1;redraw();}}>All</button>
-      <label><input type="checkbox" checked={showOutline} on:change={(event)=>{showOutline=event.currentTarget.checked;redraw();}}/> Candidate outline multiply</label>
+      <label><input type="checkbox" checked={nativeFormula} on:change={(event)=>{nativeFormula=event.currentTarget.checked;redraw();}}/> Native fragment arithmetic</label>
+      {#if nativeFormula}
+        <label><input type="checkbox" checked={artworkSlot0} on:change={(event)=>{artworkSlot0=event.currentTarget.checked;redraw();}}/> Use artwork in candidate t0 slot</label>
+        <label><input type="checkbox" checked={invertFlags} on:change={(event)=>{invertFlags=event.currentTarget.checked;redraw();}}/> Invert selected flags (candidate)</label>
+      {/if}
     </div>
   {:else if source}
-    <p role="status">This mask and shard-count pair is not eligible for one-hot preview.</p>
+    <p role="status">Unknown mask and shard-count pair.</p>
   {/if}
   {#if loading}<p role="status">Loading and verifying the three existing CDN textures…</p>{/if}
   {#if error}<p role="alert">{error}</p>{/if}
   <div class="comparison">
     <figure hidden={!source||!eligible||loading||!!error}>
       <canvas bind:this={canvas} aria-label="Diagnostic selected Memory regions"></canvas>
-      <figcaption>Diagnostic composition</figcaption>
+      <figcaption>Source-derived arithmetic / candidate composition</figcaption>
     </figure>
     {#if source}
       <figure><img src={source.thumbnail.url} alt="Completed Memory" loading="lazy"/><figcaption>Completed artwork</figcaption></figure>
