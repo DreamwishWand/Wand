@@ -18,7 +18,7 @@
  let key='',input:HTMLInputElement,epoch=0,reading=false,error=false,shapeRequest=0,stockWorker:Worker|null=null,writeWorker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  let source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',incoming:DesignPlacement[]|null=null,defs:Map<number,DesignItemGeometry>|null=null,stock:Map<number,number>|null=null,subscribed:Worker|null=null;
  $: w=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
- $: available=grids.filter(g=>wholeAreaKind(g,grids)==='biome'&&sessions.some(s=>s.receipt.viewKey===g.key&&s.verifiedGridOrdinals.length===1&&!s.receipt.dataSampled&&!s.receipt.rowsWithoutCoordinates));
+ $: available=grids.filter(g=>wholeAreaKind(g,grids)==='biome'&&sessions.some(s=>s.receipt.viewKey===g.key&&!!s.completeGridOrdinal&&s.verifiedGridOrdinals.length===1&&s.verifiedGridOrdinals[0]===s.completeGridOrdinal&&!s.receipt.dataSampled&&!s.receipt.rowsWithoutCoordinates));
  $: if(!available.some(g=>g.key===key))key=available[0]?.key??'';
  $: grid=available.find(g=>g.key===key);
  $: snapshot=grid?biomeFurnitureSnapshot(grid,objects,omitted):null;
