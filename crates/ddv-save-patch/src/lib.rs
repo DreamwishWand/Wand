@@ -865,6 +865,16 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
     let from_scope=full_grid_scope(from_layout).ok_or(PatchError::InvalidTarget)?;
     let same_world=from_scope==to_scope;
+    // Landscape is an identity-preserving logical move, not an inventory
+    // pickup or grant. Limit it to verified outdoor source path families
+    // within one world, with unchanged orientation and native resolution.
+    if target.item_id/100_000==402&&(!same_world||support_parent||
+       from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation))||
+       !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|path|outdoor_world_path(from_scope,path))||
+       !outdoor_world_path(to_scope,&destination.data_path)||
+       from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)){
+        return Err(PatchError::InvalidTarget);
+    }
     if !same_world&&(!allow_world_change||support_parent||target.item_id/100_000!=400||
        !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|path|outdoor_world_path(from_scope,path))||
        !outdoor_world_path(to_scope,&destination.data_path)){return Err(PatchError::InvalidTarget);}
@@ -2154,6 +2164,22 @@ mod structural_tests{
   assert!(preview_plain_grid_transfer(&state,&target(),(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
   let wrong=PlainGridDestination{layout_path:"SceneLayouts/VillageExpansion01/B.json".into(),..dest.clone()};
   assert!(preview_plain_grid_transfer(source,&target(),(1,2),&wrong,(5,6),"GridOrientation_Right").is_err());
+ }
+ #[test]
+ fn landscape_transfer_keeps_inventory_and_rejects_cross_world_or_rotation(){
+  let source=r#"{"Player":{"ListInventories":{"0":{"Inventory":{"40200001":{"Amount":5}}}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-A.json","NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40200001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}}},"20":{"ID":20,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/Villages/Village04-B.json","NextGridObjectID":3,"Objects":{}}},"DiffGrids":{}}}}"#;
+  let target=GridCoordinateTarget{item_id:40200001,..target()};
+  let dest=PlainGridDestination{grid_id:"20".into(),layout_path:"SceneLayouts/Village04/B.json".into(),data_path:"GridData/Villages/Village04-B.json".into(),tessellation:1,size:(20,20)};
+  let d=preview_plain_grid_transfer(source,&target,(1,2),&dest,(5,6),"GridOrientation_Down").unwrap();
+  let a:serde_json::Value=serde_json::from_str(source).unwrap();
+  let b:serde_json::Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(a["Player"],b["Player"]);
+  assert_eq!(b["World"]["GridCollection"]["Grids"]["10"]["Objects"],serde_json::json!({}));
+  assert_eq!(b["World"]["GridCollection"]["Grids"]["20"]["Objects"]["3"]["ItemID"],40200001);
+  assert!(preview_plain_grid_transfer(source,&target,(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
+  let other=source.replace("SceneLayouts/Village04/B.json","SceneLayouts/VillageExpansion01/B.json").replace("GridData/Villages/Village04-B.json","GridData/Villages/VillageExpansion01/VillageExpansion01-B.json");
+  let other_dest=PlainGridDestination{layout_path:"SceneLayouts/VillageExpansion01/B.json".into(),data_path:"GridData/Villages/VillageExpansion01/VillageExpansion01-B.json".into(),..dest.clone()};
+  assert!(preview_plain_grid_transfer(&other,&target,(1,2),&other_dest,(5,6),"GridOrientation_Down").is_err());
  }
  #[test]
  fn stock_transaction_roundtrip_retains_zero_marker_unknown_bytes_and_allocator(){
