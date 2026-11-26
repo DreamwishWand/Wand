@@ -76,6 +76,80 @@ pub(super) fn export(source:&[u8],ordinal:usize)->Result<String,CodecError>{
  let raw=format!("{{\"schema\":\"wand.preset.native-backup@1\",\"gameSchema\":{},\"kind\":\"{}\",\"storage\":\"{}\",\"baseItemId\":{},\"payload\":{}}}",s.version,r.kind,r.storage,r.base.map(|n|n.to_string()).unwrap_or_else(||"null".into()),r.payload.get());
  if raw.len()>MAX_FILE{return Err(CodecError::Bounds);}Ok(raw)
 }
+
+// A restore review is read-only. In particular, a valid allocator is not
+// evidence of motif ownership, base-item entitlement, slot capacity, or
+// runtime compatibility. Do not generate a modified Save from this receipt.
+fn same_design(a:&RawValue,b:&RawValue)->Result<bool,CodecError>{
+ let a=obj(a)?;let b=obj(b)?;
+ Ok(a.len()==b.len()&&a.iter().all(|(k,v)|k=="Id"||b.get(k).is_some_and(|w|v.get()==w.get())))
+}
+fn validate_allocator(entries:&[Entry<'_>],kind:&str,next:u32)->Result<bool,CodecError>{
+ let mut seen=std::collections::BTreeSet::new();
+ if next>=i32::MAX as u32{return Ok(false);}
+ for row in entries.iter().filter(|r|r.kind==kind){
+  let id=number(get(&obj(row.payload)?,"Id")?)?;
+  if id>=next||!seen.insert(id){return Ok(false);}
+ }
+ Ok(true)
+}
+pub(super) fn review(source:&[u8],backup:&str)->Result<String,CodecError>{
+ if backup.len()>MAX_FILE{return Err(CodecError::Bounds);}
+ let raw:Map=serde_json::from_str(backup).map_err(|_|BAD)?;
+ if raw.len()!=6||serde_json::from_str::<String>(get(&raw,"schema")?.get()).map_err(|_|BAD)?!="wand.preset.native-backup@1"{return Err(BAD);}
+ let version=number(get(&raw,"gameSchema")?)?;
+ if !matches!(version,624|626|643){return Err(BAD);}
+ let kind:String=serde_json::from_str(get(&raw,"kind")?.get()).map_err(|_|BAD)?;
+ let storage:String=serde_json::from_str(get(&raw,"storage")?.get()).map_err(|_|BAD)?;
+ let base:Option<u32>=serde_json::from_str(get(&raw,"baseItemId")?.get()).map_err(|_|BAD)?;
+ let payload=get(&raw,"payload")?;let fields=obj(payload)?;
+ let s=scan(source)?;
+ let group=match (kind.as_str(),storage.as_str(),base){
+  ("tom-furniture","furniture",Some(id))|("tom-clothing","female",Some(id))|("tom-clothing","male",Some(id))=>{
+   if id==0||number(get(&fields,"Item")?)?!=id||number(get(&fields,"Id")?)?>i32::MAX as u32{return Err(BAD);}
+   match storage.as_str(){"furniture"=>"tom-furniture","female"=>"tom-clothing-female",_=>"tom-clothing-male"}
+  }
+  ("native-decoration","decoration",None)=>{
+   obj(get(&fields,"GridCollection")?)?;
+   let _:String=serde_json::from_str(get(&fields,"PresetName")?.get()).map_err(|_|BAD)?;
+   if number(get(&fields,"StateFlags")?)?&16!=0{return Err(BAD);}
+   "native-decoration"
+  }
+  _=>return Err(BAD)
+ };
+ let available=|g:&str|s.status.iter().any(|v|v["group"]==g&&v["status"]=="read");
+ let target_readable=available(group);
+ let mut matches=0usize;let mut target_count=0usize;
+ for row in s.rows.iter().filter(|r|r.kind==kind&&r.storage==storage&&r.base==base){
+  target_count+=1;
+  if if kind=="native-decoration"{row.payload.get()==payload.get()}else{same_design(row.payload,payload)?}{matches+=1;}
+ }
+ let mut allocator=None;
+ if kind!="native-decoration"&&target_readable{
+  let root:Map=serde_json::from_slice(source).map_err(|_|BAD)?;
+  if kind=="tom-furniture"{
+   let world=obj(get(&root,"World")?)?;
+   let furniture=obj(get(&world,"FurnitureDesigns")?)?;
+   if let Ok(next)=get(&furniture,"NextDesignId").and_then(number){
+    allocator=Some(validate_allocator(&s.rows,&kind,next)?);
+   }
+  }else if available("tom-clothing-female")&&available("tom-clothing-male"){
+   let player=obj(get(&root,"Player")?)?;
+   if let Ok(next)=get(&player,"NextClothingDesignID").and_then(number){
+    allocator=Some(validate_allocator(&s.rows,&kind,next)?);
+   }
+  }
+ }
+ let source_kind=if kind=="native-decoration"{None}else{fields.get("Source").and_then(|r|number(r).ok()).filter(|n|*n<=2)};
+ let receipt=json!({"contract":"wand.native-preset-restore-review@1","kind":kind,"storage":storage,"baseItemId":base,
+  "schemaMatches":version==s.version,"backupSchema":version,"targetSchema":s.version,"targetReadable":target_readable,
+  "matchingDesigns":if target_readable{Some(matches)}else{None},
+  "existingDesignsForItem":if target_readable{Some(target_count)}else{None},
+  "allocatorConsistent":allocator,"designSource":source_kind,"requiresNewId":kind!="native-decoration",
+  "capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
+ serde_json::to_string(&receipt).map_err(|_|BAD)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -89,5 +163,27 @@ mod tests{
  fn unsupported_group_does_not_claim_empty_or_hide_supported_group(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"FemaleClothingDesigns":{"1":{"Designs":{"2":{"Id":9,"Item":1}}}},"MaleClothingDesigns":{}},"World":{"FurnitureDesigns":{"Items":{}},"DecorationPresets":[]}}"#;
   let v:Value=serde_json::from_str(&list(raw).unwrap()).unwrap();assert_eq!(v["groups"][1]["status"],"unavailable");assert_eq!(v["groups"][2]["status"],"read");
+ }
+
+ #[test]
+ fn review_uses_both_clothing_maps_and_does_not_reuse_deleted_ids(){
+  let source=br#"{"GameInfo":{"Version":643},"Player":{"NextClothingDesignID":9,"FemaleClothingDesigns":{"30000001":{"Designs":{"3":{"Id":3,"Item":30000001,"Source":2,"PlatformAccountId":"PRIVATE","Future":1e-17}}}},"MaleClothingDesigns":{"30000002":{"Designs":{"7":{"Id":7,"Item":30000002}}}}},"World":{"FurnitureDesigns":{"Items":{},"NextDesignId":4},"DecorationPresets":[]}}"#;
+  let backup=export(source,1).unwrap();
+  let v:Value=serde_json::from_str(&review(source,&backup).unwrap()).unwrap();
+  assert_eq!(v["matchingDesigns"],1);assert_eq!(v["existingDesignsForItem"],1);assert_eq!(v["allocatorConsistent"],true);assert_eq!(v["writerAuthorized"],false);
+  assert!(!v.to_string().contains("PRIVATE"));assert!(!v.to_string().contains("Future"));
+  let changed=String::from_utf8(source.to_vec()).unwrap().replace("\"NextClothingDesignID\":9","\"NextClothingDesignID\":7");
+  let v:Value=serde_json::from_str(&review(changed.as_bytes(),&backup).unwrap()).unwrap();assert_eq!(v["allocatorConsistent"],false);
+  let changed=backup.replace("\"gameSchema\":643","\"gameSchema\":626");
+  let v:Value=serde_json::from_str(&review(source,&changed).unwrap()).unwrap();assert_eq!(v["schemaMatches"],false);
+ }
+ #[test]
+ fn review_requires_full_target_group_and_preserves_unknowns(){
+  let source=br#"{"GameInfo":{"Version":643},"Player":{"NextClothingDesignID":9,"FemaleClothingDesigns":{"30000001":{"Designs":{"3":{"Id":3,"Item":30000001,"Source":1,"Future":1e-17}}}},"MaleClothingDesigns":{}},"World":{"FurnitureDesigns":{"Items":{},"NextDesignId":4},"DecorationPresets":[]}}"#;
+  let backup=export(source,1).unwrap();
+  let changed=backup.replace("1e-17","2e-17");
+  let v:Value=serde_json::from_str(&review(source,&changed).unwrap()).unwrap();assert_eq!(v["matchingDesigns"],0);
+  let malformed=backup.replace("\"baseItemId\":30000001","\"baseItemId\":30000002");
+  assert!(review(source,&malformed).is_err());
  }
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import NativeRestoreReview from '$lib/presets/NativeRestoreReview.svelte';
  import PresetAuthorPanel from '$lib/presets/PresetAuthorPanel.svelte';
  import PublicPresetCatalog from '$lib/presets/PublicPresetCatalog.svelte';
  import {catalogWords} from '$lib/presets/catalog-words.ts';
@@ -86,7 +87,7 @@
   <div class="library"><div class="entries">{#each entries as entry (entry.id)}<button type="button" class="entry" aria-pressed={selected===entry.id} on:click={()=>choose(entry)}><strong>{entry.name}</strong><small>{p[kindIndex[entry.kind]]}{entry.privateBackup?' · '+w[8]:''}</small></button>{:else}<p>{p[9]}</p>{/each}</div>
   {#if current}<aside><strong>{current.name}</strong><small>{p[kindIndex[current.kind]]} {current.version??''}</small>{#if packedSize!==null}<small>{w[20]}: {packedSize.toLocaleString(locale)} B</small>{/if}
   {#if current.publicSource}<small>{cw[14]} · {current.publicSource.creatorName}</small>{/if}
-  {#if current.privateBackup}<small>{w[8]} · {w[18]}</small>{:else}<small>{w[21]}</small>{/if}
+  {#if current.privateBackup}<small>{w[8]} · {w[18]}</small><NativeRestoreReview entry={current} {source} {locale}/>{:else}<small>{w[21]}</small>{/if}
   {#if counts}<small>{counts.size} / {[...counts.values()].reduce((n,v)=>n+v,0)}</small><div class="item-list">{#each [...counts].slice(0,120) as [id,n] (id)}<div>{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{names.get(id)??'—'}</span><strong>×{n}</strong></div>{/each}</div>{/if}
   {#if codeView}<code>{codeView}</code><small>{w[12]}</small>{/if}
   <div class="toolbar"><input bind:value={alias} maxlength="160" aria-label={p[4]}/><button type="button" on:click={()=>{if(current&&!renameSessionPreset(current.id,alias))error=true;}}>{p[4]}</button></div>
