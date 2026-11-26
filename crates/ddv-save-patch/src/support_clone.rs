@@ -291,3 +291,41 @@ pub fn preview_bulk_support_pickup(source:&str,rows:&[super::bulk_furniture::Bul
  let patched_json=super::bulk_furniture::preview_bulk_stock(&candidate,&stock,true)?;
  Ok(GridCoordinateDraft{patched_json,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
+
+#[cfg(test)]
+mod bulk_support_pickup_tests{
+ use super::*;
+ use crate::bulk_furniture::BulkPickup;
+ #[test]
+ fn multiple_support_trees_return_every_item_and_preserve_neighbor_grid_and_counters(){
+  let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let source=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{
+   "7":{"ID":7,"NextGridObjectID":10,"Objects":{
+    "1":{"ID":1,"ItemID":40005160,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":80}}},
+    "2":{"ID":2,"ItemID":40005160,"X":3,"Y":3,"Orientation":"GridOrientation_Left","State":{"SubGrid":{"GridID":81}}},
+    "3":{"ID":3,"ItemID":40005161,"X":8,"Y":8,"Orientation":"GridOrientation_Down","Unknown":100.0}}},
+   "8":{"ID":8,"Objects":{},"Unknown":100.0},
+   "80":{"ID":80,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}},
+   "81":{"ID":81,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}
+  }}}});
+  let raw=source.to_string().replace("\"Unknown\":100.0","\"Unknown\":1e2");
+  let a=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:"1".into(),item_id:40005160};
+  let b=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:"2".into(),item_id:40005160};
+  let rows=[BulkPickup{target:&a,expected:(1,1),orientation:"GridOrientation_Down"},BulkPickup{target:&b,expected:(3,3),orientation:"GridOrientation_Left"}];
+  let first=preview_support_tree_pickup(&raw,&a,(1,1)).unwrap();
+  let sequential=preview_support_tree_pickup(&first.patched_json,&b,(3,3)).unwrap();
+  let result=preview_bulk_support_pickup(&raw,&rows).unwrap();
+  let actual:Value=serde_json::from_str(&result.patched_json).unwrap();
+  assert_eq!(actual,serde_json::from_str::<Value>(&sequential.patched_json).unwrap());
+  assert_eq!(actual["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"],2);
+  assert_eq!(actual["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],4);
+  assert_eq!(actual["World"]["GridCollection"]["NextGridID"],100);
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],10);
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["8"],source["World"]["GridCollection"]["Grids"]["8"]);
+  assert_eq!(result.patched_json.matches("\"Unknown\":1e2").count(),2);
+  let mut stale=source.clone();stale["ExternalGridID"]=Value::from(81);
+  assert!(preview_bulk_support_pickup(&stale.to_string(),&rows).is_err());
+  let mut duplicate=source;duplicate["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"]=Value::from(80);
+  assert!(preview_bulk_support_pickup(&duplicate.to_string(),&rows).is_err());
+ }
+}
