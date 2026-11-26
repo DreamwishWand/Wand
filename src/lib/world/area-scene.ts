@@ -102,3 +102,71 @@ export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],r
  }
  return {rows,ghosts,areaRows:rows};
 }
+
+export type AreaSceneTransform='left'|'right'|'horizontal'|'vertical';
+/** Transform physical cell coordinates, not the native Ext anchor as a post.
+ * Fence extents are derived from the exact two endpoints; no state is lost.
+ * A reflected furniture footprint must have an exact native orientation.
+ * Populated supports retain their local arrangement on rotation; reflection
+ * of a populated support is not represented by a root-orientation change. */
+export function transformAreaScene(doc:AreaScene,defs:GroupGeometry,mode:AreaSceneTransform):AreaScene|null{
+ const quarter=mode==='left'||mode==='right',fx=mode==='vertical',fy=mode==='horizontal';
+ const shape=(p:AreaSceneItem)=>{
+  const map=defs.get(p.itemId),g=map?.get(2)??map?.get(1),factor=map?.has(2)?2:1;
+  if(!g)return null;
+  const a=p.network?networkSceneShape(p,g,factor):g.shapes[p.itemId+':'+p.orientation*4];
+  if(!a||!a.cellCount||nativeActionBlocked(g.editRestrictions,'select')||nativeActionBlocked(g.editRestrictions,'move'))return null;
+  const scale=2/factor;
+  const cells=new Set<string>();
+  for(const run of a.runs)for(let x=0;x<run.width*scale;x++)for(let y=0;y<scale;y++)cells.add((run.x*scale+x)+':'+(run.y*scale+y));
+  if(cells.size!==a.cellCount*scale*scale)return null;
+  return {w:a.width*scale,h:a.height*scale,cells,g};
+ };
+ const shapes=doc.items.map(shape);if(shapes.some(a=>!a))return null;
+ const w=Math.max(...doc.items.map((p,i)=>p.dx+shapes[i]!.w)),h=Math.max(...doc.items.map((p,i)=>p.dy+shapes[i]!.h));
+ function point(x:number,y:number,cell:number):[number,number]{
+  if(mode==='right')return [h-y-cell,x];
+  if(mode==='left')return [y,w-x-cell];
+  return [fx?w-x-cell:x,fy?h-y-cell:y];
+ }
+ const out:AreaSceneItem[]=[];
+ for(let i=0;i<doc.items.length;i++){
+  const p=doc.items[i],a=shapes[i]!;
+  let dx:number,dy:number,orientation=p.orientation;
+  if(p.network?.kind==='fence'){
+   const f=fenceFamily(p.network.base);if(!f)return null;
+   const k=p.itemId===f.base?0:(p.network.diagonal?f.diagExt:f.ext).indexOf(p.itemId)+1;
+   if(k===0){[dx,dy]=point(p.dx,p.dy,2);orientation=2;}
+   else{
+    if(k<1)return null;
+    const q=2,left=p.orientation===3,diag=p.network.diagonal;
+    const start: [number,number]=diag?(left?[p.dx-q,p.dy+k*q]:[p.dx-q,p.dy-q]):left?[p.dx,p.dy-q]:[p.dx-q,p.dy];
+    const end:[number,number]=[start[0]+(diag||!left?(k+1)*q:0),start[1]+(diag?(left?-1:1)*(k+1)*q:left?(k+1)*q:0)];
+    let u=point(...start,q),v=point(...end,q);
+    if(u[0]>v[0]||u[0]===v[0]&&u[1]>v[1])[u,v]=[v,u];
+    const sx=Math.sign(v[0]-u[0]),sy=Math.sign(v[1]-u[1]);
+    if(diag?Math.abs(v[0]-u[0])!==(k+1)*q||Math.abs(v[1]-u[1])!==(k+1)*q:Math.abs(v[0]-u[0])+Math.abs(v[1]-u[1])!==(k+1)*q)return null;
+    dx=u[0]+(sx?q:0);dy=u[1]+(sy===0?0:sy>0?q:-k*q);orientation=sx===0||diag&&sy<0?3:2;
+   }
+  }else if(p.network?.kind==='road'){
+   [dx,dy]=point(p.dx,p.dy,a.w);orientation=2;
+  }else{
+   if(!quarter&&p.support?.tree.objects.length)return null;
+   orientation=mode==='right'?(p.orientation+3)%4:mode==='left'?(p.orientation+1)%4:fx?(4-p.orientation)%4:(6-p.orientation)%4;
+   if(orientation!==p.orientation&&nativeActionBlocked(a.g.editRestrictions,'rotate'))return null;
+   [dx,dy]=mode==='right'?[h-p.dy-a.h,p.dx]:mode==='left'?[p.dy,w-p.dx-a.w]:[fx?w-p.dx-a.w:p.dx,fy?h-p.dy-a.h:p.dy];
+  }
+  const next={...p,dx,dy,orientation},b=shape(next);
+  if(!b||b.w!==(quarter?a.h:a.w)||b.h!==(quarter?a.w:a.h)||b.cells.size!==a.cells.size)return null;
+  // A road is a square native cell. Fence extension geometry is checked
+  // against its transformed logical endpoints and source-native footprint.
+  for(const cell of a.cells){
+   const [x,y]=cell.split(':').map(Number);
+   const [tx,ty]=mode==='right'?[a.h-1-y,x]:mode==='left'?[y,a.w-1-x]:[fx?a.w-1-x:x,fy?a.h-1-y:y];
+   if(!b.cells.has(tx+':'+ty))return null;
+  }
+  out.push(next);
+ }
+ const x=Math.min(...out.map(p=>p.dx)),y=Math.min(...out.map(p=>p.dy));
+ try{return parseAreaScene(JSON.stringify({...doc,items:out.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))}));}catch{return null;}
+}
