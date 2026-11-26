@@ -1,6 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
  import RoomProjectApply from './RoomProjectApply.svelte';
+ import RoomProjectCapture from './RoomProjectCapture.svelte';
  import {roomApplyWords} from './room-project-apply.ts';
  import SubgridInspector from './SubgridInspector.svelte';
  import type {DesignSymmetry,SymmetryMode} from './design-symmetry.ts';
@@ -306,7 +307,7 @@
  <div class="room-body" inert={!!supportParent||projectApplyOpen}>
   <nav aria-label={w[3]}>{#each rooms as r,i}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{w[1]} {r.house} / {w[2]} {r.floor} · {r.name||w[3]+' '+r.ordinal}</button>{/each}</nav>
   <div class="room-content">
-   <div class="finish-heading"><strong>{w[15]}</strong>{#if testExport}<button type="button" disabled={blocked||!file||!terrainWorker||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent} on:click={()=>{resetObject();cancelPreview();finishOpen=false;projectApplyOpen=true;}}>{rap[0]}</button>{/if}<button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
+   <div class="finish-heading"><strong>{w[15]}</strong>{#if file&&terrainWorker}<RoomProjectCapture {file} {room} witnesses={supportParents} worker={terrainWorker} {locale} {nextRequest} blocked={blocked||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent||projectApplyOpen||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft}/>{/if}{#if testExport}<button type="button" disabled={blocked||!file||!terrainWorker||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent} on:click={()=>{resetObject();cancelPreview();finishOpen=false;projectApplyOpen=true;}}>{rap[0]}</button>{/if}<button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
    <div class="finishes">
     {#each room.surfaces as s,i}<button type="button" class="finish-card" aria-pressed={surface===i} on:click={()=>{linkedAxis=null;resetObject();cancelPreview();surface=i;query='';highlight=null;limit=80;}}><span>{i===0?w[4]:w[5]+' '+i}</span>{#if s.finish&&images.get(s.finish)}<img src={images.get(s.finish)} alt="" loading="lazy"/>{/if}<small>{s.finish===0?w[11]:name(s.finish,records,locale,w[12])}</small></button>{/each}
     <div class="finish-card"><span>{w[6]}</span>{#if room.ceiling&&images.get(room.ceiling)}<img src={images.get(room.ceiling)} alt="" loading="lazy"/>{/if}<small>{room.ceiling===0?w[11]:name(room.ceiling,records,locale,w[12])}</small></div>
