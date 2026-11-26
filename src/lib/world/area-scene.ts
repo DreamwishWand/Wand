@@ -1,6 +1,6 @@
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
 import {captureFurnitureGroup,groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-placement.ts';
-import {parseSupportScene,supportSceneRootCounts,type SupportScene} from './support-scene.ts';
+import {parseSupportScene,supportSceneRootCounts,SCENE_FURNITURE_LIMIT,mixedSceneSizeValid,type SupportScene} from './support-scene.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {stockFootprintFeedback,type StockCandidate} from './save-furniture-placement.ts';
@@ -11,6 +11,7 @@ import {fenceBaseIdentity} from './fence-design.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 
+export const AREA_SCENE_ROOT_LIMIT=SCENE_FURNITURE_LIMIT+256+128;
 export type SceneNetwork={kind:'road';diagonal:boolean}|{kind:'fence';diagonal:boolean;base:number};
 export interface AreaSceneItem extends DesignClipItem{support:SupportScene|null;network:SceneNetwork|null}
 export interface AreaScene{schema:'wand.preset.area-scene@1';gameVersion:'1.26.2';factor:2;anchor:'corner'|'center';items:AreaSceneItem[]}
@@ -31,7 +32,7 @@ export function areaSceneCounts(items:readonly AreaSceneItem[]){
 }
 export function parseAreaScene(raw:string):AreaScene{
  if(raw.length>262144)throw Error('SCENE_LIMIT');const v:unknown=JSON.parse(raw);
- if(!rec(v)||Object.keys(v).length!==5||v.schema!=='wand.preset.area-scene@1'||v.gameVersion!=='1.26.2'||v.factor!==2||!(v.anchor==='corner'||v.anchor==='center')||!Array.isArray(v.items)||!v.items.length||v.items.length>416)throw Error('SCENE_INVALID');
+ if(!rec(v)||Object.keys(v).length!==5||v.schema!=='wand.preset.area-scene@1'||v.gameVersion!=='1.26.2'||v.factor!==2||!(v.anchor==='corner'||v.anchor==='center')||!Array.isArray(v.items)||!v.items.length||v.items.length>AREA_SCENE_ROOT_LIMIT)throw Error('SCENE_INVALID');
  const items:AreaSceneItem[]=v.items.map(p=>{
   if(!rec(p)||Object.keys(p).length!==6||!int(p.itemId,0xffffffff)||!int(p.dx,131072)||!int(p.dy,131072)||!int(p.orientation,3))throw Error('POSE');
   const network=p.network===null?null:parseSceneNetwork(p.network,p.itemId,p.orientation);
@@ -40,18 +41,18 @@ export function parseAreaScene(raw:string):AreaScene{
   return {itemId:p.itemId,dx:p.dx,dy:p.dy,orientation:p.orientation,network,support};
  });
  const roads=items.filter(p=>p.network?.kind==='road'),fences=items.filter(p=>p.network?.kind==='fence');
- if(!roads.length&&!fences.length||roads.length>256||fences.length>128||[...areaSceneCounts(items).values()].reduce((a,b)=>a+b,0)>32||Math.min(...items.map(p=>p.dx))!==0||Math.min(...items.map(p=>p.dy))!==0)throw Error('SCENE_LIMIT');
+ if(!roads.length&&!fences.length||roads.length>256||fences.length>128||!mixedSceneSizeValid(items.filter(p=>!p.network))||Math.min(...items.map(p=>p.dx))!==0||Math.min(...items.map(p=>p.dy))!==0)throw Error('SCENE_LIMIT');
  return {schema:'wand.preset.area-scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items};
 }
 export function captureAreaPoses(items:readonly MainlandSavedObject[]):DesignClipItem[]|null{
- if(!items.length||items.length>416||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
+ if(!items.length||items.length>AREA_SCENE_ROOT_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows:DesignClipItem[]=[];let roads=0,fences=0,furniture=0;
  for(const p of items){
   const id=Number(p.object.itemId),orientation=p.object.orientation,layer=p.object.layer;
   if(!p.shape||!isCardinal(orientation)||nativeActionBlocked(p.object.editRestrictions,'select')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   if(layer==='ground'&&Math.floor(id/100000)===401&&orientation==='GridOrientation_Down'&&!p.object.subgrid){if(++roads>256)return null;}
   else if(layer==='fence'&&Math.floor(id/100000)===407&&['GridOrientation_Down','GridOrientation_Left'].includes(orientation)&&!p.object.subgrid){if(++fences>128)return null;}
-  else if(++furniture>32||!captureFurnitureGroup([p],true))return null;
+  else if(++furniture>SCENE_FURNITURE_LIMIT||!captureFurnitureGroup([p],true))return null;
   rows.push({itemId:id,dx:p.x*2,dy:-p.y*2,orientation:CARDINAL_ORIENTATIONS.indexOf(orientation)});
  }
  if(!roads&&!fences)return null;
