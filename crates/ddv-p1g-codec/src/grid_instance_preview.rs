@@ -2289,3 +2289,72 @@ mod terrain_session_tests{
         assert!(resolve_grid_mixed_targets(save,&[(3,40005160,(4,5),"full".into(),None)]).is_ok());
     }
 }
+
+fn area_network_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
+ let bad=CodecError::Json;
+ let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
+ if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
+ resolve_plain_grid_destination(profile,witness)
+}
+fn area_network_rows(profile:&[u8],d:&ddv_save_patch::PlainGridDestination)->Result<Vec<Value>,CodecError>{
+ let bad=CodecError::Json;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let map=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+ let mut rows=Vec::new();
+ for (id,v) in map{
+  let item=v.get("ItemID").and_then(Value::as_u64).ok_or(bad)?;
+  if !matches!(item/100_000,401|407){continue;}
+  if v.get("ID").and_then(Value::as_u64)!=key_id(id)||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(bad);}
+  let int=|k:&str|v.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+  let orientation=v.get("Orientation").and_then(Value::as_str).ok_or(bad)?;
+  if !matches!(orientation,"GridOrientation_Down"|"GridOrientation_Left"){return Err(bad);}
+  let diagonal=ddv_save_patch::road_mode(v).ok_or(bad)?;
+  let network=if item/100_000==401{serde_json::json!({"kind":"road","diagonal":diagonal})}else{serde_json::json!({"kind":"fence","diagonal":diagonal,"base":ddv_save_patch::fence_topology::family_for_part(u32::try_from(item).map_err(|_|bad)?,diagonal).ok_or(bad)?})};
+  rows.push(serde_json::json!({"itemId":item,"x":int("X")?,"y":int("Y")?,"orientation":if orientation=="GridOrientation_Left"{3}else{2},"network":network}));
+ }
+ if rows.len()>4608{return Err(bad);}
+ Ok(rows)
+}
+fn parse_area_network_poses(rows:&Value)->Result<Vec<ddv_save_patch::AreaNetworkPose>,CodecError>{
+ let bad=CodecError::Json;
+ rows.as_array().filter(|a|a.len()<=4608).ok_or(bad)?.iter().map(|row|{
+  let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"x"|"y"|"orientation"|"network"))).ok_or(bad)?;
+  let item=o.get("itemId").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+  let orientation=o.get("orientation").and_then(Value::as_u64).filter(|n|matches!(n,2|3)).ok_or(bad)?;
+  let n=o.get("network").and_then(Value::as_object).ok_or(bad)?;
+  let diagonal=n.get("diagonal").and_then(Value::as_bool).ok_or(bad)?;
+  match n.get("kind").and_then(Value::as_str){
+   Some("road") if n.len()==2&&item/100_000==401&&orientation==2=>{},
+   Some("fence") if n.len()==3&&item/100_000==407&&ddv_save_patch::fence_topology::family_for_part(item,diagonal).map(u64::from)==n.get("base").and_then(Value::as_u64)=>{},
+   _=>return Err(bad)
+  }
+  Ok(ddv_save_patch::AreaNetworkPose{item,x:int("x")?,y:int("y")?,left:orientation==3,diagonal})
+ }).collect()
+}
+pub(super) fn inspect_area_network(profile:&[u8],witness:&str)->Result<String,CodecError>{
+ let bad=CodecError::Json;
+ let value:Value=serde_json::from_str(witness).map_err(|_|bad)?;
+ let d=area_network_destination(profile,&value)?;
+ let rows=area_network_rows(profile,&d)?;
+ ddv_save_patch::validate_area_network(&d,&parse_area_network_poses(&Value::Array(rows.clone()))?).map_err(|_|bad)?;
+ serde_json::to_string(&rows).map_err(|_|bad)
+}
+pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::Zeroize;
+ let bad=CodecError::Json;
+ if plan.len()>2_000_000{return Err(CodecError::Bounds);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+ let d=area_network_destination(profile,o.get("destination").ok_or(bad)?)?;
+ let actual=area_network_rows(profile,&d)?;
+ let before=parse_area_network_poses(o.get("before").ok_or(bad)?)?;
+ let after=parse_area_network_poses(o.get("after").ok_or(bad)?)?;
+ if parse_area_network_poses(&Value::Array(actual))?.into_iter().collect::<HashSet<_>>()!=before.iter().copied().collect(){return Err(bad);}
+ let mut result=ddv_save_patch::preview_area_network_replacement(std::str::from_utf8(profile).map_err(|_|bad)?,&d,&before,&after).map_err(|_|bad)?;
+ let ids:Vec<_>=result.removed.iter().chain(&result.allocated).cloned().collect();
+ let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&ids);
+ if !refs.is_ok_and(|r|r.blocking()==0&&r.historical==0){result.draft.patched_json.zeroize();return Err(bad);}
+ Ok(result.draft.patched_json)
+}
