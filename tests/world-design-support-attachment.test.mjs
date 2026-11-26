@@ -43,3 +43,26 @@ test('direct support edit retains exact source factor and stages one parent oper
  assert.equal(supportEditAttachment(empty,localTemplate,undefined).designOnly,true);
  assert.equal(supportEditAttachment({snapshots:[Array.from({length:32},(_,i)=>({id:i+1,itemId:child,x:i,y:0,orientation:2}))],cursor:0,nextId:33},localTemplate,undefined),null);
 });
+
+test('point symmetry preserves the entire parent-local arrangement and rejects different counterpart contents',async()=>{
+ const {reflectedDesignItem,symmetryPlan,commitSymmetry,symmetricMoveDesign,symmetricRotateDesign}=await import('../src/lib/world/design-symmetry.ts');
+ const axis={mode:'point',x2:16,y2:16};
+ const t=replaceDesignAttachment(placeDesign(emptyDesign(),geometry,2,3,2,16,16),1,support,geometry),p=currentDesign(t)[0];
+ assert.deepEqual(reflectedDesignItem(p,geometry,axis),{itemId:owner,x:12,y:11,orientation:0,attachment:support});
+ assert.equal(reflectedDesignItem(p,geometry,{...axis,mode:'vertical'}),null);
+ assert.equal(reflectedDesignItem(p,geometry,{...axis,mode:'horizontal'}),null);
+ const plan=symmetryPlan(t,[p],defs,axis,false,16,16),paired=commitSymmetry(t,plan,defs,16,16);
+ assert.equal(currentDesign(paired).length,2);assert.deepEqual(currentDesign(paired)[1].attachment,support);
+ assert.deepEqual([...designItemCounts(currentDesign(paired))],[[child,2],[owner,2]]);
+ const eligible=new Set([1,2]),moved=symmetricMoveDesign(paired,[1],defs,axis,1,0,eligible,16,16);
+ assert.deepEqual(currentDesign(moved).map(q=>[q.x,q.y]),[[3,3],[11,11]]);
+ assert.ok(currentDesign(moved).every(q=>JSON.stringify(q.attachment)===JSON.stringify(support)));
+ const rotated=symmetricRotateDesign(paired,[1],defs,axis,1,eligible,16,16);
+ assert.deepEqual(currentDesign(rotated).map(q=>q.orientation),[1,3]);assert.deepEqual(currentDesign(rotated)[1].attachment,support);
+ const altered={...support,scene:{...support.scene,tree:{...support.scene.tree,objects:[{...support.scene.tree.objects[0],x:1}]}}};
+ const incompatible=replaceDesignAttachment(paired,2,altered,geometry);
+ assert.equal(symmetricMoveDesign(incompatible,[1],defs,axis,1,0,eligible,16,16),null);
+ assert.equal(symmetryPlan(incompatible,[p],defs,axis,false,16,16),null);
+ const local=replaceDesignAttachment(t,1,{...support,designOnly:true},geometry);
+ assert.equal(reflectedDesignItem(currentDesign(local)[0],geometry,axis).attachment.designOnly,true);
+});
