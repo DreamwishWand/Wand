@@ -2,7 +2,7 @@
  import {onMount,onDestroy} from 'svelte';
  import SubgridInspector from './SubgridInspector.svelte';
  import {supportWords} from './subgrid-local.ts';
- import {parseIndoorSupportParents,type IndoorSupportWitness} from './indoor-support.ts';
+ import {parseIndoorSupportParents,roomSupportPickupPlan,type IndoorSupportWitness} from './indoor-support.ts';
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
@@ -30,6 +30,7 @@
  $: supportNames=new Map([...records].map(([id,r])=>[id,r.names[locale]??r.names.en??String(id)]));
  $: roomSupports=supportParents.filter(p=>p.roomOrdinal===room?.ordinal&&p.surfaceOrdinal===face?.ordinal);
  $: supportText=supportWords[locale];
+ $: roomPickupPlan=supportParent?roomSupportPickupPlan(face,roomSupports,[supportParent.index],shapes,removable):null;
  $: if(supportParent&&file!==supportFile)closeSupport();
  function closeSupport(){supportParent=null;supportFile=null;}
  function openSupport(p:IndoorSupportWitness){if(!file||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft||editCopy||editWorker||finishOpen)return;clearEdit();supportParent=p;supportFile=file;}
@@ -237,7 +238,7 @@
   </div>
  </div>
  {/if}
- {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 </div>
 <style>
