@@ -2,6 +2,7 @@
  import {onDestroy} from 'svelte';
  import {base} from '$app/paths';
  import {worldArtwork} from './world-artwork.ts';
+ import {roomProjectWords} from './room-project-design.ts';
  import {roomApplyWords,roomApplyMatches,roomApplyShortages,buildRoomApplyPlan,type RoomApplyPlan,type RoomApplySurfaceGeometry} from './room-project-apply.ts';
  import {parseRoomProject,roomProjectCounts,ROOM_PROJECT_FILE_LIMIT,type RoomProjectSurface} from './room-project-design.ts';
  import type {RoomDesignTemplate} from './room-design.ts';
@@ -18,6 +19,7 @@
  let alive=true,epoch=0,seen:Worker|null=null,names=new Map<number,string>(),images=new Map<number,string>();
  const requests=new Map<number,{resolve:(d:any)=>void;reject:(e:Error)=>void}>();
  $: w=roomApplyWords[locale];
+ $: rw=roomProjectWords[locale];
  $: testExport=browser&&testSaveExportEnabled(window.location);
  $: cw=testSaveWords[locale];
  $: if(worker!==seen)subscribe(worker);
@@ -66,8 +68,8 @@
  <header><strong>{w[0]} · {room.name}</strong><button type="button" on:click={onClose}>{w[8]}</button></header>
  <p>{w[3]} · {w[15]}</p>
  <input hidden type="file" accept=".json,application/json" bind:this={input} on:change={open}/><button type="button" disabled={busy||blocked||!worker} on:click={()=>input.click()}>{w[1]}</button>
- {#if doc.length}<section><strong>{w[2]}</strong>{#each doc as s,i}<label>{i===0?locale==='ja'?'床面':'Floor':(locale==='ja'?'壁面':'Wall')+' '+i} · {s.template.label}
-  <select disabled={busy||!!copy} value={mapping.get(s.id)??0} on:change={e=>mapFace(s.id,Number(e.currentTarget.value))}><option value={0}>—</option>{#each room.surfaces.filter(f=>roomApplyMatches(s,f)) as f}<option value={f.ordinal} disabled={[...mapping].some(([id,o])=>id!==s.id&&o===f.ordinal)}>{f.kind==='floor'?(locale==='ja'?'床面':'Floor'):(locale==='ja'?'壁面':'Wall')+' '+(f.wallPosition===null?f.ordinal:f.wallPosition+1)}</option>{/each}</select></label>{/each}
+ {#if doc.length}<section><strong>{w[2]}</strong>{#each doc as s,i}<label>{i===0?rw[1]:(rw[2])+' '+i} · {s.template.label}
+  <select disabled={busy||!!copy} value={mapping.get(s.id)??0} on:change={e=>mapFace(s.id,Number(e.currentTarget.value))}><option value={0}>—</option>{#each room.surfaces.filter(f=>roomApplyMatches(s,f)) as f}<option value={f.ordinal} disabled={[...mapping].some(([id,o])=>id!==s.id&&o===f.ordinal)}>{f.kind==='floor'?(rw[1]):(rw[2])+' '+(f.wallPosition===null?f.ordinal:f.wallPosition+1)}</option>{/each}</select></label>{/each}
  {#if !mapped}<small>{w[12]}</small>{/if}</section>
  <section><strong>{w[9]} · {[...counts.furniture.values()].reduce((a,b)=>a+b,0)}</strong><div class="apply-items">{#each [...counts.furniture] as [id,n]}<div>{#if images.get(id)}<img src={images.get(id)} alt=""/>{/if}<span>{names.get(id)??'—'}</span><b>{n} / {stock.get(id)??0}</b></div>{/each}</div>{#if shortages.length}<small role="alert">{w[11]} · {shortages.length}</small>{/if}</section>
  {#if counts.finishes.size}<section><strong>{w[10]}</strong><div class="apply-items">{#each [...counts.finishes] as [id,n]}<div>{#if images.get(id)}<img src={images.get(id)} alt=""/>{/if}<span>{names.get(id)??'—'}</span><b>{n}</b></div>{/each}</div></section>{/if}
