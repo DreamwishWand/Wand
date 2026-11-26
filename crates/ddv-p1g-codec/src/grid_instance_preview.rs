@@ -2701,3 +2701,34 @@ mod complete_area_support_tests{
   assert!(biome_decoration_candidate(&source,&bad.to_string()).is_err());
  }
 }
+
+#[cfg(test)]
+mod large_area_preset_tests{
+ use super::*;
+ #[test]
+ fn area_replacement_exceeds_interactive_limit_and_rejects_late_invalid_placement(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":160}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":1,"Objects":{}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{}}}}}});
+  let destination=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":32,"sizeY":32});
+  let add=(0..160).map(|i|serde_json::json!({"destination":destination,"itemId":"40005160","x":i%20+1,"y":i/20+1,"orientation":"GridOrientation_Down"})).collect::<Vec<_>>();
+  let bytes=serde_json::to_vec(&raw).unwrap();
+  assert!(plain_group_paste_candidate(&bytes,&serde_json::to_string(&add).unwrap()).is_err());
+  let mut plan=serde_json::json!({"destination":destination,"remove":[],"add":add});
+  let candidate=biome_furniture_candidate(&bytes,&plan.to_string()).unwrap();
+  let result:Value=serde_json::from_str(&candidate).unwrap();
+  assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().len(),160);
+  assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],161);
+  assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"],0);
+  assert_eq!(result["World"]["GridCollection"]["Grids"]["43"],raw["World"]["GridCollection"]["Grids"]["43"]);
+  plan["add"][159]["x"]=Value::from(32);
+  assert!(biome_furniture_candidate(&bytes,&plan.to_string()).is_err());
+  let remove=(1..=160).map(|i|{let obj=&result["World"]["GridCollection"]["Grids"]["42"]["Objects"][i.to_string()];(i,obj)}).collect::<Vec<_>>();
+  // Native Save ordinals use lexical record order, not numeric IDs.
+  let mut ids=remove;ids.sort_by_key(|(i,_)|i.to_string());
+  let rows=ids.iter().enumerate().map(|(i,(_,obj))|serde_json::json!({"localOrdinal":i+1,"itemId":"40005160","expectedX":obj["X"],"expectedY":obj["Y"],"expectedOrientation":"GridOrientation_Down"})).collect::<Vec<_>>();
+  let clear=serde_json::json!({"destination":destination,"remove":rows,"add":[]});
+  let returned:Value=serde_json::from_str(&biome_furniture_candidate(candidate.as_bytes(),&clear.to_string()).unwrap()).unwrap();
+  assert_eq!(returned["Player"],raw["Player"]);assert!(returned["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+ }
+}
