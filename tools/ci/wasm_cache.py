@@ -86,7 +86,7 @@ def fingerprint(root: Path, crate: str, output: str, features: str,
                         if "path" in dependency:
                             visit(directory / dependency["path"])
 
-    if any((root / name).exists() for name in ("Cargo.toml", ".cargo/config", ".cargo/config.toml")):
+    if any((root / name).exists() for name in ("Cargo.toml", ".cargo/config", ".cargo/config.toml", "crates/.cargo/config", "crates/.cargo/config.toml")):
         raise Unsupported("Root Cargo workspace or configuration")
     visit(root / crate)
     # A generated lockfile is deliberately included: current crates need not
