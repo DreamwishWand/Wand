@@ -6,6 +6,7 @@ const BAD:PatchError=PatchError::InvalidTarget;
 const LIMIT:usize=2048;
 pub struct BulkPickup<'a>{pub target:&'a GridCoordinateTarget,pub expected:(i32,i32),pub orientation:&'a str}
 pub struct BulkPlace<'a>{pub destination:&'a PlainGridDestination,pub item_id:u64,pub xy:(i32,i32),pub orientation:&'a str}
+pub struct BulkScenePlace<'a>{pub pose:BulkPlace<'a>,pub tree:Option<&'a Value>}
 struct GridChanges{remove:HashSet<String>,add:Vec<Value>,next:u32,objects_path:Vec<Segment>,counter_path:Vec<Segment>}
 fn inventory_route()->Vec<Segment>{vec![k("Player"),k("ListInventories"),k("0")]}
 fn amount_path(item:u64)->Vec<Segment>{let mut p=inventory_route();p.extend([k("Inventory"),k(&item.to_string()),k("Amount")]);p}
@@ -37,6 +38,13 @@ fn grid_changes(id:&str,grid:&Value,collection:&Value,allocating:bool)->Result<G
 /// before changing networks and placing new objects. This function batches
 /// each ordinary phase across all affected Grids and stock entries.
 pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkPlace<'_>])->Result<GridCoordinateDraft,PatchError>{
+ let rows=places.iter().map(|p|BulkScenePlace{pose:BulkPlace{destination:p.destination,item_id:p.item_id,xy:p.xy,orientation:p.orientation},tree:None}).collect::<Vec<_>>();
+ bulk_patch(source,pickups,&rows)
+}
+/// Mixed roots are allocated in input order, with a single global child
+/// allocator and a single stock balance across every destination.
+pub fn preview_bulk_scene_place(source:&str,places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{bulk_patch(source,&[],places)}
+fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||pickups.is_empty()==places.is_empty()||pickups.len()+places.len()>LIMIT{return Err(BAD);}
  let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(BAD)?;
@@ -45,6 +53,14 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
  let mut changes=HashMap::<String,GridChanges>::new();
  let mut delta=HashMap::<u64,i64>::new();
  let mut anchors=HashSet::new();
+ let has_support=places.iter().any(|p|p.tree.is_some());
+ let mut next_grid=0u32;let mut created=Vec::<(u32,Value)>::new();let mut count=0usize;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ if has_support{
+  next_grid=c.get("NextGridID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(BAD)?;
+  if grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next_grid||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
+ }
+ let original_next_grid=next_grid;
  for p in pickups{
   let t=p.target;if t.kind!=GridObjectKind::Full||t.item_id/100_000!=400{return Err(BAD);}
   let grid=grids.get(&t.grid_id).ok_or(BAD)?;
@@ -61,7 +77,8 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
    v.get("Orientation").and_then(Value::as_str)!=Some(p.orientation)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation){return Err(BAD);}
   *delta.entry(t.item_id).or_default()+=1;
  }
- for p in places{
+ for row in places{
+  let p=&row.pose;
   let d=p.destination;let (x,y)=p.xy;
   if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
@@ -74,9 +91,17 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
   let objects=grid.get("Objects").and_then(Value::as_object).ok_or(BAD)?;
   if objects.len()+change.add.len()>=100_000||objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(BAD);}
   let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
-  change.add.push(serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation}));
-  *delta.entry(p.item_id).or_default()-=1;
+  let mut object=serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation});
+  if let Some(scene)=row.tree{
+   let (child,following,children,items)=super::support_clone::build_source_tree(grids,diff,next_grid,p.item_id,scene)?;
+   next_grid=following;created.extend(children);count+=items.len();
+   for item in items{*delta.entry(item).or_default()-=1;}
+   object["State"]=serde_json::json!({"SubGrid":{"GridID":child,"DesignID":null}});
+  }else{count+=1;*delta.entry(p.item_id).or_default()-=1;}
+  if count>LIMIT||grids.len()+created.len()>2048&&has_support{return Err(BAD);}
+  change.add.push(object);
  }
+ if has_support&&super::support_clone::reserved_ref(&root,&(original_next_grid..next_grid).collect::<HashSet<_>>(),false){return Err(BAD);}
  let mut stock=Vec::new();
  for (item,d) in delta{
   let old=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(BAD)?;
@@ -87,10 +112,18 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
  locator.amount_path=vec![Segment::Index(usize::MAX)];
  for &(item,_,_) in &stock{locator.capture.insert(amount_path(item),None);}
  for v in changes.values(){locator.capture.insert(v.objects_path.clone(),None);if !v.add.is_empty(){locator.capture.insert(v.counter_path.clone(),None);}}
+ let gp=vec![k("World"),k("GridCollection"),k("Grids")];let gc=vec![k("World"),k("GridCollection"),k("NextGridID")];
+ if has_support{locator.capture.insert(gp.clone(),None);locator.capture.insert(gc.clone(),None);}
  locator.walk_complete()?;
  let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
  let mut edits=Vec::<(Range<usize>,String)>::new();
  for &(item,old,new) in &stock{let r=span(&amount_path(item))?;if source[r.clone()].parse::<u32>().ok()!=Some(old){return Err(PatchError::AmountMismatch);}edits.push((r,new.to_string()));}
+ if has_support{
+  let range=span(&gp)?;let counter=span(&gc)?;
+  if source[counter.clone()].parse::<u32>().ok()!=Some(original_next_grid){return Err(BAD);}
+  let mut members=String::new();for (id,g) in &created{members.push_str(&format!(",\"{}\":{}",id,g));}
+  edits.push((range.end-1..range.end-1,members));edits.push((counter,next_grid.to_string()));
+ }
  let mut maps=Vec::new();
  for (id,v) in &changes{
   let mr=span(&v.objects_path)?;
@@ -121,6 +154,11 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
   for k in v.remove{objects.remove(&k).ok_or(BAD)?;}
   for o in &v.add{objects.insert(o["ID"].to_string(),o.clone());}
   if !v.add.is_empty(){g["NextGridObjectID"]=Value::from(v.next);}
+ }
+ if has_support{
+  let g=root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?;
+  for (id,value) in created{if g.insert(id.to_string(),value).is_some(){return Err(BAD);}}
+  root["World"]["GridCollection"]["NextGridID"]=Value::from(next_grid);
  }
  for (item,_,new) in stock{root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"]=Value::from(new);}
  edits.sort_unstable_by_key(|(r,_)|r.start);
