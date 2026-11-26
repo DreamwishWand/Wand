@@ -7,6 +7,7 @@ import {stockFootprintFeedback,type StockCandidate} from './save-furniture-place
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import {roadPitch} from './road-design.ts';
 import {fenceFamily} from './fence-family-catalog.ts';
+import {fenceBaseIdentity} from './fence-design.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 
@@ -70,9 +71,9 @@ export function networkSceneShape(p:AreaSceneItem,g:DesignItemGeometry|undefined
  const name=(g.name??'').toLowerCase().replace(/[^a-z0-9]/g,'');
  if(!name.includes(f.name.toLowerCase().replace(/[^a-z0-9]/g,'')))return null;
  const k=p.itemId===f.base?1:(p.network.diagonal?f.diagExt:f.ext).indexOf(p.itemId)+1;
- if(k<1||p.itemId!==f.base&&(!name.includes('ext')||name.includes('diag')!==p.network.diagonal))return null;
+ if(k<1||p.itemId===f.base&&!fenceBaseIdentity(p.itemId,g.name)||p.itemId!==f.base&&(!name.includes('ext')||name.includes('diag')!==p.network.diagonal))return null;
  const w=p.network.diagonal||p.orientation===2?k*factor:factor,h=p.network.diagonal||p.orientation===3?k*factor:factor;
- return s.width===w&&s.height===h?s:null;
+ return s.width===w&&s.height===h&&(p.network.diagonal||s.cellCount===w*h&&s.runs.length===h&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===w))?s:null;
 }
 export type AreaSceneCandidate=GroupPasteCandidate&{areaRows:(GroupPasteRow&{scene?:SupportScene;network?:SceneNetwork})[]};
 export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number):AreaSceneCandidate|null{
@@ -96,7 +97,7 @@ export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],r
   const destination={layoutId:d.layoutId,gridDataPath:d.gridDataPath,factor:d.factor,sizeX:d.sizeX,sizeY:d.sizeY};
   const orientation=CARDINAL_ORIENTATIONS[p.orientation],itemId=String(p.itemId);
   const ghost:StockCandidate={area:d.key,...mainlandMapAnchor(d,x,y),factor:d.factor,shape:s,plan:{action:'place',itemId,x,y,orientation},destination};
-  if(p.network.kind==='fence'&&base.ghosts.some(other=>stockFootprintFeedback(ghost,[{area:other.area,x:other.x,y:other.y,factor:other.factor,shape:other.shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:other.plan.itemId,x:0,y:0,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}}]).overlaps))return null;
+  if(p.network.kind==='fence'&&(stockFootprintFeedback(ghost,objects,omitted).overlaps||base.ghosts.some(other=>stockFootprintFeedback(ghost,[{area:other.area,x:other.x,y:other.y,factor:other.factor,shape:other.shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:other.plan.itemId,x:0,y:0,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}}]).overlaps)))return null;
   rows.push({itemId,x,y,orientation,destination,network:p.network});ghosts.push(ghost);
  }
  return {rows,ghosts,areaRows:rows};
