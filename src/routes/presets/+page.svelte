@@ -63,7 +63,7 @@
  {#if root==='my'}<nav aria-label="My Presets">{#each domains as key}<button type="button" aria-pressed={myDomain===key} on:click={()=>switchDomain(key)}>{labels[key]}</button>{/each}</nav>{/if}
  <nav aria-label={w[19]}>{#if domain!=='wand'}<button type="button" aria-pressed={view==='current'} on:click={()=>view='current'}>{w[1]}</button>{/if}<button type="button" aria-pressed={view==='backups'} on:click={()=>view='backups'}>{w[2]}</button><button type="button" aria-pressed={view==='published'} on:click={()=>view='published'}>{w[3]}</button></nav>
  {#if view==='published'}<p role="status">{w[4]}</p>
- {:else if view==='current'}<div class="toolbar"><button type="button" disabled={!source||nativeBusy} on:click={()=>native('index')}>{w[1]}</button>{#if !source}<small>{w[5]}</small>{/if}</div>
+ {:else if view==='current'}<div class="toolbar"><button type="button" disabled={!source||nativeBusy} on:click={()=>native('index')}>{w[1]}</button><select bind:value={kind} aria-label={w[19]}><option value="all">{w[15]}</option>{#each kinds as k}<option value={k}>{p[kindIndex[k]]}</option>{/each}</select>{#if !source}<small>{w[5]}</small>{/if}</div>
   {#if nativeError}<p role="alert">{w[6]}</p>{/if}
   {#if index?.groups.some(g=>g.status==='unavailable')}<p role="status">{w[7]}</p>{/if}
   <div class="native-list">{#each nativeRows as row (row.ordinal)}<article><strong>{row.name||p[kindIndex[row.kind]]}</strong><small>{row.storage==='female'?'♀':row.storage==='male'?'♂':''} {w[8]}</small><button type="button" disabled={nativeBusy} on:click={()=>native('backup',row.ordinal)}>{p[6]}</button></article>{:else}{#if index}<p>{p[9]}</p>{/if}{/each}</div>

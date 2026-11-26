@@ -16,8 +16,8 @@ export async function readPresetText(file:Blob,maxBytes=PRESET_MAX_BYTES):Promis
  }catch(e){try{await reader.cancel();}catch{}throw e;}finally{reader.releaseLock();}
 }
 export async function compactPresetFile(raw:string,name:string):Promise<File>{
- // Normalize only insignificant JSON whitespace; preserve semantic values
- // and property order, including unknown native private fields.
+ // Preserve the original UTF-8 JSON bytes, including unknown native
+ // private fields, numeric spelling and property order.
  const source=new Blob([raw],{type:'application/json'});
  if(!source.size||source.size>PRESET_MAX_BYTES)throw Error('PRESET_SIZE');
  const target=presetFilename(name);

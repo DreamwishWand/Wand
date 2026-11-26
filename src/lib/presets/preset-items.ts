@@ -16,7 +16,7 @@ export function presetItems(raw:string):Map<number,number>|null{
    switch(d.schema){
     case 'wand.preset.scene@1':merge(sceneItemCounts(parseSceneAnyFactor(JSON.stringify(d)).items));return;
     case 'wand.preset.mixed-scene@1':merge(mixedSceneCounts(parseMixedScene(JSON.stringify(d)).items));return;
-    case 'wand.preset.area-scene@1':merge(areaSceneCounts(parseAreaScene(JSON.stringify(d)).items));return;
+    case 'wand.preset.area-scene@1':{const a=parseAreaScene(JSON.stringify(d));merge(areaSceneCounts(a.items));for(const p of a.items)if(p.network)add(p.itemId);return;}
     case 'wand.preset.support-scene@1':support(d,true);return;
     case 'wand.world-design@1':if(!Array.isArray(d.placements))throw Error('PLACEMENTS');for(const p of d.placements){add(p.itemId);if(p.attachment)support(p.attachment.scene);}if(d.roomFinish)add(d.roomFinish);return;
     case 'wand.preset.whole-area-design@1':walk(d.design,depth+1);return;
