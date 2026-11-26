@@ -612,6 +612,27 @@ mod tests{
   assert_eq!(g["44"]["Objects"]["8"]["ItemID"],40005162);assert!(d.patched_json.contains("1e2"));
   plan["transfer"][0]["supportFactor"]=1.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
   plan["transfer"][0]["supportFactor"]=2.into();plan["transfer"][1]["x"]=4.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  // Cross the indoor/outdoor boundary and return the same native subtree.
+  let mut cross=orig.clone();
+  cross["World"]["GridCollection"]["Grids"]["45"]=json!({"ID":45,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":2,"NextGridObjectID":1,"Objects":{}});
+  let bytes=serde_json::to_vec(&cross).unwrap();
+  let mut outdoor=json!({"roomSource":{"roomOrdinal":1,"index":0},"itemId":"40005160","expectedX":4,"expectedY":4,"expectedOrientation":"GridOrientation_Down","x":4,"y":6,"orientation":"GridOrientation_Left","supportFactor":2,"destination":{"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":2,"sizeX":16,"sizeY":16}});
+  let moved=crate::grid_instance_preview::group_cut_candidate(&bytes,&json!([outdoor.clone()]).to_string()).unwrap();
+  let after:Value=serde_json::from_str(&moved).unwrap();
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["43"],orig["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["45"]["Objects"]["1"]["State"]["SubGrid"]["GridID"],43);
+  assert_eq!(after["Player"],orig["Player"]);
+  let ordinals=crate::grid_instance_preview::room_support_ordinals(moved.as_bytes()).unwrap();
+  let ordinal=ordinals.get(&("45".to_owned(),"1".to_owned())).unwrap();
+  let mut back=json!({"roomOrdinal":2,"surfaceOrdinal":1,"transfer":[{"localOrdinal":ordinal,"itemId":40005160,"expectedX":4,"expectedY":6,"expectedOrientation":"GridOrientation_Left","x":4,"y":4,"orientation":"GridOrientation_Down","supportFactor":2}]});
+  let restored=furniture_candidate(moved.as_bytes(),&back.to_string()).unwrap();
+  let after:Value=serde_json::from_str(&restored.patched_json).unwrap();
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["43"],orig["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["44"]["Objects"]["7"]["State"]["SubGrid"]["GridID"],43);
+  assert!(after["World"]["GridCollection"]["Grids"]["45"]["Objects"].as_object().unwrap().is_empty());
+  assert_eq!(after["Player"],orig["Player"]);
+  back["transfer"][0]["supportFactor"]=1.into();assert!(furniture_candidate(moved.as_bytes(),&back.to_string()).is_err());
+  outdoor["supportFactor"]=1.into();assert!(crate::grid_instance_preview::group_cut_candidate(&bytes,&json!([outdoor]).to_string()).is_err());
   let mut alias=orig.clone();alias["World"]["GridCollection"]["Grids"]["44"]["Objects"]["1"]=orig["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"].clone();
   plan["transfer"][1]["x"]=6.into();assert!(furniture_candidate(&serde_json::to_vec(&alias).unwrap(),&plan.to_string()).is_err());
  }
