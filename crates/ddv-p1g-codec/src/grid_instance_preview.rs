@@ -775,7 +775,8 @@ pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,ite
 fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
  let tree=m.get("tree").ok_or(CodecError::Json)?;
- let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|CodecError::Json)?;
+ static CATALOG:std::sync::OnceLock<Result<Value,()>>=std::sync::OnceLock::new();
+ let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|())).as_ref().map_err(|_|CodecError::Json)?;
  fn check(tree:&Value,catalog:&Value,count:&mut usize,depth:usize)->Result<(),CodecError>{
   let bad=CodecError::Json;if depth>8{return Err(bad);}
   let factor=tree.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as usize;
@@ -791,7 +792,7 @@ fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
    let child=o.get("child").ok_or(bad)?;if !child.is_null(){check(child,catalog,count,depth+1)?;}
   }Ok(())
  }
- check(tree,&catalog,&mut 1,0)?;
+ check(tree,catalog,&mut 1,0)?;
  Ok(tree)
 }
 pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
@@ -1374,6 +1375,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
     let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=limit).ok_or(bad)?;
     let mut total=0usize;
     let mut anchors=HashSet::new();
+    let mut destinations=HashMap::<String,ddv_save_patch::PlainGridDestination>::new();
     fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
         if depth>8{return Err(CodecError::Bounds);}
         for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{
@@ -1387,8 +1389,10 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let xy=(int("x")?,int("y")?);
-        let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
-        if !anchors.insert((d.grid_id,xy)){return Err(bad);}
+        let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
+        if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
+        let d=destinations.get(&key).ok_or(bad)?;
+        if !anchors.insert((d.grid_id.clone(),xy)){return Err(bad);}
         total+=1;
         if let Some(scene)=o.get("scene"){
             let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
