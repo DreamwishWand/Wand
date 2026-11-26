@@ -56,7 +56,7 @@ function parseShard(doc:unknown,bucket:string,pin:ShardPin,origin:string):Readon
     for(const variant of ['original','thumbnail'] as const){
       const v=row[variant];
       check(record(v)&&Object.keys(v).sort().join(',')==='height,key,width'&&positive(v.width)&&positive(v.height)&&
-        v.width<=16384&&v.height<=16384&&(variant!=='thumbnail'||(v.width<=128&&v.height<=128)),'image dimensions');
+        v.width<=16384&&v.height<=16384&&(variant!=='thumbnail'||(v.width<=256&&v.height<=256)),'image dimensions');
       const ref=parsePublicImageKey(v.key);
       check(ref,'image key');
       images[variant]=Object.freeze({url:publicImageUrl(origin,variant,ref.sha256),sha256:ref.sha256,width:v.width,height:v.height});
