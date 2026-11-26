@@ -1,3 +1,4 @@
+import {parseAreaScene} from './area-scene.ts';
 import {parseSupportScene,parseMixedScene} from './support-scene.ts';
 import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
@@ -115,10 +116,11 @@ scope.onmessage=async({data})=>{
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
     }
-    if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'){
+    if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'||data.command==='area-scene-geometry'){
       if(!release)throw Error('source');
       const mixed=data.command==='mixed-scene-geometry'?parseMixedScene(JSON.stringify(data.scene)):null;
-      const single=mixed?null:parseSupportScene(JSON.stringify(data.scene));
+      const area=data.command==='area-scene-geometry'?parseAreaScene(JSON.stringify(data.scene)):null;
+      const single=mixed||area?null:parseSupportScene(JSON.stringify(data.scene));
       const definitions=await loadGeometry();let total=0;
       const itemIds=new Set<number>();
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
@@ -143,7 +145,7 @@ scope.onmessage=async({data})=>{
         return true;
       }
       let valid=true;
-      const roots=mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
+      const roots=area?area.items.filter(p=>!p.network):mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
       for(const root of roots){
         itemIds.add(root.itemId);if(++total>32){valid=false;break;}
         const source=paths.get(root.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
