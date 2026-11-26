@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorGroupMove,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -76,4 +76,15 @@ test('room group capture and paste retains relative half-cell offsets and is ato
  assert.equal(indoorGroupTransfer(empty,shapes,allowed,group.rows,[group.clip[0],{...group.clip[1],dx:1}],2,3),null);
  assert.deepEqual(rotateIndoorCut(group.clip,1,shapes,1).map(p=>[p.dx,p.dy,p.orientation]),[[0,0,1],[0,4,1]]);
  assert.equal(captureIndoorCut(full,1,[0,0],shapes,allowed,allowed),null);
+});
+
+test('room group translation reuses selected old cells and rejects stationary footprint conflicts',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8},{itemId:40000001,x:2,y:1,orientationCode:8},{itemId:40000001,x:4,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape},allowed=new Set([40000001]);
+ assert.deepEqual(indoorGroupMove(full,shapes,allowed,[0,1],0,2,1).map(p=>[p.index,p.x,p.y]),[[0,2,1],[1,3,1]]);
+ assert.equal(indoorGroupMove(full,shapes,allowed,[0,1],0,3,1),null);
+ assert.equal(indoorGroupMove(full,shapes,allowed,[0,1],0,7,1),null);
+ assert.equal(indoorGroupMove(full,shapes,allowed,[0,0],0,2,1),null);
+ assert.equal(indoorGroupMove(full,{},allowed,[0,1],0,2,1),null);
 });
