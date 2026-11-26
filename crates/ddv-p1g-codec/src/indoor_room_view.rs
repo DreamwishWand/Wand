@@ -235,6 +235,53 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
 /// Apply a room design as a single unpublished candidate. Every operation
 /// is restricted to the same room, exact source surface and native factor.
 /// No intermediate copy is exported or committed.
+/// Restore all selected rooms in an unpublished candidate. Return furniture
+/// from all faces first, then reuse the existing checked placement/finish writer.
+fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ let p=v.as_object().filter(|p|p.len()==2&&p.contains_key("scope")&&p.contains_key("rooms")).ok_or(bad)?;
+ let scope=p["scope"].as_str().filter(|s|matches!(*s,"room"|"floor"|"building")).ok_or(bad)?;
+ let rows=p["rooms"].as_array().filter(|a|!a.is_empty()&&a.len()<=2048).ok_or(bad)?;
+ let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
+ let all=report["rooms"].as_array().ok_or(bad)?;
+ let first=rows[0]["roomOrdinal"].as_u64().filter(|n|*n>0).ok_or(bad)? as usize;
+ let selected=all.get(first-1).ok_or(bad)?;
+ let expected=all.iter().filter(|r|r["house"]==selected["house"]&&(scope=="building"||r["floor"]==selected["floor"]&&(scope=="floor"||r["ordinal"]==selected["ordinal"]))).collect::<Vec<_>>();
+ if expected.len()!=rows.len(){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
+ let mut changed=false;let mut roots=0usize;
+ for (row,room) in rows.iter().zip(expected){
+  if row.as_object().is_none_or(|m|m.len()!=2)||row["roomOrdinal"]!=room["ordinal"]{return Err(bad);}
+  let faces=room["surfaces"].as_array().ok_or(bad)?;
+  let surfaces=row["surfaces"].as_array().filter(|s|s.len()==faces.len()&&s.len()<=9).ok_or(bad)?;
+  for (s,face) in surfaces.iter().zip(faces){
+   if s.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"pickup"|"place"|"finish")))||s["surfaceOrdinal"]!=face["ordinal"]||s["factor"]!=face["factor"]||s["sourcePath"]!=face["terrain"]["sourcePath"]||face["gridStatus"]!="full"||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
+   let pickup=s["pickup"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
+   let place=s["place"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
+   roots=roots.checked_add(pickup.len()+place.len()).ok_or(CodecError::Bounds)?;if roots>4096{return Err(CodecError::Bounds);}
+   if !pickup.is_empty(){
+    let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":pickup}).to_string())?;
+    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+   }
+  }
+ }
+ for row in rows{
+  let mut surfaces=Vec::new();
+  for s in row["surfaces"].as_array().ok_or(bad)?{
+   if s["place"].as_array().is_none_or(Vec::is_empty)&&s["finish"].is_null(){continue;}
+   surfaces.push(json!({"surfaceOrdinal":s["surfaceOrdinal"],"sourcePath":s["sourcePath"],"factor":s["factor"],"place":s["place"],"finish":s["finish"]}));
+  }
+  if !surfaces.is_empty(){
+   let next=room_project_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaces":surfaces}).to_string())?;
+   working.zeroize();*working=next;changed=true;
+  }
+ }
+ if !changed{return Err(bad);}
+ Ok(std::mem::take(&mut *working))
+}
+
 pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
@@ -242,6 +289,7 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ if v.get("rooms").is_some(){return indoor_scope_restore(source,&v);}
  let p=v.as_object().filter(|p|p.len()==2&&p.contains_key("roomOrdinal")&&p.contains_key("surfaces")).ok_or(bad)?;
  let ordinal=p["roomOrdinal"].as_u64().filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
  let rows=p["surfaces"].as_array().filter(|a|!a.is_empty()&&a.len()<=9).ok_or(bad)?;

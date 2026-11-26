@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {roomDesignTemplates} from '../src/lib/world/room-design.ts';
+import {newRoomSurface} from '../src/lib/world/room-project-design.ts';
+import {indoorBackupRooms,serializeIndoorBackup,parseIndoorBackup,buildIndoorRestore} from '../src/lib/world/indoor-decoration-backup.ts';
+const templates=roomDesignTemplates(JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/room-terrain.json',import.meta.url),'utf8')));
+const floor=templates.find(t=>t.kind==='floor'),id=40000001;
+const face={kind:'floor',ordinal:1,wallPosition:null,finish:0,gridStatus:'full',items:[],positions:[],factor:1,missingPositions:0,terrain:floor.raster,sourcePath:floor.grid.gridDataPath};
+const room=(ordinal,house,floor)=>({ordinal,house,floor,name:'private',ceiling:null,surfaces:[face]});
+const rooms=[room(1,1,1),room(2,1,1),room(3,1,2),room(4,2,1)];
+test('floor and building backup include exactly the selected scope; no private names or native grid identifiers',()=>{
+ assert.deepEqual(indoorBackupRooms('floor',rooms[0],rooms).map(r=>r.ordinal),[1,2]);
+ assert.deepEqual(indoorBackupRooms('building',rooms[0],rooms).map(r=>r.ordinal),[1,2,3]);
+ const targets=indoorBackupRooms('building',rooms[0],rooms),raw=serializeIndoorBackup('building',targets.map(room=>({room,surfaces:[newRoomSurface(1,floor)]})),templates);
+ assert.equal(raw.includes('private'),false);
+ assert.equal(parseIndoorBackup(raw,'building',targets,templates).length,3);
+ assert.throws(()=>parseIndoorBackup(raw,'floor',targets.slice(0,2),templates));
+ assert.throws(()=>parseIndoorBackup(raw,'building',targets.slice(0,2),templates));
+});
+test('restore returns stock in one room before placing in another',()=>{
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,4,8,12].map(n=>[id+':'+n,shape]));
+ const g={design:new Map([[id,{itemId:id,name:'Test',layer:'furniture',surfaceCapable:false,shapes}]]),shapes,allowed:new Set([id])},geometry=new Map([[1,g]]);
+ const blank=newRoomSurface(1,floor),placed={...blank,timeline:{snapshots:[[{id:1,itemId:id,x:2,y:2,orientation:2}]],cursor:0,nextId:2}};
+ const occupied={...rooms[1],surfaces:[{...face,items:[{itemId:id,quantity:1}],positions:[{itemId:id,x:1,y:1,orientationCode:8,plain:true}]}]};
+ const inputs=[{room:rooms[0],before:[blank],after:[placed],geometry},{room:occupied,before:[placed],after:[blank],geometry}];
+ const q=buildIndoorRestore('floor',inputs,new Map([[id,0]]),new Set());
+ assert.ok(q);assert.equal(q.removed,1);assert.equal(q.added,1);assert.equal(q.plan.rooms[0].surfaces[0].place[0].expectedStock,1);assert.equal(q.plan.rooms[1].surfaces[0].pickup[0].expectedStock,0);
+ assert.equal(buildIndoorRestore('floor',inputs,new Map(),new Set()),null);
+});
