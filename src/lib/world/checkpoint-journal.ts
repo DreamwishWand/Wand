@@ -1,6 +1,6 @@
 /** Local semantic replay journal. No Save bytes, filenames, native IDs,
  * account information or pending previews are serialized. */
-const COMMANDS=['furniture-stock-export','group-pickup-export','group-paste-export','group-cut-export','biome-furniture-export','island-furniture-export','biome-network-export','biome-decoration-export','cardinal-road-copy','cardinal-fence-copy','cardinal-fence-erase','support-child-copy','support-parent-copy','indoor-furniture-export','room-finish-export','export-grid-mixed-batch-copy'] as const;
+const COMMANDS=['furniture-stock-export','group-pickup-export','group-paste-export','group-cut-export','biome-furniture-export','island-furniture-export','island-decoration-export','biome-network-export','biome-decoration-export','cardinal-road-copy','cardinal-fence-copy','cardinal-fence-erase','support-child-copy','support-parent-copy','indoor-furniture-export','room-finish-export','export-grid-mixed-batch-copy'] as const;
 export type ReplayCommand=typeof COMMANDS[number];
 export interface WorldReplayStep{command:ReplayCommand;plan:unknown;destination?:unknown}
 export interface CheckpointJournal{steps:readonly WorldReplayStep[];cursor:number;firstStep:number}
@@ -19,9 +19,9 @@ function plain(v:unknown,depth=0,arrayLimit=2048):boolean{
 }
 export function parseReplayStep(v:unknown):WorldReplayStep{
  if(!object(v)||!COMMANDS.includes(v.command as ReplayCommand)||Object.keys(v).some(k=>!['command','plan','destination'].includes(k))||
- !v.plan||typeof v.plan!=='object'||!plain(v.plan,0,(v.command==='biome-network-export'||v.command==='biome-decoration-export')?4608:2048)||'destination'in v&&(v.command!=='furniture-stock-export'||!plain(v.destination)))throw Error('CHECKPOINT_STEP');
+ !v.plan||typeof v.plan!=='object'||!plain(v.plan,0,(v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?4608:2048)||'destination'in v&&(v.command!=='furniture-stock-export'||!plain(v.destination)))throw Error('CHECKPOINT_STEP');
  const step={command:v.command as ReplayCommand,plan:v.plan,...('destination'in v?{destination:v.destination}:{})};
- const text=JSON.stringify(step);if(text.length>((v.command==='biome-network-export'||v.command==='biome-decoration-export')?1_500_000:MAX_STEP))throw Error('CHECKPOINT_STEP_LIMIT');return JSON.parse(text) as WorldReplayStep;
+ const text=JSON.stringify(step);if(text.length>((v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?v.command==='island-decoration-export'?3_500_000:1_500_000:MAX_STEP))throw Error('CHECKPOINT_STEP_LIMIT');return JSON.parse(text) as WorldReplayStep;
 }
 export function parseCheckpointJournal(v:unknown):CheckpointJournal{
  if(!object(v)||Object.keys(v).length!==3||!Array.isArray(v.steps)||!v.steps.length||v.steps.length>MAX_REPLAY_STEPS||
