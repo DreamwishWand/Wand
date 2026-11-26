@@ -717,3 +717,25 @@ test('biome furniture preset retains matching identities, preserves support/netw
  assert.equal(biomeFurnitureReplacement(grid,grids,rasters,objects,0,[{...snapshot.placements[0],x:20,y:20}],defs,stock),null);
  const noChange=biomeFurnitureReplacement(grid,grids,rasters,objects,0,snapshot.placements,defs,stock);assert(noChange);assert.equal(noChange.changed,false);
 });
+
+import {islandSaveGrids,islandSaveSnapshot,parseIslandSavePreset,islandSaveReplacement} from '../src/lib/world/island-save-preset.ts';
+test('whole island save preset distinguishes an empty existing grid from an absent grid and balances stock across grids',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync('static/ddv/world/steam-1.26.2/floatingislands.json','utf8')));
+ const grids=islandSaveGrids(bundle.grids.find(g=>g.layoutId.includes('FloatingIsland_AtlanteanLayout')),bundle.grids);assert.equal(grids.length,2);
+ const [a,b]=grids,id=40005160,point={localOrdinal:1,localGridOrdinal:1,itemId:String(id),x:3,y:4,orientation:'GridOrientation_Down'},shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1};
+ const scopes=grids.map(g=>({key:g.key,witness:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,nativeGridId:g.gridIdNative,nativeSizeX:g.sizeX,nativeSizeY:g.sizeY,tessellationFactor:g.factor}}));
+ const raw={contract:'wand.db05.db04-terrain-session@1',rows:[{...point,recordKind:'full',coordinatesObserved:true}],bindings:[{localOrdinal:1,sourceRefIndex:0,savedFactor:a.factor,sourceLocalCoordinateMappingVerified:true}],gridBindings:[{sourceRefIndex:0,localGridOrdinal:1,objectCount:1},{sourceRefIndex:1,localGridOrdinal:2,objectCount:0}],sourceCoverageComplete:false,effectivePlacementVerified:false,worldCoordinatesVerified:false,placementLegalityVerified:false,saveWritingAuthorized:false};
+ const sessions=projectTerrainSession(raw,scopes);
+ assert.equal(sessions[1].completeGridOrdinal,2);assert.deepEqual(sessions[1].verifiedGridOrdinals,[2]);
+ const map={layoutId:a.layoutId,gridDataPath:a.gridDataPath,gridIdNative:a.gridIdNative,sourceGridFactor:a.factor,objects:[{...point,name:'Fixture',shapeKey:id+':8',orientationCode:8,layer:'furniture',surfaceCapable:true}],shapes:{[id+':8']:shape}};
+ const maps=new Map([[a.key,map]]),snapshot=islandSaveSnapshot(grids,sessions,maps);assert(snapshot);
+ assert.deepEqual(snapshot.summaries.map(x=>x.editable),[1,0]);
+ assert.equal(islandSaveSnapshot(grids,projectTerrainSession({...raw,gridBindings:raw.gridBindings.slice(0,1)},scopes),maps),null);
+ assert.throws(()=>projectTerrainSession({...raw,gridBindings:[...raw.gridBindings.slice(0,1),{...raw.gridBindings[1],objectCount:1}]},scopes));
+ const incoming=parseIslandSavePreset(snapshot.text,grids);assert.equal(incoming.get(a.key).length,1);assert.deepEqual(incoming.get(b.key),[]);
+ const moved={...incoming.get(a.key)[0],x:5,y:6};incoming.set(a.key,[]);incoming.set(b.key,[moved]);
+ const def={itemId:id,layer:'furniture',name:'Fixture',surfaceCapable:true,shapes:{[id+':8']:shape}};
+ const defs=new Map(grids.map(g=>[g.key,new Map([[id,def]])])),rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(1)}]));
+ const result=islandSaveReplacement(grids,rasters,snapshot,incoming,defs,new Map([[id,0]]));assert(result);assert.equal(result.plan[0].remove.length,1);assert.equal(result.plan[1].add.length,1);assert.deepEqual(result.missing,[]);
+ assert.equal(islandSaveReplacement(grids,rasters,snapshot,incoming,defs,new Map()),null);
+});
