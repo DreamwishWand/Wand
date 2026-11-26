@@ -1,6 +1,8 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import SupportSceneControls from './SupportSceneControls.svelte';
+ import GroupPickupControls from './GroupPickupControls.svelte';
+ import type {GroupPickupRow} from './group-pickup.ts';
  import {supportSceneWords,supportSceneRootCounts,supportSceneTemplateCompatible,type SupportScene} from './support-scene.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import type {SupportParentWitness} from './indoor-support.ts';
@@ -20,6 +22,8 @@
  import {worldShortcut,NUDGE} from './world-shortcuts.ts';
  export let open=false,parent:MainlandSavedObject|null=null,file:File|null=null,worker:Worker|null=null;
  export let roomParent:SupportParentWitness|null=null,onItems:(ids:number[])=>void=()=>{};
+ export let roomPickupPlan:readonly GroupPickupRow[]|null=null;
+ let roomPickupActive=false;
  $: identity=parent?{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),x:parent.object.x,y:parent.object.y}:roomParent;
  export let grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map();
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
@@ -68,8 +72,8 @@
  $: right=tree&&selected>=0?turnCandidate(tree,shapes,editable,terrain,selected,1):null;
  $: freeEligible=!!terrain&&!!tree&&selected>=0&&!!tree.objects[selected]&&!tree.objects[selected].child&&editable.has(tree.objects[selected].itemId)&&isCardinal(tree.objects[selected].orientation);
  $: partners=tree&&selected>=0?tree.objects.map((_,i)=>supportChildEdits(tree!,shapes,editable,selected,i,1)?i:-1).filter(i=>i>=0):[];
- $: mapInteractive=!!tree&&!loading&&!copy&&!placing&&!ghost&&!edits&&!stockDraft&&!stockOpen&&!transferDraft&&(!transferSource||!!transferTarget);
- $: mapKeyboard=mapInteractive||!!tree&&!loading&&!copy&&!placing&&!ghost&&(!!edits||!!stockDraft||!!transferDraft);
+ $: mapInteractive=!roomPickupActive&&!!tree&&!loading&&!copy&&!placing&&!ghost&&!edits&&!stockDraft&&!stockOpen&&!transferDraft&&(!transferSource||!!transferTarget);
+ $: mapKeyboard=!roomPickupActive&&(mapInteractive||!!tree&&!loading&&!copy&&!placing&&!ghost&&(!!edits||!!stockDraft||!!transferDraft));
  $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,editable,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts,!!transferSource,removable):null;
  $: extent=tree&&terrain?{x:-.5,y:-.5,w:terrain.sizeX*tree.factor+1,h:terrain.sizeY*tree.factor+1}:tree?supportExtent(tree,shapes):{x:0,y:0,w:1,h:1};
  $: if(open!==activeOpen||file!==activeFile||(identity?.localOrdinal??0)!==activeOrdinal)refresh(open,file,parent,identity);
@@ -240,6 +244,10 @@
   {#if loading}<small role="status">{words[12]}</small>{/if}
   {#if tree&&sceneOpen&&parent}<SupportSceneControls {tree} ownerItemId={owners[owners.length-1]} {parent} {file} {worker} {path} {counts} {names} {base} {locale} {canMove} {nextRequest} onBack={()=>sceneOpen=false} onApplied={onClose} onDuplicate={path.length===0?beginScene:null}/>
   {:else if tree}
+   {#if roomParent&&roomPickupPlan&&canMove&&!loading&&!copy&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}
+    <GroupPickupControls roomPlan={roomPickupPlan} {file} {locale} bind:active={roomPickupActive} onApplied={onClose}/>
+   {/if}
+   {#if !roomPickupActive}
    {#if parent&&!loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
    {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(Number(transferTarget.object.itemId))??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
    {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
@@ -281,6 +289,7 @@
    {/if}
    {#if (transferDraft||stockDraft||edits||ghost||copy)&&canMove}<small>{tw[1]}</small>{/if}
    {#if copy&&canMove}<button type="button" on:click={apply}>{words[5]}</button><a href={copy.url} download={copy.name}>{words[6]}</a>{/if}
+   {/if}
   {/if}
   {#if error}<small role="alert">{words[8]}</small>{/if}
  </aside>
