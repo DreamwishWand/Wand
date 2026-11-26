@@ -52,19 +52,18 @@
  export let embedded:EmbeddedSupportDesign|null=null;
  type DirectSupportJob={context:string;baseline:DesignTimeline;id:number;itemId:number;initial:DesignSupportAttachment|undefined;own:Worker};
  type DirectSupportEditor={job:DirectSupportJob;template:RoomDesignTemplate;embedded:EmbeddedSupportDesign};
- let directSupportJob:DirectSupportJob|null=null,directSupportEditor:DirectSupportEditor|null=null,directSupportRequest=0,directSupportDraft:DesignTimeline|null=null,directSupportApplying=false,embeddedInitialized=false;
+ let directSupportJob:DirectSupportJob|null=null,directSupportEditor:DirectSupportEditor|null=null,directSupportRequest=0,directSupportDraft:DesignTimeline|null=null,directSupportApplying=false,directSupportChildBusy=false,embeddedInitialized=false;
  $: dsw=supportDirectWords[locale];
  $: if(directSupportJob&&(!active||directSupportJob.context!==contextKey||directSupportJob.baseline!==timeline||directSupportJob.own!==worker))closeDirectSupport(false);
  $: if(embedded&&grid&&raster&&contextKey&&!embeddedInitialized){embeddedInitialized=true;layouts={...layouts,[contextKey]:embedded.start};cache={...cache,[grid.key]:new Map(embedded.definitions)};if(embedded.room){const id=embedded.finish??0;finishValues={...finishValues,[contextKey]:id};finishHistory={...finishHistory,[contextKey]:{values:[id],cursor:0}};}}
  function openDirectSupport(){
-  if(!worker||!chosen||!chosenGeometry?.supportPath||!isRoomDesign(grid)||embedded&&!embedded.room||busyImport)return;
-  if(chosen.attachment?.scene.tree.objects.some(o=>!!o.child)){error=dsw[4];return;}
+  if(!worker||!chosen||!chosenGeometry?.supportPath||!isRoomDesign(grid)||embedded&&!embedded.room&&!chosen.attachment||busyImport||(embedded?.depth??0)>=8)return;
   cancel();symmetry=null;directSupportJob={context:contextKey,baseline:timeline,id:chosen.id,itemId:chosen.itemId,initial:chosen.attachment,own:worker};
   directSupportRequest=nextRequest();worker.postMessage({command:'room-design-support-open',requestId:directSupportRequest,ownerItemId:chosen.itemId,attachment:chosen.attachment,locale});
  }
- function closeDirectSupport(confirm=true){if(confirm&&directSupportEditor&&directSupportDraft!==directSupportEditor.embedded.start&&!window.confirm(dsw[3]))return;directSupportJob=null;directSupportEditor=null;directSupportDraft=null;directSupportApplying=false;directSupportRequest=0;}
+ function closeDirectSupport(confirm=true){if(confirm&&directSupportEditor&&directSupportDraft!==directSupportEditor.embedded.start&&!window.confirm(dsw[3]))return;directSupportJob=null;directSupportEditor=null;directSupportDraft=null;directSupportApplying=false;directSupportChildBusy=false;directSupportRequest=0;}
  function applyDirectSupport(){
-  const e=directSupportEditor,d=directSupportDraft;if(!e||!d||directSupportApplying||e.job.baseline!==timeline||e.job.own!==worker||!worker)return;
+  const e=directSupportEditor,d=directSupportDraft;if(!e||!d||directSupportApplying||directSupportChildBusy||e.job.baseline!==timeline||e.job.own!==worker||!worker)return;
   if(d===e.embedded.start){closeDirectSupport(false);return;}
   const a=supportEditAttachment(d,e.template,e.job.initial);if(!a){error=dsw[6];return;}
   directSupportApplying=true;directSupportRequest=nextRequest();worker.postMessage({command:'room-design-support-validate',requestId:directSupportRequest,ownerItemId:e.job.itemId,attachment:a});
@@ -527,7 +526,7 @@
     try{if(d.kind!=='room-design-support-open'||!d.template||!Array.isArray(d.defs))throw Error('support open');
      const t=d.template as RoomDesignTemplate,start=supportEditTimeline(job.initial,t),defs=new Map<number,DesignItemGeometry>((d.defs as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(!start||!roomDesignValid(start,t.grid,t.raster,defs))throw Error('support geometry');
-     directSupportDraft=start;directSupportEditor={job,template:t,embedded:{start,definitions:defs,onChange:next=>{if(directSupportJob===job)directSupportDraft=next;}}};
+     directSupportDraft=start;directSupportEditor={job,template:t,embedded:{start,definitions:defs,depth:(embedded?.depth??0)+1,onBusy:busy=>{if(directSupportJob===job)directSupportChildBusy=busy;},onChange:next=>{if(directSupportJob===job)directSupportDraft=next;}}};
     }catch{closeDirectSupport(false);error=dsw[5];}return;
    }
    if(attachmentRequest&&d?.requestId===attachmentRequest){const job=attachmentJob;attachmentRequest=0;attachmentJob=null;
@@ -845,7 +844,7 @@
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
     <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
-    {#if chosenGeometry?.supportPath&&isRoomDesign(grid)&&(!embedded||embedded.room)}<button type="button" disabled={busyImport||!worker||!!chosenAttachment?.scene.tree.objects.some(o=>!!o.child)} title={chosenAttachment?.scene.tree.objects.some(o=>!!o.child)?dsw[4]:dsw[0]} on:click={openDirectSupport}>{dsw[0]}</button><input type="file" accept=".json,application/json" hidden bind:this={attachmentInput} on:change={openAttachment}/><button type="button" disabled={busyImport||!worker} title={adw[4]} on:click={()=>attachmentInput.click()}>{adw[0]}</button>{#if chosenAttachment}<button type="button" disabled={busyImport} on:click={()=>{if(chosen&&chosenGeometry)save(replaceDesignAttachment(timeline,chosen.id,undefined,chosenGeometry));}}>{adw[2]}</button>{/if}{/if}
+    {#if chosenGeometry?.supportPath&&isRoomDesign(grid)&&(!embedded||embedded.room||chosenAttachment)}<button type="button" disabled={busyImport||!worker||(embedded?.depth??0)>=8} title={dsw[0]} on:click={openDirectSupport}>{dsw[0]}</button>{#if !embedded||embedded.room}<input type="file" accept=".json,application/json" hidden bind:this={attachmentInput} on:change={openAttachment}/><button type="button" disabled={busyImport||!worker} title={adw[4]} on:click={()=>attachmentInput.click()}>{adw[0]}</button>{#if chosenAttachment}<button type="button" disabled={busyImport} on:click={()=>{if(chosen&&chosenGeometry)save(replaceDesignAttachment(timeline,chosen.id,undefined,chosenGeometry));}}>{adw[2]}</button>{/if}{/if}{/if}
     {#if chosenGeometry&&grid&&(roadPitch(chosenGeometry,grid.factor)||fencePitch(chosenGeometry,grid.factor))}
      <button type="button" title={locale==='ja'?'接続範囲を選択':'Select connected network'} aria-label={locale==='ja'?'接続範囲を選択':'Select connected network'} on:click={()=>selectNetwork()}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>
      <button type="button" title={locale==='ja'?'スタイル置換':'Replace style'} aria-label={locale==='ja'?'スタイル置換':'Replace style'} on:click={()=>selectNetwork(true)}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M3 7h17l-4-4M21 17H4l4 4M20 7l-4 4M4 17l4-4"/></svg></button>
@@ -965,7 +964,7 @@
  </div>
  {#if directSupportEditor}
   <div class="direct-support-workspace" role="dialog" aria-modal="true" aria-label={dsw[0]}>
-   <div class="direct-support-header"><strong>{directSupportEditor.template.label}</strong><small>{dsw[6]}</small><button type="button" disabled={directSupportApplying} on:click={()=>closeDirectSupport()}>{dsw[2]}</button><button type="button" disabled={directSupportApplying||!directSupportDraft} on:click={applyDirectSupport}>{dsw[1]}</button>{#if directSupportApplying}<small role="status">…</small>{/if}{#if error}<small role="alert">{error}</small>{/if}</div>
+   <div class="direct-support-header"><strong>{directSupportEditor.template.label}</strong><small>{dsw[6]}</small><button type="button" disabled={directSupportApplying||directSupportChildBusy} on:click={()=>closeDirectSupport()}>{dsw[2]}</button><button type="button" disabled={directSupportApplying||directSupportChildBusy||!directSupportDraft} on:click={applyDirectSupport}>{dsw[1]}</button>{#if directSupportApplying}<small role="status">…</small>{/if}{#if error}<small role="alert">{error}</small>{/if}</div>
    <div class="direct-support-body" inert={directSupportApplying}>
     <svelte:self active={true} grid={directSupportEditor.template.grid} raster={directSupportEditor.template.raster} embedded={directSupportEditor.embedded} {worker} {nextRequest} {locale}/>
    </div>
