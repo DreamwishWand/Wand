@@ -278,13 +278,14 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
      !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||
      obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
      objects.values().filter(|o|coord(o,"X").ok()==Some(expected.0)&&coord(o,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
-  // A support root may move within this exact owned surface, but only
-  // an ordinary leaf may be removed or used by the stock writer.
+  // An explicit support pickup must use the whole-tree writer, never the
+  // ordinary leaf path. Coordinate edits keep the same owned subtree.
+  let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
-   if !p.contains_key("edits")||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
+   if !(p.contains_key("edits")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
    let c=collection.as_object().ok_or(bad)?;
    crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
-  }
+  }else if support_pickup{return Err(bad);}
   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:item};
   if crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.blocking()>0{return Err(bad);}
   Ok((target,expected,old.to_owned()))
@@ -350,9 +351,10 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let ids=(0..rows.len() as u64).map(|i|next.checked_add(i).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
   let refs=crate::grid_instance_preview::grid_identity_dependencies_for_ids(source,&gid,&ids)?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  let mut source_ids=std::collections::HashSet::new();let mut clone_total=0usize;
   for row in rows{
   let support=row.get("supportSource");let scene=row.get("scene");
-  if row.as_object().is_none_or(|r|r.len()!=if support.is_some()||scene.is_some(){6}else{5}||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"|"supportSource"|"scene")))||support.is_some()&&(rows.len()!=1||scene.is_some()){return Err(bad);}
+  if row.as_object().is_none_or(|r|r.len()!=if support.is_some()||scene.is_some(){6}else{5}||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"|"supportSource"|"scene")))||support.is_some()&&scene.is_some(){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
@@ -375,6 +377,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    if w.as_object().is_none_or(|m|m.len()!=4||m.keys().any(|k|!matches!(k.as_str(),"index"|"expectedX"|"expectedY"|"expectedOrientation"))){return Err(bad);}
    let i=w.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
    let (key,obj)=objects.iter().nth(i).ok_or(bad)?;
+   if !source_ids.insert(key.clone()){return Err(bad);}
    let old=(coord(w,"expectedX")?,coord(w,"expectedY")?);
    let old_orientation=w.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
    if !on_terrain(old)||obj.get("ID").and_then(id).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||
@@ -384,12 +387,16 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    if crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.blocking()>0{return Err(bad);}
    let c=collection.as_object().ok_or(bad)?;
    let tree=crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
-   let actual=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(item.to_string())).and_then(|v|v.get("Amount")).and_then(Value::as_u64);
+   fn descendants(t:&Value)->Result<usize,CodecError>{let mut n=0usize;for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{n+=1;if let Some(c)=o.get("child").filter(|v|!v.is_null()){n+=descendants(c)?;}}Ok(n)}
+   clone_total+=1+descendants(&tree)?;if clone_total+rows.len()>160{return Err(bad);}
+   let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+   let actual=current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64();
    if actual!=Some(u64::from(amount)){return Err(bad);}
+   let fresh=current["World"]["GridCollection"]["Grids"][&gid]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
    let draft=ddv_save_patch::support_clone::preview_indoor_support_tree_duplicate(&working,&target,old,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
    let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
    let c=after["World"]["GridCollection"].as_object().ok_or(bad)?;
-   if crate::grid_instance_preview::subgrid_tree(c,&gid,key)?!=tree||crate::grid_instance_preview::subgrid_tree(c,&gid,&next.to_string())?!=tree{return Err(bad);}
+   if crate::grid_instance_preview::subgrid_tree(c,&gid,key)?!=tree||crate::grid_instance_preview::subgrid_tree(c,&gid,&fresh)?!=tree{return Err(bad);}
    draft
   }else{ddv_save_patch::preview_indoor_grid_stock_place(&working,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch)?};
   if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
@@ -401,14 +408,26 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
   let rows=if let Some(a)=value.as_array(){a.as_slice()}else{std::slice::from_ref(value)};
   if rows.is_empty()||rows.len()>32{return Err(bad);}
-  let mut targets=Vec::new();let mut seen=std::collections::HashSet::new();
+  let mut targets=Vec::new();let mut seen=std::collections::HashSet::new();let mut flags=Vec::new();
   for row in rows{
-   if row.as_object().is_none_or(|r|r.len()!=6||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"))){return Err(bad);}
+   let support=row.get("includeSupport").and_then(Value::as_bool)==Some(true);
+   if row.as_object().is_none_or(|r|r.len()!=if support{7}else{6}||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"|"includeSupport")))||row.get("includeSupport").is_some()&&!support{return Err(bad);}
    let (target,expected,orientation)=resolve(row)?;
    let amount=row.get("expectedStock").and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(bad)?;
    let actual=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(target.item_id.to_string())).and_then(|v|v.get("Amount")).and_then(Value::as_u64);
    if actual!=Some(amount)||!seen.insert(target.object_id.clone()){return Err(bad);}
-   targets.push((target,expected,orientation));
+   targets.push((target,expected,orientation));flags.push(support);
+  }
+  if flags.iter().any(|f|*f){
+   let ordinals=crate::grid_instance_preview::room_pickup_ordinals(source)?;
+   let mut plan=Vec::new();
+   for ((target,expected,orientation),support) in targets.iter().zip(flags){
+    let ordinal=ordinals.get(&(target.grid_id.clone(),target.object_id.clone())).ok_or(bad)?;
+    let mut row=serde_json::json!({"localOrdinal":ordinal,"itemId":target.item_id.to_string(),"expectedX":expected.0,"expectedY":expected.1,"expectedOrientation":orientation});
+    if support{row["includeSupport"]=Value::Bool(true);}plan.push(row);
+   }
+   let patched_json=crate::grid_instance_preview::group_pickup_candidate(source,&serde_json::to_string(&plan).map_err(|_|bad)?)?;
+   return Ok(ddv_save_patch::GridCoordinateDraft{patched_json,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false});
   }
   let pickups=targets.iter().map(|(target,expected,orientation)|BulkPickup{target,expected:*expected,orientation:orientation.as_str()}).collect::<Vec<_>>();
   return preview_bulk_furniture(json,&pickups,&[]).map_err(|_|CodecError::Patch);
