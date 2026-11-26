@@ -95,7 +95,7 @@ export const positionWords={
 
 export const indoorShapeWords={ja:'原本の家具形状（実際の占有状態・部屋境界は未確認）',en:'Source item shapes; actual occupancy and room bounds unverified',fr:'Formes originales ; occupation et limites non vérifiées',it:'Forme originali; occupazione e limiti non verificati',de:'Originalformen; Belegung und Raumgrenzen ungeprüft','es-ES':'Formas originales; ocupación y límites sin verificar','zh-CN':'原始家具形状；实际占用及房间边界未验证','pt-BR':'Formas originais; ocupação e limites não verificados'} as const;
 
-export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number}
+export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number;includeSupport?:true}
 export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
  if(!face||face.gridStatus!=='full'||!face.factor||face.missingPositions||face.positions.length>5000)return null;
  return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':CARDINAL_ORIENTATIONS[p.orientationCode/4],child:null}))};
@@ -133,12 +133,12 @@ export function indoorPickup(face:IndoorSurface|null,index:number,removable:Read
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
  return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
 }
-export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup[]|null{
+export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,supports:ReadonlySet<number>=new Set()):IndoorPickup[]|null{
  if(!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const counts=new Map<number,number>(),rows:IndoorPickup[]=[];
  for(const index of indices){const row=indoorPickup(face,index,removable,stock);if(!row)return null;
   const count=(counts.get(row.itemId)??0)+1;if(row.expectedStock+count>2147483647)return null;
-  counts.set(row.itemId,count);rows.push(row);
+  counts.set(row.itemId,count);rows.push(supports.has(index)?{...row,includeSupport:true}:row);
  }
  return rows;
 }
@@ -239,11 +239,11 @@ export function captureIndoorScene(face:IndoorSurface|null,indices:readonly numb
 export function indoorMixedScene(text:string):MixedScenePreset|null{
  try{return parseMixedScene(text);}catch{try{const scene=parseSupportScene(text);return mixedSceneFromClip([{itemId:scene.ownerItemId,dx:0,dy:0,orientation:2}],[scene],'corner');}catch{return null;}}
 }
-export function indoorMixedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],doc:MixedScenePreset,anchor:ScenePreset['anchor'],x:number,y:number):IndoorPlace[]|null{
- if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId)||[...mixedSceneCounts(doc.items)].some(([id,n])=>(stock.get(id)??0)<n))return null;
+export function indoorMixedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],doc:MixedScenePreset,anchor:ScenePreset['anchor'],x:number,y:number,sources:readonly (NonNullable<IndoorPlace['supportSource']>|null)[]|null=null):IndoorPlace[]|null{
+ if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId)||sources&&(sources.length!==clip.length||sources.some((s,i)=>!!s!==!!doc.items[i].support))||[...mixedSceneCounts(doc.items)].some(([id,n])=>(stock.get(id)??0)<n))return null;
  const rows=indoorScenePlacement(face,shapes,allowed,stock,clip,anchor,x,y);if(!rows)return null;
  const counts=new Map(stock);
- return rows.map((row,i)=>{const scene=doc.items[i].support,expectedStock=counts.get(row.itemId)!;for(const [id,n] of scene?supportSceneRootCounts(scene):new Map([[row.itemId,1]]))counts.set(id,counts.get(id)!-n);return {...row,expectedStock,...(scene?{scene}:{})};});
+ return rows.map((row,i)=>{const scene=doc.items[i].support,expectedStock=counts.get(row.itemId)!;for(const [id,n] of scene?supportSceneRootCounts(scene):new Map([[row.itemId,1]]))counts.set(id,counts.get(id)!-n);return {...row,expectedStock,...(scene?sources?{supportSource:sources[i]!}:{scene}:{})};});
 }
 export function captureIndoorMixedScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,supports:ReadonlyMap<number,SupportScene>):MixedScenePreset|null{
  const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!face.factor||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
