@@ -92,7 +92,7 @@ test('canonical DB01 restrictions are action-specific and never infer conditiona
  assert.deepEqual(projectNativeEditRestrictions({CanMove:{},CanRotate:{Value:true,Conditions:{}}}),{rotate:'conditional'});
 });
 
-import {bindMainland,bindMainlandGrid,mainlandExtent,mainlandMapAnchor,mainlandLocalAnchor,mainlandTerrainHits} from '../src/lib/world/mainland-world-coordinates.ts';
+import {bindMainland,bindMainlandGrid,bindFloatingIslandGrid,mainlandExtent,mainlandMapAnchor,mainlandLocalAnchor,mainlandTerrainHits} from '../src/lib/world/mainland-world-coordinates.ts';
 test('all eight original mainland GridScript paths resolve exact source origins and reversible anchor transforms',()=>{
  const source=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(source.grids);
  assert.equal(grids.length,8);const meadow=grids.find(g=>g.key==='Meadow');
@@ -113,6 +113,21 @@ test('all eight original mainland GridScript paths resolve exact source origins 
  assert.deepEqual(mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-116.75,91.75),[]);
 });
 
+test('all 28 playable floating-island grids use independent reversible local planes, never a guessed common origin',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync('static/ddv/world/steam-1.26.2/floatingislands.json','utf8')));
+ const actual=bundle.grids.filter(g=>!g.layoutId.includes('_TEMPLATE'));
+ assert.equal(actual.length,28);assert.equal(new Set(actual.map(g=>g.layoutId)).size,14);
+ for(const g of actual){
+  const bound=bindFloatingIslandGrid(g);assert(bound,g.key);
+  assert.deepEqual(bound.bounds,{x:0,y:-g.sizeY,w:g.sizeX,h:g.sizeY});
+  assert.deepEqual(mainlandMapAnchor(bound,4,6),{x:4/g.factor,y:-6/g.factor});
+  assert.deepEqual(mainlandLocalAnchor(bound,4/g.factor,-6/g.factor),{x:4,y:6});
+  assert.equal(bindFloatingIslandGrid({...g,key:g.key+'invalid'}),null);
+ }
+ assert.equal(bindMainland(actual),null);
+ assert(bundle.grids.filter(g=>g.layoutId.includes('_TEMPLATE')).every(g=>bindFloatingIslandGrid(g)===null));
+});
+ 
 import {composeMainlandDesignFrame,mainlandFrameOffset,resolveMainlandDesign,mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches} from '../src/lib/world/mainland-design-frame.ts';
 import {emptyDesign,placeDesign,transformDesign,currentDesign,travelDesign} from '../src/lib/world/design-layout.ts';
 test('actual mainland terrain resolves two distinct native areas in one local design history and portable file',()=>{
