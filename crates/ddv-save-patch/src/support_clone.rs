@@ -173,3 +173,51 @@ fn install(source:&str,root:&Value,target:&GridCoordinateTarget,d:&PlainGridDest
  validate_json_without_edit(&candidate)?;
  insert_grid_record(&candidate,d,target.item_id,xy,orientation,Some(&serde_json::to_string(&state).map_err(|_|BAD)?))
 }
+
+/// Return a complete support hierarchy to inventory. The caller must first
+/// verify every removed object's native references and exact source scope.
+/// Reuse the strict clone reader to reject any unknown/stateful record.
+/// Neither global nor per-grid allocation counters are rolled back.
+pub fn preview_support_tree_pickup(source:&str,target:&GridCoordinateTarget,expected:(i32,i32))->Result<GridCoordinateDraft,PatchError>{
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400{return Err(BAD);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ if diff.is_some_and(|m|m.contains_key(&target.grid_id)){return Err(BAD);}
+ let src=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(|m|m.get(&target.object_id)).ok_or(BAD)?;
+ if object(src,&target.object_id)?!=target.item_id||(coord(src,"X")?,coord(src,"Y")?)!=expected{return Err(BAD);}
+ let child=state_child(src)?.ok_or(BAD)?;
+ let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next:1,created:Vec::new(),stock:vec![target.item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:false};
+ tree.clone_grid(child,target.item_id,0)?;
+ if tree.seen.contains(&target.grid_id.parse::<u32>().map_err(|_|BAD)?){return Err(BAD);}
+ let removed=tree.seen;let stock=tree.stock;
+ // Inspect all surviving records, not merely the support ownership fields.
+ // Any remaining recognized or unknown Grid-ID reference prevents deletion.
+ let map=root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?;
+ for id in &removed{map.remove(&id.to_string()).ok_or(BAD)?;}
+ map.get_mut(&target.grid_id).and_then(|g|g.get_mut("Objects")).and_then(Value::as_object_mut).and_then(|m|m.remove(&target.object_id)).ok_or(BAD)?;
+ if reserved_ref(&root,&removed,false){return Err(BAD);}
+ let inventory=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(Value::as_object).ok_or(BAD)?;
+ let mut amounts=HashMap::new();for i in &stock{amounts.insert(*i,id(inventory.get(&i.to_string()).and_then(|v|v.get("Amount")).ok_or(BAD)?)?);}
+ let mut working=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?.patched_json;
+ // Delete complete child Grid members, preserving surviving lexical bytes.
+ let path=vec![k("World"),k("GridCollection"),k("Grids")];
+ let mut locator=JsonLocator::grid_axis(&working,target,"X")?;locator.signed_path=None;locator.item_path=None;
+ locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+ let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(BAD)?;
+ locator.capture.clear();locator.pos=range.start;locator.expect(b'{')?;
+ let mut members=Vec::new();let mut seen=HashSet::new();
+ loop{
+  locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+  let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=path.clone();p.push(k(&key));locator.value(&mut p)?;
+  if key.parse::<u32>().ok().is_some_and(|n|removed.contains(&n)){seen.insert(key);}else{members.push(working[start..locator.pos].to_owned());}
+  locator.space();if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(BAD);}
+ }
+ if seen.len()!=removed.len(){return Err(BAD);}
+ let mut candidate=String::with_capacity(working.len());candidate.push_str(&working[..range.start]);candidate.push('{');candidate.push_str(&members.join(","));candidate.push('}');candidate.push_str(&working[range.end..]);
+ if serde_json::from_str::<Value>(&candidate).map_err(|_|BAD)?!=root{return Err(BAD);}
+ for i in stock{let amount=amounts.get_mut(&i).ok_or(BAD)?;let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(BAD)?;working=preview_default_furniture_stock(&candidate,i,*amount,1)?.patched_json;candidate=working;*amount=next;}
+ validate_json_without_edit(&candidate)?;
+ Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}

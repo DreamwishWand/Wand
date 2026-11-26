@@ -1756,6 +1756,31 @@ try{
   assert.equal(await supportPanel.locator('.support-map g').first().getAttribute('transform'),'translate(1 2)');
   assert.ok(!(await supportPanel.innerText()).includes('8001'));
   await supportPanel.getByRole('button',{name:'閉じる',exact:true}).click();
+  // Native support pickup returns both parent and contents; no orphan Grid
+  // and no partial edit of the original working Save.
+  const pickupSupportSave=structuredClone(supportSave);
+  const pickupSupportRoot=pickupSupportSave.World.GridCollection.Grids['101'];
+  pickupSupportRoot.NextGridObjectID=20;
+  pickupSupportSave.World.GridCollection.NextGridID=9000;
+  pickupSupportSave.World.GridCollection.Grids['8001']={ID:8001,GridDataPath:'GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json',TessellationFactor:2,NextGridObjectID:2,Objects:{'1':{ID:1,ItemID:40005160,X:0,Y:0,Orientation:'GridOrientation_Down'}}};
+  delete pickupSupportSave.World.GridCollection.Grids['8002'];
+  const acceptSupportPickup=dialog=>dialog.accept();page.on('dialog',acceptSupportPickup);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'support-pickup-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pickupSupportSave))});}finally{page.off('dialog',acceptSupportPickup);}
+  await supportMap.locator('.mainland-save-object[data-support="resolved_full"]').waitFor({timeout:30000});
+  if(!(await supportMap.locator('.overview-results').isVisible()))await supportMap.getByRole('button',{name:'配置検索',exact:true}).click();
+  await supportMap.locator('.overview-results button[data-support="resolved_full"]').click();
+  const supportPickup= supportMap.locator('.overview-selection .group-pickup');
+  await supportPickup.getByRole('button',{name:'支持家具と小物を回収',exact:true}).click({timeout:30000});
+  const supportPickupCopy=supportPickup.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});await supportPickupCopy.waitFor({timeout:30000});
+  const supportPickupOutput=await supportPickupCopy.evaluate(async el=>JSON.parse(await(await fetch(el.href)).text()));
+  assert.equal(supportPickupOutput.World.GridCollection.Grids['8001'],undefined);
+  assert.equal(supportPickupOutput.World.GridCollection.Grids['101'].Objects['1'],undefined);
+  assert.equal(supportPickupOutput.World.GridCollection.NextGridID,9000);
+  assert.equal(supportPickupOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,pickupSupportSave.Player.ListInventories['0'].Inventory['40005160'].Amount+2);
+  await supportPickup.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  await supportMap.locator('.mainland-save-object[data-support="resolved_full"]').waitFor({state:'detached',timeout:30000});
+  await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
+  await supportMap.locator('.mainland-save-object[data-support="resolved_full"]').waitFor({timeout:30000});
   // Independent floating-island map: original source paths, not a fabricated
   // transform into the Valley or a union of unlocated secondary grids.
   const islandSave=structuredClone(worldSave);

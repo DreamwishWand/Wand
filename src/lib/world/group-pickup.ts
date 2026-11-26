@@ -1,17 +1,20 @@
+import {nativeActionBlocked} from './native-edit-restrictions.ts';
+import {isCardinal} from './saved-map-transform.ts';
 import {stockSourceEligible} from './save-furniture-placement.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
-export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string}
+export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;includeSupport?:true}
 /** A selection is either entirely eligible or entirely refused. Do not
  * silently skip a locked/unknown/stateful object or partially return stock. */
 export function groupPickupPlan(items:readonly MainlandSavedObject[]):GroupPickupRow[]|null{
- if(items.length<2||items.length>WORLD_BATCH_LIMIT)return null;
+ if(!items.length||items.length>WORLD_BATCH_LIMIT||items.length===1&&!items[0].object.subgrid)return null;
  const seen=new Set<number>(),out:GroupPickupRow[]=[];
  for(const p of items){
   const o=p.object;
-  if(!stockSourceEligible(p)||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
+  const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
+  if(!support&&!stockSourceEligible(p)||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
   seen.add(o.localOrdinal);
-  out.push({localOrdinal:o.localOrdinal,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
+  out.push({localOrdinal:o.localOrdinal,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(support?{includeSupport:true as const}:{})});
  }
  return out.sort((a,b)=>a.localOrdinal-b.localOrdinal);
 }
@@ -24,4 +27,15 @@ export const groupPickupWords={
  'es-ES':['Recoger grupo','Devolver todos los muebles seleccionados al inventario.','Comprobando…','Todos los objetos verificados.','Un objeto, inventario o referencia impide la recogida.','Cancelar'],
  'zh-CN':['批量收回','将所选家具全部收回库存。','验证中…','全部物品已验证，可统一应用。','部分物品、库存或引用不允许收回。','取消'],
  'pt-BR':['Recolher grupo','Recolher todos os móveis selecionados ao inventário.','Verificando…','Todos os objetos verificados.','Um objeto, estoque ou referência impede a retirada.','Cancelar']
+} as const;
+
+export const supportPickupWords={
+ ja:['支持家具と小物を回収','支持家具とその上のすべての小物をインベントリへ戻します。'],
+ en:['Return furniture and contents','Return the support furniture and all its contents to inventory.'],
+ fr:['Ranger meuble et objets','Ranger le meuble et tous ses objets.'],
+ it:['Riponi mobile e oggetti','Riponi il mobile e tutti gli oggetti.'],
+ de:['Möbel und Inhalt zurücklegen','Möbel und alle darauf platzierten Objekte ins Inventar legen.'],
+ 'es-ES':['Recoger mueble y objetos','Devolver el mueble y todos sus objetos al inventario.'],
+ 'zh-CN':['收回支撑家具和物品','将支撑家具及其所有物品收回库存。'],
+ 'pt-BR':['Recolher móvel e objetos','Recolher o móvel e todos os seus objetos ao inventário.']
 } as const;

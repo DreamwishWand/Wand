@@ -1114,7 +1114,20 @@ fn saved_db04_source_projection(
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    group_pickup_for_scope(profile,plan,2,None)
+    let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
+    group_pickup_for_scope(profile,plan,if single{1}else{2},None)
+}
+fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize)->Result<(),CodecError>{
+ let bad=CodecError::Json;
+ if depth>8{return Err(bad);}
+ let child=grids.get(grid).and_then(|g|g.get("Objects")).and_then(|o|o.get(object)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+ if !seen.insert(child.clone()){return Err(bad);}
+ let objects=grids.get(&child).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+ let ids:Vec<_>=objects.keys().cloned().collect();
+ if !ids.is_empty(){let refs=grid_identity_dependencies_for_ids(profile,&child,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+ for (id,v) in objects{*total+=1;if *total>MAX_SCENE_FURNITURE{return Err(bad);}if v.get("State").and_then(|s|s.get("SubGrid")).is_some(){support_pickup_references(profile,grids,&child,id,seen,total,depth+1)?;}}
+ Ok(())
 }
 fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
@@ -1126,14 +1139,38 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
     let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
-        let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
+        let o=v.as_object().filter(|o|(o.len()==5||o.len()==6&&o.get("includeSupport").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"))).ok_or(CodecError::Json)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
         let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
-    let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let support_flags:Vec<_>=rows.iter().map(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)).collect();
+    // The ordinary resolver deliberately rejects support parents. Resolve
+    // only explicitly marked support roots here, without weakening it.
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+    let mut selected=HashSet::new();let mut targets=Vec::new();
+    for ((ordinal,item,expected,_,orientation),flag) in selections.iter().zip(&support_flags){
+      if *ordinal==0||!selected.insert(*ordinal)||scan.subgrid_parents.contains(ordinal)!=*flag{return Err(CodecError::Json);}
+      let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(CodecError::Json)?;
+      if target.kind!=GridObjectKind::Full||target.item_id!=*item||*xy!=Some(*expected)||scan.rows.get(ordinal-1).and_then(|r|r.get("orientation")).and_then(Value::as_str)!=orientation.as_deref(){return Err(CodecError::Json);}
+      targets.push(target.clone());
+    }
+    let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let mut tree_count=0usize;let mut child_ids=HashSet::new();
+    for (target,flag) in targets.iter().zip(&support_flags){
+      tree_count+=1;
+      if !flag{continue;}
+      let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
+      let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":target.item_id,"tree":tree});
+      checked_support_scene(target.item_id,&scene)?;
+      support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0)?;
+      if grid_identity_dependencies(profile,target)?.historical>0{return Err(CodecError::Json);}
+    }
+    if support_flags.iter().any(|v|*v)&&tree_count>MAX_SCENE_FURNITURE||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
     if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
@@ -1142,13 +1179,15 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
     }
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let mut stock=HashMap::<u64,u32>::new();
-    for t in &targets{
+    for (t,flag) in targets.iter().zip(&support_flags){
+        if *flag{continue;}
         if stock.contains_key(&t.item_id){continue;}
         let amount=inventory.get(&t.item_id.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
         stock.insert(t.item_id,amount);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
-    for (target,selection) in targets.iter().zip(&selections){
+    for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
+        if *flag{continue;}
         let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
         let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(CodecError::Bounds)?;
         let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Pickup{target,expected:selection.2}).map_err(|_|CodecError::Patch)?;
@@ -1156,6 +1195,12 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
             draft.patched_json.zeroize();return Err(CodecError::Patch);
         }
         working.zeroize();*working=draft.patched_json;*amount=next;
+    }
+    for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
+        if !flag{continue;}
+        let mut draft=ddv_save_patch::support_clone::preview_support_tree_pickup(&working,target,selection.2).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        working.zeroize();*working=std::mem::take(&mut draft.patched_json);
     }
     Ok(std::mem::take(&mut *working))
 }
@@ -2098,6 +2143,26 @@ mod terrain_session_tests{
         root["World"]["GridCollection"]["Grids"]["21"]=other;
         root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
+    fn complete_support_pickup_returns_root_and_children_and_rejects_external_references(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":2}}}},"Other":1e2},"World":{"GridCollection":{"NextGridID":10,"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005161,"X":9,"Y":9,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}}}}}"#;
+        let plan=serde_json::json!([{"localOrdinal":1,"itemId":"40005160","expectedX":4,"expectedY":6,"expectedOrientation":"GridOrientation_Down","includeSupport":true}]);
+        let before:Value=serde_json::from_slice(save).unwrap();
+        let copy=group_pickup_candidate(save,&plan.to_string()).unwrap();
+        let mut expected=before.clone();
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"]=Value::from(1);
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(3);
+        expected["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object_mut().unwrap().remove("1");
+        expected["World"]["GridCollection"]["Grids"].as_object_mut().unwrap().remove("8");
+        assert_eq!(serde_json::from_str::<Value>(&copy).unwrap(),expected);
+        assert!(copy.contains("\"Unknown\":1e2"));assert!(copy.contains("\"Other\":1e2"));
+        let mut external=before.clone();external["OtherGridID"]=Value::from(8);
+        assert!(group_pickup_candidate(&serde_json::to_vec(&external).unwrap(),&plan.to_string()).is_err());
+        let mut stateful=before.clone();stateful["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["State"]=serde_json::json!({"Other":1});
+        assert!(group_pickup_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+        let mut wrong=plan.clone();wrong[0].as_object_mut().unwrap().remove("includeSupport");
+        assert!(group_pickup_candidate(save,&wrong.to_string()).is_err());
     }
     #[test]
     fn support_stock_place_and_pickup_are_atomic_and_preserve_other_records(){
