@@ -388,7 +388,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let c=collection.as_object().ok_or(bad)?;
    let tree=crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
    fn descendants(t:&Value)->Result<usize,CodecError>{let mut n=0usize;for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{n+=1;if let Some(c)=o.get("child").filter(|v|!v.is_null()){n+=descendants(c)?;}}Ok(n)}
-   clone_total+=1+descendants(&tree)?;if clone_total+rows.len()>160{return Err(bad);}
+   clone_total+=descendants(&tree)?;if clone_total+rows.len()>128{return Err(bad);}
    let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
    let actual=current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64();
    if actual!=Some(u64::from(amount)){return Err(bad);}
@@ -615,6 +615,28 @@ mod tests{
   assert_eq!(out["World"]["GridCollection"]["NextGridID"],51);
   assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
   assert!(d.patched_json.contains("1e2"));
+  // Mixed clone and pickup use original room indices, consume/return all
+  // descendant stock, and preserve the original parent and child grids.
+  let mut mixed_source=orig.clone();
+  mixed_source["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]=json!({"ID":2,"ItemID":40005162,"X":6,"Y":4,"Orientation":"GridOrientation_Down"});
+  mixed_source["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=3.into();
+  mixed_source["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=3.into();
+  let raw_mixed=serde_json::to_vec(&mixed_source).unwrap();
+  let mut clone_plan=plan.clone();
+  clone_plan["place"].as_array_mut().unwrap().push(json!({"itemId":40005162,"expectedStock":1,"x":10,"y":8,"orientation":"GridOrientation_Down"}));
+  let cloned:Value=serde_json::from_str(&furniture_candidate(&raw_mixed,&clone_plan.to_string()).unwrap().patched_json).unwrap();
+  assert_eq!(cloned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"]["SubGrid"]["GridID"],50);
+  assert_eq!(cloned["World"]["GridCollection"]["Grids"]["50"],json!({"ID":50,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":mixed_source["World"]["GridCollection"]["Grids"]["43"]["Objects"]}));
+  assert_eq!(cloned["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
+  clone_plan["place"][1]["expectedStock"]=3.into();assert!(furniture_candidate(&raw_mixed,&clone_plan.to_string()).is_err());
+  let mut pickup=json!({"roomOrdinal":1,"surfaceOrdinal":1,"pickup":[{"index":0,"itemId":40005160,"expectedX":4,"expectedY":4,"expectedOrientation":"GridOrientation_Down","expectedStock":1,"includeSupport":true},{"index":1,"itemId":40005162,"expectedX":6,"expectedY":4,"expectedOrientation":"GridOrientation_Down","expectedStock":3}]});
+  let returned:Value=serde_json::from_str(&furniture_candidate(&raw_mixed,&pickup.to_string()).unwrap().patched_json).unwrap();
+  assert!(returned["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+  assert!(returned["World"]["GridCollection"]["Grids"].get("43").is_none());
+  assert_eq!(returned["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"],2);
+  assert_eq!(returned["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],6);
+  pickup["pickup"][0].as_object_mut().unwrap().remove("includeSupport");
+  assert!(furniture_candidate(&raw_mixed,&pickup.to_string()).is_err());
   // A portable scene restores into a room with no native support template.
   let mut blank=orig.clone();
   blank["World"]["GridCollection"]["Grids"]["42"]["Objects"]=json!({});
