@@ -32,7 +32,7 @@ export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly Ma
  * re-resolves every source pose against the unchanged file before writing. */
 export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[]):boolean{
  if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
- if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>!r.supportFactor&&r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
+ if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
  if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope)return false;
  if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects);
  return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));

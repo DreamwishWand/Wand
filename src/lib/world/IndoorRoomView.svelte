@@ -110,7 +110,7 @@
  function beginDuplicate(){if(!editAllowed||sceneCaptureWorker)return;if(mixedSelected){if(linkedAxis){editError=true;return;}captureRoomMixed(cutIndices,true);return;}if(!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
- $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>(!r.supportFactor||!!r.roomSource&&r.supportFactor===face.factor)&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
+ $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>(!r.supportFactor||r.supportFactor===face.factor)&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
  $: itw=indoorTerrainWords[locale];
  $: cutWords=groupCutWords[locale];
  $: canCut=editAllowed&&!!file&&!!cutSelection&&!moving&&!placing&&!swap&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!stockOpen;
