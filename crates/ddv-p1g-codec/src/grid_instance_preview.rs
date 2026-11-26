@@ -1114,7 +1114,9 @@ fn saved_db04_source_projection(
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    group_pickup_for_scope(profile,plan,2,None)
+    let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
+    group_pickup_for_scope(profile,plan,if single{1}else{2},None)
 }
 fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize)->Result<(),CodecError>{
  let bad=CodecError::Json;
@@ -2141,6 +2143,26 @@ mod terrain_session_tests{
         root["World"]["GridCollection"]["Grids"]["21"]=other;
         root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
+    fn complete_support_pickup_returns_root_and_children_and_rejects_external_references(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":2}}}},"Other":1e2},"World":{"GridCollection":{"NextGridID":10,"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005161,"X":9,"Y":9,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}}}}}"#;
+        let plan=serde_json::json!([{"localOrdinal":1,"itemId":"40005160","expectedX":4,"expectedY":6,"expectedOrientation":"GridOrientation_Down","includeSupport":true}]);
+        let before:Value=serde_json::from_slice(save).unwrap();
+        let copy=group_pickup_candidate(save,&plan.to_string()).unwrap();
+        let mut expected=before.clone();
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"]=Value::from(1);
+        expected["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(3);
+        expected["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object_mut().unwrap().remove("1");
+        expected["World"]["GridCollection"]["Grids"].as_object_mut().unwrap().remove("8");
+        assert_eq!(serde_json::from_str::<Value>(&copy).unwrap(),expected);
+        assert!(copy.contains("\"Unknown\":1e2"));assert!(copy.contains("\"Other\":1e2"));
+        let mut external=before.clone();external["OtherGridID"]=Value::from(8);
+        assert!(group_pickup_candidate(&serde_json::to_vec(&external).unwrap(),&plan.to_string()).is_err());
+        let mut stateful=before.clone();stateful["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["State"]=serde_json::json!({"Other":1});
+        assert!(group_pickup_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+        let mut wrong=plan.clone();wrong[0].as_object_mut().unwrap().remove("includeSupport");
+        assert!(group_pickup_candidate(save,&wrong.to_string()).is_err());
     }
     #[test]
     fn support_stock_place_and_pickup_are_atomic_and_preserve_other_records(){
