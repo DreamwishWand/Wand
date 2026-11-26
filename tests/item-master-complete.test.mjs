@@ -228,7 +228,7 @@ test('DB-01 media join is version isolated and uses only SRC-04 published Item I
   const local=site(),master=await openPublicItemMaster('/Wand',local.fetcher,{scope:'complete'});
   const before=local.requests.length;
   const fail=async()=>{throw Error('unexpected media request')};
-  const unpublished=createPublicItemMediaReader(master,undefined,fail);
+  const unpublished=createPublicItemMediaReader(master,{state:'unpublished'},fail);
   assert.equal(unpublished.status,'unpublished');
   assert.deepEqual(await unpublished.getItemImages([40005160,99999999]),[null,null]);
   const origin='https://media.dreamwishwand.com',sha='a'.repeat(64);
@@ -600,7 +600,7 @@ test('Shop bundle fallback names and components resolve from current Item DB',as
   const {fetcher:dbFetch}=site();
   const sources=await loadPinnedShopBundleSources('/Wand',async url=>new Response(await readFile(join(process.cwd(),'static',url.slice('/Wand/'.length)))));
   const master=await openPublicItemMaster('/Wand',dbFetch,{scope:'complete'});
-  const media=createPublicItemMediaReader(master);
+  const media=createPublicItemMediaReader(master,{state:'unpublished'});
   const view=await createShopBundleDisplay(sources,master,'ja',media);
   const hero=view.getOfferAppearances('HeroItem_CandyHouse')[0];
   assert(hero);
