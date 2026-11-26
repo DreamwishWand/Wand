@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
  import {onDestroy,onMount} from 'svelte';
@@ -88,7 +89,7 @@
   <button type="button" disabled={blocked} aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{w[7]}</button>
   <button type="button" disabled={blocked} on:click={exportFile}>{w[5]}</button>
  {/if}
- <input type="file" accept=".json,application/json" hidden bind:this={input} on:change={openFile}/><PresetFilePicker {locale} schemas={['wand.room-design@1']} disabled={blocked||!worker} label={w[6]} onPick={f=>void importPresetFile(f)}/>
+ <input type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" hidden bind:this={input} on:change={openFile}/><PresetFilePicker {locale} schemas={['wand.room-design@1']} disabled={blocked||!worker} label={w[6]} onPick={f=>void importPresetFile(f)}/>
  <button type="button" disabled={childBusy||validating||writePending} on:click={()=>{if(!warning||!surfaces.length||window.confirm(w[19]+' '+w[8]+'?'))onClose();}}>{w[8]}</button>
 </div>
 {#if loading||validating}<div class="project-message" role="status">{w[16]}</div>{:else if recovery}<div class="project-message"><button type="button" disabled={!worker} on:click={resume}>{w[11]}</button><button type="button" on:click={discard}>{w[12]}</button>{#if error}<small role="alert">{w[10]}</small>{/if}</div>{:else if !surfaces.length}<div class="project-message">{w[17]} · {w[9]}</div>{/if}
