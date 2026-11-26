@@ -807,7 +807,7 @@ pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64
 pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None)
 }
-fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
+pub(super) fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
  let tree=m.get("tree").ok_or(CodecError::Json)?;
  static CATALOG:std::sync::OnceLock<Result<Value,()>>=std::sync::OnceLock::new();
