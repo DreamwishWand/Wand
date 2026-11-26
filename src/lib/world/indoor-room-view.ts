@@ -7,6 +7,7 @@ import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {ROOM_CUT_LIMIT,rotateFurnitureGroup,type CutWitness} from './group-paste.ts';
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
 import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
+import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,supportSceneRootCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
@@ -152,7 +153,7 @@ export const indoorEditWords={
  'pt-BR':['Editar móveis','Selecionar um objeto','Rotação e troca sem mudar a ocupação. A colocação livre requer o terreno original.','Devolver ao inventário','Revisar','Não foi possível criar a cópia.']
 } as const;
 
-export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string;supportSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string}}
+export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string;supportSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string};scene?:SupportScene}
 export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string){
  const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
 }
@@ -234,6 +235,25 @@ export function captureIndoorScene(face:IndoorSurface|null,indices:readonly numb
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  try{return sceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),face.factor,'corner');}catch{return null;}
 }
+/** Portable root poses use the common half-cell lattice. */
+export function indoorMixedScene(text:string):MixedScenePreset|null{
+ try{return parseMixedScene(text);}catch{try{const scene=parseSupportScene(text);return mixedSceneFromClip([{itemId:scene.ownerItemId,dx:0,dy:0,orientation:2}],[scene],'corner');}catch{return null;}}
+}
+export function indoorMixedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],doc:MixedScenePreset,anchor:ScenePreset['anchor'],x:number,y:number):IndoorPlace[]|null{
+ if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId)||[...mixedSceneCounts(doc.items)].some(([id,n])=>(stock.get(id)??0)<n))return null;
+ const rows=indoorScenePlacement(face,shapes,allowed,stock,clip,anchor,x,y);if(!rows)return null;
+ const counts=new Map(stock);
+ return rows.map((row,i)=>{const scene=doc.items[i].support,expectedStock=counts.get(row.itemId)!;for(const [id,n] of scene?supportSceneRootCounts(scene):new Map([[row.itemId,1]]))counts.set(id,counts.get(id)!-n);return {...row,expectedStock,...(scene?{scene}:{})};});
+}
+export function captureIndoorMixedScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,supports:ReadonlyMap<number,SupportScene>):MixedScenePreset|null{
+ const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!face.factor||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const clip:DesignClipItem[]=[],scenes:(SupportScene|null)[]=[];
+ for(const i of indices){const o=tree.objects[i],s=supports.get(i)??null;if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||(!s&&face.positions[i]?.plain!==true)||s&&s.ownerItemId!==o.itemId)return null;
+  clip.push({itemId:o.itemId,dx:o.x*2/face.factor,dy:o.y*2/face.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});scenes.push(s);
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
+ try{return mixedSceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),scenes,'corner');}catch{return null;}
+}
 export function indoorSceneClip(text:string,factor:1|2):{clip:DesignClipItem[];anchor:ScenePreset['anchor']}{
  const scene=convertSceneFactor(parseSceneAnyFactor(text),factor);
  if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400))throw Error('INDOOR_SCENE_UNSUPPORTED');
@@ -249,14 +269,14 @@ export function indoorScenePlacement(face:IndoorSurface|null,shapes:Readonly<Rec
  return indoorGroupPlace(face,shapes,allowed,stock,clip,x,y);
 }
 export const indoorSceneWords={
- ja:['面全体のSceneを保存','通常家具の配置のみ。床材・壁紙・小物の状態は含みません。','Sceneを配置できません。形状・在庫・対応数を確認してください。'],
- en:['Save entire surface as Scene','Ordinary furniture layout only; finishes and object state are not included.','Cannot place Scene. Check geometry, stock and supported count.'],
- fr:['Enregistrer la surface en scène','Disposition des meubles uniquement ; finitions et état exclus.','Scène incompatible : vérifier géométrie, stock et quantité.'],
- it:['Salva superficie come scena','Solo disposizione dei mobili; finiture e stato esclusi.','Verifica geometria, scorte e quantità.'],
- de:['Fläche als Szene speichern','Nur Möbelanordnung; Oberflächen und Zustand ausgeschlossen.','Geometrie, Bestand und Anzahl prüfen.'],
- 'es-ES':['Guardar superficie como escena','Solo distribución de muebles; sin acabados ni estado.','Comprueba geometría, inventario y cantidad.'],
- 'zh-CN':['将整个表面保存为场景','仅普通家具布局，不包含饰面及物品状态。','请检查形状、库存和数量。'],
- 'pt-BR':['Salvar superfície como cena','Somente disposição de móveis; sem acabamentos ou estado.','Verifique geometria, estoque e quantidade.']
+ ja:['面全体のSceneを保存','家具と対応する支持面の配置。床材・壁紙は含みません。','Sceneを配置できません。形状・在庫・対応数を確認してください。'],
+ en:['Save entire surface as Scene','Furniture and supported surface layouts; finishes are not included.','Cannot place Scene. Check geometry, stock and supported count.'],
+ fr:['Enregistrer la surface en scène','Meubles et supports compatibles ; finitions exclues.','Scène incompatible : vérifier géométrie, stock et quantité.'],
+ it:['Salva superficie come scena','Disposizione di mobili e supporti compatibili; finiture escluse.','Verifica geometria, scorte e quantità.'],
+ de:['Fläche als Szene speichern','Möbel und unterstützte Ablagen; Oberflächen ausgeschlossen.','Geometrie, Bestand und Anzahl prüfen.'],
+ 'es-ES':['Guardar superficie como escena','Muebles y soportes compatibles; sin acabados.','Comprueba geometría, inventario y cantidad.'],
+ 'zh-CN':['将整个表面保存为场景','家具和兼容支撑面布局，不含饰面。','请检查形状、库存和数量。'],
+ 'pt-BR':['Salvar superfície como cena','Móveis e suportes compatíveis; sem acabamentos.','Verifique geometria, estoque e quantidade.']
 } as const;
 export const indoorGroupStockWords={
  ja:['選択した家具を回収','選択した家具を複製'],en:['Return selected furniture','Duplicate selected furniture'],fr:['Ranger les meubles sélectionnés','Dupliquer les meubles sélectionnés'],it:['Riponi mobili selezionati','Duplica mobili selezionati'],de:['Ausgewählte Möbel einlagern','Ausgewählte Möbel duplizieren'],'es-ES':['Guardar muebles seleccionados','Duplicar muebles seleccionados'],'zh-CN':['收回所选家具','复制所选家具'],'pt-BR':['Recolher móveis selecionados','Duplicar móveis selecionados']
