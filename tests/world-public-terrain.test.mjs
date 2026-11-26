@@ -484,7 +484,7 @@ test('mixed Scenes preserve the individual trees of repeated support roots and t
  assert.throws(()=>parseMixedScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:1}))})));
 });
 
-import {parseAreaScene,areaSceneFromClip,areaSceneCounts,parseSceneNetwork,networkSceneShape} from '../src/lib/world/area-scene.ts';
+import {parseAreaScene,areaSceneFromClip,areaSceneCounts,parseSceneNetwork,networkSceneShape,transformAreaScene} from '../src/lib/world/area-scene.ts';
 test('area Scene round trip distinguishes network state from furniture stock',()=>{
  const clip=[{itemId:40000001,dx:0,dy:0,orientation:2},{itemId:40100068,dx:0,dy:0,orientation:2},{itemId:40100068,dx:4,dy:0,orientation:2},{itemId:40700246,dx:8,dy:4,orientation:2},{itemId:40700247,dx:10,dy:4,orientation:2}];
  const modes=[null,{kind:'road',diagonal:false},{kind:'road',diagonal:true},{kind:'fence',base:40700246,diagonal:false},{kind:'fence',base:40700246,diagonal:false}];
@@ -499,3 +499,24 @@ test('area Scene round trip distinguishes network state from furniture stock',()
  assert.equal(networkSceneShape(road,geometry,1),shape);
  assert.equal(networkSceneShape(road,geometry,2),null);
 });
+
+test('area Scene rotation and reflection preserve fence endpoints and road cell alignment',()=>{
+ const base=40700246,ext=40700247,road=40100068;
+ const shape=(w,h)=>({width:w,height:h,cellCount:w*h,runs:Array.from({length:h},(_,y)=>({x:0,y,width:w})),acceptedFloorTypesFlag:1,path:''});
+ const def=(id,name,layer,shapes)=>({itemId:id,name,layer,surfaceCapable:false,shapes:Object.fromEntries(shapes.map(([code,w,h])=>[id+':'+code,shape(w,h)]))});
+ const defs=new Map([[base,new Map([[2,def(base,'Fence_WroughtIron','fence',[[8,2,2]])]])],[ext,new Map([[2,def(ext,'Fence_WroughtIron_Ext1','fence',[[8,2,2],[12,2,2]])]])],[road,new Map([[2,def(road,'Path_Test','ground',[[8,4,4]])]])]]);
+ // Use actual family native key rather than a guessed English display name.
+ const family=fenceFamilyCandidates.find(f=>f.base===base);
+ assert.ok(family);
+ defs.get(base).get(2).name=family.name;defs.get(ext).get(2).name=family.name+'_Ext1';
+ const doc=areaSceneFromClip([{itemId:base,dx:0,dy:0,orientation:2},{itemId:ext,dx:2,dy:0,orientation:2},{itemId:base,dx:4,dy:0,orientation:2},{itemId:road,dx:0,dy:4,orientation:2}],Array(4).fill(null),[{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'road',diagonal:true}]);
+ const rotated=transformAreaScene(doc,defs,'right');assert.ok(rotated);
+ assert.equal(rotated.items[1].orientation,3);
+ assert.deepEqual(rotated.items.slice(0,3).map(p=>[p.dx,p.dy]),[[6,0],[6,2],[6,4]]);
+ assert.equal(rotated.items[3].network.diagonal,true);
+ assert.deepEqual(transformAreaScene(rotated,defs,'left'),doc);
+ const flip=transformAreaScene(doc,defs,'vertical');assert.ok(flip);
+ assert.deepEqual(transformAreaScene(flip,defs,'vertical'),doc);
+});
+
+import {fenceFamilyCandidates} from '../src/lib/world/fence-family-catalog.ts';
