@@ -16,6 +16,7 @@
   let observer:IntersectionObserver|null=null;
   async function render(id:number,projection:SavedMemoryFlags|null|undefined,detail:boolean,active:boolean){
     controller?.abort();controller=null;ready=false;
+    if(canvas){canvas.width=1;canvas.height=1;}
     if(!active||!projection||!Object.hasOwn(projection.entries,String(id)))return;
     const request=new AbortController();controller=request;
     try{
