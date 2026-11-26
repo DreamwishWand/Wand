@@ -243,7 +243,7 @@
  <aside class="support-panel" aria-label={words[0]}>
   <header><strong>{words[0]} · {tree?.objects.length??'—'}</strong><button type="button" on:click={onClose} aria-label={words[7]}>×</button></header>
   {#if loading}<small role="status">{words[12]}</small>{/if}
-  {#if tree&&sceneOpen&&parent}<SupportSceneControls {tree} ownerItemId={owners[owners.length-1]} {parent} {file} {worker} {path} {counts} {names} {base} {locale} {canMove} {nextRequest} onBack={()=>sceneOpen=false} onApplied={onClose} onDuplicate={path.length===0?beginScene:null}/>
+  {#if tree&&sceneOpen&&(parent||roomParent)}<SupportSceneControls {tree} ownerItemId={owners[owners.length-1]} {parent} {roomParent} {file} {worker} {path} {counts} {names} {base} {locale} {canMove} {nextRequest} onBack={()=>sceneOpen=false} onApplied={onClose} onDuplicate={parent&&path.length===0?beginScene:null}/>
   {:else if tree}
    {#if roomParent&&roomPickupPlan&&canMove&&!loading&&!copy&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}
     <GroupPickupControls roomPlan={roomPickupPlan} {file} {locale} bind:active={roomPickupActive} onApplied={onClose}/>
@@ -253,7 +253,7 @@
     <button type="button" disabled={!duplicateReady} title={duplicateReady?dw[0]:dw[1]} on:click={()=>{if(duplicateNeeds&&duplicateReady)onRoomDuplicate(duplicateNeeds);}}>{dw[0]}</button>
     {#if duplicateNeeds}<div class="support-list">{#each [...duplicateNeeds] as [id,n]}<small>{names.get(id)??'—'} · {dw[2]} {n}/{counts.get(id)??0}</small>{/each}</div>{/if}
    {/if}
-   {#if parent&&!loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
+   {#if (parent||roomParent)&&!loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
    {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(Number(transferTarget.object.itemId))??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
    {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
    <div class="support-heading">{#if stack.length>1}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={back}>{words[11]}</button>{/if}<strong>{words[1]}</strong></div>
