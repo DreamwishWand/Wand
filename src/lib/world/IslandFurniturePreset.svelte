@@ -126,7 +126,7 @@
   const own=worker,f=file,ss=sessions,token=++epoch;reading=true;error=false;review=null;decorationReview=null;
   try{
    if(preset.size>(world?WORLD_DECORATION_FILE_LIMIT:Math.max(ISLAND_DECORATION_FILE_LIMIT,DESIGN_FILE_LIMIT)))throw Error('size');
-   const text=await preset.text();if(token!==epoch||file!==f||sessions!==ss)return;void rememberPreset(preset,text).catch(()=>{});
+   const text=await readPresetText(preset,world?WORLD_DECORATION_FILE_LIMIT:Math.max(ISLAND_DECORATION_FILE_LIMIT,DESIGN_FILE_LIMIT));if(token!==epoch||file!==f||sessions!==ss)return;void rememberPreset(preset,text).catch(()=>{});
    const schema=JSON.parse(text)?.schema,regionDoc=world&&schema==='wand.preset.region-decoration@1'?parseRegionDecoration(text,grids):null;
    if(world&&region&&!regionDoc)throw Error('region');
    if(regionDoc&&region&&(['x','y','w','h'] as const).some(k=>region![k]!==regionDoc.region[k]))throw Error('region mismatch');

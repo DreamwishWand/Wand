@@ -117,7 +117,7 @@
   const original=file,own=worker,epoch=++sceneEpoch;sceneReading=true;sceneError='';
   try{
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const raw=await f.text();void rememberPreset(f,raw).catch(()=>{});
+   const raw=await readPresetText(f,DESIGN_FILE_LIMIT);void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==sceneEpoch||file!==original||worker!==own||blocked)return;
    let areaDoc:AreaScene|null=null;try{areaDoc=parseAreaScene(raw);}catch{/* Other Scene formats below. */}
    if(areaDoc){if(!begin(false,null,null,areaDoc))sceneError=gs[2];return;}

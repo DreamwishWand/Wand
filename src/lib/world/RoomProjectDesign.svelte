@@ -75,7 +75,7 @@
  async function resume(){if(!recovery||validating)return;if(typeof recovery.draft!=='string'){error=true;return;}await restore(recovery.draft);}
  async function discard(){if(!recovery||validating||!window.confirm(w[14]))return;validating=true;try{revision=await changeLocalWorldDraft(ROOM_PROJECT_DRAFT_KEY,revision,null);recovery=undefined;error=false;}catch{warning=true;writable=false;recovery=undefined;}finally{validating=false;}}
  async function openFile(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)void importPresetFile(f);}
- async function importPresetFile(f:File){if(blocked||!worker||validating)return;if(surfaces.length&&!window.confirm(w[14]))return;if(f.size>ROOM_PROJECT_FILE_LIMIT){error=true;return;}validating=true;error=false;const token=++epoch,own=worker;try{const raw=await f.text();if(!alive||token!==epoch||worker!==own)return;validating=false;await restore(raw);void rememberPreset(f,raw).catch(()=>{});}catch{if(alive)error=true;}finally{if(alive&&token===epoch)validating=false;}}
+ async function importPresetFile(f:File){if(blocked||!worker||validating)return;if(surfaces.length&&!window.confirm(w[14]))return;if(f.size>ROOM_PROJECT_FILE_LIMIT){error=true;return;}validating=true;error=false;const token=++epoch,own=worker;try{const raw=await readPresetText(f,ROOM_PROJECT_FILE_LIMIT);if(!alive||token!==epoch||worker!==own)return;validating=false;await restore(raw);void rememberPreset(f,raw).catch(()=>{});}catch{if(alive)error=true;}finally{if(alive&&token===epoch)validating=false;}}
  function exportFile(){if(blocked||!surfaces.length)return;try{savePresetFile(serializeRoomProject(surfaces,selected),'wand-room-design.json');}catch{error=true;}}
 </script>
 <div class="project-tools">

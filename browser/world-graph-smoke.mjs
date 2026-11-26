@@ -1,4 +1,4 @@
-import {gunzipSync} from 'node:zlib';
+import {gunzipSync,gzipSync} from 'node:zlib';
 const presetBytes=b=>b[0]===31&&b[1]===139?gunzipSync(b):b;
 /**
  * DB-04 browser regression: actual Svelte/Worker controls with only a
@@ -1177,7 +1177,7 @@ try{
   const sceneBytes=await readFile(await sceneDownload.path());
   const sceneDoc=JSON.parse(presetBytes(sceneBytes).toString('utf8'));
   assert.equal(sceneDoc.schema,'wand.preset.scene@1');assert.equal(sceneDoc.items.length,1);
-  await design.locator('.scene-file-input').setInputFiles({name:'scene.json',mimeType:'application/json',buffer:sceneBytes});
+  await design.locator('.scene-file-input').setInputFiles({name:'scene.wandpreset',mimeType:'application/gzip',buffer:gzipSync(Buffer.from(JSON.stringify(sceneDoc)))});
   await design.locator('.scene-placement').waitFor({timeout:30000});
   assert.equal(await design.locator('.scene-required-row').count(),1);
   await design.locator('.scene-placement').getByRole('button',{name:'角',exact:true}).click();

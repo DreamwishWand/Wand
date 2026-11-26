@@ -81,7 +81,7 @@
  $: if(chosenAttachment)loadImages([...attachmentCounts.keys()].map(itemId=>({itemId})));
  $: if(attachmentJob&&(!active||attachmentJob.context!==contextKey||attachmentJob.timeline!==timeline)){attachmentRequest=0;attachmentJob=null;attachmentReading=false;}
  async function openAttachment(e:Event){const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';if(!f||!worker||!chosen||!chosenGeometry?.supportPath||busyImport)return;const own=worker,job={context:contextKey,timeline,id:chosen.id,itemId:chosen.itemId};attachmentJob=job;attachmentReading=true;error='';
-  try{if(f.size>262144)throw Error('size');const raw=await f.text();if(attachmentJob!==job||worker!==own)return;attachmentRequest=nextRequest();own.postMessage({command:'room-design-support-attachment',requestId:attachmentRequest,ownerItemId:job.itemId,raw});}catch{if(attachmentJob===job){attachmentJob=null;error=sceneText[5];}}finally{attachmentReading=false;}
+  try{if(f.size>262144)throw Error('size');const raw=await readPresetText(f,262144);if(attachmentJob!==job||worker!==own)return;attachmentRequest=nextRequest();own.postMessage({command:'room-design-support-attachment',requestId:attachmentRequest,ownerItemId:job.itemId,raw});}catch{if(attachmentJob===job){attachmentJob=null;error=sceneText[5];}}finally{attachmentReading=false;}
  }
  let finishValues:Record<string,number>={},finishHistory:Record<string,{values:number[];cursor:number}>={},finishCatalog:Partial<Record<RoomFinishKind,{locale:WandLanguage;items:RoomFinishItem[]}>>={},finishRequest=0,finishRequested='',finishError=false,finishOpen=false,finishQuery='',finishLimit=80;
  $: finishKind=roomFinishKind(grid);
@@ -343,7 +343,7 @@
  function setSceneAnchor(value:ScenePreset['anchor']){sceneAnchor=value;hover=scenePoint(lastPoint);}
  function saveScene(scene:ScenePreset|MixedScenePreset|null=sceneCapture){if(!scene||busyImport)return;try{const text=JSON.stringify(scene);if(scene.schema==='wand.preset.mixed-scene@1')parseMixedScene(text);else parseScene(text,scene.factor);savePresetFile(text,'wand-scene.json');}catch{error=sceneText[5];}}
  async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(file)void openSceneFile(file);}
- async function openSceneFile(file:File){if(!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await file.text();void rememberPreset(file,raw).catch(()=>{});let scene:ScenePreset|null,clip:DesignClipItem[];try{scene=convertSceneFactor(parseSceneAnyFactor(raw),factor);if(!scene)throw Error('incompatible scene factor');clip=[...scene.items];}catch{if(!isRoomDesign(grid)||factor!==2||!grid.gridDataPath.startsWith('GridData/Rooms/'))throw Error('mixed scene context');const mixed=parseMixedScene(raw);clip=mixed.items.map(({support,...pose})=>({...pose,...(support?{attachment:{scene:support,designOnly:false}}:{})}));scene={schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:2,anchor:mixed.anchor,items:mixed.items.map(({support,...pose})=>pose)};}if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste(clip,scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
+ async function openSceneFile(file:File){if(!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(file,DESIGN_FILE_LIMIT);void rememberPreset(file,raw).catch(()=>{});let scene:ScenePreset|null,clip:DesignClipItem[];try{scene=convertSceneFactor(parseSceneAnyFactor(raw),factor);if(!scene)throw Error('incompatible scene factor');clip=[...scene.items];}catch{if(!isRoomDesign(grid)||factor!==2||!grid.gridDataPath.startsWith('GridData/Rooms/'))throw Error('mixed scene context');const mixed=parseMixedScene(raw);clip=mixed.items.map(({support,...pose})=>({...pose,...(support?{attachment:{scene:support,designOnly:false}}:{})}));scene={schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:2,anchor:mixed.anchor,items:mixed.items.map(({support,...pose})=>pose)};}if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste(clip,scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
 
  let areaReview:{key:string;areaKey:string;baseline:DesignTimeline;next:DesignTimeline;preview:readonly DesignPlacement[];incoming:Map<number,DesignItemGeometry>;summary:ReturnType<typeof reviewWholeArea>}|null=null;
  $: if(areaReview&&(!active||areaReview.key!==contextKey||areaReview.baseline!==timeline||areaReview.areaKey!==areaTarget?.key||!areaKind))areaReview=null;
@@ -406,7 +406,7 @@
   const stillCurrent=()=>epoch===islandEpoch&&contextKey===context&&worker===own&&active;
   try{
    if(file&&file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const raw=file?await file.text():null,incoming=raw?parseIslandDesign(raw,source):null,baseline=await readIslandBaseline(source);if(file&&raw)void rememberPreset(file,raw).catch(()=>{});
+   const raw=file?await readPresetText(file,DESIGN_FILE_LIMIT):null,incoming=raw?parseIslandDesign(raw,source):null,baseline=await readIslandBaseline(source);if(file&&raw)void rememberPreset(file,raw).catch(()=>{});
    const before=Object.fromEntries(baseline.map(b=>[b.grid.key,b.timeline])),defs=new Map<string,Map<number,DesignItemGeometry>>();
    for(const b of baseline){
     if(!stillCurrent())return;
@@ -458,7 +458,7 @@
   reading=true;error='';
   try{
    if(file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const content=await file.text(),parsed=JSON.parse(content),kindFinish=roomFinishKind(target);
+   const content=await readPresetText(file,DESIGN_FILE_LIMIT),parsed=JSON.parse(content),kindFinish=roomFinishKind(target);
    const importedFinish=readRoomFinish(parsed,kindFinish,kindFinish?new Set(finishCatalog[kindFinish]?.items.map(i=>i.itemId)??[]):undefined);
    const whole=parsed?.schema==='wand.preset.whole-area-design@1',kind=whole?areaKind:null,sourceAreas=sourceFrame?new Map<number,string>():undefined;
    const presetTarget=areaTarget;
