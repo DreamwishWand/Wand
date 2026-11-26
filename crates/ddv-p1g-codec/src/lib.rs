@@ -1705,6 +1705,11 @@ mod browser_amount_preview {
             draft.patched_json.zeroize();
             Ok(r#"{"contract":"wand.db05.grid-transfer-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
         }
+        pub fn inspect_scene_network(&self,plan:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_SCENE_NETWORK_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_SCENE_NETWORK_NOT_OPEN"))?.profile.as_slice()};
+            grid_instance_preview::inspect_scene_network(source,plan).map_err(|_|fail("DB05_SCENE_NETWORK_INVALID"))
+        }
         pub fn inspect_subgrid(&self,ordinal:u32,item:u32,x:i32,y:i32)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_SUBGRID_NOT_OPEN"));}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_SUBGRID_NOT_OPEN"))?.profile.as_slice()};

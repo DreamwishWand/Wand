@@ -1,4 +1,6 @@
 <script lang="ts">
+ import {captureAreaPoses} from './area-scene.ts';
+ import {SCENE_FURNITURE_LIMIT} from './support-scene.ts';
  import {onDestroy} from 'svelte';
  import SubgridInspector from './SubgridInspector.svelte';
  import {supportWords,supportParentEligible,supportParentCandidate,type SupportParentCandidate} from './subgrid-local.ts';
@@ -104,7 +106,7 @@
  let furnitureOpen=false,furniturePlacing=false,furnitureGhost:StockCandidate|null=null,furnitureTools:SaveFurniturePalette;
  let pasteTools:GroupPasteControls,pasteActive=false,pasteGhost:GroupPasteCandidate|null=null,pasteAxis:WorldSymmetryAxis|null=null;
  $: pasteWords=groupPasteWords[locale];$: sy=groupSymmetryWords[locale];$: sceneText=sceneWords[locale];
- $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureFurnitureGroup(pasteSelection,true)&&(!pasteSelection.some(p=>p.object.subgrid)||pasteSelection.length<=32);$: cutWords=groupCutWords[locale];
+ $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&(!!captureAreaPoses(pasteSelection)||!!captureFurnitureGroup(pasteSelection,true)&&(!pasteSelection.some(p=>p.object.subgrid)||pasteSelection.length<=SCENE_FURNITURE_LIMIT));$: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
  $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection);
  $: canCopyFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection);
@@ -266,7 +268,7 @@
  $: canMove=!!chosen&&!!nativeCell&&layerSelectable(layerState,chosen.object)&&mainlandSavedMoveEligible(chosen)&&!saveLoading&&!saveFailed&&!pending.size&&!failed;
  $: preciseChanged=typeof preciseX==='number'&&typeof preciseZ==='number'&&Number.isSafeInteger(preciseX)&&Number.isSafeInteger(preciseZ)&&!!nativeCell&&(preciseX!==nativeCell.x||preciseZ!==nativeCell.z);
  $: dragGroup=objectDrag?.moved&&bound&&editAxis?savedSymmetryDraft(objectDrag.members,projection.objects,linkedEligible,editAxis,{dx:(objectDrag.end.x-objectDrag.cell.x)/objectDrag.target.factor,dz:(objectDrag.end.z-objectDrag.cell.z)/objectDrag.target.factor},bound,rasters,saveMaps,timeline):objectDrag?.moved&&bound&&objectDrag.members.length>1?mainlandSavedGroupDraft(objectDrag.members,bound,rasters,saveMaps,timeline,(objectDrag.end.x-objectDrag.cell.x)*mainlandGroupFactor(objectDrag.members)/objectDrag.target.factor,(objectDrag.end.z-objectDrag.cell.z)*mainlandGroupFactor(objectDrag.members)/objectDrag.target.factor):null;
- $: directParentPreview=objectDrag?.moved&&objectDrag.support&&bound&&furnitureReady&&!furnitureBlocked?parentDragCandidate(objectDrag,bound,rasters,saveMaps):null;
+ $: directParentPreview=objectDrag?.moved&&objectDrag.support&&bound&&furnitureReady&&!furnitureBlocked?parentDragCandidate(objectDrag,bound,rasters,saveMaps,projection.objects):null;
  $: draggedDraft=!editAxis&&objectDrag?.moved&&!objectDrag.support&&bound&&objectDrag.members.length===1?mainlandSavedDraftAtCell(objectDrag.target,bound,rasters,saveMaps,timeline,objectDrag.end.x,objectDrag.end.z,objectDrag.target.object.orientation):null;
  function applyCell(x:number,z:number){
   if(!canMove||!chosen||!bound)return false;
@@ -278,8 +280,8 @@
  function applyPrecise(){if(preciseChanged&&typeof preciseX==='number'&&typeof preciseZ==='number')applyCell(preciseX,preciseZ);}
  function pointerPoint(e:MouseEvent){const matrix=svg?.getScreenCTM();if(!matrix)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
  function parentDragPoint(d:ObjectDrag){return {x:(d.end.x+.5)/d.target.factor,y:-(d.end.z+.5)/d.target.factor};}
- function parentDragCandidate(d:ObjectDrag,grids:readonly MainlandGrid[],r:typeof rasters,m:typeof saveMaps){
-  const p=parentDragPoint(d);return supportParentCandidate(d.target,grids,r,p.x,p.y,d.target.object.orientation,m.get(d.target.area)?.shapes??{});
+ function parentDragCandidate(d:ObjectDrag,grids:readonly MainlandGrid[],r:typeof rasters,m:typeof saveMaps,objects:readonly MainlandSavedObject[]){
+  const p=parentDragPoint(d);return supportParentCandidate(d.target,grids,r,p.x,p.y,d.target.object.orientation,m.get(d.target.area)?.shapes??{},objects,false);
  }
  function startPointer(e:PointerEvent){
   suppressClick=false;clearTransfer();
@@ -316,7 +318,7 @@
   suppressClick=true;
   if(!commit||d.baseline!==timeline||!bound||!layerSelectable(layerState,d.target.object)||saveLoading||saveFailed||pending.size||failed)return;
   if(d.support){
-   if(!testExport||!furnitureReady||furnitureBlocked||editAxis||!parentDragCandidate(d,bound,rasters,saveMaps)){moveError=true;return;}
+   if(!testExport||!furnitureReady||furnitureBlocked||editAxis||!parentDragCandidate(d,bound,rasters,saveMaps,projection.objects)){moveError=true;return;}
    selected=d.target.object.localOrdinal;openSupport(d.target);initialSupportPoint=parentDragPoint(d);return;
   }
   if(editAxis){applyLinked(d.members,{dx:(d.end.x-d.cell.x)/d.target.factor,dz:(d.end.z-d.cell.z)/d.target.factor});return;}
@@ -487,7 +489,7 @@
  </button>
  <MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
- {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
+ {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} objects={projection.objects} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
  {#if saveMode}<GroupPasteControls bind:this={pasteTools} bind:active={pasteActive} bind:ghost={pasteGhost} bind:axis={pasteAxis} items={pasteSelection} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} omitted={projection.omitted} {locale} blocked={!furnitureReady||furnitureBlocked||!!roadSeed||networkOpen||supportOpen||furniturePlacing||groupPickupActive} {nextRequest} onBegin={beginPaste}/>{/if}
  {#if saveMode}<SaveFurniturePalette bind:this={furnitureTools} open={furnitureOpen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {chosen} objects={projection.objects} omitted={projection.omitted} {locale} blocked={furnitureBlocked} canStart={furnitureReady} {nextRequest} onBegin={beginFurniture} onClose={closeFurniture} bind:placing={furniturePlacing} bind:ghost={furnitureGhost}/>{/if}
  {#if saveMode&&searchOpen&&!furnitureOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" data-support={p.object.subgrid?.status} on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}

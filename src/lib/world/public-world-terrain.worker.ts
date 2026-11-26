@@ -1,4 +1,5 @@
-import {parseSupportScene,parseMixedScene} from './support-scene.ts';
+import {parseAreaScene} from './area-scene.ts';
+import {parseSupportScene,parseMixedScene,SCENE_FURNITURE_LIMIT,SCENE_SUPPORT_TREE_LIMIT} from './support-scene.ts';
 import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
@@ -115,11 +116,12 @@ scope.onmessage=async({data})=>{
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
     }
-    if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'){
+    if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'||data.command==='area-scene-geometry'){
       if(!release)throw Error('source');
       const mixed=data.command==='mixed-scene-geometry'?parseMixedScene(JSON.stringify(data.scene)):null;
-      const single=mixed?null:parseSupportScene(JSON.stringify(data.scene));
-      const definitions=await loadGeometry();let total=0;
+      const area=data.command==='area-scene-geometry'?parseAreaScene(JSON.stringify(data.scene)):null;
+      const single=mixed||area?null:parseSupportScene(JSON.stringify(data.scene));
+      const definitions=await loadGeometry();let total=0,treeCount=0;
       const itemIds=new Set<number>();
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
       const paths=await supportPaths;
@@ -128,7 +130,7 @@ scope.onmessage=async({data})=>{
         const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
         const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},t.factor);
         for(const o of t.objects){
-          if(++total>32)return false;itemIds.add(o.itemId);
+          if(++total>SCENE_FURNITURE_LIMIT||++treeCount>SCENE_SUPPORT_TREE_LIMIT)return false;itemIds.add(o.itemId);
           const code=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4;
           const p=cache.resolve(o.itemId,code);
           if(!p.shapeKey||p.layer!=='furniture'||nativeActionBlocked(p.editRestrictions,'select')||nativeActionBlocked(p.editRestrictions,'move')||nativeActionBlocked(p.editRestrictions,'remove'))return false;
@@ -143,9 +145,9 @@ scope.onmessage=async({data})=>{
         return true;
       }
       let valid=true;
-      const roots=mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
+      const roots=area?area.items.filter(p=>!p.network):mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
       for(const root of roots){
-        itemIds.add(root.itemId);if(++total>32){valid=false;break;}
+        treeCount=1;itemIds.add(root.itemId);if(++total>SCENE_FURNITURE_LIMIT){valid=false;break;}
         const source=paths.get(root.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
         if(root.support?!await check(root.itemId,root.support.tree,0):!!source?.SubGrid?.SubGridDataPath){valid=false;break;}
       }

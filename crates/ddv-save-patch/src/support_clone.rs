@@ -125,7 +125,7 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  if object(src,&target.object_id)?!=target.item_id||(coord(src,"X")?,coord(src,"Y")?)!=expected{return Err(BAD);}
  if source_grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
- if dest.values().any(|o|o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
+ if dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let child=state_child(src)?.ok_or(BAD)?;
  let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![target.item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:false};
  let cloned=tree.clone_grid(child,target.item_id,0)?;
@@ -148,7 +148,7 @@ pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestinati
  let next=id(c.get("NextGridID").ok_or(BAD)?)?;
  if next==0||grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
- if dest.values().any(|o|o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
+ if dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id};
  let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:true};
  let new_child=tree.scene_grid(item_id,scene,0)?;

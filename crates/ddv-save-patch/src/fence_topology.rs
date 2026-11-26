@@ -15,6 +15,12 @@ fn families()->&'static [Family]{
 }
 fn family(base:u32)->Option<&'static Family>{families().iter().find(|f|f.1==base)}
 pub fn supported_family(base:u32)->bool{family(base).is_some()}
+/// Resolve an observed native part, without treating extension IDs as base styles.
+pub fn family_for_part(item:u32,diagonal:bool)->Option<u32>{
+ let mut found=families().iter().filter(|f|f.1==item||if diagonal{f.3.contains(&item)}else{f.2.contains(&item)});
+ let base=found.next()?.1;if found.next().is_some(){None}else{Some(base)}
+}
+
 pub fn part_key(base:u32,diagonal:bool,item:u32)->Option<usize>{
  let f=family(base)?;if item==base{return Some(0);}
  let ids=if diagonal{&f.3}else{&f.2};ids.iter().position(|id|*id==item).map(|i|i+1)

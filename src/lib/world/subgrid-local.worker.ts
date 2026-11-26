@@ -3,6 +3,7 @@ import wasmUrl from '../save/wasm/p1g-pkg/ddv_p1g_codec_bg.wasm?url';
 import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 import {testSaveExportEnabled} from './test-save-export.ts';
 import {readExperimentalCopy} from './experimental-copy.ts';
+import {SCENE_FURNITURE_LIMIT} from './support-scene.ts';
 const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMessage:(value:unknown,transfer?:Transferable[])=>void};
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
@@ -19,12 +20,13 @@ scope.onmessage=async({data})=>{
    scope.postMessage({kind:data.command,replay:{command:data.command,plan:data.plan},...copy},[copy.bytes.buffer]);
   }else if(data.command==='inspect-subgrids'){
    const rows=data.parents;
-   if(!Array.isArray(rows)||!rows.length||rows.length>32||new Set(rows.map(p=>p?.localOrdinal)).size!==rows.length)throw Error('parents');
+   if(!Array.isArray(rows)||(!rows.length&&!data.networks?.length)||rows.length>SCENE_FURNITURE_LIMIT||new Set(rows.map(p=>p?.localOrdinal)).size!==rows.length)throw Error('parents');
    const results=rows.map(p=>{
     if(!p||!Number.isSafeInteger(p.localOrdinal)||p.localOrdinal<1||p.localOrdinal>20000||!Number.isSafeInteger(p.itemId)||p.itemId<1||p.itemId>0xffffffff||![p.x,p.y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647))throw Error('parent');
     return {localOrdinal:p.localOrdinal,result:JSON.parse(wasm!.inspect_subgrid(p.localOrdinal,p.itemId,p.x,p.y))};
    });
-   scope.postMessage({kind:'subgrids-local',results});
+   const networks=data.networks?.length?JSON.parse(wasm.inspect_scene_network(JSON.stringify(data.networks))):[];
+   scope.postMessage({kind:'subgrids-local',results,networks});
   }else{
    const p=data.parent;
    if(!p||!Number.isSafeInteger(p.localOrdinal)||p.localOrdinal<1||p.localOrdinal>20000||!Number.isSafeInteger(p.itemId)||p.itemId<1||p.itemId>0xffffffff||![p.x,p.y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647))throw Error('parent');

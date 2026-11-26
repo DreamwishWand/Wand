@@ -324,7 +324,7 @@ test('same-style cardinal road cells select only their source grid and translate
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
 
-import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits,supportDragDestination} from '../src/lib/world/subgrid-local.ts';
+import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits,supportDragDestination,supportParentCandidate} from '../src/lib/world/subgrid-local.ts';
 test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
  const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
  assert.equal(catalog.grids.length,47);
@@ -410,6 +410,21 @@ test('new path and fence styles create plans without any saved network seed',()=
  assert.equal(cardinalFenceCandidate(fence,[grid],rasters,[],a,b,'connect-line'),null);
 });
 
+test('support root moves exclude their own footprint but duplicates do not',()=>{
+ const grid={key:'A',factor:1,sizeX:20,sizeY:20,origin:{position:[0,0,0]},bounds:{x:0,y:-20,w:20,h:20},layoutId:'SceneLayouts/Village04/A.json',gridDataPath:'GridData/A.json'};
+ const rasters=new Map([['A',{sizeX:20,sizeY:20,nativeFloorValues:Uint32Array.from({length:400},()=>4)}]]);
+ const shape={width:2,height:2,cellCount:4,acceptedFloorTypesFlag:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:''};
+ const parent={area:'A',factor:1,x:2,y:-2,shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:'40005160',x:2,y:2,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:'40005160:8',name:'Support',layer:'furniture',surfaceCapable:true,subgrid:{status:'resolved_full',objectCount:1}}};
+ const blocker={...parent,x:6,y:-2,object:{...parent.object,localOrdinal:2,itemId:'40005162',x:6,subgrid:undefined,surfaceCapable:false}};
+ const ground={...blocker,object:{...blocker.object,localOrdinal:3,itemId:'40100068',layer:'ground'}};
+ const at=(x,objects,duplicate=false)=>supportParentCandidate(parent,[grid],rasters,x+.1,-2.1,parent.object.orientation,{},objects,duplicate);
+ assert.ok(at(3,[parent,blocker]));
+ assert.equal(at(3,[parent,blocker],true),null);
+ assert.equal(at(5,[parent,blocker]),null);
+ assert.ok(at(5,[parent,ground]));
+ assert.ok(at(9,[parent,blocker],true));
+});
+
 test('support direct drag preserves grab offset on native cells',()=>{
  const o={x:4,y:7};
  assert.deepEqual(supportDragDestination(o,{x:5,y:8},{x:3,y:4}),{x:2,y:3});
@@ -480,6 +495,51 @@ test('mixed Scenes preserve the individual trees of repeated support roots and t
  assert.equal(scene.items[0].support.tree.factor,2);
  assert.equal(scene.items[2].support.tree.objects.length,0);
  assert.throws(()=>mixedSceneFromClip(clip,[a,b,null]));
- assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:31},(_,x)=>({...leaf,x}))})]));
+ assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:32},(_,x)=>({...leaf,x}))})]));
  assert.throws(()=>parseMixedScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:1}))})));
+ const large=Array.from({length:128},(_,i)=>({itemId:i===0?owner:item,dx:i*2,dy:0,orientation:2}));
+ const empty=captureSupportScene(owner,{factor:1,sourcePath,objects:[]});
+ const largeSupports=large.map((_,i)=>i===0?empty:null);
+ assert.equal(mixedSceneFromClip(large,largeSupports).items.length,128);
+ assert.throws(()=>mixedSceneFromClip([...large,{...large[1],dx:256}],[...largeSupports,null]));
+ assert.throws(()=>mixedSceneFromClip(large,large.map((_,i)=>i===0?a:null)));
+ const network={itemId:40100068,dx:0,dy:4,orientation:2};
+ assert.equal(areaSceneFromClip([...large,network],[...largeSupports,null],[...large.map(()=>null),{kind:'road',diagonal:false}]).items.length,129);
 });
+
+import {parseAreaScene,areaSceneFromClip,areaSceneCounts,parseSceneNetwork,networkSceneShape,transformAreaScene} from '../src/lib/world/area-scene.ts';
+test('area Scene round trip distinguishes network state from furniture stock',()=>{
+ const clip=[{itemId:40000001,dx:0,dy:0,orientation:2},{itemId:40100068,dx:0,dy:0,orientation:2},{itemId:40100068,dx:4,dy:0,orientation:2},{itemId:40700246,dx:8,dy:4,orientation:2},{itemId:40700247,dx:10,dy:4,orientation:2}];
+ const modes=[null,{kind:'road',diagonal:false},{kind:'road',diagonal:true},{kind:'fence',base:40700246,diagonal:false},{kind:'fence',base:40700246,diagonal:false}];
+ const scene=areaSceneFromClip(clip,clip.map(()=>null),modes);
+ assert.deepEqual(parseAreaScene(JSON.stringify(scene)),scene);
+ assert.deepEqual([...areaSceneCounts(scene.items)],[[40000001,1]]);
+ assert.throws(()=>parseSceneNetwork({kind:'road',diagonal:true},40100068,1));
+ assert.throws(()=>parseSceneNetwork({kind:'fence',base:40700246,diagonal:true},40700247,2));
+ assert.throws(()=>parseAreaScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:7}))})));
+ const road=scene.items[1],shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],acceptedFloorTypesFlag:1,path:'M0 0h2v2H0Z'};
+ const geometry={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ assert.equal(networkSceneShape(road,geometry,1),shape);
+ assert.equal(networkSceneShape(road,geometry,2),null);
+});
+
+test('area Scene rotation and reflection preserve fence endpoints and road cell alignment',()=>{
+ const base=40700246,ext=40700247,road=40100068;
+ const shape=(w,h)=>({width:w,height:h,cellCount:w*h,runs:Array.from({length:h},(_,y)=>({x:0,y,width:w})),acceptedFloorTypesFlag:1,path:''});
+ const def=(id,name,layer,shapes)=>({itemId:id,name,layer,surfaceCapable:false,shapes:Object.fromEntries(shapes.map(([code,w,h])=>[id+':'+code,shape(w,h)]))});
+ const defs=new Map([[base,new Map([[2,def(base,'Fence_WroughtIron','fence',[[8,2,2]])]])],[ext,new Map([[2,def(ext,'Fence_WroughtIron_Ext1','fence',[[8,2,2],[12,2,2]])]])],[road,new Map([[2,def(road,'Path_Test','ground',[[8,4,4]])]])]]);
+ // Use actual family native key rather than a guessed English display name.
+ const family=fenceFamilyCandidates.find(f=>f.base===base);
+ assert.ok(family);
+ defs.get(base).get(2).name=family.name;defs.get(ext).get(2).name=family.name+'_Ext1';
+ const doc=areaSceneFromClip([{itemId:base,dx:0,dy:0,orientation:2},{itemId:ext,dx:2,dy:0,orientation:2},{itemId:base,dx:4,dy:0,orientation:2},{itemId:road,dx:0,dy:4,orientation:2}],Array(4).fill(null),[{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'road',diagonal:true}]);
+ const rotated=transformAreaScene(doc,defs,'right');assert.ok(rotated);
+ assert.equal(rotated.items[1].orientation,3);
+ assert.deepEqual(rotated.items.slice(0,3).map(p=>[p.dx,p.dy]),[[6,0],[6,2],[6,4]]);
+ assert.equal(rotated.items[3].network.diagonal,true);
+ assert.deepEqual(transformAreaScene(rotated,defs,'left'),doc);
+ const flip=transformAreaScene(doc,defs,'vertical');assert.ok(flip);
+ assert.deepEqual(transformAreaScene(flip,defs,'vertical'),doc);
+});
+
+import {fenceFamilyCandidates} from '../src/lib/world/fence-family-catalog.ts';

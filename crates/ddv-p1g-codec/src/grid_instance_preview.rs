@@ -1135,9 +1135,134 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
 
 /// Place a clipboard group atomically. All destinations, new identities and
 /// stock requirements resolve on the immutable source before staging.
+/// Resolve network modes from exact native records; never infer a road's
+/// diagonal state or a fence's base family from the rendered footprint.
+pub(super) fn inspect_scene_network(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ let bad=CodecError::Json;
+ if plan.len()>65536{return Err(CodecError::Bounds);}
+ let requests:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let rows=requests.as_array().filter(|a|!a.is_empty()&&a.len()<=384).ok_or(bad)?;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+ let mut seen=HashSet::new();let mut output=Vec::new();
+ let mut fence_groups=HashMap::<(String,u32,bool,u32),Vec<ddv_save_patch::fence_topology::FencePart>>::new();
+ let mut chosen=HashSet::new();
+ for row in rows{
+  let o=row.as_object().filter(|o|o.len()==4).ok_or(bad)?;
+  let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0&&seen.insert(*n)).ok_or(bad)?;
+  let item=o.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
+  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+  let xy=(int("x")?,int("y")?);
+  let (target,pos)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+  if target.kind!=GridObjectKind::Full||target.item_id!=item||*pos!=Some(xy){return Err(bad);}
+  let g=grids.get(&target.grid_id).ok_or(bad)?;
+  let v=g.get("Objects").and_then(|v|v.get(&target.object_id)).ok_or(bad)?;
+  if v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(bad);}
+  let diagonal=ddv_save_patch::road_mode(v).ok_or(bad)?;
+  let orientation=v.get("Orientation").and_then(Value::as_str).ok_or(bad)?;
+  let network=match item/100_000{
+   401 if orientation=="GridOrientation_Down"=>serde_json::json!({"kind":"road","diagonal":diagonal}),
+   407=>{
+    let item=u32::try_from(item).map_err(|_|bad)?;
+    let base=ddv_save_patch::fence_topology::family_for_part(item,diagonal).ok_or(bad)?;
+    if !matches!(orientation,"GridOrientation_Down"|"GridOrientation_Left"){return Err(bad);}
+    let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
+    fence_groups.entry((target.grid_id.clone(),base,diagonal,factor)).or_default().push(ddv_save_patch::fence_topology::FencePart{item,x:xy.0,y:xy.1,left:orientation=="GridOrientation_Left",diagonal});
+    chosen.insert((target.grid_id.clone(),target.object_id.clone()));
+    serde_json::json!({"kind":"fence","diagonal":diagonal,"base":base})
+   },
+   _=>return Err(bad)
+  };
+  output.push(serde_json::json!({"localOrdinal":ordinal,"network":network}));
+ }
+ // Refuse incomplete connected selections. This deliberately uses the
+ // existing conservative eight-cell isolation envelope, not a guess.
+ for ((grid,base,diagonal,factor),parts) in fence_groups{
+  let (nodes,edges)=ddv_save_patch::fence_topology::decompile_fence(base,factor,diagonal,&parts).map_err(|_|bad)?;
+  let posts=parts.iter().filter(|p|p.item==base).map(|p|(p.x,p.y)).collect();
+  let actual=ddv_save_patch::fence_topology::compile_fence_with_posts(base,factor,diagonal,&nodes,&edges,&posts).map_err(|_|bad)?;
+  if actual.into_iter().collect::<std::collections::BTreeSet<_>>()!=parts.iter().copied().collect(){return Err(bad);}
+  for (id,v) in grids[&grid]["Objects"].as_object().ok_or(bad)?{
+   if chosen.contains(&(grid.clone(),id.clone()))||v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=407){continue;}
+   let x=v.get("X").and_then(Value::as_i64).ok_or(bad)?;let y=v.get("Y").and_then(Value::as_i64).ok_or(bad)?;
+   if nodes.iter().any(|&(a,b)|x.abs_diff(i64::from(a))<=u64::from(factor)*8&&y.abs_diff(i64::from(b))<=u64::from(factor)*8){return Err(bad);}
+  }
+ }
+ serde_json::to_string(&output).map_err(|_|bad)
+}
+/// Stage networks and furniture together, preserving stock semantics.
+/// No intermediate candidate is returned even if a later network fails.
+const MAX_SCENE_FURNITURE:usize=128;
+fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
+ use ddv_save_patch::fence_topology::{FencePart,decompile_fence,compile_fence_with_posts};
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if rows.is_empty()||rows.len()>MAX_SCENE_FURNITURE+256+128{return Err(bad);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+ let mut ordinary=Vec::new();
+ let mut roads=std::collections::BTreeMap::<(String,u64,bool),Vec<(i32,i32)>>::new();
+ let mut fences=std::collections::BTreeMap::<(String,u32,bool),Vec<FencePart>>::new();
+ let mut destinations=HashMap::new();let mut seen=HashSet::new();let mut network_count=0;
+ for row in rows{
+  let Some(n)=row.get("network") else{ordinary.push(row.clone());continue;};
+  network_count+=1;if network_count>384{return Err(bad);}
+  let o=row.as_object().filter(|o|o.len()==6&&o.keys().all(|k|matches!(k.as_str(),"network"|"itemId"|"x"|"y"|"orientation"|"destination"))).ok_or(bad)?;
+  let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u32>().ok().filter(|i|i.to_string()==s)).ok_or(bad)?;
+  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+  let (x,y)=(int("x")?,int("y")?);
+  let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+  let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
+  let kind=n.get("kind").and_then(Value::as_str).ok_or(bad)?;
+  let diagonal=n.get("diagonal").and_then(Value::as_bool).ok_or(bad)?;
+  if !seen.insert((d.grid_id.clone(),kind.to_owned(),x,y)){return Err(bad);}
+  let grid=d.grid_id.clone();destinations.insert(grid.clone(),d);
+  match kind{
+   "road" if item/100_000==401&&orientation=="GridOrientation_Down"&&n.as_object().is_some_and(|m|m.len()==2)=>{roads.entry((grid,u64::from(item),diagonal)).or_default().push((x,y));},
+   "fence" if item/100_000==407&&matches!(orientation,"GridOrientation_Down"|"GridOrientation_Left")&&n.as_object().is_some_and(|m|m.len()==3)=>{
+    let base=n.get("base").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+    if ddv_save_patch::fence_topology::family_for_part(item,diagonal)!=Some(base){return Err(bad);}
+    fences.entry((grid,base,diagonal)).or_default().push(FencePart{item,x,y,left:orientation=="GridOrientation_Left",diagonal});
+   },_=>return Err(bad)
+  }
+ }
+ if ordinary.len()>MAX_SCENE_FURNITURE||roads.values().map(Vec::len).sum::<usize>()>256||fences.values().map(Vec::len).sum::<usize>()>128{return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ if !ordinary.is_empty(){let draft=group_paste_candidate(profile,&serde_json::to_string(&ordinary).map_err(|_|bad)?)?;working.zeroize();*working=draft;}
+ let install=|working:&mut Zeroizing<String>,d:&ddv_save_patch::PlainGridDestination,mut draft:ddv_save_patch::GridCoordinateDraft,count:usize|->Result<(),CodecError>{
+  let current:Value=serde_json::from_str(working).map_err(|_|bad)?;
+  let next=current["World"]["GridCollection"]["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?;
+  let ids=(0..count).map(|i|next.checked_add(i as u64).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+  let refs=grid_identity_dependencies_for_ids(working.as_bytes(),&d.grid_id,&ids)?;
+  if refs.blocking()>0||refs.historical>0||!draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+  working.zeroize();**working=std::mem::take(&mut draft.patched_json);Ok(())
+ };
+ // Diagonal roads first would block subsequent cardinal neighbors;
+ // keep cardinal cells first and preserve exact requested modes.
+ let mut road_groups:Vec<_>=roads.into_iter().collect();road_groups.sort_by_key(|((_,_,diag),_)|*diag);
+ for ((grid,item,diag),cells) in road_groups{
+  let d=destinations.get(&grid).ok_or(bad)?;
+  let draft=ddv_save_patch::preview_road_mutation(&working,d,item,&cells,false,diag,None).map_err(|_|bad)?;
+  install(&mut working,d,draft,cells.len())?;
+ }
+ for ((grid,base,diag),parts) in fences{
+  let d=destinations.get(&grid).ok_or(bad)?;
+  let (nodes,edges)=decompile_fence(base,d.tessellation,diag,&parts).map_err(|_|bad)?;
+  let posts=parts.iter().filter(|p|p.item==base).map(|p|(p.x,p.y)).collect();
+  let actual=compile_fence_with_posts(base,d.tessellation,diag,&nodes,&edges,&posts).map_err(|_|bad)?;
+  // Preserve exact original representation: no implicit extra posts.
+  if actual.iter().copied().collect::<std::collections::BTreeSet<_>>()!=parts.iter().copied().collect(){return Err(bad);}
+  let draft=ddv_save_patch::preview_isolated_fence_with_posts(&working,d,base,diag,&nodes,&edges,&posts).map_err(|_|bad)?;
+  install(&mut working,d,draft,actual.len())?;
+ }
+ Ok(std::mem::take(&mut *working))
+}
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    if plan.len()>65536{return Err(CodecError::Bounds);}
+    if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    if let Some(rows)=value.as_array().filter(|rows|rows.iter().any(|r|r.get("network").is_some())){return area_scene_candidate(profile,rows);}
     if value.as_array().is_some_and(|rows|rows.iter().any(|r|r.get("scene").is_some())){
         return mixed_scene_candidate(profile,&value);
     }
@@ -1148,7 +1273,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
 fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=32).ok_or(bad)?;
+    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=MAX_SCENE_FURNITURE).ok_or(bad)?;
     let mut total=0usize;
     let mut anchors=HashSet::new();
     fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
@@ -1166,10 +1291,12 @@ fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
         let xy=(int("x")?,int("y")?);
         let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
         if !anchors.insert((d.grid_id,xy)){return Err(bad);}
-        total+=1;if total>32{return Err(CodecError::Bounds);}
+        total+=1;
         if let Some(scene)=o.get("scene"){
-            descendants(checked_support_scene(item,scene)?,&mut total,0)?;
+            let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
+            total+=subtree-1;
         }
+        if total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for row in rows{
@@ -1193,7 +1320,7 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
     use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    if plan.len()>32768{return Err(CodecError::Bounds);}
+    if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
@@ -1867,6 +1994,38 @@ mod terrain_session_tests{
         plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
     }
     #[test]
+    fn area_scene_preserves_road_mode_and_exact_fence_topology_with_furniture(){
+        let source=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":1},"40100068":{"Amount":8},"40700246":{"Amount":9}}}}},"World":{"GridCollection":{"NextGridID":8,"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":1,"Objects":{}}}}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":30,"sizeY":30});
+        let mut rows=serde_json::json!([
+          {"itemId":"40000001","x":4,"y":4,"orientation":"GridOrientation_Down","destination":witness},
+          {"itemId":"40100068","x":4,"y":4,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"road","diagonal":false}},
+          {"itemId":"40100068","x":8,"y":4,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"road","diagonal":true}},
+          {"itemId":"40700246","x":20,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}},
+          {"itemId":"40700247","x":22,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}},
+          {"itemId":"40700246","x":24,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}}
+        ]);
+        let result=group_paste_candidate(source,&rows.to_string()).unwrap();
+        let v:Value=serde_json::from_str(&result).unwrap();
+        let grid=&v["World"]["GridCollection"]["Grids"]["7"];
+        assert_eq!(grid["NextGridObjectID"],7);
+        assert_eq!(grid["Objects"]["2"]["State"],Value::Null);
+        assert_eq!(grid["Objects"]["3"]["State"]["FenceMode"]["Diagonal"],true);
+        assert_eq!(grid["Objects"]["5"]["ItemID"],40700247);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40100068"]["Amount"],8);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40700246"]["Amount"],9);
+        let (scan,_)=scan_grid_instances(result.as_bytes()).unwrap();
+        let requests:Vec<_>=scan.private_targets.iter().enumerate().filter(|(_, (t,_))|t.item_id/100_000==401||t.item_id/100_000==407).map(|(i,(t,xy))|{let (x,y)=xy.unwrap();serde_json::json!({"localOrdinal":i+1,"itemId":t.item_id,"x":x,"y":y})}).collect();
+        let captured:Value=serde_json::from_str(&inspect_scene_network(result.as_bytes(),&serde_json::to_string(&requests).unwrap()).unwrap()).unwrap();
+        assert_eq!(captured.as_array().unwrap().len(),5);
+        assert!(captured.as_array().unwrap().iter().any(|r|r["network"]["diagonal"]==true));
+        let mut incomplete=requests.clone();incomplete.pop();
+        assert!(inspect_scene_network(result.as_bytes(),&serde_json::to_string(&incomplete).unwrap()).is_err());
+        rows[5]["x"]=Value::from(26);
+        assert!(group_paste_candidate(source,&rows.to_string()).is_err());
+    }
+    #[test]
     fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1},"40005162":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
           "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
@@ -1951,6 +2110,25 @@ mod terrain_session_tests{
         for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
         assert_eq!(c["Grids"]["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
         assert_eq!(c["Grids"]["7"]["Objects"]["4"]["State"]["SubGrid"]["GridID"],22);
+        // Exceed the old aggregate 32-object limit without increasing
+        // either native tree's independent safety bound.
+        let mut expanded=mixed.clone();
+        expanded["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=Value::from(36);
+        let mut large_rows=rows.as_array().unwrap().clone();
+        for i in 0..31{
+            large_rows.push(serde_json::json!({"itemId":"40005162","x":i,"y":25,"orientation":"GridOrientation_Down","destination":witness}));
+        }
+        let large_result=group_paste_candidate(&serde_json::to_vec(&expanded).unwrap(),&serde_json::to_string(&large_rows).unwrap()).unwrap();
+        let large_result:Value=serde_json::from_str(&large_result).unwrap();
+        assert_eq!(large_result["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().len(),34);
+        assert_eq!(large_result["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
+        // Existing roads may share the furniture's anchor without consuming stock.
+        let mut paved=blank.clone();
+        paved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]=serde_json::json!({"ID":1,"ItemID":40100068,"X":12,"Y":12,"Orientation":"GridOrientation_Down","State":null});
+        let on_road=support_scene_place_candidate(&serde_json::to_vec(&paved).unwrap(),40005160,(12,12),&witness,"GridOrientation_Down",&scene).unwrap();
+        let on_road:Value=serde_json::from_str(&on_road.patched_json).unwrap();
+        assert_eq!(on_road["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["ItemID"],40100068);
+        assert_eq!(on_road["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]["ItemID"],40005160);
         // Failure after staging the first roots must return no candidate.
         assert!(group_paste_candidate(&raw,&rows.to_string()).is_err());
         rows[2]["x"]=Value::from(2);rows[2]["y"]=Value::from(2);

@@ -93,6 +93,12 @@ export const supportSceneCreateWords={
 
 /** A mixed Scene records root poses in a shared half-cell coordinate system.
  * Each root retains its own support hierarchy; no local Save IDs are stored. */
+/** Distinguish the transaction limit from the verified native subtree limit. */
+export const SCENE_FURNITURE_LIMIT=128;
+export const SCENE_SUPPORT_TREE_LIMIT=32;
+export function mixedSceneSizeValid(items:readonly MixedSceneItem[]){
+ return items.length<=SCENE_FURNITURE_LIMIT&&items.every(p=>!p.support||[...supportSceneRootCounts(p.support).values()].reduce((a,b)=>a+b,0)<=SCENE_SUPPORT_TREE_LIMIT)&&[...mixedSceneCounts(items).values()].reduce((a,b)=>a+b,0)<=SCENE_FURNITURE_LIMIT;
+}
 export interface MixedSceneItem extends DesignClipItem{support:SupportScene|null}
 export interface MixedScenePreset{schema:'wand.preset.mixed-scene@1';gameVersion:'1.26.2';factor:2;anchor:'corner'|'center';items:MixedSceneItem[]}
 export function mixedSceneCounts(items:readonly MixedSceneItem[]):Map<number,number>{
@@ -101,7 +107,7 @@ export function mixedSceneCounts(items:readonly MixedSceneItem[]):Map<number,num
 export function parseMixedScene(raw:string):MixedScenePreset{
  if(raw.length>262144)throw Error('SCENE_LIMIT');
  const v:unknown=JSON.parse(raw);
- if(!rec(v)||Object.keys(v).length!==5||v.schema!=='wand.preset.mixed-scene@1'||v.gameVersion!=='1.26.2'||v.factor!==2||!(v.anchor==='corner'||v.anchor==='center')||!Array.isArray(v.items)||!v.items.length||v.items.length>32)throw Error('SCENE_INVALID');
+ if(!rec(v)||Object.keys(v).length!==5||v.schema!=='wand.preset.mixed-scene@1'||v.gameVersion!=='1.26.2'||v.factor!==2||!(v.anchor==='corner'||v.anchor==='center')||!Array.isArray(v.items)||!v.items.length||v.items.length>SCENE_FURNITURE_LIMIT)throw Error('SCENE_INVALID');
  const flat=parseScene(JSON.stringify({schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items:v.items.map(p=>{
   if(!rec(p)||Object.keys(p).length!==5||!furniture(p.itemId)||!Object.prototype.hasOwnProperty.call(p,'support'))throw Error('SCENE_ITEM');
   const {support,...pose}=p;return pose;
@@ -112,7 +118,7 @@ export function parseMixedScene(raw:string):MixedScenePreset{
   if(support&&support.ownerItemId!==p.itemId)throw Error('SCENE_OWNER');
   return {...p,support};
  });
- if(!items.some(p=>p.support)||[...mixedSceneCounts(items).values()].reduce((a,b)=>a+b,0)>32)throw Error('SCENE_LIMIT');
+ if(!items.some(p=>p.support)||!mixedSceneSizeValid(items))throw Error('SCENE_LIMIT');
  return {schema:'wand.preset.mixed-scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items};
 }
 export function mixedSceneFromClip(clip:readonly DesignClipItem[],supports:readonly (SupportScene|null)[],anchor:'corner'|'center'='center'):MixedScenePreset{
