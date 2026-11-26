@@ -2667,3 +2667,28 @@ mod biome_decoration_tests{
   assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(),raw);
  }
 }
+
+#[cfg(test)]
+mod complete_area_support_tests{
+ use super::*;
+ #[test]
+ fn biome_support_replacement_restores_tree_and_stock_in_one_candidate(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":0}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":80}}}}},"80":{"ID":80,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+  let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
+  let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":tree});
+  let plan=serde_json::json!({"furniture":{"destination":dest,"remove":[{"localOrdinal":1,"itemId":"40005160","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","includeSupport":true}],"add":[{"destination":dest,"itemId":"40005160","x":4,"y":4,"orientation":"GridOrientation_Down","scene":scene}]},"network":{"destination":dest,"before":[],"after":[]}});
+  let source=serde_json::to_vec(&raw).unwrap();
+  let result=biome_decoration_candidate(&source,&plan.to_string()).unwrap();
+  let result:Value=serde_json::from_str(&result).unwrap();
+  let c=result["World"]["GridCollection"].as_object().unwrap();
+  assert_eq!(result["Player"],raw["Player"]);assert!(c["Grids"].get("80").is_none());assert_eq!(c["NextGridID"],101);
+  assert_eq!(c["Grids"]["43"],raw["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(subgrid_tree(c,"42","5").unwrap(),tree);
+  let mut bad=plan.clone();bad["furniture"]["add"][0]["scene"]["tree"]["objects"][0]["itemId"]=Value::from(40005162);
+  assert!(biome_decoration_candidate(&source,&bad.to_string()).is_err());
+ }
+}
