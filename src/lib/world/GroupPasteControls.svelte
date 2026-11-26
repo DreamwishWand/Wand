@@ -17,7 +17,7 @@
  import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import {parseSupportScene,captureSupportScene,SCENE_FURNITURE_LIMIT,mixedSceneCounts,parseMixedScene,mixedSceneFromClip,mixedScenePlacement,mixedPlacementCounts,type MixedScenePlacement,type MixedScenePreset,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
- import {parseAreaScene,areaSceneFromClip,areaSceneCounts,captureAreaPoses,areaSceneCandidate,parseSceneNetwork,transformAreaScene,type AreaSceneTransform,type AreaScene,type SceneNetwork,type AreaSceneCandidate} from './area-scene.ts';
+ import {parseAreaScene,areaSceneFromClip,areaSceneCounts,areaPlacementCounts,captureAreaPoses,areaSceneCandidate,parseSceneNetwork,transformAreaScene,type AreaSceneTransform,type AreaScene,type SceneNetwork,type AreaSceneCandidate} from './area-scene.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
@@ -45,9 +45,9 @@
  $: geometryReady=active&&(!supportScene&&!areaScene||supportValid)&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!activeCut||cutClipboardMatches(activeCut,file,scope,objects));
  $: baseReady=geometryReady&&!!counts&&(supportScene||areaScene?[...required].every(([id,n])=>(counts!.get(id)??0)>=n):groupStockAvailable(clip,counts));
  $: anchorPoint=point&&(scene||supportScene||areaScene)?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor):point;
- $: preview=geometryReady?(areaScene?anchorPoint?areaSceneCandidate(areaScene,grids,rasters,defs,remainingObjects,omitted,anchorPoint.x,anchorPoint.y):null:supportScene?anchorPoint?mixedScenePlacement(clip,supportScene,anchorPoint,axis,grids,rasters,defs,remainingObjects,omitted):null:previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene)):null;
+ $: preview=geometryReady?(areaScene?anchorPoint?areaSceneCandidate(areaScene,grids,rasters,defs,remainingObjects,omitted,anchorPoint.x,anchorPoint.y,axis):null:supportScene?anchorPoint?mixedScenePlacement(clip,supportScene,anchorPoint,axis,grids,rasters,defs,remainingObjects,omitted):null:previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene)):null;
  $: ghost=candidate??(preview&&(!cutRows||groupCutPlan(cutRows,preview))?preview:null);
- $: actualRequired=areaScene?required:supportScene?ghost&&'supportRows' in ghost?mixedPlacementCounts(ghost as MixedScenePlacement):required:ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
+ $: actualRequired=areaScene?ghost&&'areaRows' in ghost?areaPlacementCounts(ghost as AreaSceneCandidate):required:supportScene?ghost&&'supportRows' in ghost?mixedPlacementCounts(ghost as MixedScenePlacement):required:ghost?sceneItemCounts(groupCandidatePoses(ghost).map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation}))):required;
  $: ready=geometryReady&&!!counts&&(axis||mirrorOnly?!!ghost&&[...actualRequired].every(([id,n])=>(counts!.get(id)??0)>=n):baseReady);
  function previewGroup(clip:readonly DesignClipItem[],point:{x:number;y:number}|null,axis:WorldSymmetryAxis|null,mirror:WorldGroupPose[]|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:Map<number,Map<number,DesignItemGeometry>>,objects:readonly MainlandSavedObject[],omitted:number,required:Map<number,number>,counts:Map<number,number>|null,baseReady:boolean,scene:boolean){
   // Stock is evaluated independently from shape preview. All final rows must
@@ -59,7 +59,7 @@
   return base&&axis?symmetricWorldCandidate(groupCandidatePoses(base),axis,true,grids,rasters,defs,capacity,objects,omitted):base;
  }
  function changeSymmetry(value:DesignSymmetry|null){
-  if(writing||copy||cutRows||areaScene)return;
+  if(writing||copy||cutRows)return;
   symmetry=value;symmetryPicking=false;candidate=null;error=false;
  }
  function chooseMirror(){if(!preview||writing||copy||symmetryPicking)return;candidate=preview;error=false;}
@@ -154,7 +154,7 @@
   if(!geometryReady)return;
   if(mirrorOnly){chooseMirror();return;}
   const at=scene||supportScene||areaScene?groupSceneOrigin(clip,defs,grids,rasters,p,sceneAnchor):p;
-  const q=areaScene?at?areaSceneCandidate(areaScene,grids,rasters,defs,remainingObjects,omitted,at.x,at.y):null:supportScene?at?mixedScenePlacement(clip,supportScene,at,axis,grids,rasters,defs,remainingObjects,omitted):null:previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene);
+  const q=areaScene?at?areaSceneCandidate(areaScene,grids,rasters,defs,remainingObjects,omitted,at.x,at.y,axis):null:supportScene?at?mixedScenePlacement(clip,supportScene,at,axis,grids,rasters,defs,remainingObjects,omitted):null:previewGroup(clip,at,axis,null,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene);
   if(!q||cutRows&&!groupCutPlan(cutRows,q)){error=true;return;}candidate=q;point=p;error=false;
  }
  function transformArea(mode:AreaSceneTransform){
@@ -168,7 +168,7 @@
   const f=file,q=candidate,plan=cutRows?groupCutPlan(cutRows,q):q.rows;
   if(!plan||!counts||!cutRows&&!areaScene&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||activeCut&&!cutClipboardMatches(activeCut,file,scope,objects)){error=true;return;}
   if(supportScene&&(!supportValid||!('supportRows' in q)||![...mixedPlacementCounts(q as MixedScenePlacement)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
-  if(areaScene&&(!supportValid||!('areaRows' in q)||![...areaSceneCounts(areaScene.items)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
+  if(areaScene&&(!supportValid||!('areaRows' in q)||![...areaPlacementCounts(q as AreaSceneCandidate)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
   const output=areaScene?(q as AreaSceneCandidate).areaRows:supportScene?(q as MixedScenePlacement).supportRows:plan;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writing=own;error=false;
   const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
@@ -181,7 +181,7 @@
 <input class="scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
  {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene||supportScene||areaScene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||supportRequest||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
- {#if !cutRows&&!areaScene&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
+ {#if !cutRows&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
  {#if scene||supportScene||areaScene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene||supportScene||areaScene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}
  {#if !copy}<div><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(-1)} aria-label={w[9]}>⟲</button><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(1)} aria-label={w[10]}>⟳</button>{#if areaScene}<button type="button" disabled={!geometryReady||!!writing} aria-label={areaTransformWords[locale][0]} title={areaTransformWords[locale][0]} on:click={()=>transformArea('vertical')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button><button type="button" disabled={!geometryReady||!!writing} aria-label={areaTransformWords[locale][1]} title={areaTransformWords[locale][1]} on:click={()=>transformArea('horizontal')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12h18M6 9l6-6 6 6ZM6 15l6 6 6-6Z"/></svg></button>{/if}{#if candidate}<button type="button" disabled={!ready||!!writing} on:click={validate}>{w[7]}</button>{/if}</div>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}{#if error}<small role="alert">{w[5]}</small>{/if}<button type="button" on:click={cancel}>{w[8]}</button></aside>
