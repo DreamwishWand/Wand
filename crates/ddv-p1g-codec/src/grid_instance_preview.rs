@@ -1437,7 +1437,7 @@ pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String
  let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
- let mut layout_id=None::<String>;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
+ let mut layout_id=None::<String>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
  let mut remove=Vec::new();let mut add=Vec::new();
  for row in rows{
   let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
@@ -1451,6 +1451,7 @@ pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String
    !data.starts_with(&format!("GridData/FloatingIslands/{}/{family}",if name=="Desert"{"FloatingIlsnad_Desert"}else{family}))||
    layout_id.as_ref().is_some_and(|s|s!=layout){return Err(bad);}
   layout_id=Some(layout.to_owned());
+  expected_grids=match name{"Desert"|"Jungle"|"Meadow"=>4,"Atlantean"|"FairyTales"|"Library"|"Mythology"|"Wetlands"=>2,_=>1};
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
   for r in o.get("remove").and_then(Value::as_array).ok_or(bad)?{
@@ -1463,6 +1464,10 @@ pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String
    if a.get("destination")!=Some(witness){return Err(bad);}add.push(a.clone());
   }
  }
+ if grids.len()!=expected_grids{return Err(bad);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+ if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
  if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
@@ -1675,6 +1680,24 @@ mod tests{
         plan["add"][0]["x"]=Value::from(5);plan["add"][0]["y"]=Value::from(5);
         let mut stateful=old;stateful["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Unknown":5});
         assert!(biome_furniture_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn island_replacement_resolves_all_native_grids_and_reuses_stock_across_grids(){
+        let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
+        let land="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
+        let water="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanWaterGrid-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":land,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":layout,"GridDataPath":water,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}},"44":{"ID":44,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+        let dest=|data:&str|serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!([{"destination":dest(land),"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[]},{"destination":dest(water),"remove":[],"add":[{"itemId":"40000001","destination":dest(water),"x":3,"y":4,"orientation":"GridOrientation_Left"}]}]);
+        let bytes=serde_json::to_vec(&raw).unwrap();let output=island_furniture_candidate(&bytes,&plan.to_string()).unwrap();
+        let new:Value=serde_json::from_str(&output).unwrap();let g=&new["World"]["GridCollection"]["Grids"];
+        assert_eq!(new["Player"],raw["Player"]);assert_eq!(g["44"],raw["World"]["GridCollection"]["Grids"]["44"]);
+        assert!(g["42"]["Objects"].as_object().unwrap().is_empty());assert_eq!(g["43"]["Objects"]["5"]["X"],3);
+        let partial=serde_json::json!([plan[0].clone()]);assert!(island_furniture_candidate(&bytes,&partial.to_string()).is_err());
+        plan[0]["remove"][0]["localOrdinal"]=Value::from(2);assert!(island_furniture_candidate(&bytes,&plan.to_string()).is_err());
+        plan[0]["remove"][0]["localOrdinal"]=Value::from(1);
+        plan[1]["add"][0]["destination"]=dest(land);assert!(island_furniture_candidate(&bytes,&plan.to_string()).is_err());
     }
 
     #[test]
