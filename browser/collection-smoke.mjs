@@ -1486,11 +1486,7 @@ try{
   });
   await memoryPage.locator('.item-inspector [data-memory-view="candidate"]').waitFor({timeout:25000});
   // In-app link retains the in-memory save projection; no second decoder.
-  await memoryPage.keyboard.press('Escape');
-  // The mobile inspector may overlay the development banner. Close it via its actual close control if still open.
-  const memoryClose=memoryPage.locator('.item-inspector .inspector-header-actions button').last();
-  if(await memoryClose.isVisible())await memoryClose.click();
-  await memoryPage.locator('a[href="/Wand/media/memory-preview/"]').click();
+  await memoryPage.locator('.item-inspector a.memory-comparison-link').click();
   await memoryPage.locator('select').filter({has:memoryPage.locator('option[value="130000001"]')}).first().waitFor();
   await memoryPage.getByRole('button',{name:'Use observed Save flags for comparison'}).waitFor({timeout:25000});
   await memoryPage.close();
