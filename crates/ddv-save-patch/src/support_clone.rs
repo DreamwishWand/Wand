@@ -112,15 +112,23 @@ pub(super) fn build_source_tree(grids:&Map<String,Value>,diff:Option<&Map<String
 /// Existing parent tree must already have been resolved and validated by
 /// the codec. The returned candidate is not runtime or writer authority.
 pub fn preview_support_tree_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
- duplicate(source,target,expected,d,xy,orientation,None)
+ duplicate(source,target,expected,d,xy,orientation,None,false)
 }
 pub fn preview_support_scene_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
- duplicate(source,target,expected,d,xy,orientation,Some(scene))
+ duplicate(source,target,expected,d,xy,orientation,Some(scene),false)
 }
-fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:Option<&Value>)->Result<GridCoordinateDraft,PatchError>{
+/// Same owned room surface, resolved by the codec; the same clone engine
+/// allocates child grids and consumes the exact aggregate inventory.
+pub fn preview_indoor_support_tree_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id!=d.grid_id{return Err(BAD);}
+ duplicate(source,target,expected,d,xy,orientation,None,true)
+}
+fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:Option<&Value>,room:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400{return Err(BAD);}
- // Reuse the exact destination witness and anchor/allocator validation.
- let _=preview_plain_grid_place(source,d,target.item_id,xy,orientation)?;
+ // Rooms have shared template paths but their exact owner is resolved by
+ // the codec. Keep the outdoor layout/path uniqueness contract unchanged.
+ if room{validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;}
+ else{let _=preview_plain_grid_place(source,d,target.item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
  let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
@@ -146,8 +154,15 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
 /// Place a source-bound portable scene with no existing native template.
 /// The codec/UI must verify each owner/path and native terrain before calling.
 pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
+ scene_place(source,item_id,d,xy,orientation,scene,false)
+}
+pub fn preview_indoor_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
+ scene_place(source,item_id,d,xy,orientation,scene,true)
+}
+fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value,room:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400{return Err(BAD);}
- let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;
+ if room{validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Rooms/")?;}
+ else{let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
  let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;

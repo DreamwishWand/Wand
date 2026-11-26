@@ -564,7 +564,7 @@ fn local_subgrid_summary(collection:Option<&Map<String,Value>>,parent:Option<&Ma
 }
 /// Exact child ownership, no guessed child-to-parent transform. The
 /// receipt contains only local item geometry inputs, never native keys.
-fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&str)->Result<Value,CodecError>{
+pub(super) fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&str)->Result<Value,CodecError>{
  let bad=CodecError::Json;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
  let diff=collection.get("DiffGrids").map(|v|v.as_object().ok_or(bad)).transpose()?;
@@ -605,6 +605,14 @@ fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&st
  }
  let mut seen=HashSet::from([parent_grid.to_owned()]);let mut count=0;
  visit(grids,diff,&owners,parent_grid,parent_object,&mut seen,&mut count,0)
+}
+/// Ephemeral ordinal lookup for exact owned-room records. Native keys stay
+/// inside the codec; the ordinary support resolver rechecks every edit.
+pub(super) fn room_support_ordinals(profile:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+ Ok(scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|
+  (t.kind==GridObjectKind::Full&&xy.is_some()&&scan.subgrid_parents.contains(&(i+1))).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))).collect())
 }
 pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32))->Result<String,CodecError>{
  let (scan,_)=scan_grid_instances(profile)?;
@@ -799,7 +807,7 @@ pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64
 pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None)
 }
-fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
+pub(super) fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
  let tree=m.get("tree").ok_or(CodecError::Json)?;
  static CATALOG:std::sync::OnceLock<Result<Value,()>>=std::sync::OnceLock::new();

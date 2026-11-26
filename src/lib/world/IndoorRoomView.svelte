@@ -1,5 +1,9 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
+ import SubgridInspector from './SubgridInspector.svelte';
+ import {supportWords,parseSupportTree} from './subgrid-local.ts';
+ import {captureSupportScene,mixedSceneCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
+ import {parseIndoorSupportParents,roomSupportPickupPlan,type IndoorSupportWitness} from './indoor-support.ts';
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
@@ -11,7 +15,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {sceneWords,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import {DESIGN_FILE_LIMIT} from './design-layout.ts';
- import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
+ import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMixedScene,indoorMixedPlacement,captureIndoorMixedScene,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldFurnitureCut,worldFurnitureClipboard,groupCutWords,ROOM_CUT_LIMIT,type CutClipboard} from './group-paste.ts';
  import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
@@ -23,6 +27,24 @@
  export let terrainWorker:Worker|null=null,nextRequest:()=>number,blocked=false;
  let seen:File|null=null,own:Worker|null=null,rooms:IndoorRoom[]=[],status:'loading'|'ready'|'error'='loading',selected=0,surface=0,query='',limit=80;
  let positionOpen=true,highlight:number|null=null;
+ let supportParents:IndoorSupportWitness[]=[],supportParent:IndoorSupportWitness|null=null,supportFile:File|null=null;
+ let supportClone:IndoorPlace['supportSource']|null=null;
+ $: supportCloneReady=!!supportParent&&!!face?.terrain&&removable.has(supportParent.itemId)&&!!roomPickupPlan;
+ function beginSupportDuplicate(needs:ReadonlyMap<number,number>){
+  const p=supportParent,pose=p&&face?.positions[p.index];
+  if(!p||!pose||pose.orientationCode===null||!supportCloneReady||!editAllowed||[...needs].some(([id,n])=>(stock.get(id)??0)<n))return;
+  const witness={index:p.index,expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[pose.orientationCode/4]};
+  closeSupport();resetObject();supportClone=witness;stockId=p.itemId;stockOrientation=witness.expectedOrientation;positionOpen=true;placing=true;
+ }
+
+ $: supportNames=new Map([...records].map(([id,r])=>[id,r.names[locale]??r.names.en??String(id)]));
+ $: roomSupports=supportParents.filter(p=>p.roomOrdinal===room?.ordinal&&p.surfaceOrdinal===face?.ordinal);
+ $: supportText=supportWords[locale];
+ $: roomPickupPlan=supportParent?roomSupportPickupPlan(face,roomSupports,[supportParent.index],shapes,removable):null;
+ $: if(supportParent&&file!==supportFile)closeSupport();
+ function closeSupport(){supportParent=null;supportFile=null;}
+ function openSupport(p:IndoorSupportWitness){if(!file||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft||editCopy||editWorker||finishOpen)return;clearEdit();supportParent=p;supportFile=file;}
+
  let selectedObject=-1,swap=false,editDraft:SupportChildEdit[]|null=null,pickupDraft:IndoorPickup[]|null=null,editWorker:Worker|null=null,editCopy:ReturnType<typeof experimentalCopyDownload>|null=null,editError=false,stock=new Map<number,number>(),editable=new Set<number>(),removable=new Set<number>();
  let roomSvg:SVGSVGElement;
  let moving=false,placing=false,stockOpen=false,stockId=0,stockOrientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down',placeDraft:IndoorPlace[]|null=null,hoverCell:{x:number;y:number}|null=null,catalogRequest=0,stockQuery='',catalog:{itemId:number;name:string}[]=[];
@@ -32,29 +54,48 @@
  $: sw=sceneWords[locale];$: isw=indoorSceneWords[locale];
  $: selectedScene=captureIndoorScene(face,cutIndices,shapes,removable);
  $: surfaceScene=captureIndoorScene(face,face?.positions.map((_,i)=>i)??[],shapes,removable);
- $: sceneCounts=sceneItemCounts(cloneClip);
+ let mixedDoc:MixedScenePreset|null=null,mixedRequest=0,mixedValid=false,sceneCaptureWorker:Worker|null=null;
+ $: sceneCounts=mixedDoc?mixedSceneCounts(mixedDoc.items):sceneItemCounts(cloneClip);
+ $: mixedSelected=cutIndices.some(i=>roomSupports.some(p=>p.index===i));
+ $: mixedSurface=roomSupports.length>0;
+ function captureRoomMixed(indices:readonly number[]){
+  if(!file||!face||!terrainWorker||sceneCaptureWorker||!indices.length||indices.length>ROOM_CUT_LIMIT)return;
+  const source=file,target=face,selection=[...indices],sh=shapes,allowed=removable;
+  const parents=roomSupports.filter(p=>selection.includes(p.index));if(!parents.length)return;
+  const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});sceneCaptureWorker=session;sceneError=false;
+  const done=(d:any)=>{session.terminate();if(sceneCaptureWorker!==session)return;sceneCaptureWorker=null;if(file!==source||face!==target)return;
+   try{if(d?.kind!=='subgrids-local'||!Array.isArray(d.results)||d.results.length!==parents.length)throw Error('receipt');const supports=new Map<number,SupportScene>();
+    for(const p of parents){const result=d.results.find((v:any)=>v.localOrdinal===p.localOrdinal);const scene=captureSupportScene(p.itemId,parseSupportTree(result?.result));if(!scene)throw Error('tree');supports.set(p.index,scene);}
+    const scene=captureIndoorMixedScene(target,selection,sh,allowed,supports);if(!scene)throw Error('scene');saveRoomScene(scene);
+   }catch{sceneError=true;}
+  };session.onmessage=e=>done(e.data);session.onerror=()=>done(null);session.onmessageerror=()=>done(null);session.postMessage({command:'inspect-subgrids',file:source,parents:parents.map(({localOrdinal,itemId,x,y})=>({localOrdinal,itemId,x,y}))});
+ }
+
  $: sceneMissing=[...sceneCounts].some(([id,n])=>(stock.get(id)??0)<n);
- function saveRoomScene(scene:ScenePreset|null){if(!scene)return;const url=URL.createObjectURL(new Blob([JSON.stringify(scene)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ function saveRoomScene(scene:ScenePreset|MixedScenePreset|null){if(!scene)return;const url=URL.createObjectURL(new Blob([JSON.stringify(scene)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  async function openRoomScene(e:Event){
   const input=e.currentTarget as HTMLInputElement,chosen=input.files?.[0];input.value='';
   if(!chosen||!file||!face?.factor||!face.terrain||!editAllowed||sceneReading)return;
   const epoch=++sceneEpoch,source=file,target=face;sceneReading=true;sceneError=false;
   try{
    if(chosen.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const value=indoorSceneClip(await chosen.text(),target.factor!);
+   const raw=await chosen.text(),mixed=indoorMixedScene(raw);
+   const value=mixed?{clip:mixed.items.map(({support,...pose})=>pose),anchor:mixed.anchor}:indoorSceneClip(raw,target.factor!);
+   if(value.clip.length>ROOM_CUT_LIMIT||mixed&&!terrainWorker)throw Error('scene limit');
    if(epoch!==sceneEpoch||file!==source||face!==target||!editAllowed||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft)return;
    resetObject();sceneActive=true;sceneAnchor=value.anchor;cloneClip=value.clip;sceneExtra=[...new Set(value.clip.map(p=>p.itemId))];placing=true;
-   loadItems(sceneExtra,sceneExtra);
+   if(mixed){mixedDoc=mixed;mixedValid=false;mixedRequest=nextRequest();terrainWorker!.postMessage({command:'mixed-scene-geometry',requestId:mixedRequest,scene:mixed,locale});}
+   const ids=mixed?[...mixedSceneCounts(mixed.items).keys()]:sceneExtra;loadItems(ids,sceneExtra);
   }catch{if(epoch===sceneEpoch)sceneError=true;}finally{if(epoch===sceneEpoch)sceneReading=false;}
  }
 
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
  $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable):null;
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
- $: clonePreview=placing&&cloneClip.length&&hoverCell?indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y):null;
+ $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
  $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft;
  $: groupPickup=indoorGroupPickup(face,cutIndices,removable,stock);
- $: duplicateClip=indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
+ $: duplicateClip=cutIndices.some(i=>roomSupports.some(p=>p.index===i))?null:indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
  function beginDuplicate(){if(!editAllowed||!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
@@ -104,14 +145,14 @@
  $: plot=positionOpen&&face?.gridStatus==='full'&&face.positions.length<=5000?indoorPositionPlot(face.positions,highlight,shapes):null;
  $: roomViewBox=face?.terrain&&face.factor?'0 0 '+face.terrain.sizeX*face.factor+' '+face.terrain.sizeY*face.factor:plot?.viewBox??'0 0 1 1';
  function requestShapes(f:IndoorSurface|null,wk:Worker|null,extra=0,rows:readonly CutClipboard['rows'][number][]=[],extraIds:readonly number[]=[]){shapeRequest=0;shapes={};editable=new Set();removable=new Set();if(!wk||!f?.factor||f.positions.length>5000)return;const ids=[...new Set([...f.positions.filter(p=>p.orientationCode!==null).map(p=>p.itemId),...(extra?[extra]:[]),...rows.map(p=>Number(p.itemId)),...extraIds])];const items=ids.flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));if(items.length>5000)return;if(!items.length)return;shapeRequest=nextRequest();wk.postMessage({command:'indoor-shapes',factor:f.factor,items,requestId:shapeRequest});}
- function receiveShapes(e:MessageEvent){const d=e.data;if(catalogRequest&&d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='indoor-catalog'&&Array.isArray(d.items))catalog=d.items;return;}if(!shapeRequest||d?.requestId!==shapeRequest)return;shapeRequest=0;if(d.kind==='indoor-shapes'&&d.shapes&&typeof d.shapes==='object'){shapes=d.shapes;editable=new Set(Array.isArray(d.editable)?d.editable:[]);removable=new Set(Array.isArray(d.removable)?d.removable:[]);}}
+ function receiveShapes(e:MessageEvent){const d=e.data;if(mixedRequest&&d?.requestId===mixedRequest){mixedRequest=0;mixedValid=d.kind==='mixed-scene-geometry'&&d.valid===true;if(!mixedValid)sceneError=true;return;}if(catalogRequest&&d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='indoor-catalog'&&Array.isArray(d.items))catalog=d.items;return;}if(!shapeRequest||d?.requestId!==shapeRequest)return;shapeRequest=0;if(d.kind==='indoor-shapes'&&d.shapes&&typeof d.shapes==='object'){shapes=d.shapes;editable=new Set(Array.isArray(d.editable)?d.editable:[]);removable=new Set(Array.isArray(d.removable)?d.removable:[]);}}
  let owned:number[]=[],finishOpen=false,finishChoice=0,allWalls=false,preview:Worker|null=null,previewStatus:'idle'|'working'|'valid'|'error'='idle';
  $: fw=finishWords[locale]??finishWords.en;
  $: copyWords=testSaveWords[locale]??testSaveWords.en;
  const testExport=browser&&testSaveExportEnabled(window.location);
  let finishCopy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: cw=checkpointWords[locale];
- function clearEdit(){sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
+ function clearEdit(){sceneCaptureWorker?.terminate();sceneCaptureWorker=null;mixedDoc=null;mixedRequest=0;mixedValid=false;supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
  function resetObject(){clearEdit();selectedObject=-1;selectedGroup=new Set();}
  function chooseObject(i:number,add=false){if(!tree||!tree.objects[i]||editWorker||editCopy||editDraft||pickupDraft||moving||placing||placeDraft||transferDraft)return;if(swap){const e=indoorFurnitureEdits(face,shapes,editable,selectedObject,i,1);if(e){editDraft=e;swap=false;}return;}if(add&&!swap){const next=new Set(selectedGroup.size?selectedGroup:selectedObject>=0?[selectedObject]:[]);if(next.has(i))next.delete(i);else if(next.size<ROOM_CUT_LIMIT)next.add(i);selectedGroup=next;selectedObject=next.has(i)?i:[...next].at(-1)??-1;}else{selectedGroup=new Set();selectedObject=i;}highlight=selectedObject>=0?tree.objects[selectedObject].itemId:null;}
  function pickObject(e:MouseEvent){
@@ -121,8 +162,8 @@
    const draft=indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,p.x,p.y);
    if(draft){transferDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
-  if(placing&&cloneClip.length){const draft=indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y);if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
-  if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[supportClone?{...draft,supportSource:supportClone}:draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(moving){const draft=selectedGroup.size>1?indoorGroupMove(face,shapes,editable,[...selectedGroup],selectedObject,p.x,p.y):indoorMove(face,shapes,editable,selectedObject,p.x,p.y);if(draft){editDraft=draft;moving=false;hoverCell=null;editError=false;}else editError=true;return;}
   const hits=supportHitIndices(tree,shapes,p.x,p.y).filter(i=>!swap||partners.includes(i));if(hits.length)chooseObject(hits[(hits.indexOf(selectedObject)+1)%hits.length],e.ctrlKey||e.metaKey||e.shiftKey);
  }
@@ -159,7 +200,7 @@
  let records=new Map<number,ItemMasterRecord|CompleteItemMasterRecord>(),images=new Map<number,string>(),asked=new Set<number>(),resolved=new Set<number>(),itemLoadFailed=false;
  let db:ReturnType<typeof openCurrentItemDatabase>|null=null,closeButton:HTMLButtonElement,root:HTMLDivElement;
  onMount(()=>{const previous=document.activeElement;closeButton?.focus();return ()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};});
- function keys(e:KeyboardEvent){if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='x'&&canCut&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){if(captureRoomCut()){e.preventDefault();e.stopPropagation();}return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')];if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ function keys(e:KeyboardEvent){if(supportParent&&e.key==='Escape'){e.preventDefault();e.stopPropagation();closeSupport();return;}if(supportParent&&e.key!=='Tab')return;if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='x'&&canCut&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){if(captureRoomCut()){e.preventDefault();e.stopPropagation();}return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')].filter(el=>!el.closest('[inert]'));if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -168,9 +209,9 @@
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen&&finishChoice?[finishChoice]:[])]);
  function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
- function load(next:File|null){resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
+ function load(next:File|null){closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
-  const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
+  const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);supportParents=parseIndoorSupportParents(v,rooms);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
   worker.onmessage=e=>done(e.data?.kind==='indoor-rooms'?e.data.result:null,e.data?.stock);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);worker.postMessage({command:'indoor-rooms',file:next});
  }
  function loadItems(ids:number[],art:number[]){const fresh=[...new Set(ids)].filter(id=>!asked.has(id));for(const id of fresh)asked.add(id);
@@ -183,7 +224,7 @@
 <div class="indoor-room-view" role="dialog" aria-label={w[0]} aria-modal="true" bind:this={root} on:keydown={keys}>
  <header><strong>{w[0]}</strong><button type="button" bind:this={closeButton} on:click={onClose} aria-label={w[7]}>×</button></header>
  {#if status==='loading'}<p role="status">{w[8]}</p>{:else if status==='error'}<p role="alert">{w[10]}</p>{:else if !rooms.length}<p>{w[9]}</p>{:else if room}
- <div class="room-body">
+ <div class="room-body" inert={!!supportParent}>
   <nav aria-label={w[3]}>{#each rooms as r,i}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{w[1]} {r.house} / {w[2]} {r.floor} · {r.name||w[3]+' '+r.ordinal}</button>{/each}</nav>
   <div class="room-content">
    <div class="finish-heading"><strong>{w[15]}</strong><button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
@@ -192,10 +233,11 @@
     <div class="finish-card"><span>{w[6]}</span>{#if room.ceiling&&images.get(room.ceiling)}<img src={images.get(room.ceiling)} alt="" loading="lazy"/>{/if}<small>{room.ceiling===0?w[11]:name(room.ceiling,records,locale,w[12])}</small></div>
    </div>
    {#if finishOpen}<div class="finish-picker">{#if surface>0}<label><input type="checkbox" bind:checked={allWalls} disabled={previewStatus==='working'} on:change={resetFinishStatus}/> {fw[2]}</label>{/if}<select aria-label={fw[0]} bind:value={finishChoice} disabled={previewStatus==='working'} on:change={resetFinishStatus}><option value={0} disabled>{fw[0]}</option>{#each choices as id}<option value={id}>{name(id,records,locale,w[12])}</option>{/each}</select>{#if finishChoice&&images.get(finishChoice)}<img class="finish-preview-art" src={images.get(finishChoice)} alt=""/>{/if}<button type="button" disabled={!choices.includes(finishChoice)||previewStatus==='working'} on:click={checkFinish}>{fw[3]}</button>{#if itemLoadFailed}<small role="alert">{w[10]}</small>{:else if finishLoading}<small role="status">{w[8]}</small>{:else if !choices.length}<small>{fw[6]}</small>{/if}{#if previewStatus!=='idle'}<small role="status">{previewStatus==='valid'?fw[4]:previewStatus==='working'?fw[7]:fw[5]}</small>{/if}{#if testExport&&previewStatus==='valid'&&blocked}<small>{stockToolWords[locale][12]}</small>{:else if testExport&&previewStatus==='valid'}<small>{copyWords[1]}</small><button type="button" on:click={()=>runFinish(true)}>{copyWords[0]}</button>{#if finishCopy}<button type="button" on:click={applyFinishCopy}>{cw[0]}</button><a class="test-copy-link" href={finishCopy.url} download={finishCopy.name}>{copyWords[2]}</a>{/if}{/if}</div>{/if}
+   {#if roomSupports.length}<div class="indoor-edit">{#each roomSupports as p (p.localOrdinal)}<button type="button" disabled={moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy||!!editWorker||finishOpen} on:click={()=>openSupport(p)}>{supportText[0]} · {name(p.itemId,records,locale,w[12])} · {p.x}, {p.y}</button>{/each}</div>{/if}
    <div class="room-items-header"><strong>{w[13]}{#if face?.gridStatus==='full'} · {face.items.reduce((n,p)=>n+p.quantity,0)}{/if}</strong><button type="button" aria-pressed={positionOpen} on:click={()=>{resetObject();positionOpen=!positionOpen;}}>{pw[0]}</button><input type="search" aria-label={w[17]} placeholder={w[17]} bind:value={query} on:input={()=>limit=80}/></div>
    {#if face?.gridStatus!=='full'}<p>{w[16]}</p>{:else}
     {#if positionOpen}<section class="position-map" aria-label={pw[0]}><small>{face.terrain?itw[0]:plot?.footprints.length?indoorShapeWords[locale]:pw[2]}</small>{#if face.missingPositions}<small>{pw[3]}: {face.missingPositions}</small>{/if}{#if face.positions.length>5000}<small>{pw[6]}</small>{:else if plot||face.terrain}<button type="button" class="room-map-button" aria-label={moving||placing?itw[3]:iw[1]} on:click={pickObject} on:pointermove={e=>{hoverCell=moving||placing?point(e):null;}} on:pointerleave={()=>hoverCell=null}><svg bind:this={roomSvg} viewBox={roomViewBox} role="img" aria-label={pw[2]}><title>{face.terrain?itw[0]:plot?.footprints.length?indoorShapeWords[locale]:pw[2]}</title>{#if face.terrain&&face.factor}{#each Array.from(face.terrain.nativeFloorValues) as v,i}<rect x={(i%face.terrain.sizeX)*face.factor} y={Math.floor(i/face.terrain.sizeX)*face.factor} width={face.factor} height={face.factor} fill={v===0?'#a45b5b':v===3072?'#6c8b92':'#6ba98b'} fill-opacity=".3" stroke="currentColor" stroke-opacity=".25" vector-effect="non-scaling-stroke"/>{/each}{/if}{#each plot?.footprints??[] as f}<path class="indoor-footprint" class:highlighted={highlight===f.itemId} class:dimmed={highlight!==null&&highlight!==f.itemId} d={f.path} transform={'translate('+f.x+' '+f.y+')'}/>{/each}{#each plot?.points??[] as p (p.x+':'+p.y)}<circle cx={p.x} cy={p.y} r={plot?.markerRadius??.16} class:highlighted={p.selected>0} class:dimmed={highlight!==null&&!p.selected}><title>{pw[4]}: {p.count}</title></circle>{/each}{#if tree&&selectedGroup.size>1}{#each [...selectedGroup] as i}{@const o=tree.objects[i]}{@const change=(editDraft??groupMovePreview)?.find(e=>e.index===i)}{@const shape=o&&shapes[o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf((change?.orientation??o.orientation) as typeof CARDINAL_ORIENTATIONS[number])*4]}{#if shape}<path d={shape.path} transform={'translate('+(change?.x??o.x)+' '+(change?.y??o.y)+')'} fill={pickupDraft?'#d45b5b':moving&&hoverCell&&!groupMovePreview?'#c45b5b':'#4bddcd'} fill-opacity=".5" stroke="currentColor" vector-effect="non-scaling-stroke"/>{/if}{/each}{:else if tree&&selectedObject>=0&&tree.objects[selectedObject]}{@const o=tree.objects[selectedObject]}{@const change=editDraft?.find(e=>e.index===selectedObject)}{@const orientation=change?.orientation??o.orientation}{@const code=['GridOrientation_Up','GridOrientation_Right','GridOrientation_Down','GridOrientation_Left'].indexOf(orientation)*4}{@const shape=shapes[o.itemId+':'+code]}{#if shape}<path d={shape.path} transform={'translate('+(change?.x??o.x)+' '+(change?.y??o.y)+')'} fill={pickupDraft?'#d45b5b':'#4bddcd'} fill-opacity=".5" stroke="currentColor" vector-effect="non-scaling-stroke"/>{/if}{/if}{#if hoverCell&&previewShape}<path d={previewShape.path} transform={'translate('+hoverCell.x+' '+hoverCell.y+')'} fill={previewValid?'#4bddcd':'#c45b5b'} fill-opacity=".5" stroke="currentColor" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{#if cutGhost}{#each cutGhost as p}{@const shape=shapes[p.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(p.orientation as typeof CARDINAL_ORIENTATIONS[number])*4]}{#if shape}<path d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".5" stroke="currentColor" vector-effect="non-scaling-stroke"/>{#if images.get(p.itemId)}<image href={images.get(p.itemId)} x={p.x} y={p.y} width={shape.width} height={shape.height}/>{/if}{/if}{/each}{/if}</svg></button><small>{pw[5]}</small>{/if}</section>{/if}
-    {#if positionOpen&&tree}<div class="indoor-edit"><small>{isw[1]}</small><button type="button" disabled={!selectedScene||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>saveRoomScene(selectedScene)}>{sw[0]}</button><button type="button" disabled={!surfaceScene||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>saveRoomScene(surfaceScene)}>{isw[0]}</button>{#if testExport}<input type="file" accept=".json,application/json" hidden bind:this={sceneInput} on:change={openRoomScene}/><button type="button" disabled={!editAllowed||!face.terrain||sceneReading||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||stockOpen} on:click={()=>sceneInput.click()}>{sw[1]}</button>{/if}{#if sceneError}<small role="alert">{isw[2]}</small>{/if}{#if sceneActive}<select aria-label={sw[6]} bind:value={sceneAnchor} disabled={!placing}><option value="corner">{sw[3]}</option><option value="center">{sw[2]}</option></select><small>{sceneMissing?isw[2]:cloneClip.length}</small>{/if}</div>{/if}
+    {#if positionOpen&&tree}<div class="indoor-edit"><small>{isw[1]}</small><button type="button" disabled={(!selectedScene&&!mixedSelected)||!!sceneCaptureWorker||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>mixedSelected?captureRoomMixed(cutIndices):saveRoomScene(selectedScene)}>{sw[0]}</button><button type="button" disabled={(!surfaceScene&&!mixedSurface)||!!sceneCaptureWorker||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>mixedSurface?captureRoomMixed(face.positions.map((_,i)=>i)):saveRoomScene(surfaceScene)}>{isw[0]}</button>{#if testExport}<input type="file" accept=".json,application/json" hidden bind:this={sceneInput} on:change={openRoomScene}/><button type="button" disabled={!editAllowed||!face.terrain||sceneReading||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||stockOpen} on:click={()=>sceneInput.click()}>{sw[1]}</button>{/if}{#if sceneError}<small role="alert">{isw[2]}</small>{/if}{#if sceneActive}<select aria-label={sw[6]} bind:value={sceneAnchor} disabled={!placing}><option value="corner">{sw[3]}</option><option value="center">{sw[2]}</option></select><small>{mixedRequest?'…':sceneMissing?isw[2]:cloneClip.length}</small>{#if mixedDoc}<div class="indoor-edit">{#each [...sceneCounts] as [id,n]}<small>{name(id,records,locale,w[12])} · {stock.get(id)??0}/{n}</small>{/each}</div>{/if}{/if}</div>{/if}
     {#if positionOpen&&tree&&testExport}<div class="indoor-edit"><strong>{iw[0]}</strong><small>{face.terrain?itw[5]:iw[2]}</small>
      <select aria-label={iw[1]} value={selectedObject} disabled={!!editDraft||!!pickupDraft||!!editCopy||!!editWorker||moving||placing||!!placeDraft||!!transferDraft||stockOpen} on:change={e=>chooseObject(Number(e.currentTarget.value))}><option value={-1} disabled>{iw[1]}</option>{#each tree.objects as o,i}<option value={i} disabled={swap&&!partners.includes(i)}>{name(o.itemId,records,locale,w[12])} · {o.x}, {o.y}</option>{/each}</select>
      {#if selectedObject>=0&&selectedGroup.size<=1&&!editDraft&&!pickupDraft&&!editCopy&&!moving&&!placing&&!placeDraft&&!transferDraft&&!stockOpen}<button type="button" disabled={!editAllowed||!left||swap} on:click={()=>editDraft=left}>{ew[0]}</button><button type="button" disabled={!editAllowed||!right||swap} on:click={()=>editDraft=right}>{ew[1]}</button><button type="button" disabled={!editAllowed||!partners.length||swap} on:click={()=>swap=true}>{ew[2]}</button><button type="button" disabled={!editAllowed||!pickup||swap} on:click={()=>{if(pickup)pickupDraft=[pickup];}}>{iw[3]}</button>{#if face.terrain}<button type="button" disabled={!editAllowed||!moveShape||!editable.has(tree.objects[selectedObject].itemId)||swap} on:click={()=>{moving=true;editError=false;}}>{itw[1]}</button>{/if}{/if}
@@ -225,6 +267,7 @@
   </div>
  </div>
  {/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 </div>
 <style>
