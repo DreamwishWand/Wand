@@ -1,14 +1,17 @@
 <script lang="ts">
   import {onMount,onDestroy} from 'svelte';
-  import {getMemorySources,type MemorySources} from '$lib/media/memory-media';
-  import {MASK_PREVIEW_EVIDENCE,maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
+  import {localSaveSession} from '$lib/ui/local-save-session';
+  import {memoryCandidateFlags} from '$lib/media/saved-memory-flags';
+  import {getMemorySources,memoryItemIds,type MemorySources} from '$lib/media/memory-media';
+  import {maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
   import {openMaskPreview,type MaskPreview} from '$lib/media/memory-mask-preview';
 
   import {PUZZLE_MATERIALS,type PuzzleMaterial} from '$lib/media/memory-puzzle-formula';
   let canvas:HTMLCanvasElement;
   let itemId=130000001;
   let source:MemorySources|null=null;
-  let selected=1;
+  const memoryIds=memoryItemIds();
+  let selected=0;
   let nativeFormula=true;
   let artworkSlot0=false;
   let invertFlags=true;
@@ -28,7 +31,7 @@
   async function load(id:number){
     controller?.abort();renderer?.dispose();renderer=null;
     const request=new AbortController();controller=request;
-    itemId=id;source=getMemorySources(id);selected=1;error='';loading=false;
+    itemId=id;source=getMemorySources(id);selected=source?2**source.numberOfShards-1:0;error='';loading=false;
     if(!source||!memoryMaskEvidence(source.mask.sha256,source.numberOfShards))return;
     loading=true;
     try{
@@ -40,6 +43,19 @@
   }
   onMount(()=>{void load(itemId);});
   onDestroy(()=>{controller?.abort();renderer?.dispose();});
+  // Read-only comparison with the same Save session that Collection uses.
+  // This route never decodes another copy or modifies a record.
+  $: savedFlags=$localSaveSession.memoryFlags;
+  $: savedMemoryIds=Object.keys(savedFlags?.entries??{}).map(Number).filter(id=>{
+    const candidate=getMemorySources(id);
+    return candidate&&memoryMaskEvidence(candidate.mask.sha256,candidate.numberOfShards)&&
+      memoryCandidateFlags(savedFlags,id,candidate.numberOfShards)!==null;
+  }).sort((a,b)=>a-b);
+  $: candidateFlags=source?memoryCandidateFlags(savedFlags,itemId,source.numberOfShards):null;
+  function applySavedFlags(){
+    if(candidateFlags===null)return;
+    selected=candidateFlags;redraw();
+  }
 </script>
 <svelte:head>
   <title>Memory mask preview · Dreamwish Wand</title>
@@ -47,14 +63,27 @@
 </svelte:head>
 <main class="preview">
   <h1>Memory mask preview</h1>
-  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Serialized Material tint, alpha and blend are source-derived. Texture slot assignment, sampler state, runtime opacity and saved-bit polarity remain candidate inputs. No Save is loaded or modified.</p>
-  <label>Representative Memory
+  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Serialized Material tint, alpha and blend are source-derived. Texture slot assignment, sampler state, runtime opacity and saved-bit polarity remain candidate inputs. A Save is optional. The default view shows the original contour over completed artwork; selecting pieces is a simulation, not a saved unlock state. No Save is modified.</p>
+  <label>Memory (all published artwork)
     <select value={itemId} on:change={(event)=>void load(Number(event.currentTarget.value))}>
-      {#each MASK_PREVIEW_EVIDENCE as row}
-        <option value={row[0]}>{row[0]} · {row[1]} pieces{row[1]===row[3]?'':' · exception'}</option>
+      {#each memoryIds as id}
+        <option value={id}>{id} · {getMemorySources(id)?.numberOfShards} pieces</option>
       {/each}
     </select>
   </label>
+  <div class="controls">
+    {#if savedMemoryIds.length}
+      <label>Memory from current local Save
+        <select value={savedMemoryIds.includes(itemId)?String(itemId):''} on:change={(event)=>{const id=Number(event.currentTarget.value);if(id>0)void load(id);}}>
+          <option value="">Select recorded Memory</option>
+          {#each savedMemoryIds as id}<option value={String(id)}>{id}</option>{/each}
+        </select>
+      </label>
+      <button type="button" disabled={candidateFlags===null||loading} on:click={applySavedFlags}>Use observed Save flags for comparison</button>
+    {:else}
+      <p>For a local Save comparison, load the Save in Collection first, then navigate here within the same session. Absent or incompatible values are not interpreted as zero.</p>
+    {/if}
+  </div>
   {#if evidence}
     <p>Exact dominant one-hot coverage: {(100*evidence[4]/evidence[5]).toFixed(3)}% · {evidence[3]} / {evidence[1]} expected dominant values</p>
     {#if source&&!maskPreviewEligible(source.mask.sha256,source.numberOfShards)}<p role="status">Exceptional mask: native arithmetic can be inspected, but piece coverage is not verified.</p>{/if}

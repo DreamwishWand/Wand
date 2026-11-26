@@ -3,6 +3,12 @@
   import { base } from '$app/paths';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
+  import {getMemorySources} from '$lib/media/memory-media';
+  import {maskPreviewEligible} from '$lib/media/memory-mask-preview-evidence';
+  import {recordedMemoryBits,completeMemoryBits,memoryPieceCount} from '$lib/media/memory-piece-state';
+  import {memoryPieceCopy} from '$lib/collection/memory-piece-copy';
+  import {localSaveSession} from '$lib/ui/local-save-session';
   import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
@@ -42,6 +48,12 @@
   import {collectionItemHref,collectionItemFromLink}
     from '$lib/collection/item-permalink.ts';
 
+  let memoryPreviewRequested=false;
+  let showMemoryPieces=false;
+  $: memoryCopy=memoryPieceCopy(locale);
+  $: selectedMemory=selectedItem?getMemorySources(selectedItem.itemId):null;
+  $: selectedMemoryBits=selectedMemory?recordedMemoryBits(selectedEntry,selectedMemory.numberOfShards):0;
+  $: selectedMemoryEligible=selectedMemory?maskPreviewEligible(selectedMemory.mask.sha256,selectedMemory.numberOfShards):false;
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
     'Wallpaper & Flooring':'home',Buildings:'home','Environment Effects':'sun',
@@ -792,6 +804,23 @@
       void commit(()=>runtime!.setEntry(id,change),describeEntry(id,change));
     }
   }
+  function setMemoryPieces(bits:number):void{
+    if(!selectedItem||!selectedMemory||!runtime||busy||storeError)return;
+    const id=selectedItem.itemId;
+    const total=selectedMemory.numberOfShards,full=completeMemoryBits(total);
+    if(!Number.isInteger(bits)||bits<0||bits>full)return;
+    if(!selectedMemoryEligible&&bits!==0&&bits!==full)return;
+    if(bits===0&&selectedMemoryBits!==0&&!window.confirm(memoryCopy.confirmClear))return;
+    const previous=selectedMemoryBits;
+    if(bits===previous)return;
+    void commit(()=>runtime!.setEntry(id,{memoryPieces:bits}),{
+      title:selectedItem.label,change:memoryPieceCount(previous)+'/'+total+' → '+memoryPieceCount(bits)+'/'+total
+    });
+  }
+  function toggleMemoryPiece(bit:number):void{
+    if(!selectedMemoryEligible||memoryPreviewRequested)return;
+    setMemoryPieces(selectedMemoryBits^bit);
+  }
   function toggleItemStatus(id:number):void{
     if(!runtime)return;
     const current=entries[String(id)]?.status;
@@ -1076,6 +1105,7 @@
     finally{input.value='';}
   }
   onMount(()=>{
+    memoryPreviewRequested=new URLSearchParams(window.location.search).get('memoryPreview')==='1';
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
       if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
@@ -1250,6 +1280,7 @@
       on:saveReadError={(event:CustomEvent<string>)=>infoMessage=event.detail}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
+
     <div class="collection-workspace">
       <div class="workspace-top">
         <div class="collection-record-switcher" role="group" aria-label={copy.record}>
@@ -1495,7 +1526,7 @@
                       <button type="button" class="item-card-body" on:click={(event)=>void showItem(item.itemId,event)}
                         aria-label={`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">
-                          <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
+                          {#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}
                         </span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
@@ -1573,7 +1604,7 @@
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
-                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
+                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}{#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}{/if}</span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
                         </span>
@@ -1697,9 +1728,30 @@
                   on:click={closeItem} aria-label={copy.closeDetails}>×</button>
               </div>
             </div>
-            <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
+            <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
+            {#if selectedMemory}
+              <div class="memory-piece-toolbar">
+                <strong>{memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
+                <label><input type="checkbox" bind:checked={showMemoryPieces}/>{memoryCopy.split}</label>
+                {#if memoryPreviewRequested}
+                  <a class="memory-comparison-link" href={base+'/media/memory-preview/'}>{locale==='ja'?'詳細比較（開発用）':'Detailed comparison (development)'}</a>
+                  <small>{locale==='ja'?'セーブのビット対応は未検証です。':'Saved-flag mapping is unverified.'}</small>
+                {:else}
+                  <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===completeMemoryBits(selectedMemory.numberOfShards)} on:click={()=>setMemoryPieces(completeMemoryBits(selectedMemory!.numberOfShards))}>{memoryCopy.all}</button>
+                  <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===0} on:click={()=>setMemoryPieces(0)}>{memoryCopy.clear}</button>
+                  {#if !selectedMemoryEligible}<small>{memoryCopy.unverified}</small>
+                  {:else if selectedMemoryBits!==completeMemoryBits(selectedMemory.numberOfShards)||showMemoryPieces}
+                    <div class="memory-piece-buttons" role="group" aria-label={memoryCopy.select}>
+                      {#each Array.from({length:selectedMemory.numberOfShards},(_,i)=>i) as i}
+                        <button type="button" disabled={busy||Boolean(storeError)} aria-label={memoryCopy.piece+' '+(i+1)} aria-pressed={(selectedMemoryBits&(1<<i))!==0} on:click={()=>toggleMemoryPiece(1<<i)}>{i+1}</button>
+                      {/each}
+                    </div>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
             {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
@@ -1725,11 +1777,11 @@
             {/if}
             <div class="inspector-section">
               <h3>{copy.collectionRecord}</h3>
-              <div class="ownership-actions">
+              {#if !selectedMemory}<div class="ownership-actions">
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>{copy.owned}</button>
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>{copy.missing}</button>
                 <button type="button" disabled={Boolean(storeError)} class:active={!selectedEntry.status} on:click={()=>changeEntry({status:null})}>{copy.unrecorded}</button>
-              </div>
+              </div>{/if}
               {#if ['QUANTITY_STOCK','OWNERSHIP_STOCK_AND_DISCOVERY'].includes(selectedItem.stateSemantic)}
                 <label class="numeric-field">{copy.manualQuantity}
                   <input type="number" min="0" max="999999" step="1" value={selectedEntry.quantity??''}
@@ -1756,6 +1808,12 @@
 
 <style>
   /* Image-first Collection tiles. Shared shell theme remains authoritative. */
+  .memory-piece-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:6px 0;font-size:12px}
+  .memory-piece-toolbar label{display:flex;align-items:center;gap:4px}
+  .memory-piece-buttons{display:flex;flex-wrap:wrap;gap:3px;width:100%}
+  .memory-piece-buttons button[aria-pressed="true"]{background:#367aa5;color:white}
+  .memory-piece-toolbar small{width:100%}
+  .memory-comparison-link{display:inline-block;padding:6px 8px;text-decoration:underline}
   .items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,114px),1fr));gap:6px;align-items:stretch}
   .item-card{position:relative;display:flex;min-width:0;min-height:0;padding:5px;gap:0;align-items:stretch;border-radius:7px;
     background:var(--wand-card);border-color:var(--wand-line);color:var(--wand-text)}

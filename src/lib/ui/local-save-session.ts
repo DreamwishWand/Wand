@@ -1,4 +1,5 @@
 import {writable} from 'svelte/store';
+import type {SavedMemoryFlags} from '../media/saved-memory-flags.ts';
 import {readWandLanguage} from './preferences.ts';
 import {appendReplayStep,travelReplayStep,type CheckpointJournal} from '../world/checkpoint-journal.ts';
 import {checkpointWords} from '../world/world-checkpoint-words.ts';
@@ -10,6 +11,7 @@ export interface LocalSaveSession{
   readonly revision:number;
   readonly collectionStatus:LocalSaveReadStatus;
   readonly worldCheckpoint?:WorldCheckpointHistory;
+  readonly memoryFlags?:SavedMemoryFlags;
 }
 /** Explicitly applied, independently validated experimental copies. In-memory
  * only: preserve the original File and use a fresh revision for every change. */
@@ -77,6 +79,13 @@ export function closeLocalSaveFile():boolean{
   current={file:null,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
   return true;
+}
+/** Session-scoped, read-only flags. New save revisions discard this field.
+ * Never persisted or converted to owned/missing without native verification. */
+export function updateCollectionMemoryFlags(revision:number,file:File,flags:SavedMemoryFlags):void{
+  if(!isCurrentLocalSaveSelection(revision,file))return;
+  current={...current,memoryFlags:flags};
+  state.set(current);
 }
 export function needsCollectionRead(revision:number):boolean{
   return revision>completedRevision;

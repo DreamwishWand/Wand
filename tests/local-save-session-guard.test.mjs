@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import {
   localSaveSession,selectLocalSaveFile,closeLocalSaveFile,
-  registerLocalSaveChangeGuard,isCurrentLocalSaveSelection
+  registerLocalSaveChangeGuard,isCurrentLocalSaveSelection,updateCollectionMemoryFlags
 } from '../src/lib/ui/local-save-session.ts';
 
 test('shared Save guard blocks every session change BEFORE any subscriber sees it',()=>{
@@ -51,4 +51,21 @@ test('shared Save guard blocks every session change BEFORE any subscriber sees i
     'unmounting the editor must release the guard for all other services');
   assert.equal(state.file,null);
   unsubscribe();
+});
+
+test('memory flags remain in the current revision only and stale responses cannot restore them',()=>{
+  const first=new File(['synthetic'],'a.profile'),second=new File(['synthetic'],'b.profile');
+  let state;
+  const stop=localSaveSession.subscribe(next=>state=next);
+  const flags={contract:'wand.memory.raw-flags@1',saveSchema:643,status:'observed',
+    entries:{130000001:3},pieceBitMappingVerified:false,saveFileModified:false};
+  try{
+    selectLocalSaveFile(first);const rev=state.revision;
+    updateCollectionMemoryFlags(rev,first,flags);
+    assert.equal(state.memoryFlags.entries[130000001],3);
+    selectLocalSaveFile(second);assert.equal(state.memoryFlags,undefined);
+    updateCollectionMemoryFlags(rev,first,flags);assert.equal(state.memoryFlags,undefined);
+    updateCollectionMemoryFlags(state.revision,second,flags);
+    closeLocalSaveFile();assert.equal(state.memoryFlags,undefined);
+  }finally{closeLocalSaveFile();stop();}
 });
