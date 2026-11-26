@@ -316,7 +316,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   return ddv_save_patch::preview_furniture_stock_transaction(json,amount,FurnitureStockAction::Pickup{target:&target,expected}).map_err(|_|CodecError::Patch);
  }
- let rows=p.get("edits").and_then(Value::as_array).filter(|a|matches!(a.len(),1|2)).ok_or(bad)?;
+ let rows=p.get("edits").and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
  let mut edits=Vec::new();
  for row in rows{
   if row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
@@ -330,7 +330,22 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   }else if xy==expected||old!=orientation{return Err(bad);}
   edits.push(GridMixedEdit{target,expected,position:(xy!=expected).then_some(xy),orientation:(old!=orientation).then(||(old,orientation.to_owned()))});
  }
- if edits.len()==2&&(edits[0].position!=Some(edits[1].expected)||edits[1].position!=Some(edits[0].expected)){return Err(bad);}
+ if edits.len()>1{
+  let swap=edits.len()==2&&edits[0].position==Some(edits[1].expected)&&edits[1].position==Some(edits[0].expected);
+  if !swap{
+   let first=edits[0].position.ok_or(bad)?;
+   let delta=(i64::from(first.0)-i64::from(edits[0].expected.0),i64::from(first.1)-i64::from(edits[0].expected.1));
+   let selected:std::collections::HashSet<_>=edits.iter().map(|e|e.target.object_id.as_str()).collect();
+   if selected.len()!=edits.len(){return Err(bad);}
+   let mut anchors=std::collections::HashSet::new();
+   for e in &edits{
+    let xy=e.position.ok_or(bad)?;
+    if e.orientation.is_some()||!on_terrain(e.expected)||!on_terrain(xy)||
+       (i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))!=delta||
+       !anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
+   }
+  }
+ }
  ddv_save_patch::preview_existing_grid_mixed_batch(json,&edits).map_err(|_|CodecError::Patch)
 }
 
@@ -438,6 +453,21 @@ mod tests{
   plan["place"]["x"]=Value::from(8);assert!(furniture_candidate(raw,&plan.to_string()).is_err());
   let mut p=json!({"roomOrdinal":1,"surfaceOrdinal":1,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":4,"y":4,"orientation":"GridOrientation_Left"}]});
   assert!(furniture_candidate(raw,&p.to_string()).is_ok());p["edits"][0]["y"]=Value::from(-1);assert!(furniture_candidate(raw,&p.to_string()).is_err());
+ }
+ #[test]
+ fn indoor_group_translation_is_atomic_and_preserves_identity(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":1,"Orientation":"GridOrientation_Down"},"3":{"ID":3,"ItemID":40000003,"X":4,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let mut p=json!({"roomOrdinal":1,"surfaceOrdinal":1,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":2,"y":1,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40000002,"expectedX":2,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":3,"y":1,"orientation":"GridOrientation_Down"}]});
+  let d=furniture_candidate(raw,&p.to_string()).unwrap();
+  let mut expected:Value=serde_json::from_slice(raw).unwrap();
+  expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"]=2.into();
+  expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=3.into();
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);
+  assert!(d.patched_json.contains("1e2"));
+  p["edits"][0]["x"]=3.into();p["edits"][1]["x"]=4.into();
+  assert!(furniture_candidate(raw,&p.to_string()).is_err());
+  p["edits"][0]["x"]=2.into();p["edits"][1]["x"]=5.into();
+  assert!(furniture_candidate(raw,&p.to_string()).is_err());
  }
  #[test]
  fn exact_room_finishes_and_surface_counts_without_native_grid_ids(){
