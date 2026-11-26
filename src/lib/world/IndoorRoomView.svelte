@@ -1,5 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
+ import RoomProjectApply from './RoomProjectApply.svelte';
+ import {roomApplyWords} from './room-project-apply.ts';
  import SubgridInspector from './SubgridInspector.svelte';
  import type {DesignSymmetry,SymmetryMode} from './design-symmetry.ts';
  import {supportPickupWords} from './group-pickup.ts';
@@ -28,6 +30,8 @@
  import type {WandLanguage} from '../ui/preferences';
  export let file:File|null,locale:WandLanguage='ja',onClose:()=>void;
  export let terrainWorker:Worker|null=null,nextRequest:()=>number,blocked=false;
+ let projectApplyOpen=false;
+ $: rap=roomApplyWords[locale];
  let seen:File|null=null,own:Worker|null=null,rooms:IndoorRoom[]=[],status:'loading'|'ready'|'error'='loading',selected=0,surface=0,query='',limit=80;
  let positionOpen=true,highlight:number|null=null;
  let supportParents:IndoorSupportWitness[]=[],supportParent:IndoorSupportWitness|null=null,supportFile:File|null=null;
@@ -163,7 +167,7 @@
  $: iw=indoorEditWords[locale];
  $: ew=childEditWords[locale];
  $: tree=indoorEditableTree(face);
- $: editAllowed=testExport&&!blocked&&!!tree&&!finishOpen&&!editWorker&&!editCopy;
+ $: editAllowed=testExport&&!blocked&&!projectApplyOpen&&!!tree&&!finishOpen&&!editWorker&&!editCopy;
  $: left=linkedAxis?indoorLinkedRotate(face,shapes,editable,[selectedObject],-1,linkedAxis):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,-1);
  $: right=linkedAxis?indoorLinkedRotate(face,shapes,editable,[selectedObject],1,linkedAxis):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,1);
  $: partners=indoorSwapPartners(face,shapes,editable,selectedObject);
@@ -275,7 +279,7 @@
   else{const delta=roomKeyDelta(e.key,e.shiftKey?face.factor??1:1);const origin=tree.objects[selectedObject];if(!delta||!origin)return false;draft=moveDraft(cutIndices,selectedObject,origin.x+delta.x,origin.y+delta.y);if(draft){stageMove(draft);return true;}}
   if(draft){editDraft=draft;editError=false;}else editError=true;return true;
  }
- function keys(e:KeyboardEvent){if(supportParent&&e.key==='Escape'){e.preventDefault();e.stopPropagation();closeSupport();return;}if(supportParent&&e.key!=='Tab')return;if(roomKeyboard(e)){e.preventDefault();e.stopPropagation();return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='x'&&canCut&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){if(captureRoomCut()){e.preventDefault();e.stopPropagation();}return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')].filter(el=>!el.closest('[inert]'));if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
+ function keys(e:KeyboardEvent){if(projectApplyOpen&&e.key==='Escape'){e.preventDefault();e.stopPropagation();projectApplyOpen=false;return;}if(projectApplyOpen&&e.key!=='Tab')return;if(supportParent&&e.key==='Escape'){e.preventDefault();e.stopPropagation();closeSupport();return;}if(supportParent&&e.key!=='Tab')return;if(roomKeyboard(e)){e.preventDefault();e.stopPropagation();return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='x'&&canCut&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){if(captureRoomCut()){e.preventDefault();e.stopPropagation();}return;}if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='v'&&availableCut&&editAllowed&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!swap&&!stockOpen&&!(e.target instanceof HTMLElement&&e.target.closest('input,textarea,select,[contenteditable=true]'))){e.preventDefault();e.stopPropagation();beginTransfer();return;}if(e.key==='Escape'){e.preventDefault();e.stopPropagation();onClose();return;}if(e.key!=='Tab')return;const controls=[...root.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href]')].filter(el=>!el.closest('[inert]'));if(!controls.length)return;const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
  $: w=indoorWords[locale]??indoorWords.en;
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
@@ -284,7 +288,7 @@
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen&&finishChoice?[finishChoice]:[])]);
  function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
- function load(next:File|null){closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;if(!keep)linkedAxis=null;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
+ function load(next:File|null){projectApplyOpen=false;closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;if(!keep)linkedAxis=null;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
   const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);supportParents=parseIndoorSupportParents(v,rooms);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
   worker.onmessage=e=>done(e.data?.kind==='indoor-rooms'?e.data.result:null,e.data?.stock);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);worker.postMessage({command:'indoor-rooms',file:next});
@@ -299,10 +303,10 @@
 <div class="indoor-room-view" role="dialog" aria-label={w[0]} aria-modal="true" bind:this={root} on:keydown={keys}>
  <header><strong>{w[0]}</strong><button type="button" bind:this={closeButton} on:click={onClose} aria-label={w[7]}>×</button></header>
  {#if status==='loading'}<p role="status">{w[8]}</p>{:else if status==='error'}<p role="alert">{w[10]}</p>{:else if !rooms.length}<p>{w[9]}</p>{:else if room}
- <div class="room-body" inert={!!supportParent}>
+ <div class="room-body" inert={!!supportParent||projectApplyOpen}>
   <nav aria-label={w[3]}>{#each rooms as r,i}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{w[1]} {r.house} / {w[2]} {r.floor} · {r.name||w[3]+' '+r.ordinal}</button>{/each}</nav>
   <div class="room-content">
-   <div class="finish-heading"><strong>{w[15]}</strong><button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
+   <div class="finish-heading"><strong>{w[15]}</strong>{#if testExport}<button type="button" disabled={blocked||!file||!terrainWorker||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent} on:click={()=>{resetObject();cancelPreview();finishOpen=false;projectApplyOpen=true;}}>{rap[0]}</button>{/if}<button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
    <div class="finishes">
     {#each room.surfaces as s,i}<button type="button" class="finish-card" aria-pressed={surface===i} on:click={()=>{linkedAxis=null;resetObject();cancelPreview();surface=i;query='';highlight=null;limit=80;}}><span>{i===0?w[4]:w[5]+' '+i}</span>{#if s.finish&&images.get(s.finish)}<img src={images.get(s.finish)} alt="" loading="lazy"/>{/if}<small>{s.finish===0?w[11]:name(s.finish,records,locale,w[12])}</small></button>{/each}
     <div class="finish-card"><span>{w[6]}</span>{#if room.ceiling&&images.get(room.ceiling)}<img src={images.get(room.ceiling)} alt="" loading="lazy"/>{/if}<small>{room.ceiling===0?w[11]:name(room.ceiling,records,locale,w[12])}</small></div>
@@ -347,6 +351,7 @@
  {/if}
  {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
+{#if projectApplyOpen&&file&&room}<RoomProjectApply {file} {room} {stock} {owned} worker={terrainWorker} {locale} {nextRequest} {blocked} onClose={()=>projectApplyOpen=false}/>{/if}
 </div>
 <style>
  .room-map-button{flex:1;min-height:0;padding:0;background:none;border:0;display:flex;touch-action:none}.room-map-button.room-panning{cursor:grab}.room-map-button.room-panning:active{cursor:grabbing}.room-camera-tools{display:flex;gap:4px;justify-content:flex-end}.room-camera-tools button{min-width:32px;min-height:28px}.indoor-edit{display:flex;flex-wrap:wrap;align-items:center;gap:5px}.indoor-edit small{flex-basis:100%}.indoor-edit select{max-width:100%}
