@@ -2108,6 +2108,17 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(draft,true)
         }
 
+        pub fn prepare_biome_decoration_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_BIOME_DECORATION_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()
+            };
+            let draft=grid_instance_preview::biome_decoration_candidate(original,plan).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft,true)
+        }
+
         pub fn inspect_area_network(&self,witness:&str)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_AREA_NETWORK_NOT_OPEN"));}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_AREA_NETWORK_NOT_OPEN"))?.profile.as_slice()};

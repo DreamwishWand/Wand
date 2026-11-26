@@ -739,3 +739,23 @@ test('whole island save preset distinguishes an empty existing grid from an abse
  const result=islandSaveReplacement(grids,rasters,snapshot,incoming,defs,new Map([[id,0]]));assert(result);assert.equal(result.plan[0].remove.length,1);assert.equal(result.plan[1].add.length,1);assert.deepEqual(result.missing,[]);
  assert.equal(islandSaveReplacement(grids,rasters,snapshot,incoming,defs,new Map()),null);
 });
+
+import {captureBiomeDecoration,parseBiomeDecoration,reviewBiomeDecoration} from '../src/lib/world/biome-decoration-preset.ts';
+test('mixed decoration previews furniture against the final fence arrangement and preserves supports',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bundle.grids.map(bindMainlandGrid);
+ const grid=grids.find(g=>g.key==='Meadow'),rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(g.key==='Meadow'?1:0)}]));
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1};
+ const id=40005160,def={itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[id+':8']:shape}},defs=new Map([[id,def]]);
+ const point=(n,itemId,x,y,layer,extra={})=>({area:grid.key,...mainlandMapAnchor(grid,x,y),factor:grid.factor,shape,object:{localOrdinal:n,localGridOrdinal:1,itemId:String(itemId),x,y,layer,orientation:'GridOrientation_Down',orientationCode:8,surfaceCapable:false,...extra}});
+ const furniture=point(1,id,5,5,'furniture'),fence=point(2,40700000,10,10,'fence'),support=point(3,id,20,20,'furniture',{subgrid:{status:'resolved_full',objectCount:1}});
+ const objects=[furniture,fence,support],network=[{itemId:40700000,x:10,y:10,orientation:2,network:{kind:'fence',diagonal:false,base:40700000}}];
+ const capture=captureBiomeDecoration(grid,objects,0,network);assert(capture);assert.equal(capture.furnitureCount,1);assert.equal(capture.networkCount,1);assert.equal(capture.protectedCount,1);
+ const doc=parseBiomeDecoration(capture.text,grid);assert.equal(doc.furniture.length,1);assert.deepEqual(doc.network,network);
+ const moved=[{...doc.furniture[0],x:10,y:10}],stock=new Map([[id,0]]);
+ assert.equal(reviewBiomeDecoration(grid,grids,rasters,objects,0,network,{furniture:moved,network},defs,stock),null);
+ const q=reviewBiomeDecoration(grid,grids,rasters,objects,0,network,{furniture:moved,network:[]},defs,stock);
+ assert(q);assert.equal(q.furniture.plan.add.length,1);assert.equal(q.network.removed.length,1);assert.equal(q.removed.length,2);assert.equal(q.protectedCount,1);assert.deepEqual(q.missing,[]);
+ assert.equal(reviewBiomeDecoration(grid,grids,rasters,objects,0,network,{furniture:[{...moved[0],x:20,y:20}],network:[]},defs,stock),null);
+ assert.throws(()=>parseBiomeDecoration(capture.text,{...grid,gridDataPath:'GridData/Other.json'}));
+ assert.equal(captureBiomeDecoration(grid,objects,0,[]),null);
+});
