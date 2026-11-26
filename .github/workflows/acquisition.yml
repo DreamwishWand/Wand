@@ -1,18 +1,10 @@
 name: SRC-02 Acquisition
 on:
-  push:
-    paths:
-      - 'tools/src-02-acquisition/**'
-      - 'src/lib/acquisition/**'
-      - 'crates/wand-acquisition-core/**'
-      - 'tests/acquisition*.test.mjs'
-      - '.github/workflows/acquisition.yml'
-  pull_request:
-    paths:
-      - 'tools/src-02-acquisition/**'
-      - 'src/lib/acquisition/**'
-      - 'tests/acquisition*.test.mjs'
-      - '.github/workflows/acquisition.yml'
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+
 jobs:
   extraction-tests:
     runs-on: ubuntu-latest

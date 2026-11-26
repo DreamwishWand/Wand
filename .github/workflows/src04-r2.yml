@@ -1,12 +1,10 @@
 name: SRC-04 private R2 staging checks
 on:
-  pull_request:
-    paths:
-      - "tools/src-04-r2/**"
-      - ".github/workflows/src04-r2.yml"
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest

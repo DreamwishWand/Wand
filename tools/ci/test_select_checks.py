@@ -1,5 +1,5 @@
 import unittest
-from select_checks import classify, DOMAINS
+from select_checks import classify, DOMAINS, source_checks
 
 class ScopeTests(unittest.TestCase):
     def test_docs(self):
@@ -22,6 +22,15 @@ class ScopeTests(unittest.TestCase):
                      "src/routes/new-service/+page.svelte", "tests/shared.test.mjs", "package.json"]:
             self.assertTrue(all(classify([path]).values()), path)
         self.assertTrue(all(classify([]).values()))
+    def test_source_gate_selection(self):
+        self.assertTrue(source_checks(["tools/src-04-r2/test_example.py"])["r2"])
+        self.assertFalse(source_checks(["tools/src-04-r2/test_example.py"])["db05"])
+        self.assertTrue(source_checks(["crates/wand-acquisition-core/src/lib.rs"])["acquisition"])
+        self.assertTrue(source_checks(["src/lib/save/new.ts"])["db05"])
+        self.assertTrue(source_checks(["tests/world-new.test.mjs"])["db04"])
+        self.assertTrue(all(source_checks(["tools/ci/select_checks.py"]).values()))
+        self.assertTrue(all(source_checks([], full=True).values()))
+        self.assertFalse(any(source_checks(["README.md"]).values()))
     def test_named_smoke(self):
         self.assertTrue(classify(["browser/world-graph-smoke.mjs"])["world"])
         self.assertFalse(classify(["browser/world-graph-smoke.mjs"])["guide"])
