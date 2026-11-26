@@ -1209,11 +1209,21 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         working.zeroize();*working=draft.patched_json;*amount=next;
     }
     }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::BulkPickup;
+        let pickups=targets.iter().zip(&selections).zip(&support_flags).filter_map(|((target,selection),flag)|(*flag).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
+        if !pickups.is_empty(){
+            let mut draft=ddv_save_patch::support_clone::preview_bulk_support_pickup(&working,&pickups).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+    }else{
     for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
         if !flag{continue;}
         let mut draft=ddv_save_patch::support_clone::preview_support_tree_pickup(&working,target,selection.2).map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+    }
     }
     Ok(std::mem::take(&mut *working))
 }
