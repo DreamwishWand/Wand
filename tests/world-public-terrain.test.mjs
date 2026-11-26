@@ -661,3 +661,20 @@ test('Biome replacement on the continuous world map preserves all other areas an
  assert.deepEqual(currentDesign(travelDesign(r.next,-1)),currentDesign(two));
  assert.equal(replaceWorldArea(f,two,'Meadow',[{...split.local[0],x:100000}],defs),null);
 });
+
+import {biomeFurnitureSnapshot,biomeFurnitureReplacement} from '../src/lib/world/biome-furniture-preset.ts';
+test('biome furniture preset retains matching identities, preserves support/network and uses returned stock',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bundle.grids.map(bindMainlandGrid);
+ const grid=grids.find(g=>g.key==='Meadow'),rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(g.key==='Meadow'?1:0)}]));
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1};
+ const itemId=40005160,def={itemId,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[itemId+':8']:shape}};
+ const point=(n,x,y,layer='furniture',extra={})=>({area:grid.key,...mainlandMapAnchor(grid,x,y),factor:grid.factor,shape,object:{localOrdinal:n,localGridOrdinal:1,itemId:String(layer==='ground'?40100068:itemId),x,y,layer,orientation:'GridOrientation_Down',orientationCode:8,surfaceCapable:false,...extra}});
+ const a=point(1,5,5),b=point(2,10,10),c=point(3,15,15,'ground'),d=point(4,20,20,'furniture',{surfaceCapable:true});
+ const objects=[a,b,c,d],snapshot=biomeFurnitureSnapshot(grid,objects,0);assert(snapshot);assert.equal(snapshot.editable.length,2);assert.equal(snapshot.protectedObjects.length,2);
+ assert.equal(biomeFurnitureSnapshot(grid,objects,1),null);
+ const defs=new Map([[itemId,def]]),stock=new Map([[itemId,0]]);
+ const plan=biomeFurnitureReplacement(grid,grids,rasters,objects,0,[snapshot.placements[0],{...snapshot.placements[1],x:25,y:25}],defs,stock);
+ assert(plan);assert.deepEqual(plan.retained,[a]);assert.deepEqual(plan.removed,[b]);assert.equal(plan.plan.add.length,1);assert.equal(plan.missing.length,0);assert.deepEqual(plan.protectedObjects,[c,d]);
+ assert.equal(biomeFurnitureReplacement(grid,grids,rasters,objects,0,[{...snapshot.placements[0],x:20,y:20}],defs,stock),null);
+ const noChange=biomeFurnitureReplacement(grid,grids,rasters,objects,0,snapshot.placements,defs,stock);assert(noChange);assert.equal(noChange.changed,false);
+});
