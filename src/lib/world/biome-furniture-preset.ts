@@ -27,7 +27,13 @@ export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly Mainla
 export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees}){
  const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before);if(!snapshot)return null;
  if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
- const sceneKey=(scene:SupportScene|undefined)=>scene?JSON.stringify(scene.tree):'';
+ const sceneKey=(scene:SupportScene|undefined)=>{
+  if(!scene)return '';
+  // Stable semantic identity independent of JSON key ordering and the order
+  // of native object IDs in a support surface.
+  const canonical=(t:SupportScene['tree']):unknown=>[t.sourcePath,t.factor,t.objects.map(o=>[o.itemId,o.x,o.y,o.orientation,o.child?canonical(o.child):null]).map(row=>JSON.stringify(row)).sort()];
+  return JSON.stringify(canonical(scene.tree));
+ };
  const existing=new Map<string,MainlandSavedObject[]>();
  for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]))+':'+sceneKey(supports?.before.get(p.object.localOrdinal));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}
  const added:DesignPlacement[]=[],retained:MainlandSavedObject[]=[];
