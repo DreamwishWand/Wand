@@ -6,8 +6,9 @@ import type {SourceObjectShape} from "./source-object-map.ts";
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {ROOM_CUT_LIMIT,rotateFurnitureGroup,type CutWitness} from './group-paste.ts';
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
+import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
-export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
+export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
@@ -24,7 +25,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    const seen=new Set<number>();
    const items:IndoorItem[]=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
-   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||Object.keys(p).length!==4||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode']};});
+   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&p.plain===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{})};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
    let terrain:TerrainRaster|undefined;
    if(s.terrain!==undefined){
@@ -131,6 +132,15 @@ export function indoorPickup(face:IndoorSurface|null,index:number,removable:Read
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
  return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
 }
+export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup[]|null{
+ if(!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const counts=new Map<number,number>(),rows:IndoorPickup[]=[];
+ for(const index of indices){const row=indoorPickup(face,index,removable,stock);if(!row)return null;
+  const count=(counts.get(row.itemId)??0)+1;if(row.expectedStock+count>2147483647)return null;
+  counts.set(row.itemId,count);rows.push(row);
+ }
+ return rows;
+}
 export const indoorEditWords={
  ja:['家具編集','個別の家具を選択','占有形状が変わらない回転・交換に対応。自由配置には原本の部屋地形が必要です。','インベントリへ戻す','編集を確認','編集済みコピーを作成できませんでした。'],
  en:['Edit furniture','Select an individual object','Rotation and swaps preserve occupied shapes. Free placement requires original room terrain.','Return to inventory','Review edit','Unable to create edited copy.'],
@@ -187,6 +197,70 @@ export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Mo
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
  const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,expectedStock:n,x,y,orientation}:null;
 }
+/** Copy only layout poses; the original objects remain in place and all
+ * new records must fit the actual room and available furniture stock. */
+export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>):DesignClipItem[]|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const counts=new Map<number,number>(),clip:DesignClipItem[]=[];
+ for(const i of indices){
+  const o=tree.objects[i];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i))return null;
+  const count=(counts.get(o.itemId)??0)+1;if(count>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,count);
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));return clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
+}
+export function indoorGroupPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],x:number,y:number):IndoorPlace[]|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||!face?.terrain||!clip.length||clip.length>ROOM_CUT_LIMIT||tree.objects.length+clip.length>512||![x,y].every(Number.isSafeInteger))return null;
+ const staged={...tree,objects:[...tree.objects]},counts=new Map(stock),rows:IndoorPlace[]=[];
+ for(const p of clip){
+  const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation],n=counts.get(p.itemId);
+  if(!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!orientation||!allowed.has(p.itemId)||n===undefined||n<1||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  rows.push({itemId:p.itemId,x:px,y:py,orientation,expectedStock:n});counts.set(p.itemId,n-1);staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
+ }
+ return rows;
+}
+/** Existing portable Wand Scene format, not a whole-room backup.
+ * Require a positive leaf-record witness; never silently drop saved state. */
+export function captureIndoorScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>):ScenePreset|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||!face?.terrain||!face.factor||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const clip:DesignClipItem[]=[];
+ for(const i of indices){
+  const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i))return null;
+  clip.push({itemId:o.itemId,dx:o.x,dy:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
+ try{return sceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),face.factor,'corner');}catch{return null;}
+}
+export function indoorSceneClip(text:string,factor:1|2):{clip:DesignClipItem[];anchor:ScenePreset['anchor']}{
+ const scene=convertSceneFactor(parseSceneAnyFactor(text),factor);
+ if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400))throw Error('INDOOR_SCENE_UNSUPPORTED');
+ return {clip:scene.items.map(p=>({...p,dx:p.dx*2/factor,dy:p.dy*2/factor})),anchor:scene.anchor};
+}
+export function indoorScenePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number){
+ if(!face?.factor)return null;
+ if(anchor==='center'){
+  let width=0,height=0;
+  for(const p of clip){const s=shapes[p.itemId+':'+p.orientation*4];if(!s)return null;width=Math.max(width,p.dx*face.factor/2+s.width);height=Math.max(height,p.dy*face.factor/2+s.height);}
+  x-=Math.floor((width-1)/2);y-=Math.floor((height-1)/2);
+ }
+ return indoorGroupPlace(face,shapes,allowed,stock,clip,x,y);
+}
+export const indoorSceneWords={
+ ja:['面全体のSceneを保存','通常家具の配置のみ。床材・壁紙・小物の状態は含みません。','Sceneを配置できません。形状・在庫・対応数を確認してください。'],
+ en:['Save entire surface as Scene','Ordinary furniture layout only; finishes and object state are not included.','Cannot place Scene. Check geometry, stock and supported count.'],
+ fr:['Enregistrer la surface en scène','Disposition des meubles uniquement ; finitions et état exclus.','Scène incompatible : vérifier géométrie, stock et quantité.'],
+ it:['Salva superficie come scena','Solo disposizione dei mobili; finiture e stato esclusi.','Verifica geometria, scorte e quantità.'],
+ de:['Fläche als Szene speichern','Nur Möbelanordnung; Oberflächen und Zustand ausgeschlossen.','Geometrie, Bestand und Anzahl prüfen.'],
+ 'es-ES':['Guardar superficie como escena','Solo distribución de muebles; sin acabados ni estado.','Comprueba geometría, inventario y cantidad.'],
+ 'zh-CN':['将整个表面保存为场景','仅普通家具布局，不包含饰面及物品状态。','请检查形状、库存和数量。'],
+ 'pt-BR':['Salvar superfície como cena','Somente disposição de móveis; sem acabamentos ou estado.','Verifique geometria, estoque e quantidade.']
+} as const;
+export const indoorGroupStockWords={
+ ja:['選択した家具を回収','選択した家具を複製'],en:['Return selected furniture','Duplicate selected furniture'],fr:['Ranger les meubles sélectionnés','Dupliquer les meubles sélectionnés'],it:['Riponi mobili selezionati','Duplica mobili selezionati'],de:['Ausgewählte Möbel einlagern','Ausgewählte Möbel duplizieren'],'es-ES':['Guardar muebles seleccionados','Duplicar muebles seleccionados'],'zh-CN':['收回所选家具','复制所选家具'],'pt-BR':['Recolher móveis selecionados','Duplicar móveis selecionados']
+} as const;
 export const indoorTerrainWords={
  ja:['部屋の原本地形','移動','在庫から配置','配置先をクリック','家具名を検索','空きマスへ配置できます。'],
  en:['Original room terrain','Move','Place from stock','Click destination','Find furniture','Place on available cells.'],
