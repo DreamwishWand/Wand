@@ -18,3 +18,16 @@ test('reject malformed rows, unsupported evidence and contradictory empty status
   const p=sanitizeSavedMemoryFlags({...base,status:'observed_empty',entries:{}});
   assert.equal(memoryCandidateFlags(p,1,10),null);
 });
+
+test('actual combined WASM response retains raw Memory flags and independent discovery',async()=>{
+  const {projectRustReadProjectionsText}=await import('./helpers/rust-collection-discovery.mjs');
+  const result=await projectRustReadProjectionsText(JSON.stringify({GameInfo:{Version:643},Player:{
+    PrivateName:'never-export',MemoryShards:{130000001:3,130000002:0},
+    CollectionSets:[{GroupData:[{GroupsCollectionItems:{40005160:true}}]}]
+  }}));
+  const flags=sanitizeSavedMemoryFlags(result.memoryFlags);
+  assert.equal(memoryCandidateFlags(flags,130000001,10),3);
+  assert.equal(memoryCandidateFlags(flags,130000002,10),0);
+  assert.deepEqual(result.entries,[{itemId:40005160,discovered:true}]);
+  assert.equal(JSON.stringify(result).includes('never-export'),false);
+});
