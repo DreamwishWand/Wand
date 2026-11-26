@@ -487,6 +487,19 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
 mod tests{
  use super::*;
  #[test]
+ fn room_alignment_is_atomic_and_single_axis(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":4,"Y":3,"Orientation":"GridOrientation_Down"},"3":{"ID":3,"ItemID":40000002,"X":1,"Y":4,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"align":[{"index":0,"itemId":40000001,"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":1,"y":2,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40000001,"expectedX":4,"expectedY":3,"expectedOrientation":"GridOrientation_Down","x":1,"y":3,"orientation":"GridOrientation_Down"}]});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();
+  let mut expected:Value=serde_json::from_slice(raw).unwrap();
+  expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"]=1.into();
+  expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=1.into();
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);
+  assert!(d.patched_json.contains("1e2"));
+  plan["align"][1]["y"]=4.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  plan["align"][1]["y"]=3.into();plan["align"][1]["orientation"]="GridOrientation_Left".into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+ }
+ #[test]
  fn indoor_furniture_rotates_swaps_and_picks_up_only_exact_plain_records(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":0,"Y":0,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":0,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let a=json!({"index":0,"itemId":40000001,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":0,"y":0,"orientation":"GridOrientation_Left"});
