@@ -216,3 +216,78 @@ pub fn preview_support_tree_pickup(source:&str,target:&GridCoordinateTarget,expe
  validate_json_without_edit(&candidate)?;
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
+
+
+/// Area-specific multi-root pickup. The codec has already validated exact
+/// original ordinals, complete support ownership and native reference closure.
+/// Resolve every tree against the same source, then remove all child Grids,
+/// parent members and return aggregate stock without per-root Save copies.
+pub fn preview_bulk_support_pickup(source:&str,rows:&[super::bulk_furniture::BulkPickup<'_>])->Result<GridCoordinateDraft,PatchError>{
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||rows.is_empty()||rows.len()>2048{return Err(BAD);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ let mut removed=HashSet::new();let mut parents=HashMap::<String,HashSet<String>>::new();let mut stock=Vec::new();
+ for p in rows{
+  let t=p.target;if t.kind!=GridObjectKind::Full||t.item_id/100_000!=400||diff.is_some_and(|m|m.contains_key(&t.grid_id)){return Err(BAD);}
+  let grid=grids.get(&t.grid_id).ok_or(BAD)?;
+  if !valid_id(&t.grid_id)||grid.get("ID").and_then(Value::as_u64)!=t.grid_id.parse::<u64>().ok(){return Err(BAD);}
+  let objects=grid.get("Objects").and_then(Value::as_object).filter(|m|m.len()<=100_000).ok_or(BAD)?;
+  let src=objects.get(&t.object_id).ok_or(BAD)?;
+  if object(src,&t.object_id)?!=t.item_id||(coord(src,"X")?,coord(src,"Y")?)!=p.expected||src.get("Orientation").and_then(Value::as_str)!=Some(p.orientation){return Err(BAD);}
+  if !parents.entry(t.grid_id.clone()).or_default().insert(t.object_id.clone()){return Err(BAD);}
+  let child=state_child(src)?.ok_or(BAD)?;
+  let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next:1,created:Vec::new(),stock:vec![t.item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:false};
+  tree.clone_grid(child,t.item_id,0)?;
+  for n in tree.seen{if !removed.insert(n){return Err(BAD);}}
+  stock.extend(tree.stock);if stock.len()>2048{return Err(BAD);}
+ }
+ if parents.keys().any(|s|s.parse::<u32>().ok().is_some_and(|n|removed.contains(&n))){return Err(BAD);}
+ let mut locator=JsonLocator::grid_axis(source,rows[0].target,"X")?;locator.signed_path=None;locator.item_path=None;
+ let gp=vec![k("World"),k("GridCollection"),k("Grids")];
+ locator.capture.insert(gp.clone(),None);
+ let mut paths=HashMap::new();
+ for id in parents.keys(){let mut p=gp.clone();p.extend([k(id),k("Objects")]);locator.capture.insert(p.clone(),None);paths.insert(id.clone(),p);}
+ locator.walk_complete()?;
+ let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(BAD);
+ let gr=span(&gp)?;let mut inner=HashMap::new();
+ for (id,p) in &paths{inner.insert(id.clone(),span(p)?);}
+ locator.capture.clear();
+ // Read only the selected parent maps. Unchanged members remain raw source
+ // slices including their numeric notation and unknown fields.
+ let mut replacements=HashMap::new();
+ for (id,range) in inner{
+  let path=paths.get(&id).ok_or(BAD)?;let deleting=parents.get(&id).ok_or(BAD)?;
+  locator.pos=range.start;locator.expect(b'{')?;let mut members=Vec::new();let mut seen=0;let mut visited=0;
+  loop{
+   locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+   let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=path.clone();p.push(k(&key));locator.value(&mut p)?;
+   if deleting.contains(&key){seen+=1;}else{members.push(&source[start..locator.pos]);}
+   visited+=1;locator.space();if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(BAD);}
+  }
+  if seen!=deleting.len()||visited!=grids[&id]["Objects"].as_object().ok_or(BAD)?.len(){return Err(BAD);}
+  replacements.insert(id,(range,format!("{{{}}}",members.join(","))));
+ }
+ locator.pos=gr.start;locator.expect(b'{')?;
+ let mut members=Vec::new();let mut deleted=0;let mut edited=0;let mut visited=0;
+ loop{
+  locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+  let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=gp.clone();p.push(k(&key));locator.value(&mut p)?;let end=locator.pos;
+  if key.parse::<u32>().ok().is_some_and(|n|removed.contains(&n)){deleted+=1;}
+  else if let Some((r,v))=replacements.get(&key){
+   if r.start<start||r.end>end{return Err(BAD);}
+   members.push(format!("{}{}{}",&source[start..r.start],v,&source[r.end..end]));edited+=1;
+  }else{members.push(source[start..end].to_owned());}
+  visited+=1;locator.space();if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(BAD);}
+ }
+ if visited!=grids.len()||deleted!=removed.len()||edited!=parents.len(){return Err(BAD);}
+ let map=root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?;
+ for id in &removed{map.remove(&id.to_string()).ok_or(BAD)?;}
+ for (id,keys) in parents{let objects=map.get_mut(&id).and_then(|g|g.get_mut("Objects")).and_then(Value::as_object_mut).ok_or(BAD)?;for key in keys{objects.remove(&key).ok_or(BAD)?;}}
+ if reserved_ref(&root,&removed,false){return Err(BAD);}
+ let candidate=format!("{}{{{}}}{}",&source[..gr.start],members.join(","),&source[gr.end..]);
+ if serde_json::from_str::<Value>(&candidate).map_err(|_|BAD)?!=root{return Err(BAD);}
+ let patched_json=super::bulk_furniture::preview_bulk_stock(&candidate,&stock,true)?;
+ Ok(GridCoordinateDraft{patched_json,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
