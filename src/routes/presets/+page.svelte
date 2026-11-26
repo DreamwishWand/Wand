@@ -1,4 +1,5 @@
 <script lang="ts">
+ import PresetAuthorPanel from '$lib/presets/PresetAuthorPanel.svelte';
  import PublicPresetCatalog from '$lib/presets/PublicPresetCatalog.svelte';
  import {catalogWords} from '$lib/presets/catalog-words.ts';
  import {onMount,onDestroy} from 'svelte';
@@ -72,7 +73,7 @@
  {#if root==='my'}<nav aria-label="My Presets">{#each domains as key}<button type="button" aria-pressed={myDomain===key} on:click={()=>switchDomain(key)}>{labels[key]}</button>{/each}</nav>{/if}
  <nav aria-label={w[19]}>{#if root==='wand'}<button type="button" aria-pressed={view==='browse'} on:click={()=>view='browse'}>{cw[0]}</button>{/if}{#if domain!=='wand'}<button type="button" aria-pressed={view==='current'} on:click={()=>view='current'}>{w[1]}</button>{/if}<button type="button" aria-pressed={view==='backups'} on:click={()=>view='backups'}>{w[2]}</button><button type="button" aria-pressed={view==='published'} on:click={()=>view='published'}>{w[3]}</button></nav>
  {#if view==='browse'}<PublicPresetCatalog {locale}/>
- {:else if view==='published'}<p role="status">{w[4]}</p>
+ {:else if view==='published'}{#if domain==='wand'}<PresetAuthorPanel {locale} entries={$sessionPresets} selectedEntry={current}/>{:else}<p role="status">{w[4]}</p>{/if}
  {:else if view==='current'}<div class="toolbar"><button type="button" disabled={!source||nativeBusy} on:click={()=>native('index')}>{w[1]}</button><select bind:value={kind} aria-label={w[19]}><option value="all">{w[15]}</option>{#each kinds as k}<option value={k}>{p[kindIndex[k]]}</option>{/each}</select>{#if !source}<small>{w[5]}</small>{/if}</div>
   {#if nativeError}<p role="alert">{w[6]}</p>{/if}
   {#if index?.groups.some(g=>g.status==='unavailable')}<p role="status">{w[7]}</p>{/if}
