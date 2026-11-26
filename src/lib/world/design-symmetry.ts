@@ -13,7 +13,7 @@ function runSignature(shape:SourceObjectShape,flipX:boolean,flipY:boolean){
  return shape.runs.map(r=>[flipY?shape.height-1-r.y:r.y,flipX?shape.width-r.x-r.width:r.x,r.width]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(r=>r.join(':')).join(';');
 }
 export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:DesignSymmetry):SymmetryItem|null{
- if(p.attachment||!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
+ if(p.attachment&&(s.mode!=='point'||g.supportPath!==p.attachment.scene.tree.sourcePath||p.itemId!==p.attachment.scene.ownerItemId)||!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
   exclusiveAnchorClass(String(p.itemId))||!['furniture','landscape'].includes(g.layer)||nativeActionBlocked(g.editRestrictions,'select'))return null;
  const a=g.shapes[p.itemId+':'+p.orientation*4];if(!a?.runs.length)return null;
  const fx=s.mode!=='horizontal',fy=s.mode!=='vertical';
@@ -22,9 +22,13 @@ export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:Design
  const b=g.shapes[p.itemId+':'+orientation*4];
  if(!b||a.width!==b.width||a.height!==b.height||a.cellCount!==b.cellCount||runSignature(a,fx,fy)!==runSignature(b,false,false))return null;
  const x=fx?s.x2-p.x-a.width:p.x,y=fy?s.y2-p.y-a.height:p.y;
- return [x,y].every(Number.isSafeInteger)?{itemId:p.itemId,x,y,orientation}:null;
+ return [x,y].every(Number.isSafeInteger)?{itemId:p.itemId,x,y,orientation,...(p.attachment?{attachment:p.attachment}:{})}:null;
 }
-const key=(p:SymmetryItem)=>p.itemId+':'+p.x+':'+p.y+':'+p.orientation;
+// A half-turn rotates the parent-local reference frame. Descendant native
+// poses stay unchanged; linear reflection would require chirality checks
+// in every support grid, and remains deliberately unavailable.
+const attachmentKey=(a:DesignSupportAttachment|undefined):string=>a?JSON.stringify(a):'';
+const key=(p:SymmetryItem)=>p.itemId+':'+p.x+':'+p.y+':'+p.orientation+':'+attachmentKey(p.attachment);
 const anchor=(p:SymmetryItem)=>p.itemId+':'+p.x+':'+p.y;
 /** Return original and mirrored placements without duplicate center objects.
  * Existing exact matches may serve as the counterpart, but an ambiguous
@@ -66,7 +70,7 @@ export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs
   if(byPose.get(key(p))?.length!==1)return null;
   const mirror=reflectedDesignItem(p,g,s),next=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,s);
   if(!mirror||!next)return null;
-  const matches=byPose.get(key(mirror));if(matches?.length!==1||byId.get(matches[0])?.attachment)return null;
+  const matches=byPose.get(key(mirror));if(matches?.length!==1||s.mode!=='point'&&byId.get(matches[0])?.attachment)return null;
   if(!put(id,p.x+dx,p.y+dy)||!put(matches[0],next.x,next.y))return null;
  }
  return [...targets.values()];
@@ -100,7 +104,7 @@ export function symmetricRotateDesign(t:DesignTimeline,ids:readonly number[],def
   const before=reflectedDesignItem(p,g,s),after=reflectedDesignItem(next,g,s);
   if(!before||!after)return null;
   const matches=byPose.get(key(before));
-  if(matches?.length!==1||byId.get(matches[0])?.attachment||!put(id,next)||!put(matches[0],after))return null;
+  if(matches?.length!==1||s.mode!=='point'&&byId.get(matches[0])?.attachment||!put(id,next)||!put(matches[0],after))return null;
  }
  return translateDesignTargets(t,[...targets.values()],defs,width,height);
 }
