@@ -207,17 +207,28 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
  let bad=CodecError::Json;
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
- let o=row.as_object().filter(|r|r.len()==9&&r.keys().all(|k|matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+ let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
+ let o=row.as_object().filter(|r|r.len()==if support.is_some(){10}else{9}&&r.keys().all(|k|matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"))).ok_or(bad)?;
  let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let expected=(int("expectedX")?,int("expectedY")?);
- let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,None)?;
+ let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support)?;
  let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,o.get("destination").ok_or(bad)?)?;
  let xy=(int("x")?,int("y")?);
  let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
  let dest=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
  if dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
- let draft=ddv_save_patch::preview_indoor_to_outdoor_transfer(std::str::from_utf8(source).map_err(|_|bad)?,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+ let json=std::str::from_utf8(source).map_err(|_|bad)?;
+ let draft=if let Some(f)=support{
+  if f!=d.tessellation{return Err(bad);}
+  let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
+  let fresh=c["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
+  let tree=crate::grid_instance_preview::subgrid_tree(c,&target.grid_id,&target.object_id)?;
+  let result=ddv_save_patch::preview_indoor_to_outdoor_support_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+  let after:Value=serde_json::from_str(&result.patched_json).map_err(|_|bad)?;
+  if crate::grid_instance_preview::subgrid_tree(after["World"]["GridCollection"].as_object().ok_or(bad)?,&d.grid_id,&fresh)?!=tree||after["Player"]!=root["Player"]{return Err(bad);}
+  result
+ }else{ddv_save_patch::preview_indoor_to_outdoor_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?};
  if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(CodecError::Patch);}
  Ok(draft.patched_json)
 }
@@ -300,13 +311,13 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
   if row.as_object().is_none_or(|r|r.len()!=if support.is_some(){9}else{8}||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"))){return Err(bad);}
   let room_source=row.get("roomSource");
-  if support.is_some()&&(support!=Some(factor)||room_source.is_none()){return Err(bad);}
+  if support.is_some()&&support!=Some(factor){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
   let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support)?}else{
    let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
-   crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?
+   if let Some(f)=support{crate::grid_instance_preview::resolve_outdoor_support_cut_target(source,source_ordinal,item,expected,old,f)?}else{crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?}
   };
   let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
@@ -331,7 +342,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let mut draft=if let Some(tree)=tree{
     let before:Value=serde_json::from_str(&working).map_err(|_|bad)?;
     let fresh=before["World"]["GridCollection"]["Grids"][&gid]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
-    let result=ddv_save_patch::preview_indoor_support_parent_transfer(&working,&target,expected,&d,xy,&orientation).map_err(|_|CodecError::Patch)?;
+    let result=(if room_source{ddv_save_patch::preview_indoor_support_parent_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_support_transfer(&working,&target,expected,&d,xy,&orientation)}).map_err(|_|CodecError::Patch)?;
     let after:Value=serde_json::from_str(&result.patched_json).map_err(|_|bad)?;
     let c=after["World"]["GridCollection"].as_object().ok_or(bad)?;
     if crate::grid_instance_preview::subgrid_tree(c,&gid,&fresh)?!=tree||after["Player"]!=before["Player"]{return Err(bad);}
