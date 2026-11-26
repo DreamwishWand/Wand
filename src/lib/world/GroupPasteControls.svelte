@@ -1,4 +1,8 @@
 <script lang="ts">
+ import PresetFilePicker from './PresetFilePicker.svelte';
+ import {savePresetFile,rememberPreset} from './preset-session.ts';
+ import {SCENE_SCHEMAS} from './preset-session-format.ts';
+ let scenePicker:PresetFilePicker;
  import {onDestroy} from 'svelte';
  import {browser} from '$app/environment';
  import {base} from '$app/paths';
@@ -73,8 +77,7 @@
   symmetryPicking=true;return true;
  }
  function downloadScene(doc:ScenePreset|MixedScenePreset|AreaScene){
-   const url=URL.createObjectURL(new Blob([JSON.stringify(doc)],{type:'application/json'}));
-   const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+   savePresetFile(JSON.stringify(doc),'wand-scene.json');
  }
  export function saveScene(captureItems:readonly MainlandSavedObject[]=items){
   if(blocked||captureWorker)return;
@@ -104,14 +107,16 @@
   };
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'inspect-subgrids',file:f,parents,networks});
  }
- export function chooseScene(){if(!allowed||blocked||!file||!worker||sceneReading)return;sceneInput?.click();}
+ export function chooseScene(){if(!allowed||blocked||!file||!worker||sceneReading)return;scenePicker?.open();}
  async function openScene(e:Event){
-  const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';
-  if(!f||!allowed||blocked||!file||!worker||sceneReading)return;
+  const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';if(f)void openSceneFile(f);
+ }
+ async function openSceneFile(f:File){
+  if(!allowed||blocked||!file||!worker||sceneReading)return;
   const original=file,own=worker,epoch=++sceneEpoch;sceneReading=true;sceneError='';
   try{
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const raw=await f.text();
+   const raw=await f.text();void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==sceneEpoch||file!==original||worker!==own||blocked)return;
    let areaDoc:AreaScene|null=null;try{areaDoc=parseAreaScene(raw);}catch{/* Other Scene formats below. */}
    if(areaDoc){if(!begin(false,null,null,areaDoc))sceneError=gs[2];return;}
@@ -181,6 +186,7 @@
 </script>
 <input class="scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
+ <PresetFilePicker bind:this={scenePicker} {locale} schemas={SCENE_SCHEMAS} disabled={blocked||!file||!worker||sceneReading} showTrigger={false} onPick={f=>void openSceneFile(f)}/>
  {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene||supportScene||areaScene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||supportRequest||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
  {#if !cutRows&&!copy}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
  {#if scene||supportScene||areaScene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene||supportScene||areaScene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}

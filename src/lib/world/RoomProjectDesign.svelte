@@ -1,4 +1,6 @@
 <script lang="ts">
+ import PresetFilePicker from './PresetFilePicker.svelte';
+ import {savePresetFile,rememberPreset} from './preset-session.ts';
  import {onDestroy,onMount} from 'svelte';
  import DecorationDesign from './DecorationDesign.svelte';
  import {roomProjectWords,newRoomSurface,serializeRoomProject,parseRoomProject,roomProjectCounts,ROOM_PROJECT_FILE_LIMIT,ROOM_PROJECT_WALL_LIMIT,ROOM_PROJECT_DRAFT_KEY,type RoomProjectSurface} from './room-project-design.ts';
@@ -71,8 +73,9 @@
  }
  async function resume(){if(!recovery||validating)return;if(typeof recovery.draft!=='string'){error=true;return;}await restore(recovery.draft);}
  async function discard(){if(!recovery||validating||!window.confirm(w[14]))return;validating=true;try{revision=await changeLocalWorldDraft(ROOM_PROJECT_DRAFT_KEY,revision,null);recovery=undefined;error=false;}catch{warning=true;writable=false;recovery=undefined;}finally{validating=false;}}
- async function openFile(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(!f||blocked||!worker)return;if(surfaces.length&&!window.confirm(w[14]))return;if(f.size>ROOM_PROJECT_FILE_LIMIT){error=true;return;}validating=true;error=false;const token=++epoch,own=worker;try{const raw=await f.text();if(!alive||token!==epoch||worker!==own)return;validating=false;await restore(raw);}catch{if(alive)error=true;}finally{if(alive&&token===epoch)validating=false;}}
- function exportFile(){if(blocked||!surfaces.length)return;try{const url=URL.createObjectURL(new Blob([serializeRoomProject(surfaces,selected)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='wand-room-design.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=true;}}
+ async function openFile(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)void importPresetFile(f);}
+ async function importPresetFile(f:File){if(blocked||!worker||validating)return;if(surfaces.length&&!window.confirm(w[14]))return;if(f.size>ROOM_PROJECT_FILE_LIMIT){error=true;return;}validating=true;error=false;const token=++epoch,own=worker;try{const raw=await f.text();if(!alive||token!==epoch||worker!==own)return;validating=false;await restore(raw);void rememberPreset(f,raw).catch(()=>{});}catch{if(alive)error=true;}finally{if(alive&&token===epoch)validating=false;}}
+ function exportFile(){if(blocked||!surfaces.length)return;try{savePresetFile(serializeRoomProject(surfaces,selected),'wand-room-design.json');}catch{error=true;}}
 </script>
 <div class="project-tools">
  <select aria-label={w[17]} bind:value={floorKey} disabled={blocked}>{#each floors as t}<option value={t.grid.key}>{t.label}</option>{/each}</select>
@@ -85,7 +88,7 @@
   <button type="button" disabled={blocked} aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{w[7]}</button>
   <button type="button" disabled={blocked} on:click={exportFile}>{w[5]}</button>
  {/if}
- <input type="file" accept=".json,application/json" hidden bind:this={input} on:change={openFile}/><button type="button" disabled={blocked||!worker} on:click={()=>input.click()}>{w[6]}</button>
+ <input type="file" accept=".json,application/json" hidden bind:this={input} on:change={openFile}/><PresetFilePicker {locale} schemas={['wand.room-design@1']} disabled={blocked||!worker} label={w[6]} onPick={f=>void importPresetFile(f)}/>
  <button type="button" disabled={childBusy||validating||writePending} on:click={()=>{if(!warning||!surfaces.length||window.confirm(w[19]+' '+w[8]+'?'))onClose();}}>{w[8]}</button>
 </div>
 {#if loading||validating}<div class="project-message" role="status">{w[16]}</div>{:else if recovery}<div class="project-message"><button type="button" disabled={!worker} on:click={resume}>{w[11]}</button><button type="button" on:click={discard}>{w[12]}</button>{#if error}<small role="alert">{w[10]}</small>{/if}</div>{:else if !surfaces.length}<div class="project-message">{w[17]} · {w[9]}</div>{/if}
