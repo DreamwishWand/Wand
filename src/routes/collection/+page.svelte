@@ -42,6 +42,7 @@
   import {collectionItemHref,collectionItemFromLink}
     from '$lib/collection/item-permalink.ts';
 
+  let memoryPreviewRequested=false;
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
     'Wallpaper & Flooring':'home',Buildings:'home','Environment Effects':'sun',
@@ -1076,6 +1077,7 @@
     finally{input.value='';}
   }
   onMount(()=>{
+    memoryPreviewRequested=new URLSearchParams(window.location.search).get('memoryPreview')==='1';
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
       if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
@@ -1250,6 +1252,7 @@
       on:saveReadError={(event:CustomEvent<string>)=>infoMessage=event.detail}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
+    {#if memoryPreviewRequested}<p><a href={base+'/media/memory-preview/'}>Memory rendering comparison (development)</a></p>{/if}
     <div class="collection-workspace">
       <div class="workspace-top">
         <div class="collection-record-switcher" role="group" aria-label={copy.record}>
