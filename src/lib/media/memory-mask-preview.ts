@@ -1,10 +1,10 @@
-/** Diagnostic preview only; not a recreation of the native boundary shader.
- * Original published mask is sampled without filtering or color conversion.
- * No saved images or Save access. The GPU composes only the selected artwork.
- */
+/** Source-derived fragment comparison. The assignment of textures to slots,
+ * sampler settings, tint, and Save flag polarity remain candidate inputs.
+ * No saved images or Save access. */
 import type {ItemImage} from './item-media.ts';
 import type {MemorySources} from './memory-media.ts';
-import {maskPreviewEligible} from './memory-mask-preview-evidence.ts';
+import {memoryMaskEvidence} from './memory-mask-preview-evidence.ts';
+import {puzzleFragmentGlsl} from './memory-puzzle-formula.ts';
 
 const vertex=`#version 300 es
 out vec2 uv;
@@ -21,20 +21,30 @@ uniform sampler2D artwork;
 uniform sampler2D maskTex;
 uniform sampler2D outlineTex;
 uniform int selectedBits;
+uniform bool nativeFormula;
+uniform bool artworkSlot0;
+uniform bool invertFlags;
 uniform int completeBits;
-uniform bool showOutline;
 out vec4 color;
+${puzzleFragmentGlsl}
 void main(){
   vec4 art=texture(artwork,uv);
-  ivec4 m=ivec4(floor(texture(maskTex,uv)*255.0+0.5));
-  int bit=m.r+256*m.g;
-  bool exact=m.b==0&&m.a==255&&bit>0&&(bit&(bit-1))==0&&bit<=completeBits;
-  // Explicitly highlight unresolved boundary/compression samples in amber.
-  // Never choose a piece by rounding the integer to a nearby power of two.
-  vec3 rgb=!exact?vec3(0.83,0.55,0.18):
-    ((selectedBits&bit)!=0?art.rgb:vec3(0.12,0.14,0.18));
-  if(showOutline&&exact)rgb*=texture(outlineTex,uv).rgb;
-  color=vec4(rgb,1.0);
+  vec4 mask=texture(maskTex,uv);
+  if(nativeFormula){
+    // Candidate input assignment only: artwork as underlay, t0 either a
+    // neutral diagnostic sample or the artwork. Never claim native tint.
+    int flags=invertFlags?(completeBits^selectedBits):selectedBits;
+    vec3 tint=vec3(0.12,0.14,0.18);
+    vec3 tex0=artworkSlot0?art.rgb:tint;
+    vec4 overlay=puzzleFragment(mask.rg,texture(outlineTex,uv).r,flags,tex0,tint,1.0);
+    color=vec4(mix(art.rgb,overlay.rgb,clamp(overlay.a,0.0,1.0)),1.0);
+  }else{
+    ivec4 m=ivec4(floor(mask*255.0+0.5));
+    int bit=m.r+256*m.g;
+    bool exact=m.b==0&&m.a==255&&bit>0&&(bit&(bit-1))==0&&bit<=completeBits;
+    color=vec4(!exact?vec3(0.83,0.55,0.18):
+      ((selectedBits&bit)!=0?art.rgb:vec3(0.12,0.14,0.18)),1.0);
+  }
 }`;
 
 async function verifiedBitmap(image:ItemImage,signal:AbortSignal):Promise<ImageBitmap>{
@@ -62,11 +72,11 @@ function compile(gl:WebGL2RenderingContext,type:number,source:string){
   return shader;
 }
 export interface MaskPreview{
-  draw(selectedBits:number,showOutline:boolean):void;
+  draw(selectedBits:number,nativeFormula:boolean,artworkSlot0:boolean,invertFlags:boolean):void;
   dispose():void;
 }
 export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySources,signal:AbortSignal):Promise<MaskPreview>{
-  if(!maskPreviewEligible(source.mask.sha256,source.numberOfShards))throw new Error('Mask layout not eligible for diagnostic preview');
+  if(!memoryMaskEvidence(source.mask.sha256,source.numberOfShards)||source.numberOfShards>10)throw new Error('Unknown diagnostic mask layout');
   const bitmaps:ImageBitmap[]=[];
   let gl:WebGL2RenderingContext|null=null;
   let program:WebGLProgram|null=null;
@@ -110,12 +120,12 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     }
     if(g.getError()!==g.NO_ERROR)throw new Error('GPU upload failed');
     const complete=2**source.numberOfShards-1;
-    const bits=g.getUniformLocation(program,'selectedBits'),outline=g.getUniformLocation(program,'showOutline');
+    const bits=g.getUniformLocation(program,'selectedBits'),native=g.getUniformLocation(program,'nativeFormula'),slot=g.getUniformLocation(program,'artworkSlot0'),invert=g.getUniformLocation(program,'invertFlags');
     g.uniform1i(g.getUniformLocation(program,'completeBits'),complete);
     g.viewport(0,0,canvas.width,canvas.height);
-    return {draw(selectedBits,showOutline){
+    return {draw(selectedBits,nativeFormula,artworkSlot0,invertFlags){
       if(!program||!Number.isInteger(selectedBits)||selectedBits<0||selectedBits>complete)throw new Error('Invalid diagnostic mask');
-      g.useProgram(program);g.uniform1i(bits,selectedBits);g.uniform1i(outline,showOutline?1:0);g.drawArrays(g.TRIANGLES,0,3);
+      g.useProgram(program);g.uniform1i(bits,selectedBits);g.uniform1i(native,nativeFormula?1:0);g.uniform1i(slot,artworkSlot0?1:0);g.uniform1i(invert,invertFlags?1:0);g.drawArrays(g.TRIANGLES,0,3);
     },dispose};
   }catch(error){dispose();throw error;}
   finally{for(const bitmap of bitmaps)bitmap.close();}
