@@ -159,3 +159,11 @@ test('room cut carries support witness only to matching native factor',()=>{
  assert.equal(indoorGroupTransfer(dest,shapes,allowed,group.rows,group.clip,2,2)[0].supportFactor,1);
  assert.equal(indoorGroupTransfer({...dest,factor:2},shapes,allowed,group.rows,group.clip,2,2),null);
 });
+
+test('mixed indoor pickup flags exact support roots without dropping ordinary rows',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8},{itemId:40000001,x:3,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const rows=indoorGroupPickup(full,[0,1],new Set([40000001]),new Map([[40000001,2]]),new Set([0]));
+ assert.equal(rows[0].includeSupport,true);assert.equal(rows[1].includeSupport,undefined);
+ assert.equal(indoorGroupPickup(full,[0,0],new Set([40000001]),new Map([[40000001,2]]),new Set([0])),null);
+});
