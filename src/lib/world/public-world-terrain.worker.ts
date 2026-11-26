@@ -1,4 +1,4 @@
-import {readDesignAttachment,type DesignSupportAttachment} from './design-support-attachment.ts';
+import {readDesignAttachment,supportEditTimeline,type DesignSupportAttachment} from './design-support-attachment.ts';
 import {parseSceneAnyFactor,convertSceneFactor} from './scene-preset.ts';
 import {flatSupportScene} from './room-design.ts';
 import {roomFinishRecordValid,type RoomFinishKind,type RoomFinishItem} from './room-finish-design.ts';
@@ -179,6 +179,28 @@ scope.onmessage=async({data})=>{
       for(let i=0;i<ids.length;i+=128){for(const item of await db.getItems(ids.slice(i,i+128))){if(item&&roomFinishRecordValid(item,kind))items.push({itemId:item.itemId,name:names.get(item.itemId)??item.names[locale]??'—'});}}
       items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'room-finish-catalog',requestId:id,surface:kind,items});return;
     }
+    if(data.command==='room-design-support-open'||data.command==='room-design-support-validate'){
+      if(!release||!Number.isSafeInteger(data.ownerItemId))throw Error('support editor');
+      const owner=data.ownerItemId as number;
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+      const path=((await supportPaths).get(owner) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath;
+      if(!path||!await boundSupportTerrain(path,owner))throw Error('support owner');
+      const a=data.attachment===undefined?undefined:readDesignAttachment(data,owner,true);
+      if(a&&(a.scene.tree.sourcePath!==path||!(await validateSupportRoots([{itemId:owner,support:a.scene}])).valid))throw Error('support geometry');
+      if(data.command==='room-design-support-validate'){if(!a)throw Error('attachment required');scope.postMessage({kind:data.command,requestId:id,attachment:a});return;}
+      const factor=a?.scene.tree.factor??2;
+      const names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage)),template=supportDesignTemplate(await supportCatalog!,owner,path,names.get(owner)??'—',factor);
+      if(!template)throw Error('support template');
+      const start=supportEditTimeline(a,template);if(!start)throw Error('nested support');
+      const geometry=await loadGeometry(),defs:DesignItemGeometry[]=[];
+      for(const itemId of new Set(start.snapshots[0].map(p=>p.itemId))){
+        const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:geometry},factor),g=cache.resolve(itemId,8);
+        if(!g.shapeKey||g.surfaceCapable||nativeActionBlocked(g.editRestrictions,'select')||nativeActionBlocked(g.editRestrictions,'move')||nativeActionBlocked(g.editRestrictions,'remove'))throw Error('support item');
+        for(const code of [0,4,12])cache.resolve(itemId,code);
+        defs.push({itemId,name:names.get(itemId)??g.name,layer:'furniture',surfaceCapable:false,editRestrictions:g.editRestrictions,shapes:cache.shapes});
+      }
+      scope.postMessage({kind:data.command,requestId:id,template,start,defs});return;
+    }
     if(data.command==='room-design-support-attachment'){
       if(!release||typeof data.raw!=='string'||data.raw.length>262144||!Number.isSafeInteger(data.ownerItemId))throw Error('attachment');
       const owner=data.ownerItemId as number;
@@ -211,9 +233,9 @@ scope.onmessage=async({data})=>{
     if(typeof data.key==='string'&&data.key.startsWith('room-design:')&&['design-catalog','design-shape','design-shapes'].includes(data.command)){
       let template:RoomDesignTemplate|undefined;
       if(data.key.startsWith('room-design:support:')){
-        const match=/^room-design:support:(\d+):(GridData\/Furniture\/[^:]+):[a-f0-9]{64}$/.exec(data.key);if(!match)throw Error('support template');
+        const match=/^room-design:support:(\d+):(GridData\/Furniture\/[^:]+):[a-f0-9]{64}(:f1)?$/.exec(data.key);if(!match)throw Error('support template');
         const owner=Number(match[1]),path=match[2];if(!await boundSupportTerrain(path,owner))throw Error('support template');
-        template=supportDesignTemplate(await supportCatalog!,owner,path,'—')??undefined;
+        template=supportDesignTemplate(await supportCatalog!,owner,path,'—',match[3]?1:2)??undefined;
         if(template?.grid.key!==data.key)throw Error('support template digest');
       }else template=(await loadRoomTemplates()).find(t=>t.grid.key===data.key);
       if(!template)throw Error('room template');
