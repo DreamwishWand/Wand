@@ -102,6 +102,13 @@ export function createItemMediaClient(activation:ItemMediaActivation=ITEM_MEDIA_
 const commonItemMedia = createItemMediaClient();
 export const itemMedia = {
   async getItemImage(itemId:number,variant:ImageVariant='thumbnail'):Promise<ItemImage|null>{
+    // Reviewed Steam 1.26.2 native Memory ID interval. The reader still
+    // requires an exact published row; it does not infer membership.
+    if(Number.isSafeInteger(itemId)&&itemId>=130000001&&itemId<=130000533){
+      const {getMemoryImage}=await import('./memory-media.ts');
+      const memory=getMemoryImage(itemId,variant);
+      if(memory)return memory;
+    }
     // Only the reviewed Story ID interval can load this small optional index.
     // Actual membership is checked by exact Item ID, never inferred from range.
     if(Number.isSafeInteger(itemId)&&itemId>=200000001&&itemId<=200000061){
