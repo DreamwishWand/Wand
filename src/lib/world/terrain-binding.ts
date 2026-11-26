@@ -13,7 +13,7 @@ export interface TerrainWarningRun{readonly x:number;readonly y:number;readonly 
 const rec=(x:unknown):x is Record<string,unknown>=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const uint=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>=0&&x<=0xffffffff;
 const int=(x:unknown):x is number=>typeof x==='number'&&Number.isInteger(x)&&x>=-2147483648&&x<=2147483647;
-export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[]}
+export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[];readonly completeGridOrdinal?:number}
 export function projectTerrainSession(value:unknown,scopes:readonly {key:string;witness:SourceGridWitness}[]):TerrainScopeReceipt[]{
   if(!rec(value)||value.contract!=='wand.db05.db04-terrain-session@1'||!Array.isArray(value.rows)||value.rows.length>20000||
     !Array.isArray(value.bindings)||value.bindings.length>value.rows.length||value.sourceCoverageComplete!==false||
@@ -45,7 +45,17 @@ export function projectTerrainSession(value:unknown,scopes:readonly {key:string;
     points[i].push({localOrdinal:b.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
       x:row.x,y:row.y,orientation:row.orientation as string|null,subgrid:parseSavedSubgridSummary(b.subgrid)});
   }
-  return scopes.map((s,i)=>({verifiedGridOrdinals:[...eligible[i]],receipt:{
+  const complete=new Map<number,number>(),nativeOrdinals=new Set<number>();
+  if(value.gridBindings!==undefined){
+    if(!Array.isArray(value.gridBindings)||value.gridBindings.length>scopes.length)throw Error('DB04_GRID_BINDING_INVALID');
+    for(const g of value.gridBindings){
+      if(!rec(g)||!uint(g.sourceRefIndex)||g.sourceRefIndex>=scopes.length||complete.has(g.sourceRefIndex)||!uint(g.localGridOrdinal)||g.localGridOrdinal<1||nativeOrdinals.has(g.localGridOrdinal)||!uint(g.objectCount))throw Error('DB04_GRID_BINDING_INVALID');
+      const i=g.sourceRefIndex;
+      if(g.objectCount!==matched[i]+missing[i]||points[i].some(p=>p.localGridOrdinal!==g.localGridOrdinal)||eligible[i].size>1||g.objectCount>0&&!eligible[i].has(g.localGridOrdinal))throw Error('DB04_GRID_BINDING_MISMATCH');
+      nativeOrdinals.add(g.localGridOrdinal);complete.set(i,g.localGridOrdinal);eligible[i].add(g.localGridOrdinal);
+    }
+  }
+  return scopes.map((s,i)=>({verifiedGridOrdinals:[...eligible[i]],...(complete.has(i)?{completeGridOrdinal:complete.get(i)}:{}),receipt:{
     contract:'wand.db04.saved-source-numeric-candidates@1',status:matched[i]?'full_path_pair_numeric_candidates':'no_full_path_pair_candidates',
     viewKey:s.key,nativeGridId:s.witness.nativeGridId,matchedRecordCount:matched[i],displayedCount:points[i].length,
     outsideSourceNumericEnvelopeCount:outside[i],rowsWithoutCoordinates:missing[i],otherOrAmbiguousSaveRecords:0,sourceReferenceCount:1,

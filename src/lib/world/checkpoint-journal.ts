@@ -1,6 +1,6 @@
 /** Local semantic replay journal. No Save bytes, filenames, native IDs,
  * account information or pending previews are serialized. */
-const COMMANDS=['furniture-stock-export','group-pickup-export','group-paste-export','group-cut-export','biome-furniture-export','biome-network-export','cardinal-road-copy','cardinal-fence-copy','cardinal-fence-erase','support-child-copy','support-parent-copy','indoor-furniture-export','room-finish-export','export-grid-mixed-batch-copy'] as const;
+const COMMANDS=['furniture-stock-export','group-pickup-export','group-paste-export','group-cut-export','biome-furniture-export','island-furniture-export','biome-network-export','cardinal-road-copy','cardinal-fence-copy','cardinal-fence-erase','support-child-copy','support-parent-copy','indoor-furniture-export','room-finish-export','export-grid-mixed-batch-copy'] as const;
 export type ReplayCommand=typeof COMMANDS[number];
 export interface WorldReplayStep{command:ReplayCommand;plan:unknown;destination?:unknown}
 export interface CheckpointJournal{steps:readonly WorldReplayStep[];cursor:number;firstStep:number}

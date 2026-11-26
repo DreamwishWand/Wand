@@ -3,7 +3,7 @@ import {stockSourceEligible,type StockDestination} from './save-furniture-placem
 import {groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-placement.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-import {mainlandMapAnchor,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
@@ -12,16 +12,16 @@ export const BIOME_CHANGE_LIMIT=128;
 export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:GroupPasteRow[]}
 const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
-export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number){
- if(omitted||wholeAreaKind(grid,[grid])!=='biome')return null;
+export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false){
+ if(omitted||(island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
  const editable=area.filter(eligible),protectedObjects=area.filter(p=>!eligible(p));
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number])}));
- try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,'biome');return {editable,protectedObjects,placements,text};}catch{return null;}
+ try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,island?'floating-island':'biome');return {editable,protectedObjects,placements,text};}catch{return null;}
 }
-export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>){
- const snapshot=biomeFurnitureSnapshot(grid,objects,omitted);if(!snapshot)return null;
+export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false){
+ const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island);if(!snapshot)return null;
  if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
  const existing=new Map<string,MainlandSavedObject[]>();
  for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}

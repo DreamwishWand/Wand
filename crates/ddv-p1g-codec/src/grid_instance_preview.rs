@@ -1063,10 +1063,33 @@ fn saved_db04_source_projection(
         }));
     }
     if terrain_session{
+        // A complete native grid witness is independent of object rows.
+        // Empty existing grids must be distinguished from absent/locked grids.
+        let mut grid_bindings=Vec::new();
+        if let Some(grids)=collection.and_then(|c|c.get("Grids")).and_then(Value::as_object){
+            for (i,(key,grid)) in grids.iter().enumerate(){
+                let Some(objects)=grid.get("Objects").and_then(Value::as_object) else{continue;};
+                let layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str);
+                let data=grid.get("GridDataPath").and_then(Value::as_str);
+                let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64);
+                if grid.get("ID").and_then(Value::as_u64)!=key_id(key)||
+                   collection.and_then(|c|c.get("DiffGrids")).is_some_and(|d|d.as_object().is_none_or(|m|m.contains_key(key)))||
+                   grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout&&g.get("GridDataPath").and_then(Value::as_str)==data).count()!=1{continue;}
+                let matches=sources.iter().enumerate().filter(|(_,r)|layout==Some(r.layout.as_str())&&data==Some(r.data.as_str())).collect::<Vec<_>>();
+                if matches.len()!=1{continue;}
+                let (source_index,source)=matches[0];
+                if !matches!(factor,Some(1|2))||factor!=source.tessellation.map(u64::from)||source.size.is_none(){continue;}
+                let ordinal=i+1;
+                let projected=scan.rows.iter().filter(|r|r.get("localGridOrdinal").and_then(Value::as_u64)==Some(ordinal as u64)).count();
+                if projected!=objects.len(){continue;}
+                grid_bindings.push(serde_json::json!({"sourceRefIndex":source_index,"localGridOrdinal":ordinal,"objectCount":objects.len()}));
+            }
+        }
         return serde_json::to_string(&serde_json::json!({
             "contract":"wand.db05.db04-terrain-session@1",
             "rows":scan.rows,
             "bindings":bindings,
+            "gridBindings":grid_bindings,
             "sourceCoverageComplete":false,
             "effectivePlacementVerified":false,
             "worldCoordinatesVerified":false,
@@ -1096,7 +1119,7 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
 fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
-    if plan.len()>16384{return Err(CodecError::Bounds);}
+    if plan.len()>65536{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
@@ -1402,6 +1425,62 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
  Ok(std::mem::take(&mut *working))
 }
 
+/// Atomic whole-island ordinary furniture replacement. Every exact full
+/// destination must belong to the same playable island. All removals resolve
+/// on the immutable source before any ordinal can shift. Returned inventory
+/// is available to every destination, and no intermediate copy is emitted.
+pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>120*1024{return Err(CodecError::Bounds);}
+ let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let mut layout_id=None::<String>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
+ let mut remove=Vec::new();let mut add=Vec::new();
+ for row in rows{
+  let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
+  let witness=o.get("destination").ok_or(bad)?;
+  let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
+  let data=witness.get("gridDataPath").and_then(Value::as_str).ok_or(bad)?;
+  let family=layout.strip_prefix("SceneLayouts/FloatingIslands/").and_then(|s|s.split('/').next()).ok_or(bad)?;
+  let name=family.strip_prefix("FloatingIsland_").ok_or(bad)?;
+  if !["Atlantean","Beach","Dark","Desert","FairyTales","Forest","Jungle","Library","Meadow","Mythology","Savannah","Snow","Urban","Wetlands"].contains(&name)||
+   layout!=format!("SceneLayouts/FloatingIslands/{family}/{family}Layout.json")||
+   !data.starts_with(&format!("GridData/FloatingIslands/{}/{family}",if name=="Desert"{"FloatingIlsnad_Desert"}else{family}))||
+   layout_id.as_ref().is_some_and(|s|s!=layout){return Err(bad);}
+  layout_id=Some(layout.to_owned());
+  expected_grids=match name{"Desert"|"Jungle"|"Meadow"=>4,"Atlantean"|"FairyTales"|"Library"|"Mythology"|"Wetlands"=>2,_=>1};
+  let d=resolve_plain_grid_destination(profile,witness)?;
+  if !grids.insert(d.grid_id.clone()){return Err(bad);}
+  for r in o.get("remove").and_then(Value::as_array).ok_or(bad)?{
+   let ordinal=r.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+   let (target,_)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+   if target.grid_id!=d.grid_id||!ordinals.insert(ordinal){return Err(bad);}
+   remove.push(r.clone());
+  }
+  for a in o.get("add").and_then(Value::as_array).ok_or(bad)?{
+   if a.get("destination")!=Some(witness){return Err(bad);}add.push(a.clone());
+  }
+ }
+ if grids.len()!=expected_grids{return Err(bad);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+ if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
+ if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ if !remove.is_empty(){
+  let r=group_pickup_for_scope(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None)?;
+  working.zeroize();*working=r;
+ }
+ if !add.is_empty(){
+  let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)?;
+  working.zeroize();*working=r;
+ }
+ Ok(std::mem::take(&mut *working))
+}
+
 /// Cut is a deferred relocation: no stock changes, no intermediate Save
 /// output. Same-grid objects retain their native identities; cross-grid
 /// ordinary leaves require unreferenced old and newly allocated identities.
@@ -1601,6 +1680,24 @@ mod tests{
         plan["add"][0]["x"]=Value::from(5);plan["add"][0]["y"]=Value::from(5);
         let mut stateful=old;stateful["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Unknown":5});
         assert!(biome_furniture_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn island_replacement_resolves_all_native_grids_and_reuses_stock_across_grids(){
+        let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
+        let land="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
+        let water="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanWaterGrid-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":land,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":layout,"GridDataPath":water,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}},"44":{"ID":44,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+        let dest=|data:&str|serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!([{"destination":dest(land),"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[]},{"destination":dest(water),"remove":[],"add":[{"itemId":"40000001","destination":dest(water),"x":3,"y":4,"orientation":"GridOrientation_Left"}]}]);
+        let bytes=serde_json::to_vec(&raw).unwrap();let output=island_furniture_candidate(&bytes,&plan.to_string()).unwrap();
+        let new:Value=serde_json::from_str(&output).unwrap();let g=&new["World"]["GridCollection"]["Grids"];
+        assert_eq!(new["Player"],raw["Player"]);assert_eq!(g["44"],raw["World"]["GridCollection"]["Grids"]["44"]);
+        assert!(g["42"]["Objects"].as_object().unwrap().is_empty());assert_eq!(g["43"]["Objects"]["5"]["X"],3);
+        let partial=serde_json::json!([plan[0].clone()]);assert!(island_furniture_candidate(&bytes,&partial.to_string()).is_err());
+        plan[0]["remove"][0]["localOrdinal"]=Value::from(2);assert!(island_furniture_candidate(&bytes,&plan.to_string()).is_err());
+        plan[0]["remove"][0]["localOrdinal"]=Value::from(1);
+        plan[1]["add"][0]["destination"]=dest(land);assert!(island_furniture_candidate(&bytes,&plan.to_string()).is_err());
     }
 
     #[test]

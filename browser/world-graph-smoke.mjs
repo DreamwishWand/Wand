@@ -1767,6 +1767,39 @@ try{
   assert.deepEqual(islandOutput.World.GridCollection.Grids['101'],islandSave.World.GridCollection.Grids['101']);
   assert.equal(Object.keys(islandOutput.World.GridCollection.Grids['9001'].Objects).length,0);
   assert.equal(islandOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  // A real Save fixture with one populated and one empty original island
+  // grid. Reuse the native grid witnesses, not inferred island coordinates.
+  const islandSource=JSON.parse(await readFile(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8'));
+  const sourceIslandAreas=islandSource.entries.find(e=>e.scope==='FloatingIslands').grids.filter(g=>g.layoutId.includes('FloatingIsland_AtlanteanLayout'));
+  const completeIslandSave=structuredClone(worldSave);
+  completeIslandSave.World.GridCollection.Grids['9101']={ID:9101,GridDefaultLayoutPath:sourceIslandAreas[0].layoutId,GridDataPath:sourceIslandAreas[0].gridDataPath,TessellationFactor:sourceIslandAreas[0].factor,NextGridObjectID:2,Objects:{'1':{ID:1,ItemID:40005160,X:10,Y:10,Orientation:'GridOrientation_Down'}}};
+  completeIslandSave.World.GridCollection.Grids['9102']={ID:9102,GridDefaultLayoutPath:sourceIslandAreas[1].layoutId,GridDataPath:sourceIslandAreas[1].gridDataPath,TessellationFactor:sourceIslandAreas[1].factor,NextGridObjectID:1,Objects:{}};
+  page.on('dialog',islandDialog);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'island-all-grids.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(completeIslandSave))});}finally{page.off('dialog',islandDialog);}
+  await islandMap.getByLabel('浮島・エリア',{exact:true}).selectOption(sourceIslandAreas[0].key);
+  await islandMap.locator('.mainland-save-object[data-area="'+sourceIslandAreas[0].key+'"]').first().waitFor({timeout:30000});
+  await islandMap.getByRole('button',{name:'浮島家具Preset',exact:true}).click({timeout:30000});
+  const wholeIslandPanel=islandMap.locator('.island-furniture-panel');
+  const completeDownload=page.waitForEvent('download');
+  await wholeIslandPanel.getByRole('button',{name:'全体の家具配置を保存',exact:true}).click({timeout:30000});
+  const completeDoc=JSON.parse((await readFile(await (await completeDownload).path())).toString('utf8'));
+  assert.equal(completeDoc.areas.length,2);
+  assert.equal(completeDoc.areas[0].placements.length,1);
+  assert.equal(completeDoc.areas[1].placements.length,0);
+  completeDoc.areas[0].placements=[];
+  await wholeIslandPanel.locator('.island-save-preset-input').setInputFiles({name:'island-clear.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(completeDoc))});
+  await wholeIslandPanel.getByRole('button',{name:'編集コピーを検証',exact:true}).click({timeout:30000});
+  const completeCopy=wholeIslandPanel.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await completeCopy.waitFor({timeout:30000});
+  const completeOutput=await completeCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.equal(Object.keys(completeOutput.World.GridCollection.Grids['9101'].Objects).length,0);
+  assert.deepEqual(completeOutput.World.GridCollection.Grids['9102'],completeIslandSave.World.GridCollection.Grids['9102']);
+  assert.deepEqual(completeOutput.World.GridCollection.Grids['101'],completeIslandSave.World.GridCollection.Grids['101']);
+  assert.equal(completeOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  await wholeIslandPanel.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object').length===0,{},{timeout:30000});
+  await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
+  await islandMap.locator('.mainland-save-object').first().waitFor({timeout:30000});
   // Complete multi-grid island design import includes unvisited grids,
   // persists them together, and re-exports both after selecting either.
   await islandMap.getByRole('button',{name:'装飾設計',exact:true}).click();
