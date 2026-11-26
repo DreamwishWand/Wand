@@ -228,7 +228,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"align"|"paired"|"pickup"|"place"|"transfer"))&&["edits","align","paired","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
+ let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"align"|"paired"|"pairedRotate"|"pickup"|"place"|"transfer"))&&["edits","align","paired","pairedRotate","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
  let ordinal=p.get("roomOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
  let surface=p.get("surfaceOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
  let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
@@ -433,7 +433,8 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   return preview_bulk_furniture(json,&pickups,&[]).map_err(|_|CodecError::Patch);
  }
  let alignment=p.contains_key("align");
- let paired=p.get("paired").map(|v|v.as_object().filter(|m|m.len()==2&&m.contains_key("mode")&&m.contains_key("edits")).ok_or(bad)).transpose()?;
+ let paired_rotate=p.contains_key("pairedRotate");
+ let paired=p.get(if paired_rotate{"pairedRotate"}else{"paired"}).map(|v|v.as_object().filter(|m|m.len()==2&&m.contains_key("mode")&&m.contains_key("edits")).ok_or(bad)).transpose()?;
  let mode=paired.map(|m|m.get("mode").and_then(Value::as_str).filter(|s|matches!(*s,"vertical"|"horizontal"|"point")).ok_or(bad)).transpose()?;
  let rows=(if let Some(m)=paired{m.get("edits")}else{p.get(if alignment{"align"}else{"edits"})}).and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
  if mode.is_some()&&rows.len()<2{return Err(bad);}
@@ -443,7 +444,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let (target,expected,old)=resolve(row)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
-  if mode.is_some()&&(old!=orientation||xy==expected||!on_terrain(expected)||!on_terrain(xy)){return Err(bad);}
+  if mode.is_some()&&(!on_terrain(expected)||!on_terrain(xy)||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
   if alignment&&(old!=orientation||!on_terrain(expected)||!on_terrain(xy)||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if rows.len()==1{
    if xy==expected&&old==orientation{return Err(bad);}
@@ -461,11 +462,15 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let delta=|e:&GridMixedEdit|{let xy=e.position.unwrap_or(e.expected);(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))};
    let reflect=|(x,y):(i64,i64)|{(if mode=="horizontal"{x}else{-x},if mode=="vertical"{y}else{-y})};
    let first=delta(&edits[0]);let other=reflect(first);
+   let turn=|e:&GridMixedEdit|->Option<usize>{let (a,b)=e.orientation.as_ref()?;let names=ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS;let before=names.iter().position(|v|*v==a.as_str())?;let after=names.iter().position(|v|*v==b.as_str())?;Some((after+4-before)%4)};
+   let expected_turn=|n:usize|if mode=="point"{n}else{(4-n)%4};
+   let first_turn=turn(&edits[0]);
+   if paired_rotate&&first_turn.is_none_or(|n|!matches!(n,1|3)){return Err(bad);}
    let mut matched=vec![false;edits.len()];
-   for (i,e) in edits.iter().enumerate(){let xy=e.position.ok_or(bad)?;
-    if (delta(e)!=first&&delta(e)!=other)||!anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
+   for (i,e) in edits.iter().enumerate(){let xy=e.position.unwrap_or(e.expected);
+    if (!paired_rotate&&delta(e)!=first&&delta(e)!=other)||paired_rotate&&turn(e).is_none_or(|n|Some(n)!=first_turn&&Some(expected_turn(n))!=first_turn)||!anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
     if matched[i]{continue;}
-    let j=(i+1..edits.len()).find(|j|!matched[*j]&&edits[*j].target.item_id==e.target.item_id&&delta(&edits[*j])==reflect(delta(e))).ok_or(bad)?;
+    let j=(i+1..edits.len()).find(|j|!matched[*j]&&edits[*j].target.item_id==e.target.item_id&&if paired_rotate{turn(e).is_some_and(|n|turn(&edits[*j])==Some(expected_turn(n)))}else{delta(&edits[*j])==reflect(delta(e))}).ok_or(bad)?;
     matched[i]=true;matched[j]=true;
    }
   }else if alignment{
