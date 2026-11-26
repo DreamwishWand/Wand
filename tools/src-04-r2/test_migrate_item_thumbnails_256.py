@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from PIL import Image
-from migrate_item_thumbnails_256 import make_thumbnail, verify_local, meta, POLICY
+from migrate_item_thumbnails_256 import make_thumbnail, verify_local, meta, POLICY, pending_breakdown, key
 from stage_media_v2 import digest_file
 
 class Item256Tests(unittest.TestCase):
@@ -34,6 +34,14 @@ class Item256Tests(unittest.TestCase):
             (root/"images"/(t["sha256"]+".webp")).write_bytes(b"corrupt")
             with self.assertRaises(ValueError):
                 make_thumbnail(p,o,root,t)
+
+    def test_pending_breakdown_counts_shared_original_once(self):
+        a,b,c="a"*64,"b"*64,"c"*64
+        pending={key(a):meta(a,1000,400,400),key(b):meta(b,200,128,128),key(c):meta(c,300,256,256)}
+        result=pending_breakdown(pending,{key(a),key(b)},{a:{1000},b:{199}})
+        self.assertEqual(result,{"missingCanonicalOriginals":2,"missingCanonicalOriginalBytes":1200,
+                                 "missingCanonicalThumbnailOnly":1,"missingCanonicalThumbnailOnlyBytes":300,
+                                 "legacyNameSizeMatches":1,"legacyNameSizeMatchBytes":1000})
 
 if __name__=="__main__":
     unittest.main()
