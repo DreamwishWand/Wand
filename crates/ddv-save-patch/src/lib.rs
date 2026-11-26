@@ -1233,6 +1233,10 @@ pub fn preview_default_furniture_stock(
 pub fn preview_plain_grid_place(
     source:&str,destination:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,
 )->Result<GridCoordinateDraft,PatchError>{
+    validate_plain_grid_destination(source,destination,item_id,xy,orientation)?;
+    insert_plain_grid_record(source,destination,item_id,xy,orientation)
+}
+fn validate_plain_grid_destination(source:&str,destination:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str)->Result<(),PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400||
        !valid_id(&destination.grid_id)||destination.grid_id.starts_with('0')||
        full_grid_scope(&destination.layout_path).is_none()||
@@ -1255,7 +1259,7 @@ pub fn preview_plain_grid_place(
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&destination.grid_id))){
         return Err(PatchError::AmbiguousTarget);
     }
-    insert_plain_grid_record(source,destination,item_id,xy,orientation)
+    Ok(())
 }
 
 /// Insert an ordinary leaf into an existing owned support Grid. The caller
@@ -1326,11 +1330,35 @@ pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarge
 /// The codec checks exclusive subtree ownership and external references.
 /// Keep the original lexical State and all descendants; no stock change.
 pub fn preview_indoor_support_parent_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
- if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
- validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ support_room_transfer(source,target,expected,d,xy,orientation,true,true)
+}
+pub fn preview_outdoor_to_indoor_support_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ support_room_transfer(source,target,expected,d,xy,orientation,false,true)
+}
+pub fn preview_indoor_to_outdoor_support_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ support_room_transfer(source,target,expected,d,xy,orientation,true,false)
+}
+fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,from_room:bool,to_room:bool)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400{return Err(PatchError::InvalidTarget);}
+ if to_room{
+  if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
+  validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ }else{
+  if !full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)){return Err(PatchError::InvalidTarget);}
+  validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+ }
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
- let from=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&target.grid_id)).ok_or(PatchError::MissingTarget)?;
- if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||!from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|s|s.starts_with("GridData/Rooms/Room")&&s.ends_with(".json")&&!s.contains(".."))||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation)){return Err(PatchError::InvalidTarget);}
+ let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+ let from=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
+ let data=from.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
+ if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation)){return Err(PatchError::InvalidTarget);}
+ if from_room{
+  if !data.starts_with("GridData/Rooms/Room")||!data.ends_with(".json")||data.contains(".."){return Err(PatchError::InvalidTarget);}
+ }else{
+  let layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
+  if !full_grid_scope(layout).is_some_and(|scope|outdoor_world_path(scope,data))||grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&g.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{return Err(PatchError::InvalidTarget);}
+ }
+ if !to_room&&grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::AmbiguousTarget);}
  let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
  let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
  locator.capture.insert(path.clone(),None);locator.walk_complete()?;
