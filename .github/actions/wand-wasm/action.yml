@@ -1,0 +1,77 @@
+name: Build or reuse exact Wand WASM package
+description: Reuse only byte-verified public artifacts with identical Rust, data, lockfile and toolchain inputs.
+inputs:
+  crate:
+    description: Crate path relative to repository root
+    required: true
+  output:
+    description: Generated package path relative to repository root
+    required: true
+  features:
+    description: Cargo features for wasm-pack
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Resolve exact Cargo dependencies
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+      run: |
+        if [ ! -f "$CRATE/Cargo.lock" ]; then
+          cargo generate-lockfile --manifest-path "$CRATE/Cargo.toml"
+        fi
+    - name: Fingerprint public build inputs
+      id: fingerprint
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+        OUTPUT: ${{ inputs.output }}
+        FEATURES: ${{ inputs.features }}
+      run: python3 tools/ci/wasm_cache.py key --crate "$CRATE" --output "$OUTPUT" --features "$FEATURES"
+    - uses: actions/cache/restore@v4
+      if: steps.fingerprint.outputs.cacheable == 'true'
+      id: restore
+      with:
+        path: ${{ inputs.output }}
+        key: ${{ steps.fingerprint.outputs.key }}
+    - name: Validate restored package
+      id: validate
+      if: steps.restore.outputs.cache-hit == 'true'
+      shell: bash
+      env:
+        OUTPUT: ${{ inputs.output }}
+        CACHE_KEY: ${{ steps.fingerprint.outputs.key }}
+      run: python3 tools/ci/wasm_cache.py verify --output "$OUTPUT" --key "$CACHE_KEY"
+    - name: Compile WASM on cache miss or invalid package
+      if: steps.validate.outputs.verified != 'true'
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+        OUTPUT: ${{ inputs.output }}
+        FEATURES: ${{ inputs.features }}
+      run: |
+        case "$OUTPUT" in src/lib/*/wasm/*pkg) ;; *) echo "Invalid WASM output path"; exit 1;; esac
+        rm -rf -- "$OUTPUT"
+        args=()
+        if [ -n "$FEATURES" ]; then args+=(--features "$FEATURES"); fi
+        wasm-pack build "$CRATE" --release --target web --out-dir "$GITHUB_WORKSPACE/$OUTPUT" "${args[@]}" -- --locked
+    - name: Record generated package integrity
+      if: steps.fingerprint.outputs.cacheable == 'true' && steps.validate.outputs.verified != 'true'
+      shell: bash
+      env:
+        OUTPUT: ${{ inputs.output }}
+        CACHE_KEY: ${{ steps.fingerprint.outputs.key }}
+      run: python3 tools/ci/wasm_cache.py record --output "$OUTPUT" --key "$CACHE_KEY"
+    - uses: actions/cache/save@v4
+      if: steps.fingerprint.outputs.cacheable == 'true' && steps.restore.outputs.cache-hit != 'true'
+      with:
+        path: ${{ inputs.output }}
+        key: ${{ steps.fingerprint.outputs.key }}
+    - name: Report exact package reuse
+      if: steps.validate.outputs.verified == 'true'
+      shell: bash
+      env:
+        CRATE: ${{ inputs.crate }}
+      run: echo "Reused verified WASM package for $CRATE"
