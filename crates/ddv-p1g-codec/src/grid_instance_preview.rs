@@ -1429,31 +1429,53 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
 /// destination must belong to the same playable island. All removals resolve
 /// on the immutable source before any ordinal can shift. Returned inventory
 /// is available to every destination, and no intermediate copy is emitted.
-pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
- use zeroize::{Zeroize,Zeroizing};
+fn island_scope(witness:&Value)->Result<(String,usize),CodecError>{
  let bad=CodecError::Json;
- if plan.len()>120*1024{return Err(CodecError::Bounds);}
- let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
- let (scan,_)=scan_grid_instances(profile)?;
- if scan.sampled||scan.invalid>0{return Err(bad);}
- let mut layout_id=None::<String>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
- let mut remove=Vec::new();let mut add=Vec::new();
- for row in rows{
-  let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
-  let witness=o.get("destination").ok_or(bad)?;
   let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
   let data=witness.get("gridDataPath").and_then(Value::as_str).ok_or(bad)?;
   let family=layout.strip_prefix("SceneLayouts/FloatingIslands/").and_then(|s|s.split('/').next()).ok_or(bad)?;
   let name=family.strip_prefix("FloatingIsland_").ok_or(bad)?;
   if !["Atlantean","Beach","Dark","Desert","FairyTales","Forest","Jungle","Library","Meadow","Mythology","Savannah","Snow","Urban","Wetlands"].contains(&name)||
    layout!=format!("SceneLayouts/FloatingIslands/{family}/{family}Layout.json")||
-   !data.starts_with(&format!("GridData/FloatingIslands/{}/{family}",if name=="Desert"{"FloatingIlsnad_Desert"}else{family}))||
-   layout_id.as_ref().is_some_and(|s|s!=layout){return Err(bad);}
-  layout_id=Some(layout.to_owned());
-  expected_grids=match name{"Desert"|"Jungle"|"Meadow"=>4,"Atlantean"|"FairyTales"|"Library"|"Mythology"|"Wetlands"=>2,_=>1};
+   !data.starts_with(&format!("GridData/FloatingIslands/{}/{family}",if name=="Desert"{"FloatingIlsnad_Desert"}else{family})){return Err(bad);}
+  let expected=match name{"Desert"|"Jungle"|"Meadow"=>4,"Atlantean"|"FairyTales"|"Library"|"Mythology"|"Wetlands"=>2,_=>1};
+  Ok((layout.to_owned(),expected))
+}
+pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ island_area_candidate(profile,plan,false)
+}
+pub(super) fn island_decoration_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ island_area_candidate(profile,plan,true)
+}
+fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>if decoration{6_000_000}else{120*1024}{return Err(CodecError::Bounds);}
+ let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(bad);}
+ let mut layout_id=None::<String>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
+ let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();
+ for row in rows{
+  let (row,network)=if decoration{let m=row.as_object().filter(|m|m.len()==2&&m.contains_key("furniture")&&m.contains_key("network")).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?))}else{(row,None)};
+  let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
+  let witness=o.get("destination").ok_or(bad)?;
+  let (layout,expected)=island_scope(witness)?;
+  if layout_id.as_ref().is_some_and(|s|s!=&layout){return Err(bad);}
+  layout_id=Some(layout);expected_grids=expected;
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
+  if let Some(network)=network{
+   let n=network.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+   if n.get("destination")!=Some(witness){return Err(bad);}
+   let before=parse_area_network_poses(n.get("before").ok_or(bad)?)?;let after=parse_area_network_poses(n.get("after").ok_or(bad)?)?;
+   let old:HashSet<_>=before.iter().copied().collect();let desired:HashSet<_>=after.iter().copied().collect();
+   let actual=parse_area_network_poses(&Value::Array(area_network_rows(profile,&d)?))?;
+   if old.len()!=before.len()||desired.len()!=after.len()||actual.len()!=old.len()||actual.into_iter().collect::<HashSet<_>>()!=old{return Err(bad);}
+   ddv_save_patch::validate_area_network(&d,&before).map_err(|_|bad)?;ddv_save_patch::validate_area_network(&d,&after).map_err(|_|bad)?;
+   if old!=desired{networks.push(network.clone());}
+  }
   for r in o.get("remove").and_then(Value::as_array).ok_or(bad)?{
    let ordinal=r.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
    let (target,_)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
@@ -1468,11 +1490,15 @@ pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
  if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
- if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let r=group_pickup_for_scope(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None)?;
   working.zeroize();*working=r;
+ }
+ for n in networks{
+  let next=biome_network_candidate(working.as_bytes(),&serde_json::to_string(&n).map_err(|_|bad)?)?;
+  working.zeroize();*working=next;
  }
  if !add.is_empty(){
   let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)?;
@@ -2390,7 +2416,7 @@ mod terrain_session_tests{
 fn area_network_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
  let bad=CodecError::Json;
  let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
- if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
+ if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){island_scope(witness)?;}
  resolve_plain_grid_destination(profile,witness)
 }
 fn area_network_rows(profile:&[u8],d:&ddv_save_patch::PlainGridDestination)->Result<Vec<Value>,CodecError>{
@@ -2469,6 +2495,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  let n=o.get("network").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
  let witness=f.get("destination").ok_or(bad)?;
  if n.get("destination")!=Some(witness){return Err(bad);}
+ if island_scope(witness).is_ok(){return Err(bad);}
  let dest=area_network_destination(profile,witness)?;
  let remove=f.get("remove").and_then(Value::as_array).ok_or(bad)?;
  let add=f.get("add").and_then(Value::as_array).ok_or(bad)?;
