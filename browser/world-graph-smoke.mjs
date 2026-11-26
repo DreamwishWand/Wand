@@ -1705,6 +1705,38 @@ try{
   assert.deepEqual(islandOutput.World.GridCollection.Grids['101'],islandSave.World.GridCollection.Grids['101']);
   assert.equal(Object.keys(islandOutput.World.GridCollection.Grids['9001'].Objects).length,0);
   assert.equal(islandOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  // Complete multi-grid island design import includes unvisited grids,
+  // persists them together, and re-exports both after selecting either.
+  await islandMap.getByRole('button',{name:'装飾設計',exact:true}).click();
+  const islandIndex=JSON.parse(await readFile(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8'));
+  const atlantean=islandIndex.entries.find(e=>e.scope==='FloatingIslands').grids.filter(g=>g.layoutId.includes('FloatingIsland_AtlanteanLayout'));
+  assert.equal(atlantean.length,2);
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption(atlantean[0].key);
+  const islandDesign=publicWorld.locator('.design-workspace');
+  const islandDoc={schema:'wand.preset.floating-island-design@1',gameVersion:'1.26.2',layoutId:atlantean[0].layoutId,areas:atlantean.map(g=>({schema:'wand.world-design@1',grid:Object.fromEntries(['key','layoutId','gridDataPath','gridIdNative','sizeX','sizeY','factor'].map(k=>[k,g[k]])),placements:[{id:1,itemId:40005160,x:10,y:10,orientation:2}]}))};
+  await islandDesign.getByRole('button',{name:'浮島Presetを開く',exact:true}).waitFor({timeout:30000});
+  const islandPresetInput=islandDesign.locator('.island-preset-input');
+  await islandPresetInput.setInputFiles({name:'whole-island.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandDoc))});
+  const islandReview=islandDesign.locator('.island-preset-review');await islandReview.waitFor({timeout:30000});
+  assert.equal(await islandReview.locator('small').filter({hasText:'追加 1'}).count(),2);
+  await islandReview.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal(await islandDesign.locator('.design-object').count(),0);
+  await islandPresetInput.setInputFiles({name:'whole-island.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandDoc))});
+  await islandReview.getByRole('button',{name:'浮島全体に適用',exact:true}).click({timeout:30000});
+  await islandDesign.locator('.design-object').first().waitFor({timeout:30000});
+  assert.equal(await islandDesign.locator('.design-object').count(),1);
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption(atlantean[1].key);
+  await islandDesign.locator('.design-object').first().waitFor({timeout:30000});
+  const wholeIslandDownload=page.waitForEvent('download');
+  await islandDesign.getByRole('button',{name:'浮島全体を保存',exact:true}).click({timeout:30000});
+  const reexport=JSON.parse((await readFile(await (await wholeIslandDownload).path())).toString('utf8'));
+  assert.deepEqual(reexport,islandDoc);
+  await islandDesign.getByLabel('設計を取り消す').click();
+  assert.equal(await islandDesign.locator('.design-object').count(),0);
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption(atlantean[0].key);
+  await islandDesign.locator('.design-object').first().waitFor({timeout:30000});
+  assert.equal(await islandDesign.locator('.design-object').count(),1);
+
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign,islandPresetWords} from './island-design-preset.ts';
  import {localSaveSession} from '../ui/local-save-session';
  import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea,wholeAreaWords,type WholeAreaKind} from './whole-area-preset.ts';
  import {captureScene,parseScene,parseSceneAnyFactor,convertSceneFactor,sceneOrigin,sceneBounds,sceneItemCounts,sceneWords,type ScenePreset} from './scene-preset.ts';
@@ -16,7 +17,7 @@
  import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
  import {onDestroy,tick} from 'svelte';
- import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft,readDesignDraft,writeDesignDraft,discardDesignDraft,type DraftLocation,type DesignDraft} from './design-draft.ts';
+ import {designDraftLocation,makeDesignDraft,parseDesignDraft,draftItemIds,validateDesignDraft,readDesignDraft,writeDesignDraft,discardDesignDraft,writeIslandDrafts,type DraftLocation,type DesignDraft} from './design-draft.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import type {TerrainRaster,TerrainBinding} from './terrain-binding.ts';
  import {terrainWarnings} from './terrain-binding.ts';
@@ -62,6 +63,9 @@
  $: areaTarget=availableAreaPresets.find(g=>g.key===areaTargetKey)??null;
  $: areaKind=wholeAreaKind(areaTarget,sourceGrids);
  $: areaText=wholeAreaWords[locale];
+ $: islandGrids=worldFrame?[]:islandPresetGrids(grid,sourceGrids);
+ $: multiIsland=islandGrids.length>1;
+ $: iw=islandPresetWords[locale];
  $: contextKey=worldFrame?'@world-'+worldFrame.scope+'-1.26.2':grid?.key??'';
  export let areaLabel:(key:string)=>string=key=>key;
  const areaWords={ja:['エリアへ移動','エリア設計を追加','エリア設計を追加できません。地形範囲または重複を確認してください。'],en:['Jump to area','Add area designs','Unable to add area designs. Check terrain bounds or duplicates.'],fr:['Aller à la zone','Ajouter les plans de zones','Impossible d’ajouter les plans de zones.'],it:['Vai alla zona','Aggiungi progetti delle zone','Impossibile aggiungere i progetti.'],de:['Zum Bereich','Bereichsentwürfe hinzufügen','Bereichsentwürfe konnten nicht hinzugefügt werden.'],'es-ES':['Ir a zona','Añadir diseños de zonas','No se pudieron añadir los diseños.'],'zh-CN':['前往区域','添加区域设计','无法添加区域设计，请检查地形或重复物品。'],'pt-BR':['Ir à área','Adicionar projetos de áreas','Não foi possível adicionar os projetos.']} as const;
@@ -295,10 +299,85 @@
   'pt-BR':['Salvar','Abrir','Itens necessários','Não foi possível abrir o projeto. Verifique a área e os itens.','Substituir o projeto da área?','Abrindo…']
  } as const;
  $: words=labels[locale]??labels.en;
- $: busyImport=reading||pendingImport!==null||areaReview!==null||recoveryBlocked;
+ $: busyImport=reading||pendingImport!==null||areaReview!==null||islandBusy||islandReview!==null||recoveryBlocked;
  $: counts=designItemCounts(placements);
  $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
  $: if(active&&showCounts)loadImages([...counts.keys()].map(itemId=>({itemId})));
+ type IslandBaseline={grid:PublicTerrainGridRef;location:DraftLocation;revision:string|null;timeline:DesignTimeline;camera:ReturnType<typeof defaultMapCamera>;selection:number[]};
+ type IslandReview={context:string;epoch:number;own:Worker;baseline:IslandBaseline[];definitions:Map<string,Map<number,DesignItemGeometry>>;incoming:Map<string,DesignPlacement[]>;result:NonNullable<ReturnType<typeof reviewIslandDesign>>};
+ let islandReview:IslandReview|null=null,islandBusy=false,islandEpoch=0,islandInput:HTMLInputElement;
+ $: if(islandReview&&(!active||islandReview.context!==contextKey||islandReview.own!==worker))islandReview=null;
+ function islandCancel(){if(islandBusy)return;islandEpoch++;islandReview=null;}
+ async function readIslandBaseline(source:readonly PublicTerrainGridRef[]):Promise<IslandBaseline[]>{
+  return Promise.all(source.map(async g=>{
+   const location=designDraftLocation(g,null);
+   await recoveryWrites.get(location.identity);
+   const stored=await readDesignDraft(location.key),revision=typeof stored?.revision==='string'?stored.revision:null;
+   const state=recovery[location.identity],local=layouts[g.key];
+   if(state?.phase==='ready'&&(!state.writable||state.revision!==revision)||state&&['restoring','discarding','loading'].includes(state.phase))throw Error('ISLAND_DRAFT_CONFLICT');
+   const draft=stored?parseDesignDraft(stored.draft,location):null;
+   const timeline=state?.phase==='ready'&&local?local:draft?.timeline??emptyDesign();
+   return {grid:g,location,revision,timeline,camera:draft?.camera??defaultMapCamera(),selection:draft?.selection??[]};
+  }));
+ }
+ async function loadIslandShapes(own:Worker,key:string,ids:readonly number[]):Promise<Map<number,DesignItemGeometry>>{
+  const result=new Map<number,DesignItemGeometry>();
+  for(let offset=0;offset<ids.length;offset+=128){
+   const batch=ids.slice(offset,offset+128),requestId=nextRequest();
+   const rows=await new Promise<DesignItemGeometry[]>((resolve,reject)=>{
+    const cleanup=()=>{clearTimeout(timer);own.removeEventListener('message',receive);};
+    const timer=setTimeout(()=>{cleanup();reject(Error('ISLAND_GEOMETRY_TIMEOUT'));},30000);
+    const receive=(e:MessageEvent)=>{const d=e.data;if(d?.requestId!==requestId)return;cleanup();
+     if(d.kind!=='design-shapes'||d.key!==key||!Array.isArray(d.result)||d.result.length!==batch.length||d.result.some((g:DesignItemGeometry)=>!batch.includes(g.itemId)))reject(Error('ISLAND_GEOMETRY'));else resolve(d.result);
+    };
+    own.addEventListener('message',receive);try{own.postMessage({command:'design-shapes',requestId,key,itemIds:batch});}catch(e){cleanup();reject(e);}
+   });
+   for(const g of rows)result.set(g.itemId,g);
+  }
+  return result;
+ }
+ async function prepareIsland(file?:File){
+  if(!multiIsland||!worker||busyImport||!active)return;
+  const own=worker,context=contextKey,source=[...islandGrids],epoch=++islandEpoch;
+  islandBusy=true;error='';
+  const stillCurrent=()=>epoch===islandEpoch&&contextKey===context&&worker===own&&active;
+  try{
+   if(file&&file.size>DESIGN_FILE_LIMIT)throw Error('size');
+   const incoming=file?parseIslandDesign(await file.text(),source):null,baseline=await readIslandBaseline(source);
+   const before=Object.fromEntries(baseline.map(b=>[b.grid.key,b.timeline])),defs=new Map<string,Map<number,DesignItemGeometry>>();
+   for(const b of baseline){
+    if(!stillCurrent())return;
+    const draft=makeDesignDraft(b.location,b.timeline,b.camera,b.selection),ids=[...new Set([...draftItemIds(draft),...(incoming?.get(b.grid.key)??[]).map(p=>p.itemId)])];
+    const geometry=await loadIslandShapes(own,b.grid.key,ids);
+    if(!validateDesignDraft(draft,b.location,null,geometry))throw Error('ISLAND_DRAFT_INVALID');
+    defs.set(b.grid.key,geometry);
+   }
+   if(!stillCurrent())return;
+   if(!incoming){const text=serializeIslandDesign(source,before),url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-island-'+source[0].layoutId.split('/')[2]+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+   const result=reviewIslandDesign(source,before,incoming,defs);if(!result)throw Error('ISLAND_PRESET_INVALID');
+   cancel();islandReview={context,epoch,own,baseline,definitions:defs,incoming,result};
+  }catch{if(stillCurrent())error=iw[5];}finally{if(epoch===islandEpoch)islandBusy=false;}
+ }
+ function openIsland(e:Event){const input=e.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(file)void prepareIsland(file);}
+ async function applyIsland(){
+  const r=islandReview;if(!r||islandBusy||r.context!==contextKey||r.own!==worker||!active||recoveryBlocked)return;
+  islandBusy=true;error='';
+  try{
+   const changed=r.baseline.map(b=>({key:b.location.key,expected:b.revision,draft:r.result.next[b.grid.key]!==b.timeline?makeDesignDraft(b.location,r.result.next[b.grid.key],b.camera,[]):null}));
+   const revisions=await writeIslandDrafts(changed);
+   // Durable storage has committed all grids. Update the memory cache and
+   // recovery entries together, even if the user switched to another grid.
+   let nextCache={...cache},nextRecovery={...recovery},nextLayouts={...layouts};
+   for(const b of r.baseline){
+    const t=r.result.next[b.grid.key],factor=String(b.grid.factor);
+    nextLayouts[b.grid.key]=t;nextCache[factor]=new Map([...(nextCache[factor]??new Map<number,DesignItemGeometry>()),...(r.definitions.get(b.grid.key)??new Map<number,DesignItemGeometry>())]);
+    nextRecovery[b.location.identity]={phase:'ready',revision:revisions.get(b.location.key)??null,writable:true};
+   }
+   layouts=nextLayouts;cache=nextCache;recovery=nextRecovery;
+   if(contextKey===r.context){selected=null;groupIds=[];cancel();}
+   islandReview=null;
+  }catch{error=iw[5];}finally{islandBusy=false;}
+ }
  function exportAreaPreset(){
   if(!areaTarget||!areaKind||busyImport)return;try{const split=worldFrame?splitWorldArea(worldFrame,timeline,areaTarget.key,definitions):null;if(worldFrame&&!split)throw Error('AREA_OWNER');const t=split?{snapshots:[split.local],cursor:0,nextId:timeline.nextId}:timeline;const text=serializeWholeArea(t,areaTarget,areaKind),url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-'+areaKind+'-'+areaTarget.key.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=areaText[12];}
  }
@@ -666,6 +745,7 @@
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={saveScene}>{sceneText[0]}</button><button type="button" disabled={busyImport||sceneReading||!worker} on:click={()=>sceneInput.click()}>{sceneText[1]}</button>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
+    {#if multiIsland}<input class="file-input island-preset-input" type="file" accept=".json,application/json" bind:this={islandInput} on:change={openIsland}/><button type="button" disabled={busyImport} on:click={()=>prepareIsland()}>{iw[0]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>islandInput.click()}>{iw[1]}</button>{/if}
     {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{areaText[2]}</button>{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
@@ -687,6 +767,8 @@
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
    {#if activeScene}<div class="scene-placement"><strong>Scene · {activeScene.items.length}</strong><small>{sceneText[6]}</small><div class="scene-required">{#each [...sceneRequired] as [itemId,count] (itemId)}<div class="scene-required-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>{/each}</div><div><button type="button" aria-pressed={sceneAnchor==='center'} on:click={()=>setSceneAnchor('center')}>{sceneText[2]}</button><button type="button" aria-pressed={sceneAnchor==='corner'} on:click={()=>setSceneAnchor('corner')}>{sceneText[3]}</button><button type="button" on:click={cancel}>{sceneText[4]}</button></div></div>{/if}
+   {#if islandBusy}<div class="design-capture" role="status">{iw[4]}</div>{/if}
+   {#if islandReview}<div class="design-capture island-preset-review" aria-label={iw[2]}><strong>{iw[2]}</strong><small>{iw[3]}</small>{#each islandReview.result.summaries as row (row.key)}<small>{areaLabel(row.key)} · {areaText[4]} {row.retained} · {areaText[5]} {row.removed} · {areaText[6]} {row.added}</small>{/each}<div><button type="button" disabled={islandBusy} on:click={applyIsland}>{iw[6]}</button><button type="button" disabled={islandBusy} on:click={islandCancel}>{iw[7]}</button></div></div>{/if}
    {#if areaReview}<div class="design-capture area-preset-review" aria-label={areaText[3]}><strong>{areaText[3]} · {areaLabel(areaReview.areaKey)}</strong><small>{areaText[4]} {areaReview.summary.retained} · {areaText[5]} {areaReview.summary.removed} · {areaText[6]} {areaReview.summary.added}</small><small>{areaText[7]} {areaReview.summary.total} · {areaText[8]} {areaReview.summary.counts.size}</small><small>{areaText[9]}</small><div><button type="button" on:click={applyAreaReview}>{areaText[10]}</button><button type="button" on:click={cancelAreaReview}>{areaText[11]}</button></div></div>{/if}
    {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
@@ -722,6 +804,7 @@
        </g>
       {/if}
      {/each}
+     {#if islandReview}{#each islandReview.incoming.get(grid?.key??'')??[] as p (p.id)}{@const shape=islandReview.definitions.get(grid?.key??'')?.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="island-preset-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#if areaReview}{#each areaReview.preview.filter(p=>p.x>=viewport.x-10&&p.x<=viewport.x+viewport.w+10&&p.y>=viewport.y-10&&p.y<=viewport.y+viewport.h+10) as p (p.id)}{@const shape=areaReview.incoming.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="area-preset-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#each fenceDrawEdges as edge (edge.key)}
       {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges&&!originalFenceEdgeKeys.has(edge.key)?'#4bddcd':selectedIds.has(edge.a)&&selectedIds.has(edge.b)?'#fff':'#e5d2b1'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
