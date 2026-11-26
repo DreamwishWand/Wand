@@ -565,7 +565,7 @@
      if(pending.capture&&pending.capture!==capturedLayout)return;
      const merged=new Map([...definitions,...incoming]);
      const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
-     if(!next||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
+     if(!next||embedded&&currentDesign(next).length>31||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
      const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
      selected=null;groupIds=[];cancel();
@@ -778,7 +778,7 @@
  function endSpace(e:KeyboardEvent){if(e.code!=='Space'||!spacePan)return;const select=!spaceUsed&&active&&!busyImport&&focusedId!==null&&!placing&&!pasting.length&&!moveMode;spacePan=false;spaceUsed=false;if(select&&focusedId!==null){e.preventDefault();focusPlaced(focusedId,true);}}
 
  function keys(e:KeyboardEvent){
-   if(!active||busyImport||!worldShortcutTarget(e,root))return;
+   if(!active||directSupportEditor||busyImport||!worldShortcutTarget(e,root))return;
    if(e.target instanceof HTMLElement&&e.target.closest('.design-plot')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     if(e.key==='['||e.key===']'){if(cyclePlaced(e.key==='['?-1:1))e.preventDefault();return;}
     if(e.code==='Space'){e.preventDefault();if(!spacePan){spacePan=true;spaceUsed=false;}return;}
@@ -963,7 +963,7 @@
   </div>
  </div>
  {#if directSupportEditor}
-  <div class="direct-support-workspace" role="dialog" aria-label={dsw[0]}>
+  <div class="direct-support-workspace" role="dialog" aria-modal="true" aria-label={dsw[0]}>
    <div class="direct-support-header"><strong>{directSupportEditor.template.label}</strong><small>{dsw[6]}</small><button type="button" disabled={directSupportApplying} on:click={()=>closeDirectSupport()}>{dsw[2]}</button><button type="button" disabled={directSupportApplying||!directSupportDraft} on:click={applyDirectSupport}>{dsw[1]}</button>{#if directSupportApplying}<small role="status">…</small>{/if}{#if error}<small role="alert">{error}</small>{/if}</div>
    <div class="direct-support-body" inert={directSupportApplying}>
     <svelte:self active={true} grid={directSupportEditor.template.grid} raster={directSupportEditor.template.raster} embedded={directSupportEditor.embedded} {worker} {nextRequest} {locale}/>
