@@ -24,7 +24,7 @@ fn object(o:&Value,key:&str)->Result<u64,PatchError>{
  if !o.get("Orientation").and_then(Value::as_str).is_some_and(|s|OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){return Err(BAD);}
  item(m.get("ItemID").ok_or(BAD)?)
 }
-fn reserved_ref(v:&Value,ids:&HashSet<u32>,grid_context:bool)->bool{
+pub(super) fn reserved_ref(v:&Value,ids:&HashSet<u32>,grid_context:bool)->bool{
  match v{
   Value::Object(m)=>m.iter().any(|(k,v)|{
    let k=k.to_ascii_lowercase();
@@ -101,6 +101,13 @@ impl CloneTree<'_>{
   }
   g["ID"]=Value::from(fresh);g["NextGridObjectID"]=Value::from((rows.len()+1) as u32);g["Objects"]=Value::Object(objects);self.created[slot].1=g;Ok(fresh)
  }
+}
+/// Build one source-bound portable tree, with the same per-tree limits
+/// and native child record construction as interactive placement.
+pub(super) fn build_source_tree(grids:&Map<String,Value>,diff:Option<&Map<String,Value>>,next:u32,owner:u64,scene:&Value)->Result<(u32,u32,Vec<(u32,Value)>,Vec<u64>),PatchError>{
+ let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![owner],templates:HashMap::new(),plain:HashSet::new(),source_only:true};
+ let child=tree.scene_grid(owner,scene,0)?;
+ Ok((child,tree.next,tree.created,tree.stock))
 }
 /// Existing parent tree must already have been resolved and validated by
 /// the codec. The returned candidate is not runtime or writer authority.
