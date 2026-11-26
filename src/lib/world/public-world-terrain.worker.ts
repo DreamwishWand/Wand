@@ -1,3 +1,4 @@
+import {roomDesignTemplates,type RoomDesignTemplate} from './room-design.ts';
 import {parseAreaScene} from './area-scene.ts';
 import {parseSupportScene,parseMixedScene,SCENE_FURNITURE_LIMIT,SCENE_SUPPORT_TREE_LIMIT} from './support-scene.ts';
 import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
@@ -47,6 +48,8 @@ function getMaster(){
 }
 let geometry:Promise<ReturnType<typeof publicShapeDefinitions>>|null=null;
 let supportCatalog:Promise<unknown>|null=null;
+let roomTemplates:Promise<RoomDesignTemplate[]>|null=null;
+function loadRoomTemplates(){return roomTemplates??=(fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/room-terrain.json').then(r=>{if(!r.ok)throw Error('room terrain');return r.json();}).then(roomDesignTemplates).catch(e=>{roomTemplates=null;throw e;}));}
 let supportPaths:Promise<Map<number,unknown>>|null=null;
 async function boundSupportTerrain(path:unknown,owner:unknown){
  if(typeof path!=='string'||!/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(path)||path.includes('..')||typeof owner!=='number'||!Number.isSafeInteger(owner))return null;
@@ -168,6 +171,21 @@ scope.onmessage=async({data})=>{
       let terrain:TerrainRaster|null=null;
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
       scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
+    }
+    if(data.command==='room-design-templates'){
+      if(!release)throw Error('source');scope.postMessage({kind:'room-design-templates',requestId:id,templates:await loadRoomTemplates()});return;
+    }
+    if(typeof data.key==='string'&&data.key.startsWith('room-design:')&&['design-catalog','design-shape','design-shapes'].includes(data.command)){
+      const template=(await loadRoomTemplates()).find(t=>t.grid.key===data.key);if(!template)throw Error('room template');
+      const {grid,raster}=template,mask=raster.nativeFloorValues.reduce((a,b)=>a|b,0),definitions=await loadGeometry();
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});const subgrids=await supportPaths;
+      const eligible=(itemId:number)=>{const d=definitions.get(String(itemId)),f=d?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(d);return Math.floor(itemId/100000)===400&&d?.nativeType==='Furniture'&&!!f&&!!((f.acceptedFloorTypesFlag??0)&mask)&&!subgrids.has(itemId)&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');};
+      if(data.command==='design-catalog'){const locale=data.locale as WandLanguage,names=new Map(await (await getMaster()).getBrowseNames(locale)),items:DesignCatalogItem[]=[];for(const [key,d] of definitions){const itemId=Number(key);if(eligible(itemId))items.push({itemId,name:names.get(itemId)??String(d.nativeName??'—'),layer:'furniture'});}items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;}
+      const batch=data.command==='design-shapes',ids=batch?data.itemIds:[data.itemId];
+      if(!Array.isArray(ids)||ids.length>DESIGN_LIMIT||new Set(ids).size!==ids.length||!ids.every(n=>Number.isSafeInteger(n)&&eligible(n)))throw Error('room furniture');
+      const results:DesignItemGeometry[]=[];let runs=0;
+      for(const itemId of ids){const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},grid.factor),item=cache.resolve(itemId,8);if(!item.shapeKey||item.surfaceCapable)throw Error('room shape');for(const code of [0,4,12])cache.resolve(itemId,code);runs+=Object.values(cache.shapes).reduce((n,s)=>n+s.runs.length,0);if(runs>1_000_000)throw Error('shape limit');results.push({itemId,name:item.name,layer:'furniture',surfaceCapable:false,editRestrictions:item.editRestrictions,shapes:cache.shapes});}
+      scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
     const grid=region?.grids.find(g=>g.key===data.key);

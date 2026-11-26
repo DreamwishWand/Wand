@@ -13,9 +13,12 @@
   import {bindMainland,bindFloatingIslandGrid} from '$lib/world/mainland-world-coordinates.ts';
   import type {MainlandDesignFrame} from '$lib/world/mainland-design-frame.ts';
   import MainlandOverview from '$lib/world/MainlandOverview.svelte';
+  import RoomDecorationDesign from '$lib/world/RoomDecorationDesign.svelte';
+  import {roomDesignWords} from '$lib/world/room-design.ts';
   import IndoorRoomView from '$lib/world/IndoorRoomView.svelte';
   import {indoorWords} from '$lib/world/indoor-room-view.ts';
-  let indoorOpen=false;
+  let indoorOpen=false,roomDesignOpen=false;
+  $: if(!designMode)roomDesignOpen=false;
   $: indoorText=indoorWords[locale]??indoorWords.en;
   $: if(!sourceFile||designMode)indoorOpen=false;
   import type {SaveDesignCapture} from '$lib/world/save-design-capture.ts';
@@ -320,6 +323,7 @@
     </select>{/if}
     {#if designMode&&worldReady}<button type="button" aria-pressed={mainlandEditing} on:click={toggleMainland}>{editWorldLabel}</button>{/if}
     {#if !designMode&&sourceFile}<button type="button" on:click={()=>indoorOpen=true}>{indoorText[0]}</button>{/if}
+    {#if designMode}<button type="button" aria-pressed={roomDesignOpen} on:click={()=>{roomDesignOpen=!roomDesignOpen;if(roomDesignOpen)overviewOpen=false;}}>{roomDesignWords[locale][0]}</button>{/if}
     {#if overviewReady}<button type="button" aria-pressed={overviewOpen} aria-label={independentGrid?label(independentGrid):overviewLabel} title={independentGrid?label(independentGrid):overviewLabel} on:click={()=>overviewOpen=!overviewOpen} >{independentGrid?label(independentGrid):overviewLabel}</button>{/if}
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
@@ -343,9 +347,10 @@
     </div>
   {/if}
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'ワールドの地形を読み込めませんでした。':'Unable to load world terrain.'):(locale==='ja'?'ワールドの地形読み込み中…':'Loading world terrain…')}</p>{/if}
-  <DecorationDesign sourceGrids={grids} bind:layerState {capturedLayout} onDismissCapture={()=>capturedLayout=null} active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
+  <DecorationDesign sourceGrids={grids} bind:layerState {capturedLayout} onDismissCapture={()=>capturedLayout=null} active={designMode&&!roomDesignOpen&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&overviewReady&&(designMode||!recoveryBlocked)}{#key overviewIdentity}<MainlandOverview sourceGrids={grids} independent={!!independentGrid} areaOptions={independentGrid?regionGrids.filter(g=>!!bindFloatingIslandGrid(g)).map(g=>({key:g.key,label:label(g)})):[]} onAreaChange={chooseArea} title={independentGrid?label(independentGrid):overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={overviewGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
+  {#if roomDesignOpen&&designMode}<RoomDecorationDesign {worker} {locale} nextRequest={nextDesignRequest} bind:layerState onClose={()=>roomDesignOpen=false}/>{/if}
+  {#if !roomDesignOpen&&overviewOpen&&overviewReady&&(designMode||!recoveryBlocked)}{#key overviewIdentity}<MainlandOverview sourceGrids={grids} independent={!!independentGrid} areaOptions={independentGrid?regionGrids.filter(g=>!!bindFloatingIslandGrid(g)).map(g=>({key:g.key,label:label(g)})):[]} onAreaChange={chooseArea} title={independentGrid?label(independentGrid):overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={overviewGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
   {#if indoorOpen&&sourceFile}<IndoorRoomView file={sourceFile} {locale} terrainWorker={worker} nextRequest={nextDesignRequest} blocked={currentWorldEdits(timeline).length>0} onClose={()=>indoorOpen=false}/>{/if}
 </section>
 <style>
