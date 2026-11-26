@@ -6,7 +6,7 @@
  import type {WandLanguage} from '../ui/preferences';
  export let locale:WandLanguage='ja',schemas:readonly PresetSchema[]=[],kinds:readonly PresetKind[]|undefined=undefined,disabled=false,label='',showTrigger=true,onPick:(file:File)=>void;
  let visible=false,reading=false,query='',selected=0,alias='',error=false,alive=true,input:HTMLInputElement;
- const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21};
+ const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21,'tom-furniture':22,'tom-clothing':23,'native-decoration':24,'decoration-code':25,'shop-code':26};
  $: w=presetPickerWords[locale];$: entries=filterSessionPresets($sessionPresets,schemas,query,kinds);
  $: current=entries.find(e=>e.id===selected);
  $: if(disabled&&visible)visible=false;

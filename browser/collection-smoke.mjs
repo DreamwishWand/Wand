@@ -166,8 +166,8 @@ try{
   assert.equal(await portal.locator('.portal-grid .portal-card').count(),7);
   assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
     ['Decorate','Presets','Gallery','DreamSnaps','Collection','Guide','Community Help Center']);
-  assert.equal(await portal.locator('a.portal-card').count(),3);
-  assert.equal(await portal.locator('.portal-card.planned').count(),4);
+  assert.equal(await portal.locator('a.portal-card').count(),4);
+  assert.equal(await portal.locator('.portal-card.planned').count(),3);
   assert.equal(await portal.locator('a.portal-card-decorate').getAttribute('href'),'/Wand/decorate/');
   assert.equal(await portal.locator('.portal-card-community').count(),1);
   assert.match(await portal.locator('.portal-card-community').innerText(),/Community Help Center/);

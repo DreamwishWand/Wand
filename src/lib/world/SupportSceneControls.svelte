@@ -1,4 +1,6 @@
 <script lang="ts">
+ import {savePresetFile} from './preset-session.ts';
+ import {readPresetText} from '../presets/preset-file.ts';
  import {onDestroy} from 'svelte';
  import {flatSupportScene,supportDesignWords} from './room-design.ts';
  import {parseSceneAnyFactor,convertSceneFactor} from './scene-preset.ts';
@@ -36,13 +38,13 @@
  function reset(){epoch++;reading=false;own?.terminate();own=null;request=0;geometryRequest=0;geometryValid=false;scene=null;flatRaw=null;flatImport=false;source=null;shapes={};terrain=null;allowed=new Set();images=new Map();if(copy)URL.revokeObjectURL(copy.url);copy=null;error=false;}
  function save(){
   if(!capture)return;
-  const url=URL.createObjectURL(new Blob([JSON.stringify(capture)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='wand-support-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  savePresetFile(JSON.stringify(capture),'wand-support-scene.json');
  }
  async function load(e:Event){
   const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';
   if(!f||!file||!canMove)return;
   reset();const token=epoch,original=file;source=original;reading=true;
-  try{if(f.size>262144)throw Error('size');const raw=await f.text();if(epoch!==token||file!==original)return;
+  try{if(f.size>262144)throw Error('size');const raw=await readPresetText(f,262144);if(epoch!==token||file!==original)return;
    let doc:SupportScene;try{doc=parseSupportScene(raw);}catch{
     const flat=convertSceneFactor(parseSceneAnyFactor(raw),tree.factor);if(!flat||!tree.sourcePath||tree.objects.length||flat.items.length>32||!worker)throw Error('flat scene');
     flatRaw=raw;flatImport=true;const items=[...new Set(flat.items.map(p=>p.itemId))].flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));
@@ -74,7 +76,7 @@
 <div class="scene">
  <div class="actions"><strong>{w[0]}</strong><button type="button" on:click={onBack}>{w[7]}</button></div>
  <button type="button" disabled={!capture||!!own} on:click={save}>{w[1]}</button>
- <label title={sdw[2]}>{w[2]}<input type="file" accept=".json,application/json" disabled={!canMove||!!own||!!copy} on:change={load}/></label>
+ <label title={sdw[2]}>{w[2]}<input type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" disabled={!canMove||!!own||!!copy} on:change={load}/></label>
  {#if reading||request||geometryRequest||own}<small role="status">…</small>{/if}
  {#if scene}
   <strong>{names.get(scene.ownerItemId)??'—'} · {w[4]}</strong>
