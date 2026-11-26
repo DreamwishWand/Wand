@@ -73,7 +73,7 @@
    if(!group.length)throw Error('scope');
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
-   const incomingRaw=mode==='restore'&&chosen?await chosen.text():null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw)void rememberPreset(chosen,incomingRaw).catch(()=>{});
+   const incomingRaw=mode==='restore'&&chosen?await readPresetText(chosen,INDOOR_BACKUP_LIMIT):null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw)void rememberPreset(chosen,incomingRaw).catch(()=>{});
    for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds));
    if(!valid())throw Error('changed');
    if(mode==='restore'){

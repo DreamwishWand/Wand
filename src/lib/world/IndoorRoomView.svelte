@@ -96,7 +96,7 @@
   const epoch=++sceneEpoch,source=file,target=face;sceneReading=true;sceneError=false;
   try{
    if(chosen.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const raw=await chosen.text(),mixed=indoorMixedScene(raw);
+   const raw=await readPresetText(chosen,DESIGN_FILE_LIMIT),mixed=indoorMixedScene(raw);
    const value=mixed?{clip:mixed.items.map(({support,...pose})=>pose),anchor:mixed.anchor}:indoorSceneClip(raw,target.factor!);
    if(value.clip.length>ROOM_CUT_LIMIT||mixed&&(!terrainWorker||linkedAxis))throw Error('scene limit');
    if(epoch!==sceneEpoch||file!==source||face!==target||!editAllowed||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft)return;
