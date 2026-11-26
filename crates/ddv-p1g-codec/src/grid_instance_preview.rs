@@ -608,6 +608,13 @@ pub(super) fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent
 }
 /// Ephemeral ordinal lookup for exact owned-room records. Native keys stay
 /// inside the codec; the ordinary support resolver rechecks every edit.
+/// Internal exact native ordinal mapping for an owned room selection.
+pub(super) fn room_pickup_ordinals(profile:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+ Ok(scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|
+  (t.kind==GridObjectKind::Full&&xy.is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))).collect())
+}
 pub(super) fn room_support_ordinals(profile:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
