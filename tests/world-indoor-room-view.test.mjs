@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorGroupMove,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -87,4 +87,17 @@ test('room group translation reuses selected old cells and rejects stationary fo
  assert.equal(indoorGroupMove(full,shapes,allowed,[0,1],0,7,1),null);
  assert.equal(indoorGroupMove(full,shapes,allowed,[0,0],0,2,1),null);
  assert.equal(indoorGroupMove(full,{},allowed,[0,1],0,2,1),null);
+});
+
+test('room group rotation uses native rotated footprints and rejects blocked targets',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8},{itemId:40000001,x:3,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const wide={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],acceptedFloorTypesFlag:1024,path:'M0 0h2v1H0Z'};
+ const tall={width:1,height:2,cellCount:2,runs:[{x:0,y:0,width:1},{x:0,y:1,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v2H0Z'};
+ const shapes={'40000001:8':wide,'40000001:4':tall,'40000001:12':tall},allowed=new Set([40000001]);
+ const result=indoorGroupRotate(full,shapes,allowed,[0,1],1);
+ assert.deepEqual(result?.map(p=>[p.index,p.x,p.y,p.orientation]),[[0,1,1,'GridOrientation_Right'],[1,1,3,'GridOrientation_Right']]);
+ assert.equal(indoorGroupRotate({...full,positions:[...full.positions,{itemId:40000001,x:1,y:3,orientationCode:8}]},shapes,allowed,[0,1],1),null);
+ assert.equal(indoorGroupRotate(full,{'40000001:8':wide},allowed,[0,1],1),null);
+ assert.equal(indoorGroupRotate(full,shapes,new Set(),[0,1],1),null);
 });
