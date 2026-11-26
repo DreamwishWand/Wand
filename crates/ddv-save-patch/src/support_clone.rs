@@ -154,8 +154,15 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
 /// Place a source-bound portable scene with no existing native template.
 /// The codec/UI must verify each owner/path and native terrain before calling.
 pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
+ scene_place(source,item_id,d,xy,orientation,scene,false)
+}
+pub fn preview_indoor_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
+ scene_place(source,item_id,d,xy,orientation,scene,true)
+}
+fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value,room:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400{return Err(BAD);}
- let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;
+ if room{validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Rooms/")?;}
+ else{let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
  let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
