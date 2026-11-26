@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Test CI scope selection
-        run: python3 -m unittest discover -s tools/ci -p test_select_checks.py -v
+        run: python3 -m unittest discover -s tools/ci -p 'test_*.py' -v
       - name: Select required product checks
         id: scope
         env:
@@ -61,13 +61,11 @@ jobs:
           key: npm-downloads-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
           restore-keys: npm-downloads-${{ runner.os }}-
       - run: python3 -m unittest discover -s tools/collection -p 'test_*.py' -v
-        if: steps.scope.outputs.product == 'true'
+        if: steps.scope.outputs.collection == 'true'
       - run: cargo test --manifest-path crates/wand-collection-core/Cargo.toml
-        if: steps.scope.outputs.product == 'true'
+        if: steps.scope.outputs.collection == 'true'
       - run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
-        if: steps.scope.outputs.product == 'true'
-      - run: cargo check --manifest-path crates/wand-collection-core/Cargo.toml --target wasm32-unknown-unknown
-        if: steps.scope.outputs.product == 'true'
+        if: steps.scope.outputs.save == 'true' || steps.scope.outputs.collection == 'true' || steps.scope.outputs.world == 'true'
       - run: wasm-pack build crates/wand-collection-core --release --target web --out-dir ../../src/lib/collection/wasm/pkg
         if: steps.scope.outputs.product == 'true'
       - run: wasm-pack build crates/ddv-save-schema --release --target web --out-dir ../../src/lib/save/wasm/pkg --features wasm
@@ -83,7 +81,7 @@ jobs:
       - run: npm test
         if: steps.scope.outputs.product == 'true'
       - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
-        if: steps.scope.outputs.product == 'true'
+        if: steps.scope.outputs.collection == 'true'
       - run: npm run check
         if: steps.scope.outputs.product == 'true'
       - run: npm run build
