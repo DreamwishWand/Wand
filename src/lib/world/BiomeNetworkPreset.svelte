@@ -57,7 +57,7 @@
     if(download&&full&&withSupport){if(!worker)throw Error('worker');const ac=new AbortController();supportAbort=ac;currentSupports=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted)return;}
     if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');savePresetFile(text,'wand-biome-'+(full?'decoration-':'network-')+g.key+'.json');return;}
     if(!preset||!worker||preset.size>(full?BIOME_DECORATION_FILE_LIMIT:1_000_000))throw Error('file');
-    const text=await preset.text(),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);void rememberPreset(preset,text).catch(()=>{});
+    const text=await readPresetText(preset,full?BIOME_DECORATION_FILE_LIMIT:1_000_000),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);void rememberPreset(preset,text).catch(()=>{});
     if(epoch!==token||source!==file||sourceObjects!==objects||sourceKey!==key)return;
     if(combined?.supports){const ac=new AbortController();supportAbort=ac;const trees=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);await validateAreaSupportTrees(worker,combined.supports.values(),nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted||source!==file||sourceObjects!==objects||sourceKey!==key)return;currentSupports=trees;incomingSupports=combined.supports;includeSupport=true;}else includeSupport=false;
     before=rows;after=incoming;incomingFurniture=combined?.furniture??null;

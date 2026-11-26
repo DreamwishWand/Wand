@@ -169,6 +169,7 @@ try{
   assert.equal(await portal.locator('a.portal-card').count(),4);
   assert.equal(await portal.locator('.portal-card.planned').count(),3);
   assert.equal(await portal.locator('a.portal-card-decorate').getAttribute('href'),'/Wand/decorate/');
+  assert.equal(await portal.locator('a.portal-card-presets').getAttribute('href'),'/Wand/presets/');
   assert.equal(await portal.locator('.portal-card-community').count(),1);
   assert.match(await portal.locator('.portal-card-community').innerText(),/Community Help Center/);
   assert.equal(await portal.locator('header.site-header .site-nav').count(),0);
@@ -221,7 +222,7 @@ try{
   assert.ok(p.gallery.y>p.decorate.y&&p.gallery.x===p.decorate.x);
   assert.ok(p.dreamsnaps.y>p.presets.y&&p.dreamsnaps.x===p.presets.x);
   assert.ok(p.community.x===p.collection.x&&p.community.w>p.collection.w);
-  assert.equal(await portal.locator('.portal-planned-status svg').count(),4,'planned badges show a lock next to legible text');
+  assert.equal(await portal.locator('.portal-planned-status svg').count(),3,'planned badges show a lock next to legible text');
   assert.equal(await portal.locator('.shell-nav-trigger,.shell-shortcuts').count(),0,
     'Home provides the service list; redundant global service switching is absent');
   await portal.setViewportSize({width:390,height:844});

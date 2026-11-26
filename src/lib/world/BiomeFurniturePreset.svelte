@@ -39,7 +39,7 @@
  async function openFile(f:File){if(!file||!worker||!grid||!snapshot||blocked||!allowed||busy||copy)return;
   cancel();const own=worker,g=grid,activeFile=file,activeObjects=objects,token=epoch;source=activeFile;sourceObjects=activeObjects;sourceKey=g.key;reading=true;
   try{
-   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await f.text(),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
+   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,DESIGN_FILE_LIMIT),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
    incoming=rows;
    if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();

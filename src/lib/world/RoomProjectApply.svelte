@@ -39,7 +39,7 @@
  onDestroy(()=>{alive=false;epoch++;seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('closed'));requests.clear();output?.terminate();if(copy)URL.revokeObjectURL(copy.url);});
  async function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)void openFile(f);}
  async function openFile(f:File){if(!worker||busy||blocked)return;resetPreview();doc=[];mapping=new Map();busy=true;const token=++epoch,own=worker;
-  try{if(f.size>ROOM_PROJECT_FILE_LIMIT)throw Error('size');const raw=await f.text(),res=await request(own,{command:'room-design-templates'});if(res.kind!=='room-design-templates'||!Array.isArray(res.templates))throw Error('templates');
+  try{if(f.size>ROOM_PROJECT_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,ROOM_PROJECT_FILE_LIMIT),res=await request(own,{command:'room-design-templates'});if(res.kind!=='room-design-templates'||!Array.isArray(res.templates))throw Error('templates');
    const incoming=parseRoomProject(raw,res.templates as RoomDesignTemplate[]).surfaces;void rememberPreset(f,raw).catch(()=>{});if(!alive||epoch!==token)return;
    doc=incoming;mapping=new Map();const floor=room.surfaces[0];if(floor&&roomApplyMatches(doc[0],floor))mapping.set(doc[0].id,floor.ordinal);mapping=new Map(mapping);
    const ids=[...new Set([...roomProjectCounts(doc).furniture.keys(),...roomProjectCounts(doc).finishes.keys()])];
