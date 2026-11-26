@@ -1,6 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
  import SubgridInspector from './SubgridInspector.svelte';
+ import {supportPickupWords} from './group-pickup.ts';
  import {supportWords,parseSupportTree} from './subgrid-local.ts';
  import {captureSupportScene,mixedSceneCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
  import {parseIndoorSupportParents,roomSupportPickupPlan,type IndoorSupportWitness} from './indoor-support.ts';
@@ -56,18 +57,24 @@
  $: selectedScene=captureIndoorScene(face,cutIndices,shapes,removable);
  $: surfaceScene=captureIndoorScene(face,face?.positions.map((_,i)=>i)??[],shapes,removable);
  let mixedDoc:MixedScenePreset|null=null,mixedRequest=0,mixedValid=false,sceneCaptureWorker:Worker|null=null;
+ let mixedSources:readonly (NonNullable<IndoorPlace['supportSource']>|null)[]|null=null;
  $: sceneCounts=mixedDoc?mixedSceneCounts(mixedDoc.items):sceneItemCounts(cloneClip);
  $: mixedSelected=cutIndices.some(i=>roomSupports.some(p=>p.index===i));
  $: mixedSurface=roomSupports.length>0;
- function captureRoomMixed(indices:readonly number[]){
+ function captureRoomMixed(indices:readonly number[],duplicate=false){
   if(!file||!face||!terrainWorker||sceneCaptureWorker||!indices.length||indices.length>ROOM_CUT_LIMIT)return;
   const source=file,target=face,selection=[...indices],sh=shapes,allowed=removable;
   const parents=roomSupports.filter(p=>selection.includes(p.index));if(!parents.length)return;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});sceneCaptureWorker=session;sceneError=false;
-  const done=(d:any)=>{session.terminate();if(sceneCaptureWorker!==session)return;sceneCaptureWorker=null;if(file!==source||face!==target)return;
+  const done=(d:any)=>{session.terminate();if(sceneCaptureWorker!==session)return;sceneCaptureWorker=null;if(file!==source||face!==target||duplicate&&(!editAllowed||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft))return;
    try{if(d?.kind!=='subgrids-local'||!Array.isArray(d.results)||d.results.length!==parents.length)throw Error('receipt');const supports=new Map<number,SupportScene>();
     for(const p of parents){const result=d.results.find((v:any)=>v.localOrdinal===p.localOrdinal);const scene=captureSupportScene(p.itemId,parseSupportTree(result?.result));if(!scene)throw Error('tree');supports.set(p.index,scene);}
-    const scene=captureIndoorMixedScene(target,selection,sh,allowed,supports);if(!scene)throw Error('scene');saveRoomScene(scene);
+    const scene=captureIndoorMixedScene(target,selection,sh,allowed,supports);if(!scene)throw Error('scene');
+    if(!duplicate){saveRoomScene(scene);return;}
+    if([...mixedSceneCounts(scene.items)].some(([id,n])=>(stock.get(id)??0)<n))throw Error('stock');
+    const sources=selection.map(i=>{const p=target.positions[i];return supports.has(i)&&p.orientationCode!==null?{index:i,expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[p.orientationCode/4]}:null;});
+    resetObject();mixedDoc=scene;mixedSources=sources;mixedValid=false;sceneActive=true;sceneAnchor=scene.anchor;cloneClip=scene.items.map(({support,...pose})=>pose);sceneExtra=[...new Set(cloneClip.map(p=>p.itemId))];placing=true;
+    mixedRequest=nextRequest();terrainWorker!.postMessage({command:'mixed-scene-geometry',requestId:mixedRequest,scene,locale});loadItems([...mixedSceneCounts(scene.items).keys()],sceneExtra);
    }catch{sceneError=true;}
   };session.onmessage=e=>done(e.data);session.onerror=()=>done(null);session.onmessageerror=()=>done(null);session.postMessage({command:'inspect-subgrids',file:source,parents:parents.map(({localOrdinal,itemId,x,y})=>({localOrdinal,itemId,x,y}))});
  }
@@ -93,11 +100,11 @@
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
  $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable,new Set(roomSupports.map(p=>p.index))):null;
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
- $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
+ $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y,mixedSources):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
  $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft;
- $: groupPickup=cutIndices.some(i=>roomSupports.some(p=>p.index===i))?null:indoorGroupPickup(face,cutIndices,removable,stock);
+ $: groupPickup=indoorGroupPickup(face,cutIndices,removable,stock,new Set(roomSupports.map(p=>p.index)));
  $: duplicateClip=cutIndices.some(i=>roomSupports.some(p=>p.index===i))?null:indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
- function beginDuplicate(){if(!editAllowed||!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
+ function beginDuplicate(){if(!editAllowed||sceneCaptureWorker)return;if(mixedSelected){captureRoomMixed(cutIndices,true);return;}if(!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
  $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>(!r.supportFactor||!!r.roomSource&&r.supportFactor===face.factor)&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
@@ -185,7 +192,7 @@
  const testExport=browser&&testSaveExportEnabled(window.location);
  let finishCopy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: cw=checkpointWords[locale];
- function clearEdit(){objectDrag=null;panDrag=null;sceneCaptureWorker?.terminate();sceneCaptureWorker=null;mixedDoc=null;mixedRequest=0;mixedValid=false;supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
+ function clearEdit(){objectDrag=null;panDrag=null;sceneCaptureWorker?.terminate();sceneCaptureWorker=null;mixedDoc=null;mixedSources=null;mixedRequest=0;mixedValid=false;supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
  function resetObject(){clearEdit();selectedObject=-1;selectedGroup=new Set();}
  function chooseObject(i:number,add=false){if(!tree||!tree.objects[i]||editWorker||editCopy||editDraft||pickupDraft||moving||placing||placeDraft||transferDraft)return;if(swap){const e=indoorFurnitureEdits(face,shapes,editable,selectedObject,i,1);if(e){editDraft=e;swap=false;}return;}if(add&&!swap){const next=new Set(selectedGroup.size?selectedGroup:selectedObject>=0?[selectedObject]:[]);if(next.has(i))next.delete(i);else if(next.size<ROOM_CUT_LIMIT)next.add(i);selectedGroup=next;selectedObject=next.has(i)?i:[...next].at(-1)??-1;}else{selectedGroup=new Set();selectedObject=i;}highlight=selectedObject>=0?tree.objects[selectedObject].itemId:null;}
  function pickObject(e:MouseEvent){
@@ -195,7 +202,7 @@
    const draft=indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,p.x,p.y);
    if(draft){transferDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
-  if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y,mixedSources):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[supportClone?{...draft,supportSource:supportClone}:draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(moving){const draft=selectedGroup.size>1?indoorGroupMove(face,shapes,editable,[...selectedGroup],selectedObject,p.x,p.y):indoorMove(face,shapes,editable,selectedObject,p.x,p.y);if(draft){editDraft=draft;moving=false;hoverCell=null;editError=false;}else editError=true;return;}
   const hits=supportHitIndices(tree,shapes,p.x,p.y).filter(i=>!swap||partners.includes(i));if(hits.length)chooseObject(hits[(hits.indexOf(selectedObject)+1)%hits.length],e.ctrlKey||e.metaKey||e.shiftKey);
@@ -242,7 +249,7 @@
   const turn=e.shiftKey?-1:1;
   let draft:SupportChildEdit[]|null=null;
   if(e.key.toLowerCase()==='r')draft=selectedGroup.size>1?indoorGroupRotate(face,shapes,editable,[...selectedGroup],turn):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,turn);
-  else if(e.key==='Delete'||e.key==='Backspace'){if(cutIndices.some(i=>roomSupports.some(p=>p.index===i)))return false;const rows=indoorGroupPickup(face,cutIndices,removable,stock);if(rows){pickupDraft=rows;editError=false;}return true;}
+  else if(e.key==='Delete'||e.key==='Backspace'){const rows=groupPickup;if(rows){pickupDraft=rows;editError=false;}return true;}
   else{const delta=roomKeyDelta(e.key,e.shiftKey?face.factor??1:1);const origin=tree.objects[selectedObject];if(!delta||!origin)return false;draft=roomDragDraft(face,shapes,editable,cutIndices,selectedObject,origin.x+delta.x,origin.y+delta.y);}
   if(draft){editDraft=draft;editError=false;}else editError=true;return true;
  }
@@ -291,8 +298,8 @@
      {#if face.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!cutSource}<button type="button" disabled={!editAllowed||!catalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{itw[2]}</button>{/if}
      {#if stockOpen}<input type="search" bind:value={stockQuery} placeholder={itw[4]} aria-label={itw[4]}/><select aria-label={itw[2]} value={0} on:change={e=>chooseStock(Number(e.currentTarget.value))}><option value={0} disabled>{itw[2]}</option>{#each options as o}<option value={o.itemId}>{o.name} · {stock.get(o.itemId)}</option>{/each}</select>{/if}
      {#if selectedObject>=0&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}
-      {#if selectedGroup.size>1}<button type="button" disabled={!editAllowed||!groupPickup} on:click={()=>pickupDraft=groupPickup}>{indoorGroupStockWords[locale][0]} · {selectedGroup.size}</button>{/if}
-      <button type="button" disabled={!editAllowed||!duplicateClip} on:click={beginDuplicate}>{indoorGroupStockWords[locale][1]}{#if selectedGroup.size>1} · {selectedGroup.size}{/if}</button>
+      {#if selectedGroup.size>1||mixedSelected}<button type="button" disabled={!editAllowed||!groupPickup} on:click={()=>pickupDraft=groupPickup}>{mixedSelected?supportPickupWords[locale][0]:indoorGroupStockWords[locale][0]} · {cutIndices.length}</button>{/if}
+      <button type="button" disabled={!editAllowed||!!sceneCaptureWorker||!duplicateClip&&!mixedSelected} on:click={beginDuplicate}>{indoorGroupStockWords[locale][1]}{#if selectedGroup.size>1} · {selectedGroup.size}{/if}</button>
      {/if}
      {#if canCut}<button type="button" on:click={captureRoomCut}>{cutWords[0]}{#if cutIndices.length>1} · {cutIndices.length}{/if}</button>{/if}
      {#if $worldFurnitureCut?.file===file&&$worldFurnitureCut?.scope==='indoor'&&!cutSource}<small role="status">{cutWords[1]} · {$worldFurnitureCut.rows.length}</small>{/if}
@@ -300,7 +307,7 @@
      {#if moving||placing}<small>{itw[3]}</small>{/if}{#if placing}<button type="button" on:click={()=>turnStock(-1)}>{ew[0]}</button><button type="button" on:click={()=>turnStock(1)}>{ew[1]}</button>{/if}
      {#if placeDraft}<small>{placeDraft.length===1?placeDraft[0].expectedStock+' → '+(placeDraft[0].expectedStock-1):'+'+placeDraft.length}</small>{/if}
      {#if swap}<small>{ew[3]}</small>{/if}
-     {#if pickupDraft}<small>{pickupDraft.length===1?pickupDraft[0].expectedStock+' → '+(pickupDraft[0].expectedStock+1):'−'+pickupDraft.length}</small>{/if}
+     {#if pickupDraft}{#if pickupDraft.some(p=>p.includeSupport)}<small>{supportPickupWords[locale][1]}</small>{/if}<small>{pickupDraft.length===1&&!pickupDraft[0].includeSupport?pickupDraft[0].expectedStock+' → '+(pickupDraft[0].expectedStock+1):'−'+pickupDraft.length}</small>{/if}
      {#if (editDraft||pickupDraft||placeDraft||transferDraft)&&!editCopy}<button type="button" disabled={!editAllowed} on:click={runFurniture}>{iw[4]}</button>{/if}
      {#if swap||editDraft||pickupDraft||editCopy||moving||placing||placeDraft||transferDraft||stockOpen}<button type="button" on:click={clearEdit}>{w[7]}</button>{/if}
      {#if editCopy}<small>{copyWords[1]}</small><button type="button" disabled={blocked} on:click={applyFurniture}>{cw[0]}</button><a class="test-copy-link" href={editCopy.url} download={editCopy.name}>{copyWords[2]}</a>{/if}
