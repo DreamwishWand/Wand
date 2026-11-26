@@ -50,7 +50,7 @@ export function reviewBiomeNetwork(grid:MainlandGrid,rasters:ReadonlyMap<string,
   if(!shape||nativeActionBlocked(def?.editRestrictions,'select')||terrainWarnings({raster:r,factor:grid.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let j=0;j<run.width;j++){const a=mainlandMapAnchor(grid,p.x+run.x+j+.5,p.y+run.y+.5);if(mainlandTerrainHits([grid],rasters,a.x,a.y).length!==1)return null;}
   const ghost:StockCandidate={area:grid.key,...mainlandMapAnchor(grid,p.x,p.y),factor:grid.factor,shape,plan:{action:'place',itemId:String(p.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS[p.orientation]},destination};
-  if(p.network.kind==='fence'&&stockFootprintFeedback(ghost,furniture,0).overlaps)return null;
+  if(p.network.kind==='fence'){const feedback=stockFootprintFeedback(ghost,furniture,0);if(feedback.overlaps||feedback.unknown)return null;}
   ghosts.push(ghost);
  }
  const plan={destination,before,after};
