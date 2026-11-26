@@ -1,4 +1,4 @@
-import {parseSupportScene} from './support-scene.ts';
+import {parseSupportScene,parseMixedScene} from './support-scene.ts';
 import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
@@ -115,11 +115,14 @@ scope.onmessage=async({data})=>{
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
     }
-    if(data.command==='support-scene-geometry'){
+    if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'){
       if(!release)throw Error('source');
-      const scene=parseSupportScene(JSON.stringify(data.scene));
-      const definitions=await loadGeometry();let total=1;
-      const itemIds=new Set<number>([scene.ownerItemId]);
+      const mixed=data.command==='mixed-scene-geometry'?parseMixedScene(JSON.stringify(data.scene)):null;
+      const single=mixed?null:parseSupportScene(JSON.stringify(data.scene));
+      const definitions=await loadGeometry();let total=0;
+      const itemIds=new Set<number>();
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+      const paths=await supportPaths;
       async function check(owner:number,t:SupportTree,depth:number):Promise<boolean>{
         if(depth>8||!t.sourcePath)return false;
         const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
@@ -139,9 +142,15 @@ scope.onmessage=async({data})=>{
         }
         return true;
       }
-      const valid=await check(scene.ownerItemId,scene.tree,0);
+      let valid=true;
+      const roots=mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
+      for(const root of roots){
+        itemIds.add(root.itemId);if(++total>32){valid=false;break;}
+        const source=paths.get(root.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
+        if(root.support?!await check(root.itemId,root.support.tree,0):!!source?.SubGrid?.SubGridDataPath){valid=false;break;}
+      }
       const names=valid&&typeof data.locale==='string'?new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage)):new Map<number,string>();
-      scope.postMessage({kind:'support-scene-geometry',requestId:id,valid,names:[...itemIds].flatMap(itemId=>names.has(itemId)?[[itemId,names.get(itemId)]]:[])});return;
+      scope.postMessage({kind:data.command,requestId:id,valid,names:[...itemIds].flatMap(itemId=>names.has(itemId)?[[itemId,names.get(itemId)]]:[])});return;
     }
     if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
