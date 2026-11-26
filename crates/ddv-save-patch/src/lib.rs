@@ -2303,3 +2303,36 @@ pub fn preview_area_network_replacement(source:&str,d:&PlainGridDestination,befo
  validate_json_without_edit(&candidate)?;
  Ok(AreaNetworkDraft{draft:GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false},removed,allocated})
 }
+
+#[cfg(test)]
+mod area_network_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"Inventory":{"40100068":{"Amount":17}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2},"3":{"ID":3,"ItemID":40100068,"X":8,"Y":4,"Orientation":"GridOrientation_Down","State":{"FenceMode":{"Diagonal":true}}}}},"8":{"ID":8,"Objects":{"1":{"ID":1,"ItemID":40100068}}}}}}}"#;
+ fn dest()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(40,40)}}
+ fn road(item:u32,x:i32,y:i32,diagonal:bool)->AreaNetworkPose{AreaNetworkPose{item,x,y,left:false,diagonal}}
+ #[test]fn full_network_replacement_keeps_unchanged_ids_and_unrelated_lexical_members(){
+  let old=[road(40100068,4,4,false),road(40100068,8,4,true)];
+  let next=[old[0],road(40100038,12,4,true)];
+  let result=preview_area_network_replacement(SOURCE,&dest(),&old,&next).unwrap();
+  assert_eq!(result.removed,vec!["3"]);assert_eq!(result.allocated,vec!["4"]);
+  assert!(result.draft.patched_json.contains("\"Unknown\":1e2"));assert!(!result.draft.export_authorized);
+  let a:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let b:serde_json::Value=serde_json::from_str(&result.draft.patched_json).unwrap();
+  assert_eq!(a["Player"],b["Player"]);let g=&b["World"]["GridCollection"]["Grids"];let old_g=&a["World"]["GridCollection"]["Grids"];
+  assert_eq!(old_g["8"],g["8"]);assert_eq!(g["7"]["Objects"]["1"],old_g["7"]["Objects"]["1"]);assert_eq!(g["7"]["Objects"]["2"],old_g["7"]["Objects"]["2"]);
+  assert!(g["7"]["Objects"].get("3").is_none());assert_eq!(g["7"]["Objects"]["4"]["ItemID"],40100038);assert_eq!(g["7"]["Objects"]["4"]["State"]["FenceMode"]["Diagonal"],true);
+  assert_eq!(g["7"]["NextGridObjectID"],5);
+  assert!(preview_area_network_replacement(SOURCE,&dest(),&old[..1],&next).is_err());
+  assert!(preview_area_network_replacement(SOURCE,&dest(),&old,&[next[0],road(40100038,4,4,true)]).is_err());
+  let stale=SOURCE.replace("\"Diagonal\":true","\"Diagonal\":false");assert!(preview_area_network_replacement(&stale,&dest(),&old,&next).is_err());
+  let removed=preview_area_network_replacement(SOURCE,&dest(),&old,&[]).unwrap();assert_eq!(removed.removed.len(),2);assert!(removed.allocated.is_empty());
+ }
+ #[test]fn whole_fence_network_round_trips_original_parts(){
+  let nodes=vec![(20,20),(22,20),(24,20)];let edges=nodes.windows(2).map(|p|(p[0],p[1])).collect::<Vec<_>>();
+  let original=fence_topology::compile_fence_with_posts(40700000,2,false,&nodes,&edges,&std::collections::BTreeSet::new()).unwrap();
+  let next=original.iter().map(|p|AreaNetworkPose{item:p.item,x:p.x,y:p.y,left:p.left,diagonal:p.diagonal}).collect::<Vec<_>>();
+  let old=[road(40100068,4,4,false),road(40100068,8,4,true)];
+  let result=preview_area_network_replacement(SOURCE,&dest(),&old,&next).unwrap();
+  assert_eq!(result.allocated.len(),original.len());
+  let mut invalid=next.clone();invalid[0].x=1;assert!(preview_area_network_replacement(SOURCE,&dest(),&old,&invalid).is_err());
+ }
+}
