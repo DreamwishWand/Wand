@@ -1433,8 +1433,7 @@ fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String
     for (grid,count) in count_by_grid{
         let next=grids.get(&grid).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
-        let refs=grid_identity_dependencies_for_ids(profile,&grid,&ids)?;
-        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+        for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for (key,item,xy,orientation) in poses{
