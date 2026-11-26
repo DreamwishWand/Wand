@@ -615,6 +615,21 @@ pub(super) fn room_pickup_ordinals(profile:&[u8])->Result<HashMap<(String,String
  Ok(scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|
   (t.kind==GridObjectKind::Full&&xy.is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))).collect())
 }
+/// Resolve an explicitly selected support root from a full outdoor grid.
+pub(super) fn resolve_outdoor_support_cut_target(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),orientation:&str,factor:u32)->Result<GridCoordinateTarget,CodecError>{
+ let bad=CodecError::Json;
+ let (scan,_)=scan_grid_instances(profile)?;
+ if scan.sampled||scan.invalid>0||ordinal==0||!scan.subgrid_parents.contains(&ordinal)||item/100_000!=400||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ let (t,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+ if t.kind!=GridObjectKind::Full||t.item_id!=item||*xy!=Some(expected)||scan.rows.get(ordinal-1).and_then(|v|v.get("orientation")).and_then(Value::as_str)!=Some(orientation){return Err(bad);}
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
+ let g=c.get("Grids").and_then(|v|v.get(&t.grid_id)).ok_or(bad)?;
+ if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/"))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
+ subgrid_tree(c,&t.grid_id,&t.object_id)?;
+ let refs=grid_identity_dependencies(profile,t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+ Ok(t.clone())
+}
 pub(super) fn room_support_ordinals(profile:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
