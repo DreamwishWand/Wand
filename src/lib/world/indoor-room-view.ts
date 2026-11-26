@@ -146,6 +146,25 @@ export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:numbe
 export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string){
  const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
 }
+/** Translate selected native records together; their old cells may be reused.
+ * The final footprints must fit the original room and all stationary objects. */
+export function indoorGroupMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face),selected=new Set(indices),origin=tree?.objects[anchor];
+ if(!tree||!face?.terrain||!origin||!selected.has(anchor)||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length||![x,y].every(Number.isSafeInteger))return null;
+ const dx=x-origin.x,dy=y-origin.y;
+ if(!dx&&!dy)return null;
+ const stationary=tree.objects.filter((_,i)=>!selected.has(i)),out:SupportChildEdit[]=[];
+ for(const index of indices){
+  const o=tree.objects[index];
+  if(!o||!indoorClear(tree,shapes,index))return null;
+  const draft=supportFreeEdit({...tree,objects:[o,...stationary]},shapes,allowed,face.terrain,0,o.x+dx,o.y+dy,o.orientation);
+  if(!draft)return null;
+  out.push({...draft[0],index});
+ }
+ return out;
+}
+export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Move selected furniture',fr:'Déplacer les meubles sélectionnés',it:'Sposta mobili selezionati',de:'Ausgewählte Möbel verschieben','es-ES':'Mover muebles seleccionados','zh-CN':'移动所选家具','pt-BR':'Mover móveis selecionados'} as const;
+
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
  const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,expectedStock:n,x,y,orientation}:null;
 }
