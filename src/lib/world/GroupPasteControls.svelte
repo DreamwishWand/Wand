@@ -76,10 +76,11 @@
    const url=URL.createObjectURL(new Blob([JSON.stringify(doc)],{type:'application/json'}));
    const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
- export function saveScene(){
+ export function saveScene(captureItems:readonly MainlandSavedObject[]=items){
   if(blocked||captureWorker)return;
-  if(selection){try{const half=sceneFromClip(selection,2);downloadScene(convertSceneFactor(half,1)??half);}catch{sceneError=gs[2];}return;}
-  const selected=[...items],areaPoses=captureAreaPoses(selected),poses=areaPoses??captureFurnitureGroup(selected,true),f=file;
+  const flat=captureFurnitureGroup(captureItems);
+  if(flat){try{const half=sceneFromClip(flat,2);downloadScene(convertSceneFactor(half,1)??half);}catch{sceneError=gs[2];}return;}
+  const selected=[...captureItems],areaPoses=captureAreaPoses(selected),poses=areaPoses??captureFurnitureGroup(selected,true),f=file;
   if(!f||!poses||!areaPoses&&(poses.length>SCENE_FURNITURE_LIMIT||!selected.some(p=>p.object.subgrid)))return;
   const networks=areaPoses?selected.filter(p=>p.object.layer==='ground'||p.object.layer==='fence').map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y})):[];
   const parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));

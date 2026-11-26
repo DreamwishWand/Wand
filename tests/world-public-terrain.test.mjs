@@ -607,6 +607,27 @@ test('area Scene point symmetry preserves road mode, fence endpoints, support tr
  assert.equal(areaSceneCandidate(doc,[g],rasters,defs,[],0,point.x,point.y,axis),null);
 });
 
+
+import {captureRegionBounds,validCaptureRegion,resizeCaptureRegion,captureRegionPlan} from '../src/lib/world/scene-capture-region.ts';
+test('capture region uses explicit furniture selection, independent network toggles and exact occupied cells',()=>{
+ const shape=(w,h)=>({width:w,height:h,cellCount:w*h,runs:Array.from({length:h},(_,y)=>({x:0,y,width:w})),path:''});
+ const obj=(n,itemId,layer,x,y,w=1,h=1)=>({area:'Meadow',factor:1,x,y,shape:shape(w,h),object:{localOrdinal:n,localGridOrdinal:1,itemId:String(itemId),layer,x,y:-y,orientation:'GridOrientation_Down',orientationCode:8,name:'Fixture',surfaceCapable:false}});
+ const a=obj(1,40000001,'furniture',2,-2,2,2),other=obj(2,40000002,'furniture',3,-3),r=obj(3,40100068,'ground',2,-2,2,2),next=obj(4,40100068,'ground',4,-2,2,2),f=obj(5,40700246,'fence',2,-3);
+ const all=[a,other,r,next,f],extent={x:0,y:-20,w:20,h:20};
+ const region=captureRegionBounds([a]);assert.deepEqual(region,{x:2,y:-4,w:2,h:2});
+ const only=captureRegionPlan(region,[a],all,{roads:false,fences:false});assert.equal(only.valid,true);assert.deepEqual(only.items,[a]);
+ const road=captureRegionPlan(region,[a],all,{roads:true,fences:false});assert.equal(road.valid,false);assert.deepEqual(road.outside,[next]);
+ const wide=resizeCaptureRegion(region,extent,'se',2,0);assert.deepEqual(wide,{x:2,y:-4,w:4,h:2});
+ const full=captureRegionPlan(wide,[a],all,{roads:true,fences:false});assert.equal(full.valid,true);assert.deepEqual(full.items,[a,r,next]);
+ const both=captureRegionPlan(wide,[a],all,{roads:true,fences:true});assert.equal(both.valid,true);assert.equal(both.fences,1);
+ assert.equal(captureRegionPlan(wide,[a],all,{roads:true,fences:true},1).valid,false);
+ const small=resizeCaptureRegion(region,extent,'se',-1,0);
+ assert.equal(captureRegionPlan(small,[a],all,{roads:false,fences:false}).valid,false);
+ assert.deepEqual(resizeCaptureRegion(region,extent,'move',.26,100),{x:2.5,y:-2,w:2,h:2});
+ assert.equal(validCaptureRegion(wide,extent),true);
+ assert.equal(validCaptureRegion({...wide,x:2.1},extent),false);
+});
+
 import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea} from '../src/lib/world/whole-area-preset.ts';
 test('whole-area preset requires exact source identity and reviews multiset replacement',()=>{
  const g={key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:100,sizeY:100};
