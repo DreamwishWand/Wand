@@ -16,6 +16,8 @@ mod mission_slot_audit;
 mod grid_instance_preview;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
+#[cfg(feature="wasm")]
+mod native_preset_backup;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -1436,6 +1438,16 @@ mod browser_amount_preview {
                 InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_INDOOR_NOT_OPEN"))?.profile.as_slice()
             };
             indoor_room_view::project(source).map_err(|_|fail("DB05_INDOOR_UNAVAILABLE"))
+        }
+        pub fn list_native_presets(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_PRESET_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
+            native_preset_backup::list(source).map_err(|_|fail("DB05_PRESET_UNAVAILABLE"))
+        }
+        pub fn export_native_preset_backup(&self,ordinal:u32)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_PRESET_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
+            native_preset_backup::export(source,ordinal as usize).map_err(|_|fail("DB05_PRESET_UNAVAILABLE"))
         }
         pub fn list_furniture_catalog_stock(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_FURNITURE_STOCK_NOT_OPEN"));}
