@@ -1,3 +1,5 @@
+import {gunzipSync,gzipSync} from 'node:zlib';
+const presetBytes=b=>b[0]===31&&b[1]===139?gunzipSync(b):b;
 /**
  * DB-04 browser regression: actual Svelte/Worker controls with only a
  * GENERATED synthetic reference graph. No real game files or private Save.
@@ -1108,7 +1110,7 @@ try{
   const biomeDownloadPromise=page.waitForEvent('download');
   await mainland.getByRole('button',{name:'Biomeを保存',exact:true}).click();
   const biomeDownload=await biomeDownloadPromise;
-  const biomeDoc=JSON.parse((await readFile(await biomeDownload.path())).toString('utf8'));
+  const biomeDoc=JSON.parse(presetBytes(await readFile(await biomeDownload.path())).toString('utf8'));
   assert.equal(biomeDoc.schema,'wand.preset.whole-area-design@1');
   assert.equal(biomeDoc.kind,'biome');assert.equal(biomeDoc.design.grid.key,'Meadow');
   assert.equal(biomeDoc.design.placements.length,1);
@@ -1171,11 +1173,11 @@ try{
   const sceneDownloadPromise=page.waitForEvent('download');
   await design.getByRole('button',{name:'Sceneを保存',exact:true}).click();
   const sceneDownload=await sceneDownloadPromise;
-  assert.equal(sceneDownload.suggestedFilename(),'wand-scene.json');
+  assert.equal(sceneDownload.suggestedFilename(),'wand-scene.wandpreset');
   const sceneBytes=await readFile(await sceneDownload.path());
-  const sceneDoc=JSON.parse(sceneBytes.toString('utf8'));
+  const sceneDoc=JSON.parse(presetBytes(sceneBytes).toString('utf8'));
   assert.equal(sceneDoc.schema,'wand.preset.scene@1');assert.equal(sceneDoc.items.length,1);
-  await design.locator('.scene-file-input').setInputFiles({name:'scene.json',mimeType:'application/json',buffer:sceneBytes});
+  await design.locator('.scene-file-input').setInputFiles({name:'scene.wandpreset',mimeType:'application/gzip',buffer:gzipSync(Buffer.from(JSON.stringify(sceneDoc)))});
   await design.locator('.scene-placement').waitFor({timeout:30000});
   assert.equal(await design.locator('.scene-required-row').count(),1);
   await design.locator('.scene-placement').getByRole('button',{name:'角',exact:true}).click();
@@ -1616,7 +1618,7 @@ try{
   await biomePanel.getByLabel('対象Biome',{exact:true}).selectOption('Meadow');
   const biomeSaveDownload=page.waitForEvent('download');
   await biomePanel.getByRole('button',{name:'家具配置を保存',exact:true}).click({timeout:30000});
-  const biomeSavedDoc=JSON.parse((await readFile(await (await biomeSaveDownload).path())).toString('utf8'));
+  const biomeSavedDoc=JSON.parse(presetBytes(await readFile(await (await biomeSaveDownload).path())).toString('utf8'));
   assert.equal(biomeSavedDoc.design.placements.length,2);
   const biomeSubset=structuredClone(biomeSavedDoc);biomeSubset.design.placements.pop();
   const biomeInput=biomePanel.locator('.biome-preset-input');
@@ -1647,7 +1649,7 @@ try{
   await networkPresetPanel.getByLabel('対象Biome',{exact:true}).selectOption('Meadow');
   const networkDownload=page.waitForEvent('download');
   await networkPresetPanel.getByRole('button',{name:'ネットワークを保存',exact:true}).click({timeout:30000});
-  const networkDoc=JSON.parse((await readFile(await (await networkDownload).path())).toString('utf8'));
+  const networkDoc=JSON.parse(presetBytes(await readFile(await (await networkDownload).path())).toString('utf8'));
   assert.equal(networkDoc.rows.length,2);assert.equal(networkDoc.rows.filter(x=>x.network.diagonal).length,1);
   networkDoc.rows=networkDoc.rows.filter(x=>!x.network.diagonal);
   await networkPresetPanel.locator('.biome-network-input').setInputFiles({name:'biome-networks-subset.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(networkDoc))});
@@ -1669,7 +1671,7 @@ try{
   await networkPresetPanel.getByLabel('対象Biome',{exact:true}).selectOption('Meadow');
   const decorationDownload=page.waitForEvent('download');
   await networkPresetPanel.getByRole('button',{name:'装飾を一括保存',exact:true}).click({timeout:30000});
-  const decorationDoc=JSON.parse((await readFile(await (await decorationDownload).path())).toString('utf8'));
+  const decorationDoc=JSON.parse(presetBytes(await readFile(await (await decorationDownload).path())).toString('utf8'));
   assert.equal(decorationDoc.schema,'wand.preset.biome-decoration@1');
   assert.equal(decorationDoc.furniture.design.placements.length,2);assert.equal(decorationDoc.network.rows.length,2);
   decorationDoc.furniture.design.placements.pop();decorationDoc.network.rows=decorationDoc.network.rows.filter(x=>!x.network.diagonal);
@@ -1833,7 +1835,7 @@ try{
   const wholeIslandPanel=islandMap.locator('.island-furniture-panel');
   const completeDownload=page.waitForEvent('download');
   await wholeIslandPanel.getByRole('button',{name:'全体の家具配置を保存',exact:true}).click({timeout:30000});
-  const completeDoc=JSON.parse((await readFile(await (await completeDownload).path())).toString('utf8'));
+  const completeDoc=JSON.parse(presetBytes(await readFile(await (await completeDownload).path())).toString('utf8'));
   assert.equal(completeDoc.areas.length,2);
   assert.equal(completeDoc.areas[0].placements.length,1);
   assert.equal(completeDoc.areas[1].placements.length,0);
@@ -1865,7 +1867,7 @@ try{
   await wholeIslandPanel.getByLabel('道・フェンスも含める',{exact:true}).check();
   const islandMixedDownload=page.waitForEvent('download');
   await wholeIslandPanel.getByRole('button',{name:'浮島の装飾を一括保存',exact:true}).click({timeout:30000});
-  const islandMixedDoc=JSON.parse((await readFile(await (await islandMixedDownload).path())).toString('utf8'));
+  const islandMixedDoc=JSON.parse(presetBytes(await readFile(await (await islandMixedDownload).path())).toString('utf8'));
   assert.equal(islandMixedDoc.schema,'wand.preset.floating-island-decoration@1');assert.equal(islandMixedDoc.areas.length,2);
   const islandMixedPrimary=islandMixedDoc.areas.find(a=>a.furniture.design.grid.key===sourceIslandAreas[0].key);
   const islandMixedSecondary=islandMixedDoc.areas.find(a=>a.furniture.design.grid.key===sourceIslandAreas[1].key);
@@ -1913,7 +1915,7 @@ try{
   await islandDesign.locator('.design-object').first().waitFor({timeout:30000});
   const wholeIslandDownload=page.waitForEvent('download');
   await islandDesign.getByRole('button',{name:'浮島全体を保存',exact:true}).click({timeout:30000});
-  const reexport=JSON.parse((await readFile(await (await wholeIslandDownload).path())).toString('utf8'));
+  const reexport=JSON.parse(presetBytes(await readFile(await (await wholeIslandDownload).path())).toString('utf8'));
   assert.deepEqual(reexport,islandDoc);
   await islandDesign.getByLabel('設計を取り消す').click();
   assert.equal(await islandDesign.locator('.design-object').count(),0);

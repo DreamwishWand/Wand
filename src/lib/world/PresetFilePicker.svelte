@@ -6,7 +6,7 @@
  import type {WandLanguage} from '../ui/preferences';
  export let locale:WandLanguage='ja',schemas:readonly PresetSchema[]=[],kinds:readonly PresetKind[]|undefined=undefined,disabled=false,label='',showTrigger=true,onPick:(file:File)=>void;
  let visible=false,reading=false,query='',selected=0,alias='',error=false,alive=true,input:HTMLInputElement;
- const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21};
+ const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21,'tom-furniture':22,'tom-clothing':23,'native-decoration':24,'decoration-code':25,'shop-code':26};
  $: w=presetPickerWords[locale];$: entries=filterSessionPresets($sessionPresets,schemas,query,kinds);
  $: current=entries.find(e=>e.id===selected);
  $: if(disabled&&visible)visible=false;
@@ -26,11 +26,11 @@
 {#if visible}<div class="preset-picker" role="dialog" aria-label={w[0]} on:keydown|stopPropagation>
  <div class="preset-picker-head"><strong>{w[0]}</strong><button type="button" aria-label={w[7]} on:click={close}>×</button></div>
  <small>{w[8]}</small>
- <input type="file" hidden multiple accept=".json,application/json" bind:this={input} on:change={add}/>
+ <input type="file" hidden multiple accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={add}/>
  <div class="preset-picker-actions"><button type="button" disabled={reading||disabled} on:click={()=>input.click()}>{w[1]}</button><input type="search" placeholder={w[2]} aria-label={w[2]} bind:value={query}/></div>
  <div class="preset-picker-list">{#each entries as entry (entry.id)}<button type="button" class:chosen={entry.id===selected} aria-pressed={entry.id===selected} on:click={()=>choose(entry.id)}><span>{entry.name}</span><small>{w[kindIndex[entry.kind]]}{entry.version?' · '+entry.version:''}</small></button>{:else}<small>{w[9]}</small>{/each}</div>
  {#if current}<div class="preset-picker-actions"><input type="text" maxlength="160" aria-label={w[4]} bind:value={alias}/><button type="button" on:click={()=>{if(current&&!renameSessionPreset(current.id,alias))error=true;}}>{w[4]}</button></div>
- <div class="preset-picker-actions"><button type="button" disabled={disabled||reading} on:click={apply}>{w[3]}</button><button type="button" on:click={()=>current&&downloadPresetFile(current.file)}>{w[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{w[5]}</button></div>{/if}
+ <div class="preset-picker-actions"><button type="button" disabled={disabled||reading} on:click={apply}>{w[3]}</button><button type="button" on:click={()=>{if(current)void downloadPresetFile(current.file,current.name).catch(()=>error=true);}}>{w[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{w[5]}</button></div>{/if}
  {#if error}<small role="alert">{w[10]}</small>{/if}
 </div>{/if}
 <style>

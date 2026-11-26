@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
 
@@ -38,7 +39,7 @@
  async function openFile(f:File){if(!file||!worker||!grid||!snapshot||blocked||!allowed||busy||copy)return;
   cancel();const own=worker,g=grid,activeFile=file,activeObjects=objects,token=epoch;source=activeFile;sourceObjects=activeObjects;sourceKey=g.key;reading=true;
   try{
-   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await f.text(),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
+   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,DESIGN_FILE_LIMIT),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
    incoming=rows;
    if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();
@@ -62,7 +63,7 @@
  <select aria-label={w[1]} bind:value={key} disabled={busy||!!copy}>{#each available as g (g.key)}<option value={g.key}>{label(g.key)}</option>{/each}</select>
  <small>{w[11]}</small>
  {#if snapshot}<small>{w[15]} {snapshot.editable.length} · {w[7]} {snapshot.protectedObjects.length}</small>{/if}
- <input class="biome-preset-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
+ <input class="biome-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={['biome']} disabled={!snapshot||blocked||busy||!!copy} label={w[3]} onPick={f=>void openFile(f)}/>{/if}</div>
  {#if busy}<small role="status">{w[14]}</small>{/if}
  {#if result}

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
 
@@ -38,7 +39,7 @@
  onDestroy(()=>{alive=false;epoch++;seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('closed'));requests.clear();output?.terminate();if(copy)URL.revokeObjectURL(copy.url);});
  async function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)void openFile(f);}
  async function openFile(f:File){if(!worker||busy||blocked)return;resetPreview();doc=[];mapping=new Map();busy=true;const token=++epoch,own=worker;
-  try{if(f.size>ROOM_PROJECT_FILE_LIMIT)throw Error('size');const raw=await f.text(),res=await request(own,{command:'room-design-templates'});if(res.kind!=='room-design-templates'||!Array.isArray(res.templates))throw Error('templates');
+  try{if(f.size>ROOM_PROJECT_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,ROOM_PROJECT_FILE_LIMIT),res=await request(own,{command:'room-design-templates'});if(res.kind!=='room-design-templates'||!Array.isArray(res.templates))throw Error('templates');
    const incoming=parseRoomProject(raw,res.templates as RoomDesignTemplate[]).surfaces;void rememberPreset(f,raw).catch(()=>{});if(!alive||epoch!==token)return;
    doc=incoming;mapping=new Map();const floor=room.surfaces[0];if(floor&&roomApplyMatches(doc[0],floor))mapping.set(doc[0].id,floor.ordinal);mapping=new Map(mapping);
    const ids=[...new Set([...roomProjectCounts(doc).furniture.keys(),...roomProjectCounts(doc).finishes.keys()])];
@@ -71,7 +72,7 @@
 <div class="room-apply" role="dialog" aria-label={w[0]}>
  <header><strong>{w[0]} · {room.name}</strong><button type="button" on:click={onClose}>{w[8]}</button></header>
  <p>{w[3]} · {w[15]}</p>
- <input hidden type="file" accept=".json,application/json" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.room-design@1']} disabled={busy||blocked||!worker} label={w[1]} onPick={f=>void openFile(f)}/>
+ <input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.room-design@1']} disabled={busy||blocked||!worker} label={w[1]} onPick={f=>void openFile(f)}/>
  {#if doc.length}<section><strong>{w[2]}</strong>{#each doc as s,i}<label>{i===0?rw[1]:(rw[2])+' '+i} · {s.template.label}
   <select disabled={busy||!!copy} value={mapping.get(s.id)??0} on:change={e=>mapFace(s.id,Number(e.currentTarget.value))}><option value={0}>—</option>{#each room.surfaces.filter(f=>roomApplyMatches(s,f)) as f}<option value={f.ordinal} disabled={[...mapping].some(([id,o])=>id!==s.id&&o===f.ordinal)}>{f.kind==='floor'?(rw[1]):(rw[2])+' '+(f.wallPosition===null?f.ordinal:f.wallPosition+1)}</option>{/each}</select></label>{/each}
  {#if !mapped}<small>{w[12]}</small>{/if}</section>

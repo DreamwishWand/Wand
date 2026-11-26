@@ -1,4 +1,7 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
+ import PresetFilePicker from './PresetFilePicker.svelte';
+ import {savePresetFile,rememberPreset} from './preset-session.ts';
  import {onDestroy} from 'svelte';
  import {browser} from '$app/environment';
  import {testSaveExportEnabled} from './test-save-export.ts';
@@ -70,7 +73,7 @@
    if(!group.length)throw Error('scope');
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
-   const incoming=mode==='restore'&&chosen?parseIndoorBackup(await chosen.text(),selectedScope,group,templates):null;
+   const incomingRaw=mode==='restore'&&chosen?await readPresetText(chosen,INDOOR_BACKUP_LIMIT):null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw)void rememberPreset(chosen,incomingRaw).catch(()=>{});
    for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds));
    if(!valid())throw Error('changed');
    if(mode==='restore'){
@@ -92,10 +95,11 @@
     if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned));if(!review)throw Error('plan');return;
    }
    const raw=mode==='design'?capturedRoomDocument(target,entries[0].surfaces,templates):serializeIndoorBackup(selectedScope,entries,templates);if(!valid()||!raw)throw Error('document');
-   const url=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=mode==='design'?'wand-room-design.json':'wand-indoor-'+selectedScope+'-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+   savePresetFile(raw,mode==='design'?'wand-room-design.json':'wand-indoor-'+selectedScope+'-backup.json');
   }catch{if(valid())error=true;}finally{if(alive&&epoch===token)busy=false;}
  }
- function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(!f)return;if(f.size>INDOOR_BACKUP_LIMIT){error=true;return;}void run('restore',f);}
+ function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)openBackup(f);}
+ function openBackup(f:File){if(busy||blocked||copy)return;if(f.size>INDOOR_BACKUP_LIMIT){error=true;return;}void run('restore',f);}
  function validate(){if(!testExport||blocked||busy||!review?.changed||copy)return;
   busy=true;const source=file,target=room,plan=review.plan,own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});writer=own;
   const done=(d:any)=>{own.terminate();if(writer!==own)return;writer=null;busy=false;if(!alive||file!==source||room!==target||blocked){d?.bytes?.fill(0);return;}try{if(d?.kind!=='indoor-room-project-copy')throw Error('receipt');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
@@ -107,7 +111,7 @@
 <div class="indoor-backup">
  <label>{bw[0]} <select bind:value={scope} disabled={busy||blocked||!!copy} on:change={reset}><option value="room">{bw[1]}</option><option value="floor">{bw[2]}</option><option value="building">{bw[3]}</option></select></label>
  <button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>run('backup')}>{bw[4]}</button>
- {#if testExport}<input hidden type="file" accept=".json,application/json" bind:this={input} on:change={open}/><button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>input.click()}>{bw[5]}</button>{/if}
+ {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/>{/if}
  {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small>{#if !review.changed}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
  {#if error}<small role="alert">{bw[13]}</small>{/if}
 </div>

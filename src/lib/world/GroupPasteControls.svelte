@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
  import {SCENE_SCHEMAS} from './preset-session-format.ts';
@@ -116,7 +117,7 @@
   const original=file,own=worker,epoch=++sceneEpoch;sceneReading=true;sceneError='';
   try{
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const raw=await f.text();void rememberPreset(f,raw).catch(()=>{});
+   const raw=await readPresetText(f,DESIGN_FILE_LIMIT);void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==sceneEpoch||file!==original||worker!==own||blocked)return;
    let areaDoc:AreaScene|null=null;try{areaDoc=parseAreaScene(raw);}catch{/* Other Scene formats below. */}
    if(areaDoc){if(!begin(false,null,null,areaDoc))sceneError=gs[2];return;}
@@ -184,7 +185,7 @@
  export function cancel(){captureWorker?.terminate();captureWorker=null;read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;areaScene=null;supportScene=null;supportRequest=0;supportValid=false;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
 </script>
-<input class="scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/>
+<input class="scene-file-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
  <PresetFilePicker bind:this={scenePicker} {locale} schemas={SCENE_SCHEMAS} disabled={blocked||!file||!worker||sceneReading} showTrigger={false} onPick={f=>void openSceneFile(f)}/>
  {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene||supportScene||areaScene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||supportRequest||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
