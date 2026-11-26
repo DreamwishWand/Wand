@@ -1257,7 +1257,7 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  Ok(std::mem::take(&mut *working))
 }
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    if plan.len()>65536{return Err(CodecError::Bounds);}
+    if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(rows)=value.as_array().filter(|rows|rows.iter().any(|r|r.get("network").is_some())){return area_scene_candidate(profile,rows);}
     if value.as_array().is_some_and(|rows|rows.iter().any(|r|r.get("scene").is_some())){
@@ -1987,6 +1987,38 @@ mod terrain_session_tests{
         assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
         plan["edits"][1]["y"]=Value::from(7);assert!(support_child_candidate(save,&plan).is_err());
         plan["path"]=serde_json::json!([0]);assert!(support_child_candidate(save,&plan).is_err());
+    }
+    #[test]
+    fn area_scene_preserves_road_mode_and_exact_fence_topology_with_furniture(){
+        let source=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":1},"40100068":{"Amount":8},"40700246":{"Amount":9}}}}},"World":{"GridCollection":{"NextGridID":8,"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":1,"Objects":{}}}}}}"#;
+        let witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/Test.json","gridDataPath":"GridData/Test.json","factor":2,"sizeX":30,"sizeY":30});
+        let mut rows=serde_json::json!([
+          {"itemId":"40000001","x":4,"y":4,"orientation":"GridOrientation_Down","destination":witness},
+          {"itemId":"40100068","x":4,"y":4,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"road","diagonal":false}},
+          {"itemId":"40100068","x":8,"y":4,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"road","diagonal":true}},
+          {"itemId":"40700246","x":20,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}},
+          {"itemId":"40700247","x":22,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}},
+          {"itemId":"40700246","x":24,"y":20,"orientation":"GridOrientation_Down","destination":witness,"network":{"kind":"fence","base":40700246,"diagonal":false}}
+        ]);
+        let result=group_paste_candidate(source,&rows.to_string()).unwrap();
+        let v:Value=serde_json::from_str(&result).unwrap();
+        let grid=&v["World"]["GridCollection"]["Grids"]["7"];
+        assert_eq!(grid["NextGridObjectID"],7);
+        assert_eq!(grid["Objects"]["2"]["State"],Value::Null);
+        assert_eq!(grid["Objects"]["3"]["State"]["FenceMode"]["Diagonal"],true);
+        assert_eq!(grid["Objects"]["5"]["ItemID"],40700247);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40100068"]["Amount"],8);
+        assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40700246"]["Amount"],9);
+        let (scan,_)=scan_grid_instances(result.as_bytes()).unwrap();
+        let requests:Vec<_>=scan.private_targets.iter().enumerate().filter(|(_, (t,_))|t.item_id/100_000==401||t.item_id/100_000==407).map(|(i,(t,xy))|{let (x,y)=xy.unwrap();serde_json::json!({"localOrdinal":i+1,"itemId":t.item_id,"x":x,"y":y})}).collect();
+        let captured:Value=serde_json::from_str(&inspect_scene_network(result.as_bytes(),&serde_json::to_string(&requests).unwrap()).unwrap()).unwrap();
+        assert_eq!(captured.as_array().unwrap().len(),5);
+        assert!(captured.as_array().unwrap().iter().any(|r|r["network"]["diagonal"]==true));
+        let mut incomplete=requests.clone();incomplete.pop();
+        assert!(inspect_scene_network(result.as_bytes(),&serde_json::to_string(&incomplete).unwrap()).is_err());
+        rows[5]["x"]=Value::from(26);
+        assert!(group_paste_candidate(source,&rows.to_string()).is_err());
     }
     #[test]
     fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
