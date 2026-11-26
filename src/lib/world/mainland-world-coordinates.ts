@@ -49,6 +49,18 @@ export function bindMainland(grids:readonly PublicTerrainGridRef[]):MainlandGrid
  const bound=grids.map(bindMainlandGrid);
  return bound.every((g):g is MainlandGrid=>g!==null)?bound:null;
 }
+/** A floating island grid has an independent source-local map plane. This
+ * origin is a UI coordinate basis only, not a recovered scene/world origin.
+ * Never combine two such planes or infer the offsets of secondary grids. */
+export function bindFloatingIslandGrid(grid:PublicTerrainGridRef|null):MainlandGrid|null{
+ if(!grid||!/^SceneLayouts\/FloatingIslands\/FloatingIsland_[A-Za-z]+\/FloatingIsland_[A-Za-z]+Layout\.json$/.test(grid.layoutId)||grid.layoutId.includes('_TEMPLATE')||
+ !grid.gridDataPath.startsWith('GridData/FloatingIslands/')||!grid.gridDataPath.endsWith('-GridData.json')||grid.gridDataPath.includes('..')||
+ !(grid.factor===1||grid.factor===2)||!Number.isSafeInteger(grid.sizeX)||!Number.isSafeInteger(grid.sizeY)||grid.sizeX<1||grid.sizeY<1||!Number.isSafeInteger(grid.gridIdNative)||grid.gridIdNative<0)return null;
+ const family=grid.layoutId.split('/')[2],name=family.slice('FloatingIsland_'.length);
+ const folder=name==='Desert'?'FloatingIlsnad_Desert':family;
+ if(grid.layoutId!=='SceneLayouts/FloatingIslands/'+family+'/'+family+'Layout.json'||grid.key!==grid.layoutId+'#'+grid.gridIdNative||!grid.gridDataPath.startsWith('GridData/FloatingIslands/'+folder+'/'+family))return null;
+ return {...grid,origin:{gridDataPath:grid.gridDataPath,position:[0,0,0]},bounds:{x:0,y:-grid.sizeY,w:grid.sizeX,h:grid.sizeY}};
+}
 export function mainlandExtent(grids:readonly MainlandGrid[]):MapExtent{
  if(!grids.length)return {x:0,y:0,w:1,h:1};
  const x=Math.min(...grids.map(g=>g.bounds.x)),y=Math.min(...grids.map(g=>g.bounds.y));

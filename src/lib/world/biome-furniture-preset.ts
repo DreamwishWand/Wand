@@ -10,7 +10,7 @@ import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 import type {GroupPickupRow} from './group-pickup.ts';
 export const BIOME_CHANGE_LIMIT=128;
 export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:GroupPasteRow[]}
-const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p)&&!p.object.surfaceCapable&&!nativeActionBlocked(p.object.editRestrictions,'move');
+const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
 export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number){
  if(omitted||wholeAreaKind(grid,[grid])!=='biome')return null;
@@ -22,7 +22,7 @@ export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly Mainla
 }
 export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>){
  const snapshot=biomeFurnitureSnapshot(grid,objects,omitted);if(!snapshot)return null;
- if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||d.surfaceCapable||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
+ if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
  const existing=new Map<string,MainlandSavedObject[]>();
  for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}
  const added:DesignPlacement[]=[],retained:MainlandSavedObject[]=[];

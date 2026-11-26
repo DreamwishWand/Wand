@@ -1702,6 +1702,40 @@ try{
   assert.equal(await supportPanel.locator('.support-map g').first().getAttribute('transform'),'translate(1 2)');
   assert.ok(!(await supportPanel.innerText()).includes('8001'));
   await supportPanel.getByRole('button',{name:'閉じる',exact:true}).click();
+  // Independent floating-island map: original source paths, not a fabricated
+  // transform into the Valley or a union of unlocated secondary grids.
+  const islandSave=structuredClone(worldSave);
+  const islandLayout='SceneLayouts/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachLayout.json';
+  const islandKey=islandLayout+'#0';
+  islandSave.World.GridCollection.Grids['9001']={ID:9001,GridDefaultLayoutPath:islandLayout,GridDataPath:'GridData/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachGrid-GridData.json',TessellationFactor:1,NextGridObjectID:2,Objects:{'1':{ID:1,ItemID:40005160,X:60,Y:35,Orientation:'GridOrientation_Down'}}};
+  const islandDialog=dialog=>dialog.accept();page.on('dialog',islandDialog);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'floating-island-fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandSave))});}finally{page.off('dialog',islandDialog);}
+  await supportMap.getByLabel('ワールド',{exact:true}).selectOption('FloatingIslands');
+  await supportMap.getByLabel('浮島・エリア',{exact:true}).selectOption(islandKey);
+  const islandMap=publicWorld.locator('.mainland-overview');
+  const islandObject=islandMap.locator('.mainland-save-object').first();
+  await islandObject.waitFor({timeout:30000});
+  assert.equal(await islandMap.locator('.mainland-terrain').count(),1);
+  assert.equal(await islandObject.getAttribute('data-area'),islandKey);
+  assert.equal(await islandObject.getAttribute('transform'),'translate(60 -35) scale(1 -1)');
+  await islandMap.getByRole('button',{name:'配置検索',exact:true}).click();
+  await islandMap.locator('.overview-results button').first().click();
+  await islandMap.getByRole('button',{name:'精密配置',exact:true}).click();
+  assert.equal(await islandMap.locator('.overview-precise').getByLabel('X',{exact:true}).inputValue(),'60');
+  await islandMap.locator('.overview-precise').getByRole('button',{name:'閉じる',exact:true}).click();
+  await islandMap.getByRole('button',{name:'家具パレット',exact:true}).click();
+  const islandPalette=islandMap.locator('.save-furniture-palette');
+  await islandPalette.locator('.stock-item[data-item-id="40005160"]').waitFor({timeout:30000});
+  await islandPalette.getByRole('button',{name:'回収を検証',exact:true}).click();
+  await islandPalette.locator('.stock-preview-result').waitFor({timeout:30000});
+  assert.match(await islandPalette.locator('.stock-preview-result').innerText(),/在庫 3 → 4/);
+  await islandPalette.getByRole('button',{name:'テスト用セーブコピーを作成',exact:true}).click();
+  const islandCopy=islandPalette.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await islandCopy.waitFor({timeout:30000});
+  const islandOutput=await islandCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.deepEqual(islandOutput.World.GridCollection.Grids['101'],islandSave.World.GridCollection.Grids['101']);
+  assert.equal(Object.keys(islandOutput.World.GridCollection.Grids['9001'].Objects).length,0);
+  assert.equal(islandOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();

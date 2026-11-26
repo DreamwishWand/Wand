@@ -10,7 +10,7 @@
   import WorldSaveExport from '$lib/world/WorldSaveExport.svelte';
   import {saveDraftIdentity,makeSaveSessionDraft,parseSaveSessionDraft,readSaveDraft,writeSaveDraft,discardSaveDraft,isCheckpointSaveDraft,parseCheckpointSaveDraft,makeCheckpointSaveDraft,rememberOriginalSaveIdentity,originalSaveIdentity,type SaveDraftIdentity,type SaveSessionDraft} from '$lib/world/save-session-draft.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
-  import {bindMainland} from '$lib/world/mainland-world-coordinates.ts';
+  import {bindMainland,bindFloatingIslandGrid} from '$lib/world/mainland-world-coordinates.ts';
   import type {MainlandDesignFrame} from '$lib/world/mainland-design-frame.ts';
   import MainlandOverview from '$lib/world/MainlandOverview.svelte';
   import IndoorRoomView from '$lib/world/IndoorRoomView.svelte';
@@ -39,6 +39,12 @@
   let worldFrames=new Map<string,MainlandDesignFrame>(),requestedWorld='';
   $: mainlandFrame=worldFrames.get(worldScope)??null;
   $: worldReady=Boolean(bindMainland(regionGrids));
+  $: independentGrid=selected&&bindFloatingIslandGrid(selected)?selected:null;
+  $: overviewGrids=independentGrid?[independentGrid]:regionGrids;
+  $: overviewReady=worldReady||!!independentGrid;
+  $: overviewIdentity=independentGrid?.key??worldScope;
+  function canOverview(grid:Grid|null,areas:readonly Grid[]){return Boolean(bindMainland(areas)||bindFloatingIslandGrid(grid));}
+  function overviewScope(areas:readonly Grid[]){return areas.length===1?areas[0].key:areas[0]?.scope??'';}
   const worldMapLabels={ja:'ワールド全体マップ',en:'World map',fr:'Carte du monde',it:'Mappa del mondo',de:'Weltkarte','es-ES':'Mapa del mundo','zh-CN':'世界地图','pt-BR':'Mapa do mundo'} as const;
   const worldEditLabels={ja:'ワールド全体編集',en:'Edit world',fr:'Modifier le monde',it:'Modifica mondo',de:'Welt bearbeiten','es-ES':'Editar mundo','zh-CN':'编辑世界','pt-BR':'Editar mundo'} as const;
   $: overviewLabel=worldScope==='Village04'?overviewLabels[locale]:worldMapLabels[locale];
@@ -52,7 +58,7 @@
   function setDesignMode(next:boolean){
     if(next===designMode)return;
     designMode=next;overviewOpen=false;
-    if(next)openWorldDesign(worldScope,regionGrids);else{mainlandEditing=false;overviewOpen=Boolean(sourceFile&&bindMainland(regionGrids));}
+    if(next)openWorldDesign(worldScope,regionGrids);else{mainlandEditing=false;overviewOpen=Boolean(sourceFile&&canOverview(selected,regionGrids));}
   }
   let layerState=defaultWorldLayers();
   function nextDesignRequest(){return ++request;}
@@ -66,11 +72,11 @@
   let focusOrdinal:number|null=null;
   let mainlandSaveScope='';
   function loadMainlandSave(all:TerrainScopeReceipt[],w:Worker,regions:Grid[]){
-    mainlandSaveRequested=all;mainlandSaveScope=regions[0]?.scope??'';mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;
+    mainlandSaveRequested=all;mainlandSaveScope=overviewScope(regions);mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;
     for(const g of regions){const s=all.find(v=>v.receipt.viewKey===g.key);if(!s?.receipt.points.length)continue;const id=++request;mainlandShapeRequests.set(id,g.key);w.postMessage({command:'shapes',requestId:id,key:g.key,points:s.receipt.points});}
     mainlandShapeRequests=new Map(mainlandShapeRequests);
   }
-  $: if(overviewOpen&&!designMode&&worldReady&&worker&&(sessions!==mainlandSaveRequested||mainlandSaveScope!==worldScope))loadMainlandSave(sessions,worker,regionGrids);
+  $: if(overviewOpen&&!designMode&&overviewReady&&worker&&(sessions!==mainlandSaveRequested||mainlandSaveScope!==overviewScope(overviewGrids)))loadMainlandSave(sessions,worker,overviewGrids);
   let boundOrdinals:readonly number[]=[];
   let sourceFile:File|null=null;
   let terrainBinding:TerrainBinding|null=null;
@@ -129,7 +135,7 @@
    if(!state.draft)return;
    const draft=state.draft,grid=grids.find(g=>g.key===draft.context.area);
    baseline=timeline=draft.timeline;writeChain={revision:state.revision,blocked:false};
-   if(grid){openGrid(grid);overviewOpen=draft.context.overview&&Boolean(bindMainland(grids.filter(g=>g.scope===grid.scope)));}
+   if(grid){openGrid(grid);overviewOpen=draft.context.overview&&canOverview(grid,grids.filter(g=>g.scope===grid.scope));}
    recovery={phase:'ready',identity:state.identity,revision:state.revision,writable:true};
   }
   /** Reopen the selected recovered checkpoint with the current source
@@ -174,7 +180,7 @@
     if(JSON.stringify(envelope.journal)!==JSON.stringify(history.journal))throw Error('DRAFT_CONFLICT');
     const draft=parseSaveSessionDraft(envelope.draft,id,all),revision=stored.revision;
     baseline=timeline=draft.timeline;baselineHistory=history;writeChain={revision,blocked:false};
-    const grid=grids.find(g=>g.key===draft.context.area);if(grid){openGrid(grid);overviewOpen=draft.context.overview&&Boolean(bindMainland(grids.filter(g=>g.scope===grid.scope)));}
+    const grid=grids.find(g=>g.key===draft.context.area);if(grid){openGrid(grid);overviewOpen=draft.context.overview&&canOverview(grid,grids.filter(g=>g.scope===grid.scope));}
     recovery={phase:'ready',identity:id,revision,writable:true};
    }catch(e){if(epoch===recoveryEpoch&&sourceFile===file)recovery={phase:'ready',identity:id,revision:null,writable:false,warning:e instanceof Error&&e.message==='DRAFT_CONFLICT'?'conflict':'unavailable'};}
   }
@@ -220,7 +226,7 @@
      if(resume){baselineHistory=h;const grid=grids.find(g=>g.key===resume.context.area);if(grid)openGrid(grid);}
     }else resetRecovery($localSaveSession.file,Boolean(h));
     openSaveSession($localSaveSession.file,grids);
-    if(!designMode)overviewOpen=Boolean($localSaveSession.file&&bindMainland(grids.filter(g=>g.scope===worldScope)))&&(resume?resume.context.overview:true);
+    if(!designMode)overviewOpen=Boolean($localSaveSession.file&&canOverview(grids.find(g=>g.key===key)??null,grids.filter(g=>g.scope===worldScope)))&&(resume?resume.context.overview:true);
 
   }
   const english:Record<string,string>={Beach:'Dazzle Beach',Cliff:'Frosted Heights',DarkMountains:'Forgotten Lands',Forest:'Forest of Valor',Meadow:'Peaceful Meadow',Savannah:'Sunlit Plateau',Urban:'Plaza',Wetland:'Glade of Trust'};
@@ -232,7 +238,8 @@
     return area+' · '+(g.gridIdNative+1);
   }
   const scopeNames:Record<string,string>={Village04:'Dreamlight Valley',VillageExpansion01:'Eternity Isle',VillageExpansion02:'Storybook Vale',VillageExpansion03:'Wishblossom Ranch',VillageExpansion04:'Expansion 4',VillageExpansion04UnderwaterAreas:'Underwater areas',VillageWinnieDLC:'Honeywood',FloatingIslands:'Floating Islands'};
-  function chooseScope(value:string){worldScope=value;const areas=grids.filter(g=>g.scope===value),first=areas[0];if(first){openGrid(first);if(designMode)openWorldDesign(value,areas);else if(sourceFile&&bindMainland(areas))overviewOpen=true;}}
+  function chooseScope(value:string){worldScope=value;const areas=grids.filter(g=>g.scope===value),first=areas[0];if(first){openGrid(first);if(designMode)openWorldDesign(value,areas);else if(sourceFile&&canOverview(first,areas))overviewOpen=true;}}
+  function chooseArea(value:string){const next=grids.find(g=>g.key===value&&g.scope===worldScope);if(!next)return;openGrid(next);if(!designMode&&sourceFile&&bindFloatingIslandGrid(next))overviewOpen=true;}
   function clearCompare(){mainlandSaveRequested=null;mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;focusOrdinal=null;terrainDisplayed=false;compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
   function selectSaveGrid(grid:Grid|null){
     terrainDisplayed=false;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];compareError='';
@@ -278,7 +285,7 @@
       if(value.requestId===indexRequest&&value.kind==='index'){
         grids=value.grids;
         const first=grids.find(g=>g.key===key)??grids[0];
-        openSaveSession($localSaveSession.file,grids);if(first){openGrid(first);const areas=grids.filter(g=>g.scope===first.scope);if(designMode)openWorldDesign(first.scope,areas);else overviewOpen=Boolean(sourceFile&&bindMainland(areas));}return;
+        openSaveSession($localSaveSession.file,grids);if(first){openGrid(first);const areas=grids.filter(g=>g.scope===first.scope);if(designMode)openWorldDesign(first.scope,areas);else overviewOpen=Boolean(sourceFile&&canOverview(first,areas));}return;
       }
       if(mainlandRequest&&value.requestId===mainlandRequest){mainlandRequest=0;if(value.kind==='mainland-design-terrain'&&value.worldScope===requestedWorld&&value.frame?.scope===requestedWorld&&value.frame?.owners instanceof Uint8Array&&value.frame?.raster?.nativeFloorValues instanceof Uint32Array)worldFrames=new Map(worldFrames).set(requestedWorld,value.frame);else if(requestedWorld===worldScope)mainlandError=true;return;}
       if(value.requestId===terrainRequest&&value.kind==='terrain'&&value.key===key){
@@ -303,17 +310,17 @@
 </script>
 <svelte:head><title>World Editor · Dreamwish Wand</title></svelte:head>
 <section class="world-workspace">
-  <div class="world-navigation" class:overview-navigation-hidden={overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
+  <div class="world-navigation" class:overview-navigation-hidden={overviewOpen&&overviewReady&&(designMode||!recoveryBlocked)}><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
     <div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>setDesignMode(false)}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>setDesignMode(true)}>装飾設計</button></div>
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
       {#each scopes as scope}<option value={scope}>{scopeNames[scope]??scope}</option>{/each}
     </select>
-    {#if !(designMode&&mainlandEditing)}<select aria-label="エリア" value={key} on:change={e=>{const next=regionGrids.find(g=>g.key===e.currentTarget.value);if(next)openGrid(next);}}>
+    {#if !(designMode&&mainlandEditing)}<select aria-label="エリア" value={key} on:change={e=>chooseArea(e.currentTarget.value)}>
       {#each regionGrids as grid (grid.key)}<option value={grid.key}>{label(grid)}</option>{/each}
     </select>{/if}
     {#if designMode&&worldReady}<button type="button" aria-pressed={mainlandEditing} on:click={toggleMainland}>{editWorldLabel}</button>{/if}
     {#if !designMode&&sourceFile}<button type="button" on:click={()=>indoorOpen=true}>{indoorText[0]}</button>{/if}
-    {#if worldReady}<button type="button" aria-pressed={overviewOpen} aria-label={overviewLabel} title={overviewLabel} on:click={()=>overviewOpen=!overviewOpen}>{overviewLabel}</button>{/if}
+    {#if overviewReady}<button type="button" aria-pressed={overviewOpen} aria-label={independentGrid?label(independentGrid):overviewLabel} title={independentGrid?label(independentGrid):overviewLabel} on:click={()=>overviewOpen=!overviewOpen} >{independentGrid?label(independentGrid):overviewLabel}</button>{/if}
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
   <WorldShortcutHelp {locale} {designMode} worldOverview={overviewOpen}/>
@@ -338,7 +345,7 @@
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'ワールドの地形を読み込めませんでした。':'Unable to load world terrain.'):(locale==='ja'?'ワールドの地形読み込み中…':'Loading world terrain…')}</p>{/if}
   <DecorationDesign sourceGrids={grids} bind:layerState {capturedLayout} onDismissCapture={()=>capturedLayout=null} active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&worldReady&&(designMode||!recoveryBlocked)}{#key worldScope}<MainlandOverview title={overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
+  {#if overviewOpen&&overviewReady&&(designMode||!recoveryBlocked)}{#key overviewIdentity}<MainlandOverview independent={!!independentGrid} areaOptions={independentGrid?regionGrids.filter(g=>!!bindFloatingIslandGrid(g)).map(g=>({key:g.key,label:label(g)})):[]} onAreaChange={chooseArea} title={independentGrid?label(independentGrid):overviewLabel} worldKey={worldScope} worldOptions={scopes.map(scope=>({key:scope,label:scopeNames[scope]??scope}))} onWorldChange={chooseScope} onDesign={()=>setDesignMode(true)} onCapture={captureLayout} onIndoor={()=>indoorOpen=true} grids={overviewGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>{const g=grids.find(g=>g.key===k);return g?label(g):k;}} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/key}{/if}
   {#if indoorOpen&&sourceFile}<IndoorRoomView file={sourceFile} {locale} terrainWorker={worker} nextRequest={nextDesignRequest} blocked={currentWorldEdits(timeline).length>0} onClose={()=>indoorOpen=false}/>{/if}
 </section>
 <style>
