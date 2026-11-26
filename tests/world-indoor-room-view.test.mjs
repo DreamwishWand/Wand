@@ -187,3 +187,16 @@ test('linked room move translates exact mirrored pairs and rejects missing partn
  assert.deepEqual(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis).map(p=>[p.index,p.x,p.y]),[[0,2,2],[1,5,2]]);
  assert.equal(indoorLinkedMove({...full,positions:[full.positions[0]]},shapes,allowed,[0],0,2,2,axis),null);
 });
+
+test('linked room rotation and placement use exact native pairs and joint stock',async()=>{
+ const {indoorLinkedRotate,indoorLinkedPlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8,plain:true},{itemId:40000001,x:6,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,4,8,12].map(n=>['40000001:'+n,shape])),allowed=new Set([40000001]),axis={mode:'vertical',x2:8,y2:0};
+ const rotated=indoorLinkedRotate(full,shapes,allowed,[0],1,axis);
+ assert.deepEqual(rotated.map(p=>[p.index,p.orientation]),[[0,'GridOrientation_Left'],[1,'GridOrientation_Right']]);
+ const clip=[{itemId:40000001,dx:0,dy:0,orientation:2}];
+ const rows=indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,2]]),clip,'corner',1,3,axis);
+ assert.deepEqual(rows.map(p=>[p.x,p.y,p.expectedStock]),[[1,3,2],[6,3,1]]);
+ assert.equal(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,1]]),clip,'corner',1,3,axis),null);
+});
