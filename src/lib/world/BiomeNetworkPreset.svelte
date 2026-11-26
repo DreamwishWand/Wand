@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
 
@@ -86,7 +87,7 @@
  <label><input type="checkbox" checked={includeFurniture} disabled={busy||!!copy} on:change={e=>setMode(e.currentTarget.checked)}/>{dw[6]}</label>
  {#if includeFurniture}<label><input type="checkbox" checked={includeSupport} disabled={busy||!!copy} on:change={e=>setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}
  <small>{includeFurniture?(includeSupport?sw[1]:dw[3]):w[3]}</small>
- <input class="biome-network-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
+ <input class="biome-network-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>inspect(true)}>{includeFurniture?dw[1]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={includeFurniture?['wand.preset.biome-decoration@1']:['wand.preset.biome-network@1']} disabled={!grid||blocked||busy||!!copy||!!omitted} label={includeFurniture?dw[2]:w[2]} onPick={f=>inspect(false,f)}/>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}{#if decorationReview}<small>{dw[4]} · {bw[4]} {decorationReview.furniture.retained.length} · {bw[5]} {decorationReview.furniture.removed.length} · {bw[6]} {decorationReview.furniture.ghosts.length}</small><small>{dw[5]} · {bw[4]} {decorationReview.network.retained} · {bw[5]} {decorationReview.network.removed.length} · {bw[6]} {decorationReview.network.ghosts.length}</small><small>{bw[7]} {decorationReview.protectedCount}</small>{#if decorationReview.missing.length}<small role="alert">{bw[8]} · {decorationReview.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}{:else if networkReview}<small>{bw[4]} {networkReview.retained} · {bw[5]} {networkReview.removed.length} · {bw[6]} {networkReview.ghosts.length}</small>{/if}{#if !result.changed}<small>{bw[13]}</small>{/if}{#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!decorationReview?.missing.length} on:click={validate}>{bw[9]}</button>{/if}{:else if after&&!busy}<small role="alert">{bw[12]}</small>{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
  import {onMount,onDestroy} from 'svelte';
@@ -180,7 +181,7 @@
 <aside class="biome-furniture-panel island-furniture-panel" aria-label={world?(region?rg[0]:ww[0]):includeNetworks?dw[0]:w[0]}>
  <strong>{world?(region?rg[0]:ww[0]):includeNetworks?dw[0]:w[0]}</strong>{#if !world}<label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label>{#if includeNetworks}<label><input type="checkbox" checked={includeSupport} disabled={!networkSnapshot||busy||!!copy} on:change={e=>void setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}{/if}<small>{world?(region?rg[4]:ww[3]):includeNetworks?(includeSupport?sw[1]:dw[4]):w[3]}</small>
  {#if includeNetworks&&selectedSnapshot}{#each selectedSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {bw[7]} {row.protectedCount}</small>{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
- <input class="island-save-preset-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
+ <input class="island-save-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot} on:click={exportPreset}>{world?(region?rg[2]:ww[1]):includeNetworks?dw[2]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={world?(region?['wand.preset.region-decoration@1']:['wand.preset.world-decoration@1','wand.preset.region-decoration@1']):['wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.whole-area-design@1']} kinds={world?(region?['region']:['world','region']):['island']} disabled={!snapshot||blocked||busy||!!copy} label={world?(region?rg[3]:ww[2]):openWords[locale]} onPick={f=>void openPreset(f)}/>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}

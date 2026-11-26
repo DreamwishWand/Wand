@@ -1,3 +1,4 @@
+import {compactPresetFile,readPresetText} from '../presets/preset-file.ts';
 import {writable,get} from 'svelte/store';
 import {presetHeader,validPresetName,PRESET_FILE_LIMIT,PRESET_SESSION_COUNT,PRESET_SESSION_LIMIT,type SessionPreset} from './preset-session-format.ts';
 const session=writable<readonly SessionPreset[]>([]);
@@ -8,19 +9,22 @@ let serial=0;
 export async function rememberPreset(file:File,knownRaw?:string):Promise<SessionPreset>{
  if(!file.size||file.size>PRESET_FILE_LIMIT)throw Error('PRESET_SIZE');
  const existing=get(session).find(e=>e.file===file);if(existing)return existing;
- const header=presetHeader(knownRaw??await file.text());
- const name=file.name.replace(/\.json$/i,'').slice(0,160);
+ const raw=knownRaw??await readPresetText(file,PRESET_FILE_LIMIT),header=presetHeader(raw);
+ const decoded=new File([raw],file.name.replace(/(?:\.wandpreset|\.json\.gz|\.gz)$/i,'.json'),{type:'application/json'});
+ if(decoded.size>PRESET_FILE_LIMIT)throw Error('PRESET_SIZE');
+ const name=file.name.replace(/(?:\.wandpreset|\.json\.gz|\.json|\.gz)$/i,'').slice(0,160);
  const current=get(session),again=current.find(e=>e.file===file);if(again)return again;
- if(current.length>=PRESET_SESSION_COUNT||current.reduce((n,e)=>n+e.file.size,0)+file.size>PRESET_SESSION_LIMIT)throw Error('PRESET_SESSION_LIMIT');
- const entry={...header,id:++serial,name:validPresetName(name)?name:'Preset',file};session.set([...current,entry]);return entry;
+ if(current.length>=PRESET_SESSION_COUNT||current.reduce((n,e)=>n+e.file.size,0)+decoded.size>PRESET_SESSION_LIMIT)throw Error('PRESET_SESSION_LIMIT');
+ const entry={...header,id:++serial,name:validPresetName(name)?name:'Preset',file:knownRaw!==undefined?file:decoded};session.set([...current,entry]);return entry;
 }
 export function renameSessionPreset(id:number,name:string){if(!validPresetName(name))return false;session.update(rows=>rows.map(e=>e.id===id?{...e,name:name.trim()}:e));return true;}
 export function removeSessionPreset(id:number){session.update(rows=>rows.filter(e=>e.id!==id));}
-export function downloadPresetFile(file:File,name=file.name){
- const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+export async function downloadPresetFile(file:File,name=file.name){
+ const packed=await compactPresetFile(await readPresetText(file),name);
+ const url=URL.createObjectURL(packed),a=document.createElement('a');a.href=url;a.download=packed.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 export function savePresetFile(raw:string,name:string){
  const file=new File([raw],name,{type:'application/json'});
- downloadPresetFile(file); // File export must work even if session capacity is exhausted.
+ void downloadPresetFile(file).catch(()=>{const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}); // Export works even if session capacity is exhausted.
  void rememberPreset(file,raw).catch(()=>{});
 }
