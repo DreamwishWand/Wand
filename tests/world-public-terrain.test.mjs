@@ -324,7 +324,7 @@ test('same-style cardinal road cells select only their source grid and translate
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
 
-import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits,supportDragDestination} from '../src/lib/world/subgrid-local.ts';
+import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup,supportHitIndices,supportPlacementFits,supportDragDestination,supportParentCandidate} from '../src/lib/world/subgrid-local.ts';
 test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
  const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
  assert.equal(catalog.grids.length,47);
@@ -408,6 +408,21 @@ test('new path and fence styles create plans without any saved network seed',()=
  assert.deepEqual(f.plan.nodes,[[2,2],[3,2],[4,2]]);
  assert.equal(f.plan.seed,undefined);
  assert.equal(cardinalFenceCandidate(fence,[grid],rasters,[],a,b,'connect-line'),null);
+});
+
+test('support root moves exclude their own footprint but duplicates do not',()=>{
+ const grid={key:'A',factor:1,sizeX:20,sizeY:20,origin:{position:[0,0,0]},bounds:{x:0,y:-20,w:20,h:20},layoutId:'SceneLayouts/Village04/A.json',gridDataPath:'GridData/A.json'};
+ const rasters=new Map([['A',{sizeX:20,sizeY:20,nativeFloorValues:Uint32Array.from({length:400},()=>4)}]]);
+ const shape={width:2,height:2,cellCount:4,acceptedFloorTypesFlag:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],path:''};
+ const parent={area:'A',factor:1,x:2,y:-2,shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:'40005160',x:2,y:2,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:'40005160:8',name:'Support',layer:'furniture',surfaceCapable:true,subgrid:{status:'resolved_full',objectCount:1}}};
+ const blocker={...parent,x:6,y:-2,object:{...parent.object,localOrdinal:2,itemId:'40005162',x:6,subgrid:undefined,surfaceCapable:false}};
+ const ground={...blocker,object:{...blocker.object,localOrdinal:3,itemId:'40100068',layer:'ground'}};
+ const at=(x,objects,duplicate=false)=>supportParentCandidate(parent,[grid],rasters,x+.1,-2.1,parent.object.orientation,{},objects,duplicate);
+ assert.ok(at(3,[parent,blocker]));
+ assert.equal(at(3,[parent,blocker],true),null);
+ assert.equal(at(5,[parent,blocker]),null);
+ assert.ok(at(5,[parent,ground]));
+ assert.ok(at(9,[parent,blocker],true));
 });
 
 test('support direct drag preserves grab offset on native cells',()=>{
