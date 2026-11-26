@@ -10,15 +10,22 @@
   export let sourcePath:string|null=null;
   let failed=false;
   let currentMedia:string|null=null;
+  let resolving=true;
   let ticket=0;
   async function resolveMedia(id:number,original:boolean){
-    const request=++ticket;currentMedia=null;
-    try{const image=await itemMedia.getItemImage(id,original?'original':'thumbnail');if(ticket===request)currentMedia=image?.url??null;}catch{/* retained published fallback */}
+    const request=++ticket;
+    resolving=true;currentMedia=null;failed=false;
+    try{
+      const image=await itemMedia.getItemImage(id,original?'original':'thumbnail');
+      if(ticket===request)currentMedia=image?.url??null;
+    }catch{/* retained historical fallback if the published lookup is unavailable */}
+    finally{if(ticket===request)resolving=false;}
   }
   $: void resolveMedia(itemId,large);
   onDestroy(()=>{ticket++;});
   $: fallbackHref=gameImageHref(base,itemId,sourcePath ?? '');
-  $: href=currentMedia??fallbackHref;
+  // Do not request legacy thumbnails while the shared CDN lookup is in flight.
+  $: href=resolving?null:(currentMedia??fallbackHref);
   $: if (href) failed=false;
 </script>
 <span class="artwork" class:large>
