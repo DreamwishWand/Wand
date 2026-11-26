@@ -60,7 +60,7 @@ void main(){
   }
 }`;
 
-async function verifiedBitmap(image:ItemImage,signal:AbortSignal):Promise<ImageBitmap>{
+export async function verifiedBitmap(image:ItemImage,signal:AbortSignal):Promise<ImageBitmap>{
   const response=await fetch(image.url,{signal,credentials:'omit',redirect:'error'});
   if(!response.ok)throw new Error('CDN image HTTP '+response.status);
   const bytes=await response.arrayBuffer();
