@@ -1727,6 +1727,29 @@ mod tests{
     }
 
     #[test]
+    fn island_decoration_reuses_stock_after_network_edits_and_rejects_partial_scope(){
+        let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
+        let land="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
+        let water="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanWaterGrid-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":land,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null}}},"43":{"ID":43,"GridDefaultLayoutPath":layout,"GridDataPath":water,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40100068,"X":6,"Y":4,"Orientation":"GridOrientation_Down","State":{"FenceMode":{"Diagonal":true}}}}},"44":{"ID":44,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+        let dest=|data:&str|serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+        let a=serde_json::json!({"itemId":40100068,"x":4,"y":4,"orientation":2,"network":{"kind":"road","diagonal":false}});
+        let b=serde_json::json!({"itemId":40100068,"x":6,"y":4,"orientation":2,"network":{"kind":"road","diagonal":true}});
+        let mut plan=serde_json::json!([{"furniture":{"destination":dest(land),"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[]},"network":{"destination":dest(land),"before":[a.clone()],"after":[a.clone()]}},{"furniture":{"destination":dest(water),"remove":[],"add":[{"itemId":"40000001","destination":dest(water),"x":6,"y":4,"orientation":"GridOrientation_Left"}]},"network":{"destination":dest(water),"before":[b.clone()],"after":[]}}]);
+        let bytes=serde_json::to_vec(&raw).unwrap();let output=island_decoration_candidate(&bytes,&plan.to_string()).unwrap();
+        let result:Value=serde_json::from_str(&output).unwrap();let g=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(result["Player"],raw["Player"]);assert_eq!(g["44"],raw["World"]["GridCollection"]["Grids"]["44"]);
+        assert_eq!(g["42"]["Objects"]["2"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);
+        assert!(g["42"]["Objects"].get("1").is_none());assert!(g["43"]["Objects"].get("1").is_none());assert_eq!(g["43"]["Objects"]["5"]["X"],6);
+        assert!(island_decoration_candidate(&bytes,&serde_json::json!([plan[0].clone()]).to_string()).is_err());
+        plan[1]["network"]["before"][0]["network"]["diagonal"]=Value::Bool(false);
+        assert!(island_decoration_candidate(&bytes,&plan.to_string()).is_err());
+        plan[1]["network"]["before"]=serde_json::json!([b]);
+        plan[1]["furniture"]["add"][0]["itemId"]=Value::from("40000002");
+        assert!(island_decoration_candidate(&bytes,&plan.to_string()).is_err());
+    }
+
+    #[test]
     fn group_cut_preserves_stock_and_same_grid_ids_and_checks_cross_grid_refs(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
         let a=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
