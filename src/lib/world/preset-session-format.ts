@@ -2,7 +2,7 @@ export const PRESET_SCHEMAS=[
  'wand.preset.scene@1','wand.preset.mixed-scene@1','wand.preset.area-scene@1','wand.preset.support-scene@1',
  'wand.preset.whole-area-design@1','wand.preset.biome-network@1','wand.preset.biome-decoration@1',
  'wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.world-decoration@1',
- 'wand.preset.region-decoration@1','wand.preset.indoor-decoration@1','wand.room-design@1','wand.world-design@1','wand.mainland-design@1'
+ 'wand.preset.region-decoration@1','wand.preset.indoor-decoration@1','wand.room-design@1','wand.world-design@1','wand.mainland-design@1','wand.world-scope-design@1'
 ] as const;
 export type PresetSchema=typeof PRESET_SCHEMAS[number];
 export type PresetKind='scene'|'support'|'biome'|'island'|'world'|'region'|'room'|'floor'|'building'|'design'|'network';
@@ -28,7 +28,7 @@ export function presetHeader(raw:string):PresetHeader{
   case 'wand.preset.indoor-decoration@1':if(!Array.isArray(v.rooms)||!['room','floor','building'].includes(v.scope))throw Error('PRESET_ROOM');kind=v.scope;break;
   case 'wand.room-design@1':if(!Array.isArray(v.surfaces))throw Error('PRESET_ROOM');kind='room';break;
   case 'wand.world-design@1':if(!Array.isArray(v.placements))throw Error('PRESET_DESIGN');kind='design';break;
-  default:if(!Array.isArray(v.placements))throw Error('PRESET_DESIGN');kind='design';
+  default:if(!Array.isArray(v.areas))throw Error('PRESET_DESIGN');kind='design';
  }
  const version=schema==='wand.preset.region-decoration@1'?v.world?.gameVersion:v.gameVersion;
  return {schema,kind,version:typeof version==='string'&&/^\d+\.\d+(\.\d+)?$/.test(version)?version:null};

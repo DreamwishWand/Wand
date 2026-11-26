@@ -405,7 +405,7 @@
   const stillCurrent=()=>epoch===islandEpoch&&contextKey===context&&worker===own&&active;
   try{
    if(file&&file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const incoming=file?parseIslandDesign(await file.text(),source):null,baseline=await readIslandBaseline(source);
+   const raw=file?await file.text():null,incoming=raw?parseIslandDesign(raw,source):null,baseline=await readIslandBaseline(source);if(file&&raw)void rememberPreset(file,raw).catch(()=>{});
    const before=Object.fromEntries(baseline.map(b=>[b.grid.key,b.timeline])),defs=new Map<string,Map<number,DesignItemGeometry>>();
    for(const b of baseline){
     if(!stillCurrent())return;
@@ -415,7 +415,7 @@
     defs.set(b.grid.key,geometry);
    }
    if(!stillCurrent())return;
-   if(!incoming){const text=serializeIslandDesign(source,before),url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-island-'+source[0].layoutId.split('/')[2]+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+   if(!incoming){const text=serializeIslandDesign(source,before);savePresetFile(text,'wand-island-'+source[0].layoutId.split('/')[2]+'.json');return;}
    const result=reviewIslandDesign(source,before,incoming,defs);if(!result)throw Error('ISLAND_PRESET_INVALID');
    cancel();islandReview={context,epoch,own,baseline,definitions:defs,incoming,result};
   }catch{if(stillCurrent())error=iw[5];}finally{if(epoch===islandEpoch)islandBusy=false;}
@@ -441,18 +441,18 @@
   }catch{error=iw[5];}finally{islandBusy=false;}
  }
  function exportAreaPreset(){
-  if(!areaTarget||!areaKind||busyImport)return;try{const split=worldFrame?splitWorldArea(worldFrame,timeline,areaTarget.key,definitions):null;if(worldFrame&&!split)throw Error('AREA_OWNER');const t=split?{snapshots:[split.local],cursor:0,nextId:timeline.nextId}:timeline;const text=serializeWholeArea(t,areaTarget,areaKind),url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-'+areaKind+'-'+areaTarget.key.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=areaText[12];}
+  if(!areaTarget||!areaKind||busyImport)return;try{const split=worldFrame?splitWorldArea(worldFrame,timeline,areaTarget.key,definitions):null;if(worldFrame&&!split)throw Error('AREA_OWNER');const t=split?{snapshots:[split.local],cursor:0,nextId:timeline.nextId}:timeline;const text=serializeWholeArea(t,areaTarget,areaKind);savePresetFile(text,'wand-'+areaKind+'-'+areaTarget.key.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json');}catch{error=areaText[12];}
  }
  function exportFile(){
   if(!grid)return;
   let content:string;try{content=worldFrame?serializeMainlandDesign(worldFrame,timeline,definitions):serializeDesign(timeline,grid);if(roomFinishKind(grid))content=JSON.stringify({...JSON.parse(content),roomFinish:finishId});}catch{error=words[3];return;}
-  const url=URL.createObjectURL(new Blob([content],{type:'application/json'}));
-  const a=document.createElement('a');a.href=url;a.download='wand-world-design-'+(worldFrame?worldFrame.scope:grid.key.replace(/[^a-zA-Z0-9_-]/g,'_'))+'.json';a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  savePresetFile(content,'wand-world-design-'+(worldFrame?worldFrame.scope:grid.key.replace(/[^a-zA-Z0-9_-]/g,'_'))+'.json');
  }
  async function importFile(event:Event){
-  const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';
-  if(!file||!grid||!worker||busyImport)return;
+  const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(file)void importPresetFile(file);
+ }
+ async function importPresetFile(file:File){
+  if(!grid||!worker||busyImport)return;
   const target=grid,sourceFrame=worldFrame,original=timeline,own=worker,epoch=++importEpoch;
   reading=true;error='';
   try{
@@ -462,7 +462,7 @@
    const whole=parsed?.schema==='wand.preset.whole-area-design@1',kind=whole?areaKind:null,sourceAreas=sourceFrame?new Map<number,string>():undefined;
    const presetTarget=areaTarget;
    if(whole&&(!kind||!presetTarget))throw Error('AREA_PRESET_CONTEXT');
-   const incoming=kind&&presetTarget?parseWholeArea(content,presetTarget,kind):sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);
+   const incoming=kind&&presetTarget?parseWholeArea(content,presetTarget,kind):sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);void rememberPreset(file,content).catch(()=>{});
    if(epoch!==importEpoch||worldFrame!==sourceFrame||grid?.key!==target.key||timeline!==original||worker!==own||!active)return;
    if(!kind&&currentDesign(original).length&&!window.confirm(words[4]))return;
    cancel();
@@ -835,11 +835,11 @@
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={()=>saveScene()}>{sceneText[0]}</button>{#if isRoomDesign(grid)}<button type="button" disabled={busyImport||!fullRoomScene} title={rsw[3]} on:click={()=>saveScene(fullRoomScene)}>{rsw[2]}</button>{/if}<PresetFilePicker {locale} schemas={['wand.preset.scene@1','wand.preset.mixed-scene@1']} disabled={busyImport||sceneReading||!worker} label={sceneText[1]} onPick={f=>void openSceneFile(f)}/>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
-    {#if multiIsland}<input class="file-input island-preset-input" type="file" accept=".json,application/json" bind:this={islandInput} on:change={openIsland}/><button type="button" disabled={busyImport} on:click={()=>prepareIsland()}>{iw[0]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>islandInput.click()}>{iw[1]}</button>{/if}
-    {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{areaText[2]}</button>{/if}
+    {#if multiIsland}<input class="file-input island-preset-input" type="file" accept=".json,application/json" bind:this={islandInput} on:change={openIsland}/><button type="button" disabled={busyImport} on:click={()=>prepareIsland()}>{iw[0]}</button><PresetFilePicker {locale} schemas={['wand.preset.floating-island-design@1']} disabled={busyImport||!worker} label={iw[1]} onPick={f=>void prepareIsland(f)}/>{/if}
+    {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={areaKind==='biome'?['biome']:['island']} disabled={busyImport||!worker} label={areaText[2]} onPick={f=>void importPresetFile(f)}/>{/if}
     {#if finishKind}<button type="button" aria-pressed={finishOpen} title={fw[0]} disabled={busyImport} on:click={()=>finishOpen=!finishOpen}>{#if finishId&&images.get(finishId)}<img class="finish-icon" src={images.get(finishId)} alt=""/>{/if}{fw[0]}</button>{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
-    <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
+    <PresetFilePicker {locale} schemas={worldFrame?['wand.mainland-design@1','wand.world-scope-design@1']:['wand.world-design@1']} disabled={busyImport||!worker} label={words[1]} onPick={f=>void importPresetFile(f)}/>
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
     <button type="button" aria-label="設計を取り消す" disabled={busyImport||timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
     <button type="button" aria-label="設計をやり直す" disabled={busyImport||timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>

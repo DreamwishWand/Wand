@@ -6,6 +6,8 @@ test('classifies every backup scope without accepting native saves',()=>{
  for(const scope of ['room','floor','building'])assert.equal(h({schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope,rooms:[]}).kind,scope);
  assert.equal(h({schema:'wand.preset.region-decoration@1',region:{},world:{gameVersion:'1.26.2'}}).version,'1.26.2');
  assert.equal(h({schema:'wand.preset.world-decoration@1',areas:[]}).kind,'world');
+ assert.equal(h({schema:'wand.mainland-design@1',areas:[]}).kind,'design');
+ assert.equal(h({schema:'wand.world-scope-design@1',areas:[]}).kind,'design');
  assert.equal(h({schema:'wand.preset.whole-area-design@1',kind:'biome',design:{}}).kind,'biome');
  assert.throws(()=>h({GameInfo:{Version:643},World:{PlayerHouses:[]}}));
  assert.throws(()=>h({schema:'wand.preset.indoor-decoration@1',scope:'unknown',rooms:[]}));
