@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <title>Dreamwish Wand</title>
-  <rect id="background" width="512" height="512" fill="#011A60"/>
   <g fill="#F2F9FE" transform="translate(4.534196 33.201993) scale(0.389390322)">
     <path id="wordmark" d="M 640.680 722.516
       C 640.510 722.694 640.220 722.724 640.050 722.903
