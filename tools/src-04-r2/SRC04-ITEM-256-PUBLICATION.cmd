@@ -19,7 +19,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'private-media-overlay-v2-latest\manifest.json'))) { throw 'Existing verified Item overlay not found.' }
     $work=Join-Path $env:TEMP ('wand-item-256-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/dfc5df04a131946d000e21fe58955df3777cf078/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/7d13056d431f558b4f732e0dee66ad43f83bdde3/'
     foreach ($name in @('migrate_item_thumbnails_256.py','stage_media_v2.py','bundle_thumbnails.py','publish_bundle_thumbnails.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+'tools/src-04-r2/'+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
@@ -36,7 +36,7 @@ try {
         $env:R2_ACCOUNT_ID=Read-Host 'R2 account ID'
         $env:AWS_ACCESS_KEY_ID=ReadSecret 'Public bucket access key ID'
         $env:AWS_SECRET_ACCESS_KEY=ReadSecret 'Public bucket secret access key'
-        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root @resume --r2
+        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root @resume --r2 --review-over-budget
     } else { throw 'No operation selected.' }
     $result=$LASTEXITCODE
     Write-Host "Output directory: $root"
