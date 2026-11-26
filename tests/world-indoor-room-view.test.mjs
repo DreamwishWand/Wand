@@ -178,3 +178,12 @@ test('room alignment uses shape edges and rejects overlap; symmetry preserves na
  assert.deepEqual(indoorSymmetricDuplicate(full,shapes,allowed,new Map([[40000001,2]]),[0,1],{mode:'vertical',x2:8,y2:0}).map(p=>[p.x,p.y]),[[6,1],[4,3]]);
  assert.equal(indoorSymmetricDuplicate({...full,positions:[{...full.positions[0],plain:undefined},full.positions[1]]},shapes,allowed,new Map([[40000001,2]]),[0,1],{mode:'vertical',x2:8,y2:0}),null);
 });
+
+test('linked room move translates exact mirrored pairs and rejects missing partners',async()=>{
+ const {indoorLinkedMove}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8,plain:true},{itemId:40000001,x:6,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape},allowed=new Set([40000001]),axis={mode:'vertical',x2:8,y2:0};
+ assert.deepEqual(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis).map(p=>[p.index,p.x,p.y]),[[0,2,2],[1,5,2]]);
+ assert.equal(indoorLinkedMove({...full,positions:[full.positions[0]]},shapes,allowed,[0],0,2,2,axis),null);
+});
