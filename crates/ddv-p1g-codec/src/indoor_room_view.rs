@@ -228,7 +228,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"pickup"|"place"|"transfer"))&&["edits","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
+ let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"align"|"pickup"|"place"|"transfer"))&&["edits","align","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
  let ordinal=p.get("roomOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
  let surface=p.get("surfaceOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
  let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
@@ -282,7 +282,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   // ordinary leaf path. Coordinate edits keep the same owned subtree.
   let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
-   if !(p.contains_key("edits")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
+   if !(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
    let c=collection.as_object().ok_or(bad)?;
    crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
   }else if support_pickup{return Err(bad);}
@@ -432,13 +432,15 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let pickups=targets.iter().map(|(target,expected,orientation)|BulkPickup{target,expected:*expected,orientation:orientation.as_str()}).collect::<Vec<_>>();
   return preview_bulk_furniture(json,&pickups,&[]).map_err(|_|CodecError::Patch);
  }
- let rows=p.get("edits").and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
+ let alignment=p.contains_key("align");
+ let rows=p.get(if alignment{"align"}else{"edits"}).and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
  let mut edits=Vec::new();
  for row in rows{
   if row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
   let (target,expected,old)=resolve(row)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+  if alignment&&(old!=orientation||!on_terrain(expected)||!on_terrain(xy)||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if rows.len()==1{
    if xy==expected&&old==orientation{return Err(bad);}
    if xy!=expected&&(!on_terrain(expected)||!on_terrain(xy)||!empty_anchor(xy,Some(target.object_id.as_str()))){return Err(bad);}
@@ -448,7 +450,14 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  }
  if edits.len()>1{
   let swap=edits.len()==2&&edits.iter().all(|e|e.orientation.is_none())&&edits[0].position==Some(edits[1].expected)&&edits[1].position==Some(edits[0].expected);
-  if !swap{
+  if alignment{
+   let selected:std::collections::HashSet<_>=edits.iter().map(|e|e.target.object_id.as_str()).collect();
+   if selected.len()!=edits.len()||!edits.iter().all(|e|e.position.is_some_and(|xy|xy.0==e.expected.0))&&!edits.iter().all(|e|e.position.is_some_and(|xy|xy.1==e.expected.1)){return Err(bad);}
+   let mut anchors=std::collections::HashSet::new();
+   for e in &edits{let xy=e.position.ok_or(bad)?;
+    if !anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
+   }
+  }else if !swap{
    let turn=|e:&GridMixedEdit|->Option<usize>{
     let (a,b)=e.orientation.as_ref()?;
     let names=ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS;
