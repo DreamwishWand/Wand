@@ -15,7 +15,7 @@
  import type {DesignSymmetry} from './design-symmetry.ts';
  import {mainlandExtent,sourceWorldScope} from './mainland-world-coordinates.ts';
  import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
- import {parseSupportScene,captureSupportScene,mixedSceneCounts,parseMixedScene,mixedSceneFromClip,type MixedScenePreset,type SupportScene} from './support-scene.ts';
+ import {parseSupportScene,captureSupportScene,SCENE_FURNITURE_LIMIT,mixedSceneCounts,parseMixedScene,mixedSceneFromClip,type MixedScenePreset,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
  import {parseAreaScene,areaSceneFromClip,areaSceneCounts,captureAreaPoses,areaSceneCandidate,parseSceneNetwork,transformAreaScene,type AreaSceneTransform,type AreaScene,type SceneNetwork,type AreaSceneCandidate} from './area-scene.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -80,7 +80,7 @@
   if(blocked||captureWorker)return;
   if(selection){try{const half=sceneFromClip(selection,2);downloadScene(convertSceneFactor(half,1)??half);}catch{sceneError=gs[2];}return;}
   const selected=[...items],areaPoses=captureAreaPoses(selected),poses=areaPoses??captureFurnitureGroup(selected,true),f=file;
-  if(!f||!poses||!areaPoses&&(poses.length>32||!selected.some(p=>p.object.subgrid)))return;
+  if(!f||!poses||!areaPoses&&(poses.length>SCENE_FURNITURE_LIMIT||!selected.some(p=>p.object.subgrid)))return;
   const networks=areaPoses?selected.filter(p=>p.object.layer==='ground'||p.object.layer==='fence').map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y})):[];
   const parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
   const own=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});captureWorker=own;sceneError='';
