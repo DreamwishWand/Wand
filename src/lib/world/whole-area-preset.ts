@@ -1,5 +1,6 @@
-import {currentDesign,serializeDesign,parseDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignTimeline,type DesignPlacement} from './design-layout.ts';
+import {currentDesign,serializeDesign,parseDesign,designItemCounts,restoreDesign,DESIGN_FILE_LIMIT,DESIGN_LIMIT,type DesignTimeline,type DesignPlacement,type DesignItemGeometry} from './design-layout.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
+import {resolveMainlandDesign,mainlandFrameOffset,mainlandItemsValid,type MainlandDesignFrame} from './mainland-design-frame.ts';
 export type WholeAreaKind='biome'|'floating-island';
 const biomeKeys=new Set(['Urban','DarkMountains','Meadow','Savannah','Wetland','Forest','Cliff','Beach']);
 /** A biome is one of the original eight mainland source grids. An island
@@ -41,3 +42,30 @@ export const wholeAreaWords={
  'zh-CN':['保存生态区','保存浮岛','打开区域预设','确认区域预设','保留','移除','添加','总数','种类','仅替换本地设计，不修改原始存档。','应用','取消','区域或物品形状不匹配。'],
  'pt-BR':['Salvar bioma','Salvar ilha','Abrir preset de área','Revisar preset','Mantidos','Removidos','Adicionados','Total','Tipos','Substitui apenas o projeto local, sem alterar o save.','Aplicar','Cancelar','Área ou geometria incompatível.']
 } as const;
+
+/** Extract only placements with an exact occupied-cell owner. Never infer an
+ * area from a bounding rectangle, and never silently drop unresolved poses. */
+export function splitWorldArea(f:MainlandDesignFrame,t:DesignTimeline,key:string,defs:ReadonlyMap<number,DesignItemGeometry>){
+ const grid=f.grids.find(g=>g.key===key);if(!grid)return null;
+ const local:DesignPlacement[]=[],other:DesignPlacement[]=[];
+ for(const p of currentDesign(t)){
+  const shape=defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+  const owner=shape?resolveMainlandDesign(f,p.x,p.y,shape):null;
+  if(!owner)return null;
+  if(owner.grid.key===key)local.push({...p,x:owner.x,y:owner.y});else other.push(p);
+ }
+ return {grid,local,other};
+}
+export function replaceWorldArea(f:MainlandDesignFrame,t:DesignTimeline,key:string,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>){
+ const split=splitWorldArea(f,t,key,defs);if(!split||split.other.length+incoming.length>DESIGN_LIMIT)return null;
+ const offset=mainlandFrameOffset(f,split.grid);let id=t.nextId;
+ const added:DesignPlacement[]=[];
+ for(const p of incoming){
+  if(!Number.isSafeInteger(id+1))return null;
+  const q={...p,id:id++,x:p.x+offset.x,y:p.y+offset.y},shape=defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+  if(!shape||resolveMainlandDesign(f,q.x,q.y,shape)?.grid.key!==key||!mainlandItemsValid(f,[q],defs))return null;
+  added.push(q);
+ }
+ const next=restoreDesign(t,[...split.other,...added],defs,f.raster.sizeX,f.raster.sizeY);
+ return next?{next,added,summary:reviewWholeArea({snapshots:[split.local],cursor:0,nextId:t.nextId},incoming)}:null;
+}
