@@ -122,7 +122,73 @@ def prepare(root,out):
     print(json.dumps(summary,indent=2),flush=True)
     return objects,paths,summary
 
-def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes):
+def resume(root,out):
+    """Reconstruct publication inputs from the completed index and pinned originals.
+    No image decoding or encoding. Pending uploads are SHA-checked before PUT.
+    """
+    manifest_sha,files,coverage=collect(root)
+    source=root/"private-media-overlay-v2-latest"
+    manifest=json.loads((source/"manifest.json").read_bytes())
+    ix=json.loads((out/"item-256-index-candidate.json").read_bytes())
+    cache=json.loads((out/"item-256-thumbnail-cache.json").read_bytes())
+    summary=json.loads((out/"item-256-generation-report.json").read_bytes())
+    check(ix.get("schema")=="wand.media.item-index@256-v1" and ix.get("gameVersion")=="1.26.2" and
+          ix.get("thumbnailPolicy")==cache.get("policy")==POLICY and ix.get("maxThumbnailLongEdge")==EDGE,
+          "Completed 256px index policy mismatch")
+    originals={}
+    paths={}
+    for rel,(sha,size,w,h,kind) in sorted(files.items()):
+        if kind!="original":
+            continue
+        m=meta(sha,size,w,h)
+        p=ensure_inside(root,rel)
+        check(p.stat().st_size==size,"Original size changed")
+        check(sha not in originals or originals[sha]==m,"Conflicting original metadata")
+        originals[sha]=m
+        paths.setdefault(key(sha),p)
+    mapping=cache["images"]
+    check(set(mapping)==set(originals),"Incomplete thumbnail cache")
+    objects={key(sha):m for sha,m in originals.items()}
+    for sha,o in originals.items():
+        t=mapping[sha]
+        k=key(t["sha256"])
+        check(all(type(t.get(n)) is int and t[n]>0 for n in ("width","height","bytes")),"Invalid thumbnail metadata")
+        if max(o["width"],o["height"])<=EDGE:
+            check(t==o,"Small original must be reused")
+        else:
+            check(max(t["width"],t["height"])==EDGE and t["width"]<=o["width"] and t["height"]<=o["height"],"Invalid thumbnail bounds")
+        if k in objects:
+            check(objects[k]==t,"Conflicting image metadata")
+        else:
+            p=(out/k).resolve()
+            check(p.is_relative_to(out.resolve()) and p.is_file() and p.stat().st_size==t["bytes"],"Missing or changed thumbnail: "+k)
+            objects[k]=t
+            paths[k]=p
+    items={}
+    for n in range(256):
+        name=f"id/{n:02x}.json"
+        raw=(source/name).read_bytes()
+        pin=manifest["files"][name]
+        check(hashlib.sha256(raw).hexdigest()==pin["sha256"] and len(raw)==pin["bytes"],"Source shard changed")
+        for row in json.loads(raw)["rows"]:
+            sha=row["image"]["original"]["sha256"]
+            check(sha in originals,"Unknown original")
+            items[str(row["itemId"])]=[sha,mapping[sha]["sha256"]]
+    check(len(items)==coverage["itemCount"] and ix["items"]==items and
+          ix["images"]=={v["sha256"]:v for v in objects.values()},"Completed index differs from source/cache")
+    thumbs={v["sha256"]:v for v in mapping.values()}
+    expected={"itemCount":len(items),"guidCount":coverage["guidCount"],"uniqueOriginals":len(originals),
+              "originalsReusedAsThumbnail":sum(sha==t["sha256"] for sha,t in mapping.items()),
+              "uniqueThumbnails":len(thumbs),"uniqueImages":len(objects),
+              "originalBytes":sum(v["bytes"] for v in originals.values()),
+              "thumbnailBytes":sum(v["bytes"] for v in thumbs.values()),
+              "totalBytes":sum(v["bytes"] for v in objects.values())}
+    check(all(summary.get(k)==v for k,v in expected.items()),"Generation report mismatch")
+    print("Completed 256px generation reused; no image decoding or encoding.",flush=True)
+    return objects,paths,summary
+
+def connect_and_census():
+
     account=os.getenv("R2_ACCOUNT_ID","")
     check(re.fullmatch(r"[a-f0-9]{32}",account) and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"),"R2 credentials required")
     import boto3
@@ -131,7 +197,17 @@ def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes):
     s3=boto3.client("s3",region_name="auto",endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
                     config=Config(retries={"total_max_attempts":1},connect_timeout=10,read_timeout=30,max_pool_connections=8))
     check("IfNoneMatch" in s3.meta.service_model.operation_model("PutObject").input_shape.members,"Conditional PUT required")
-    _,canonical,pages,_=census(s3)
+    try:
+        _,canonical,pages,_=census(s3)
+    except ClientError as e:
+        if e.response.get("Error",{}).get("Code") in ("AccessDenied","403"):
+            raise SystemExit("R2 LIST denied. Check the R2 S3 access key pair and Object Read & Write scope for dreamwishwand-media. No image writes performed.")
+        raise
+    return s3,canonical,pages
+
+def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None):
+    from botocore.exceptions import ClientError
+    s3,canonical,pages=connection if connection is not None else connect_and_census()
     # Existing trusted receipt is optional; reuse only when current LIST size agrees.
     trusted={}
     for p in (root.parent/"src04-flat-inventory.json",root/"src04-flat-inventory.json",out/"item-256-publication-receipt.json"):
@@ -192,6 +268,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root",type=Path,default=DEFAULT_OUT)
     p.add_argument("--r2",action="store_true")
+    p.add_argument("--resume",action="store_true",help="Reuse completed local generation without resizing")
     p.add_argument("--max-new-uploads",type=int,default=10000)
     p.add_argument("--max-new-bytes",type=int,default=500000000)
     a=p.parse_args()
@@ -199,9 +276,10 @@ def main():
     check(not any((x/".git").exists() for x in (root,*root.parents)),"Private working directory required")
     out=root/"item-thumbnails-256"
     out.mkdir(exist_ok=True)
-    objects,paths,summary=prepare(root,out)
+    connection=connect_and_census() if a.r2 else None
+    objects,paths,summary=resume(root,out) if a.resume else prepare(root,out)
     if a.r2:
-        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes)
+        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection)
 
 if __name__=="__main__":
     main()
