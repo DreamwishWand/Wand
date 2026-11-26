@@ -543,3 +543,36 @@ test('area Scene rotation and reflection preserve fence endpoints and road cell 
 });
 
 import {fenceFamilyCandidates} from '../src/lib/world/fence-family-catalog.ts';
+
+
+import {mixedScenePlacement,mixedPlacementCounts,reflectedMixedRoot} from '../src/lib/world/support-scene.ts';
+test('point-symmetric mixed Scene duplicates each support tree and checks both halves atomically',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
+ const g=bindMainlandGrid({...bundle.grids.find(g=>g.key==='Meadow'),factor:1});
+ const raster={sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(4)};
+ const rasters=new Map([[g.key,raster]]);
+ const owner=40000001,leaf=40000002,other=40000003;
+ const tree={factor:1,sourcePath:'GridData/Furniture/Example.json',objects:[{itemId:leaf,x:0,y:0,orientation:'GridOrientation_Down',child:null}]};
+ const support=captureSupportScene(owner,tree);
+ const clip=[{itemId:owner,dx:0,dy:0,orientation:2},{itemId:other,dx:4,dy:0,orientation:2}];
+ const doc=mixedSceneFromClip(clip,[support,null]);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
+ const geo=id=>({itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:id===owner,shapes:Object.fromEntries([0,4,8,12].map(o=>[id+':'+o,shape]))});
+ const defs=new Map([owner,other].map(id=>[id,new Map([[1,geo(id)]])]));
+ const point=mainlandMapAnchor(g,4.5,6.5);
+ const axis={mode:'point',...mainlandMapAnchor(g,10,10)};
+ const q=mixedScenePlacement(clip,doc,point,axis,[g],rasters,defs,[],0);
+ assert.ok(q);assert.equal(q.supportRows.length,4);
+ assert.deepEqual(q.supportRows.map(r=>[r.x,r.y,r.orientation]),[[4,6,'GridOrientation_Down'],[6,6,'GridOrientation_Down'],[15,13,'GridOrientation_Up'],[13,13,'GridOrientation_Up']]);
+ assert.deepEqual(q.supportRows.map(r=>r.scene??null),[support,null,support,null]);
+ assert.deepEqual([...mixedPlacementCounts(q)],[[leaf,2],[owner,2],[other,2]]);
+ assert.equal(mixedScenePlacement(clip,doc,point,{...axis,mode:'vertical'},[g],rasters,defs,[],0),null);
+ const existing={area:g.key,factor:1,shape,...mainlandMapAnchor(g,15,13),object:{localOrdinal:1,localGridOrdinal:1,itemId:String(owner),x:15,y:13,orientation:'GridOrientation_Up',layer:'furniture'}};
+ assert.equal(mixedScenePlacement(clip,doc,point,axis,[g],rasters,defs,[existing],0),null);
+ const blocked=mainlandMapAnchor(g,15,13);assert.ok(mainlandTerrainHits([g],rasters,blocked.x+.001,blocked.y-.001).length);
+ raster.nativeFloorValues[13*g.sizeX+15]=0;
+ assert.equal(mixedScenePlacement(clip,doc,point,axis,[g],rasters,defs,[],0),null);
+ const empty=captureSupportScene(owner,{...tree,objects:[]});
+ const root={itemId:owner,x:4,y:-6,orientation:2};
+ assert.deepEqual(reflectedMixedRoot(root,empty,geo(owner),1,{mode:'vertical',x:10,y:0}),{itemId:owner,x:15,y:-6,orientation:2});
+});
