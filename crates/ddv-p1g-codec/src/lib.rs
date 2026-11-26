@@ -1422,6 +1422,13 @@ mod browser_amount_preview {
             let draft=indoor_room_view::furniture_candidate(source,plan).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
+        pub fn prepare_room_project_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_ROOM_PROJECT_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>128*1024{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=indoor_room_view::room_project_candidate(source,plan).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
             let source=match self.kind{

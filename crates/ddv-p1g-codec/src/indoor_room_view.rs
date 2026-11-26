@@ -12,7 +12,7 @@ fn room_terrain(catalog:&Value,path:&str,kind:&str)->Option<Value>{
  let sx=row.get(1)?.as_u64()?;let sy=row.get(2)?.as_u64()?;
  let values=row.get(4)?.as_array()?;
  if sx==0||sy==0||sx>256||sy>256||values.len()!=(sx*sy) as usize{return None;}
- Some(json!({"sizeX":sx,"sizeY":sy,"values":values}))
+ Some(json!({"sizeX":sx,"sizeY":sy,"values":values,"sourcePath":path}))
 }
 fn terrain_catalog()->Result<Value,CodecError>{
  serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|CodecError::Json)
@@ -232,6 +232,76 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
  if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(CodecError::Patch);}
  Ok(draft.patched_json)
 }
+/// Apply a room design as a single unpublished candidate. Every operation
+/// is restricted to the same room, exact source surface and native factor.
+/// No intermediate copy is exported or committed.
+pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>128*1024{return Err(CodecError::Bounds);}
+ let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let p=v.as_object().filter(|p|p.len()==2&&p.contains_key("roomOrdinal")&&p.contains_key("surfaces")).ok_or(bad)?;
+ let ordinal=p["roomOrdinal"].as_u64().filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
+ let rows=p["surfaces"].as_array().filter(|a|!a.is_empty()&&a.len()<=9).ok_or(bad)?;
+ let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
+ let faces=report["rooms"].get(ordinal-1).and_then(|r|r["surfaces"].as_array()).ok_or(bad)?;
+ let mut rooms=Vec::new();
+ for house in root["World"]["PlayerHouses"].as_array().ok_or(bad)?{
+  if let Some(floors)=house.get("Floors"){for floor in floors.as_array().ok_or(bad)?{if let Some(m)=floor.get("Rooms"){rooms.extend(m.as_object().ok_or(bad)?.values());}}}
+ }
+ let room=rooms.get(ordinal-1).ok_or(bad)?;
+ let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
+ let mut used=std::collections::HashSet::new();
+ let mut total=0usize;
+ let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
+ let mut changed=false;
+ for row in rows{
+  let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"place"|"finish"))).ok_or(bad)?;
+  let s=o["surfaceOrdinal"].as_u64().filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
+  if !used.insert(s){return Err(bad);}
+  let face=faces.get(s-1).ok_or(bad)?;
+  let path=o["sourcePath"].as_str().ok_or(bad)?;
+  let factor=o["factor"].as_u64().filter(|n|matches!(n,1|2)).ok_or(bad)?;
+  let native=if s==1{room.get("FloorGridID").and_then(id)}else{
+   let wall=face["wallPosition"].as_i64().ok_or(bad)?.to_string();room["WallGridIDs"].get(&wall).and_then(id)
+  }.filter(|n|*n>0).ok_or(bad)?.to_string();
+  let grid=grids.get(&native).ok_or(bad)?;
+  if grid["GridDataPath"].as_str()!=Some(path)||face["gridStatus"]!="full"||face["factor"].as_u64()!=Some(factor)||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
+  let places=o["place"].as_array().filter(|r|r.len()<=32).ok_or(bad)?;
+  for place in places{
+   if place.get("supportSource").is_some(){return Err(bad);}
+   let count=if let Some(scene)=place.get("scene"){
+    fn count(t:&Value,depth:usize)->Result<usize,CodecError>{if depth>8{return Err(CodecError::Bounds);}let mut n=0usize;for o in t["objects"].as_array().ok_or(CodecError::Json)?{n=n.checked_add(1).ok_or(CodecError::Bounds)?;if let Some(c)=o.get("child").filter(|v|!v.is_null()){n=n.checked_add(count(c,depth+1)?).ok_or(CodecError::Bounds)?;}if n>31{return Err(CodecError::Bounds);}}Ok(n)}
+    1+count(&scene["tree"],0)?
+   }else{1};
+   total=total.checked_add(count).ok_or(CodecError::Bounds)?;if total>256{return Err(CodecError::Bounds);}
+  }
+  if !places.is_empty(){
+   let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":places}).to_string())?;
+   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+   working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+  }
+  if !o["finish"].is_null(){
+   let f=o["finish"].as_object().filter(|v|v.len()==2&&v.contains_key("itemId")&&v.contains_key("expected")).ok_or(bad)?;
+   let item=f["itemId"].as_u64().filter(|n|*n>0&&*n<=u32::MAX as u64).ok_or(bad)?;
+   if item/100_000!=if s==1{1601}else{1600}||face["finish"]!=f["expected"]{return Err(bad);}
+   if face["finish"].as_u64()==Some(item){continue;}
+   let current:Value=serde_json::from_str(&project(working.as_bytes())?).map_err(|_|bad)?;
+   let current_faces=current["rooms"][ordinal-1]["surfaces"].as_array().ok_or(bad)?;
+   if current_faces.len()!=5||!current_faces[1..].iter().enumerate().all(|(i,f)|f["wallPosition"].as_u64()==Some(i as u64)){return Err(bad);}
+   let wall=if s==1{Value::Null}else{face["wallPosition"].clone()};
+   let expected=if s==1{current_faces[0]["finish"].clone()}else{Value::Array(current_faces[1..].iter().map(|v|v["finish"].clone()).collect())};
+   let mut d=finish_candidate(working.as_bytes(),&json!({"roomOrdinal":ordinal,"itemId":item,"kind":if s==1{"floor"}else{"wall"},"wall":wall,"expected":expected}).to_string())?;
+   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+   working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+  }
+ }
+ if !changed{return Err(bad);}
+ Ok(std::mem::take(&mut *working))
+}
+
 pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit};
  let bad=CodecError::Json;
@@ -689,6 +759,23 @@ mod tests{
   group["place"][1]["expectedStock"]=2.into();assert!(furniture_candidate(raw,&group.to_string()).is_err());
   let mut p=json!({"roomOrdinal":1,"surfaceOrdinal":1,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":4,"y":4,"orientation":"GridOrientation_Left"}]});
   assert!(furniture_candidate(raw,&p.to_string()).is_ok());p["edits"][0]["y"]=Value::from(-1);assert!(furniture_candidate(raw,&p.to_string()).is_err());
+ }
+ #[test]
+ fn whole_room_project_is_atomic_across_floor_and_wall_stock(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42,"WallGridIDs":{"0":43}}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Wall8x9-GridData.json","TessellationFactor":1,"NextGridObjectID":1,"Objects":{}}}}}}"#;
+  let mut p=json!({"roomOrdinal":1,"surfaces":[{"surfaceOrdinal":1,"sourcePath":"GridData/Rooms/Room8x8-GridData.json","factor":1,"place":[{"itemId":40000001,"expectedStock":2,"x":3,"y":3,"orientation":"GridOrientation_Down"}],"finish":null},{"surfaceOrdinal":2,"sourcePath":"GridData/Rooms/Wall8x9-GridData.json","factor":1,"place":[{"itemId":40000001,"expectedStock":1,"x":2,"y":2,"orientation":"GridOrientation_Down"}],"finish":null}]});
+  let d=room_project_candidate(raw,&p.to_string()).unwrap();let v:Value=serde_json::from_str(&d).unwrap();
+  assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"],1);
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["X"],3);
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["43"]["Objects"]["1"]["X"],2);
+  assert!(d.contains("1e2"));
+  p["surfaces"][1]["place"][0]["expectedStock"]=2.into();assert!(room_project_candidate(raw,&p.to_string()).is_err());
+  p["surfaces"][1]["place"][0]["expectedStock"]=1.into();
+  p["surfaces"][1]["sourcePath"]="GridData/Rooms/Wall6x9-GridData.json".into();assert!(room_project_candidate(raw,&p.to_string()).is_err());
+  p["surfaces"][1]["sourcePath"]="GridData/Rooms/Wall8x9-GridData.json".into();
+  p["surfaces"][1]["finish"]=json!({"itemId":160000001,"expected":null});assert!(room_project_candidate(raw,&p.to_string()).is_err());
+  p["surfaces"][1]["finish"]=Value::Null;p["surfaces"][1]["surfaceOrdinal"]=1.into();assert!(room_project_candidate(raw,&p.to_string()).is_err());
  }
  #[test]
  fn room_support_clone_consumes_descendant_stock_and_allocates_fresh_grids(){

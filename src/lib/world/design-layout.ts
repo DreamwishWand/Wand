@@ -99,7 +99,7 @@ export function parseDesign(text:string,grid:DesignGridIdentity):DesignPlacement
  return value.placements.map(p=>{
   if(!record(p)||!bounded(p.id,1,Number.MAX_SAFE_INTEGER-1)||ids.has(p.id)||!bounded(p.itemId,1,0xffffffff)||
      !bounded(p.x,0,grid.sizeX*grid.factor-1)||!bounded(p.y,0,grid.sizeY*grid.factor-1)||!bounded(p.orientation,0,3))throw Error('DESIGN_PLACEMENT_INVALID');
-  const attachment=readDesignAttachment(p,p.itemId,grid.layoutId==='DesignRooms/local-only.json'&&grid.gridDataPath.startsWith('GridData/Rooms/'));
+  const attachment=readDesignAttachment(p,p.itemId,grid.layoutId==='DesignRooms/local-only.json'&&(grid.gridDataPath.startsWith('GridData/Rooms/')||grid.key.startsWith('room-design:support:')));
   ids.add(p.id);return {id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation,...(attachment?{attachment}:{})};
  });
 }

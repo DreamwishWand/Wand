@@ -9,7 +9,7 @@ async function replayStep(file:File,step:WorldReplayStep,signal:AbortSignal):Pro
  const command=step.command,grid=command==='export-grid-mixed-batch-copy';
  const own=grid?new Worker(new URL('../save/save-amount-preview.worker.ts',import.meta.url),{type:'module'}):
  command==='support-child-copy'||command==='support-parent-copy'?new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'}):
- command==='indoor-furniture-export'||command==='room-finish-export'?new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'}):
+ command==='indoor-furniture-export'||command==='room-finish-export'||command==='indoor-room-project-export'?new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'}):
  command==='cardinal-road-copy'||command==='cardinal-fence-copy'||command==='cardinal-fence-erase'?new Worker(new URL('./cardinal-road-save.worker.ts',import.meta.url),{type:'module'}):
  new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});
  try{
@@ -24,7 +24,7 @@ async function replayStep(file:File,step:WorldReplayStep,signal:AbortSignal):Pro
     if(settled){d?.bytes?.fill(0);return;}
     try{
      const expected=grid?'copy':command==='support-child-copy'||command==='support-parent-copy'?command:
-       command==='indoor-furniture-export'?'indoor-furniture-copy':command==='room-finish-export'?'room-finish-copy':
+       command==='indoor-room-project-export'?'indoor-room-project-copy':command==='indoor-furniture-export'?'indoor-furniture-copy':command==='room-finish-export'?'room-finish-copy':
        command.startsWith('cardinal-')?'cardinal-road-copy':'furniture-stock-copy';
      if(d?.kind!==expected)throw Error('REPLAY_RECEIPT');
      const copy=experimentalCopyDownload(d,file);URL.revokeObjectURL(copy.url);end(null,copy.file);

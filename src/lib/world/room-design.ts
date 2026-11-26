@@ -29,7 +29,7 @@ export function roomDesignValid(t:DesignTimeline,grid:PublicTerrainGridRef,raste
   const tree:SupportTree={factor:grid.factor,sourcePath:grid.gridDataPath,objects:[]};
   const shapes:Record<string,import('./source-object-map.ts').SourceObjectShape>={};for(const id of new Set(snapshot.map(p=>p.itemId)))Object.assign(shapes,defs.get(id)?.shapes??{});
   for(const p of snapshot){const g=defs.get(p.itemId),orientation=CARDINAL_ORIENTATIONS[p.orientation];
-   if(!g||g.layer!=='furniture'||g.surfaceCapable&&!g.supportPath||p.attachment&&(!g.supportPath||p.attachment.scene.ownerItemId!==p.itemId||p.attachment.scene.tree.sourcePath!==g.supportPath)||!orientation||!supportPlacementFits(tree,shapes,raster,p.itemId,p.x,p.y,orientation))return false;
+   if(!g||g.layer!=='furniture'||g.surfaceCapable&&!g.supportPath||grid.key.startsWith('room-design:support:')&&g.supportPath&&!p.attachment||p.attachment&&(!g.supportPath||p.attachment.scene.ownerItemId!==p.itemId||p.attachment.scene.tree.sourcePath!==g.supportPath)||!orientation||!supportPlacementFits(tree,shapes,raster,p.itemId,p.x,p.y,orientation))return false;
    tree.objects.push({itemId:p.itemId,x:p.x,y:p.y,orientation,child:null});
   }
  }return true;
