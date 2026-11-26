@@ -1,6 +1,6 @@
-import {createPresetShareCatalog,validateShareablePreset} from './preset-public.ts';
+import {createPresetShareCatalog} from './preset-public.ts';
 import {PUBLIC_TERRAIN_ROOT} from '../world/public-terrain-projection.ts';
-import {readPresetText,compactPresetFile} from './preset-file.ts';
+import {preparePublicPreset} from './preset-publication.ts';
 let cached:{base:string;value:Promise<ReturnType<typeof createPresetShareCatalog>>}|null=null;
 export function loadShareCatalog(base:string,fetcher:typeof fetch=fetch){
  if(cached?.base===base)return cached.value;
@@ -10,6 +10,6 @@ export function loadShareCatalog(base:string,fetcher:typeof fetch=fetch){
  cached={base,value};void value.catch(()=>{if(cached?.value===value)cached=null;});return value;
 }
 export async function createShareFile(file:File,name:string,base:string){
- const raw=await readPresetText(file),catalog=await loadShareCatalog(base);
- return compactPresetFile(validateShareablePreset(raw,catalog),name);
+ const catalog=await loadShareCatalog(base);
+ return (await preparePublicPreset(file,name,catalog)).file;
 }

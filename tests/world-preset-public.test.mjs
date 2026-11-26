@@ -38,3 +38,17 @@ test('room project permits only source room geometry and known finishes',()=>{
  const bad=JSON.parse(raw);bad.surfaces[0].design.roomFinish=42;reject(bad);
  const backup={schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope:'room',rooms:[{floor:1,room:1,wallPositions:[null,0],design:JSON.parse(raw)}]};valid(JSON.stringify(backup));reject({...backup,rooms:[{...backup.rooms[0],houseId:42}]});
 });
+
+test('publication receipt binds the exact compact file and its semantic metadata',async()=>{
+ const {preparePublicPreset,verifyPublicPreset}=await import('../src/lib/presets/preset-publication.ts');
+ const scene={schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:1,anchor:'corner',items:[{itemId:40000001,dx:0,dy:0,orientation:2},{itemId:40000001,dx:2,dy:0,orientation:2}]};
+ const source=new Blob([JSON.stringify(scene)]),out=await preparePublicPreset(source,'scene',catalog);
+ assert.equal(out.receipt.kind,'scene');assert.equal(out.receipt.distinctObjectTypes,1);assert.equal(out.receipt.totalObjects,2);
+ assert.equal(out.receipt.byteSize,out.file.size);assert.equal(out.receipt.schemaVersion,2);
+ assert.deepEqual(JSON.parse(await verifyPublicPreset(out.file,out.receipt,catalog)),scene);
+ await assert.rejects(verifyPublicPreset(out.file,{...out.receipt,totalObjects:99},catalog));
+ await assert.rejects(verifyPublicPreset(out.file,{...out.receipt,kind:'world'},catalog));
+ const changed=new Uint8Array(await out.file.arrayBuffer());changed[changed.length-1]^=1;
+ await assert.rejects(verifyPublicPreset(new Blob([changed]),out.receipt,catalog),/CHECKSUM/);
+ await assert.rejects(preparePublicPreset(source,'scene',catalog,1),/PUBLIC_SIZE/);
+});
