@@ -1,7 +1,7 @@
 import {withSupabase} from 'npm:@supabase/server';
 import {corsHeaders} from 'npm:@supabase/supabase-js@2/cors';
 import {resolveRuntimeWepPresetArtifactBucket} from '../wand-presets-public-v2/bucket.ts';
-import {preparePublicPreset,verifyPublicPreset,type PublicPresetReceipt} from '../../../src/lib/presets/preset-publication.ts';
+import {inspectPublicPreset,verifyPublicPreset,type PublicPresetReceipt} from '../../../src/lib/presets/preset-publication.ts';
 import {createPresetShareCatalog} from '../../../src/lib/presets/preset-public.ts';
 import {readPresetText,PRESET_MAX_BYTES} from '../../../src/lib/presets/preset-file.ts';
 import index from '../../../static/ddv/world/steam-1.26.2/index.json' with {type:'json'};
@@ -54,7 +54,21 @@ const handler=withSupabase({auth:'user'},async(req,ctx)=>{
   ]);
   if(profiles.error||media.error||works.error)return reply({error:'AUTHOR_CONTEXT_UNAVAILABLE'},503);
   // Do not return account ID or media storage locations.
-  return reply({contract:'wand.preset-author-context@2',profiles:profiles.data,media:media.data,works:works.data});
+  const candidates=(works.data??[]).filter((v:any)=>v.community_works&&['published','unpublished'].includes(v.community_works.lifecycle_state)&&validId(v.community_works.current_published_revision_id));
+  const revisions=candidates.map((v:any)=>v.community_works.current_published_revision_id);
+  let result:any[]=[];
+  if(revisions.length){
+   const {data:rows,error}=await ctx.supabaseAdmin.from('preset_revision_publications').select('work_revision_id,preset_revisions!inner(preset_artifact_id,metadata,artifact_blobs!inner(schema_version)),community_work_revisions!inner(shared_metadata)').in('work_revision_id',revisions);
+   if(error)return reply({error:'AUTHOR_CONTEXT_UNAVAILABLE'},503);
+   result=candidates.flatMap((v:any)=>{
+    const row=(rows??[]).find((x:any)=>x.work_revision_id===v.community_works.current_published_revision_id);
+    if(!row)return [];
+    const p=(row as any).preset_revisions,w=(row as any).community_work_revisions;
+    if(p?.artifact_blobs?.schema_version!==2||p.preset_artifact_id!==v.preset_artifact_id||typeof w?.shared_metadata?.title!=='string')return [];
+    return [{artifactId:v.preset_artifact_id,creatorProfileId:v.creator_profile_id,kind:p.metadata?.kind,title:w.shared_metadata.title,description:w.shared_metadata.description??'',state:v.community_works.lifecycle_state}];
+   });
+  }
+  return reply({contract:'wand.preset-author-context@2',profiles:profiles.data,media:media.data,works:result});
  }
  if(v.action==='prepare'){
   if(!allowedKeys(v,['action','byteSize','contentType'])||!Number.isSafeInteger(v.byteSize)||v.byteSize<1||v.byteSize>MAX||!mime(v.contentType))return reply({error:'INVALID_SIZE'},400);
@@ -69,11 +83,11 @@ const handler=withSupabase({auth:'user'},async(req,ctx)=>{
   if(!allowedKeys(v,keys)||v.ownWorkConfirmed!==true||!validId(v.creatorProfileId)||typeof v.title!=='string'||!v.title.trim()||v.title.length>240||v.description!=null&&(typeof v.description!=='string'||v.description.length>20000)||!validId(v.idempotencyKey)||v.presetArtifactId!=null&&!validId(v.presetArtifactId)||!Array.isArray(v.mediaIds)||v.mediaIds.length<1||v.mediaIds.length>10||v.mediaIds.some((m:unknown)=>!validId(m))||new Set(v.mediaIds).size!==v.mediaIds.length||typeof v.storageKey!=='string'||!v.storageKey.startsWith('staging/'+accountId+'/')||!UUID.test(v.storageKey.slice(('staging/'+accountId+'/').length,-'.wandpreset'.length))||!v.storageKey.endsWith('.wandpreset'))return reply({error:'INVALID_PUBLICATION'},400);
   if(!await rate('gallery_write'))return reply({error:'RATE_LIMIT'},429);
   const finalKey=await publishedKey(accountId,v.idempotencyKey);
-  let prepared:{file:File;receipt:PublicPresetReceipt};
+  let prepared:{file:Blob;receipt:PublicPresetReceipt};
   try{
    const staging=await getBlob(ctx,v.storageKey);
    if(!staging)return reply({error:'UPLOAD_NOT_FOUND'},404);
-   prepared=await preparePublicPreset(staging,'public',catalog);
+   prepared={file:staging,receipt:await inspectPublicPreset(staging,catalog)};
    const existing=await getBlob(ctx,finalKey);
    if(existing){
     await verifyPublicPreset(existing,prepared.receipt,catalog);

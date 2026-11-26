@@ -31,6 +31,13 @@ export async function preparePublicPreset(file:Blob,name:string,catalog:Catalog,
  const packed=await compactPresetFile(raw,name);if(!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>PRESET_MAX_BYTES||packed.size>maxBytes)throw Error('PRESET_PUBLIC_SIZE');
  return {file:packed,receipt:await receipt(packed,raw)};
 }
+/** Server validates exact stored bytes, not a recompressed stream. Compression
+ * implementations may produce distinct byte sequences for identical JSON. */
+export async function inspectPublicPreset(file:Blob,catalog:Catalog):Promise<PublicPresetReceipt>{
+ const raw=await readPresetText(file);
+ if(validateShareablePreset(raw,catalog)!==raw)throw Error('PRESET_PUBLIC_CANONICAL');
+ return receipt(file,raw);
+}
 /** Verify retrieved bytes before adding them to the local library. No
  * remote response can select an editor operation or write to a Save. */
 export async function verifyPublicPreset(file:Blob,expected:PublicPresetReceipt,catalog:Catalog):Promise<string>{
