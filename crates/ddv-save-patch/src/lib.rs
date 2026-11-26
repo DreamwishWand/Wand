@@ -2204,7 +2204,7 @@ mod structural_tests{
 pub struct AreaNetworkPose{pub item:u32,pub x:i32,pub y:i32,pub left:bool,pub diagonal:bool}
 /// Exact whole-grid native network representation. Do not regenerate adjacent
 /// roads or silently normalize a fence; its known parts must round-trip.
-fn validate_area_network(d:&PlainGridDestination,rows:&[AreaNetworkPose])->Result<(),PatchError>{
+pub fn validate_area_network(d:&PlainGridDestination,rows:&[AreaNetworkPose])->Result<(),PatchError>{
  use fence_topology::{FencePart,decompile_fence,compile_fence_with_posts};
  let q=d.tessellation as i32;let w=(d.size.0*d.tessellation) as i32;let h=(d.size.1*d.tessellation) as i32;
  let mut anchors=HashSet::new();let mut groups=std::collections::BTreeMap::<(u32,bool),Vec<FencePart>>::new();let mut roads=0;let mut fences=0;
