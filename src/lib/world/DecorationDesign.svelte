@@ -55,9 +55,9 @@
  let directSupportJob:DirectSupportJob|null=null,directSupportEditor:DirectSupportEditor|null=null,directSupportRequest=0,directSupportDraft:DesignTimeline|null=null,directSupportApplying=false,embeddedInitialized=false;
  $: dsw=supportDirectWords[locale];
  $: if(directSupportJob&&(!active||directSupportJob.context!==contextKey||directSupportJob.baseline!==timeline||directSupportJob.own!==worker))closeDirectSupport(false);
- $: if(embedded&&grid&&raster&&contextKey&&!embeddedInitialized){embeddedInitialized=true;layouts={...layouts,[contextKey]:embedded.start};cache={...cache,[grid.key]:new Map(embedded.definitions)};}
+ $: if(embedded&&grid&&raster&&contextKey&&!embeddedInitialized){embeddedInitialized=true;layouts={...layouts,[contextKey]:embedded.start};cache={...cache,[grid.key]:new Map(embedded.definitions)};if(embedded.room){const id=embedded.finish??0;finishValues={...finishValues,[contextKey]:id};finishHistory={...finishHistory,[contextKey]:{values:[id],cursor:0}};}}
  function openDirectSupport(){
-  if(!worker||!chosen||!chosenGeometry?.supportPath||!isRoomDesign(grid)||embedded||busyImport)return;
+  if(!worker||!chosen||!chosenGeometry?.supportPath||!isRoomDesign(grid)||embedded&&!embedded.room||busyImport)return;
   if(chosen.attachment?.scene.tree.objects.some(o=>!!o.child)){error=dsw[4];return;}
   cancel();symmetry=null;directSupportJob={context:contextKey,baseline:timeline,id:chosen.id,itemId:chosen.itemId,initial:chosen.attachment,own:worker};
   directSupportRequest=nextRequest();worker.postMessage({command:'room-design-support-open',requestId:directSupportRequest,ownerItemId:chosen.itemId,attachment:chosen.attachment,locale});
@@ -198,8 +198,8 @@
   if(recoveryLocation?.identity===job.location.identity){cancel();camera=job.draft.camera;selected=job.draft.selection.length===1?job.draft.selection[0]:null;groupIds=job.draft.selection.length>1?job.draft.selection:[];}
   setRecovery(job.location,{phase:'ready',revision:state.revision,writable:true});
  }
- function persistRecovery(next:DesignTimeline){
-  if(embedded){embedded.onChange(next);return;}
+ function persistRecovery(next:DesignTimeline,defs=definitions){
+  if(embedded){embedded.onChange(next,defs,finishValues[contextKey]??0);return;}
   const location=recoveryLocation,state=location?recovery[location.identity]:undefined;
   if(!location||state?.phase!=='ready'||!state.writable)return;
   const originalFinish=roomFinishKind(grid)?finishValues[contextKey]??0:undefined;
@@ -358,6 +358,7 @@
  } as const;
  $: words=labels[locale]??labels.en;
  $: busyImport=directSupportJob!==null||attachmentReading||attachmentJob!==null||reading||pendingImport!==null||areaReview!==null||islandBusy||islandReview!==null||recoveryBlocked;
+ $: if(embedded?.onBusy)embedded.onBusy(busyImport||sceneReading||!!pasteRequest||loadingShape);
  $: counts=designItemCounts(placements);
  $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
  $: if(active&&showCounts)loadImages([...counts.keys()].map(itemId=>({itemId})));
@@ -565,12 +566,12 @@
      if(pending.capture&&pending.capture!==capturedLayout)return;
      const merged=new Map([...definitions,...incoming]);
      const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
-     if(!next||embedded&&currentDesign(next).length>31||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
+     if(!next||embedded&&!embedded.room&&currentDesign(next).length>31||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
      const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
      selected=null;groupIds=[];cancel();
      if(pending.roomFinish!==undefined){if(!allowedFinish(roomFinishKind(grid),pending.roomFinish)){error=words[3];return;}finishValues={...finishValues,[contextKey]:pending.roomFinish};finishHistory={...finishHistory,[contextKey]:{values:[pending.roomFinish],cursor:0}};}
-     if(next!==timeline||pending.roomFinish!==undefined){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
+     if(next!==timeline||pending.roomFinish!==undefined){layouts={...layouts,[contextKey]:next};persistRecovery(next,merged);}if(pending.capture)onDismissCapture();error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -636,8 +637,8 @@
    ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
  }
  function save(next:DesignTimeline|null,defs=definitions):boolean{
-   if(recoveryBlocked||!grid||!next||embedded&&currentDesign(next).length>31||!validatedMainlandPlan(worldFrame,timeline,next,defs)||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,defs))){error=isRoomDesign(grid)?roomDesignWords[locale][4]:worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
-   if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}error='';return true;
+   if(recoveryBlocked||!grid||!next||embedded&&!embedded.room&&currentDesign(next).length>31||!validatedMainlandPlan(worldFrame,timeline,next,defs)||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,defs))){error=isRoomDesign(grid)?roomDesignWords[locale][4]:worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
+   if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next,defs);}error='';return true;
  }
  function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
@@ -844,7 +845,7 @@
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
     <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
-    {#if chosenGeometry?.supportPath&&isRoomDesign(grid)&&!embedded}<button type="button" disabled={busyImport||!worker||!!chosenAttachment?.scene.tree.objects.some(o=>!!o.child)} title={chosenAttachment?.scene.tree.objects.some(o=>!!o.child)?dsw[4]:dsw[0]} on:click={openDirectSupport}>{dsw[0]}</button><input type="file" accept=".json,application/json" hidden bind:this={attachmentInput} on:change={openAttachment}/><button type="button" disabled={busyImport||!worker} title={adw[4]} on:click={()=>attachmentInput.click()}>{adw[0]}</button>{#if chosenAttachment}<button type="button" disabled={busyImport} on:click={()=>{if(chosen&&chosenGeometry)save(replaceDesignAttachment(timeline,chosen.id,undefined,chosenGeometry));}}>{adw[2]}</button>{/if}{/if}
+    {#if chosenGeometry?.supportPath&&isRoomDesign(grid)&&(!embedded||embedded.room)}<button type="button" disabled={busyImport||!worker||!!chosenAttachment?.scene.tree.objects.some(o=>!!o.child)} title={chosenAttachment?.scene.tree.objects.some(o=>!!o.child)?dsw[4]:dsw[0]} on:click={openDirectSupport}>{dsw[0]}</button><input type="file" accept=".json,application/json" hidden bind:this={attachmentInput} on:change={openAttachment}/><button type="button" disabled={busyImport||!worker} title={adw[4]} on:click={()=>attachmentInput.click()}>{adw[0]}</button>{#if chosenAttachment}<button type="button" disabled={busyImport} on:click={()=>{if(chosen&&chosenGeometry)save(replaceDesignAttachment(timeline,chosen.id,undefined,chosenGeometry));}}>{adw[2]}</button>{/if}{/if}
     {#if chosenGeometry&&grid&&(roadPitch(chosenGeometry,grid.factor)||fencePitch(chosenGeometry,grid.factor))}
      <button type="button" title={locale==='ja'?'接続範囲を選択':'Select connected network'} aria-label={locale==='ja'?'接続範囲を選択':'Select connected network'} on:click={()=>selectNetwork()}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>
      <button type="button" title={locale==='ja'?'スタイル置換':'Replace style'} aria-label={locale==='ja'?'スタイル置換':'Replace style'} on:click={()=>selectNetwork(true)}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M3 7h17l-4-4M21 17H4l4 4M20 7l-4 4M4 17l4-4"/></svg></button>
