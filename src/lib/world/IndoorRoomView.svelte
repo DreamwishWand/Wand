@@ -27,6 +27,15 @@
  let seen:File|null=null,own:Worker|null=null,rooms:IndoorRoom[]=[],status:'loading'|'ready'|'error'='loading',selected=0,surface=0,query='',limit=80;
  let positionOpen=true,highlight:number|null=null;
  let supportParents:IndoorSupportWitness[]=[],supportParent:IndoorSupportWitness|null=null,supportFile:File|null=null;
+ let supportClone:IndoorPlace['supportSource']|null=null;
+ $: supportCloneReady=!!supportParent&&!!face?.terrain&&removable.has(supportParent.itemId)&&!!roomPickupPlan;
+ function beginSupportDuplicate(needs:ReadonlyMap<number,number>){
+  const p=supportParent,pose=p&&face?.positions[p.index];
+  if(!p||!pose||pose.orientationCode===null||!supportCloneReady||!editAllowed||[...needs].some(([id,n])=>(stock.get(id)??0)<n))return;
+  const witness={index:p.index,expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[pose.orientationCode/4]};
+  closeSupport();resetObject();supportClone=witness;stockId=p.itemId;stockOrientation=witness.expectedOrientation;positionOpen=true;placing=true;
+ }
+
  $: supportNames=new Map([...records].map(([id,r])=>[id,r.names[locale]??r.names.en??String(id)]));
  $: roomSupports=supportParents.filter(p=>p.roomOrdinal===room?.ordinal&&p.surfaceOrdinal===face?.ordinal);
  $: supportText=supportWords[locale];
@@ -66,7 +75,7 @@
  $: clonePreview=placing&&cloneClip.length&&hoverCell?indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y):null;
  $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft;
  $: groupPickup=indoorGroupPickup(face,cutIndices,removable,stock);
- $: duplicateClip=indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
+ $: duplicateClip=cutIndices.some(i=>roomSupports.some(p=>p.index===i))?null:indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
  function beginDuplicate(){if(!editAllowed||!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
@@ -123,7 +132,7 @@
  const testExport=browser&&testSaveExportEnabled(window.location);
  let finishCopy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: cw=checkpointWords[locale];
- function clearEdit(){sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
+ function clearEdit(){supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
  function resetObject(){clearEdit();selectedObject=-1;selectedGroup=new Set();}
  function chooseObject(i:number,add=false){if(!tree||!tree.objects[i]||editWorker||editCopy||editDraft||pickupDraft||moving||placing||placeDraft||transferDraft)return;if(swap){const e=indoorFurnitureEdits(face,shapes,editable,selectedObject,i,1);if(e){editDraft=e;swap=false;}return;}if(add&&!swap){const next=new Set(selectedGroup.size?selectedGroup:selectedObject>=0?[selectedObject]:[]);if(next.has(i))next.delete(i);else if(next.size<ROOM_CUT_LIMIT)next.add(i);selectedGroup=next;selectedObject=next.has(i)?i:[...next].at(-1)??-1;}else{selectedGroup=new Set();selectedObject=i;}highlight=selectedObject>=0?tree.objects[selectedObject].itemId:null;}
  function pickObject(e:MouseEvent){
@@ -134,7 +143,7 @@
    if(draft){transferDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
   if(placing&&cloneClip.length){const draft=indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y);if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
-  if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[supportClone?{...draft,supportSource:supportClone}:draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(moving){const draft=selectedGroup.size>1?indoorGroupMove(face,shapes,editable,[...selectedGroup],selectedObject,p.x,p.y):indoorMove(face,shapes,editable,selectedObject,p.x,p.y);if(draft){editDraft=draft;moving=false;hoverCell=null;editError=false;}else editError=true;return;}
   const hits=supportHitIndices(tree,shapes,p.x,p.y).filter(i=>!swap||partners.includes(i));if(hits.length)chooseObject(hits[(hits.indexOf(selectedObject)+1)%hits.length],e.ctrlKey||e.metaKey||e.shiftKey);
  }
@@ -238,7 +247,7 @@
   </div>
  </div>
  {/if}
- {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 </div>
 <style>
