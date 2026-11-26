@@ -1,0 +1,132 @@
+//! Private batch patching of ordinary furniture. All original identities
+//! and references are resolved by the codec before invoking this writer.
+use super::*;
+use serde_json::{Map,Value};
+const BAD:PatchError=PatchError::InvalidTarget;
+const LIMIT:usize=2048;
+pub struct BulkPickup<'a>{pub target:&'a GridCoordinateTarget,pub expected:(i32,i32),pub orientation:&'a str}
+pub struct BulkPlace<'a>{pub destination:&'a PlainGridDestination,pub item_id:u64,pub xy:(i32,i32),pub orientation:&'a str}
+struct GridChanges{remove:HashSet<String>,add:Vec<Value>,next:u32,objects_path:Vec<Segment>,counter_path:Vec<Segment>}
+fn inventory_route()->Vec<Segment>{vec![k("Player"),k("ListInventories"),k("0")]}
+fn amount_path(item:u64)->Vec<Segment>{let mut p=inventory_route();p.extend([k("Inventory"),k(&item.to_string()),k("Amount")]);p}
+fn checked_inventory(root:&Value)->Result<&Map<String,Value>,PatchError>{
+ let row=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|v|v.get("0")).ok_or(BAD)?;
+ let o=row.as_object().ok_or(BAD)?;
+ if row.get("ID").and_then(Value::as_u64)!=Some(0)||row.get("CompatibleItemType").and_then(Value::as_str)!=Some("ItemType_Furniture")||
+ o.keys().any(|k|k.starts_with("Compatible")&&!matches!(k.as_str(),"CompatibleItemType"|"CompatibleFurnitureTypes")){return Err(BAD);}
+ let restriction=row.get("CompatibleFurnitureTypes").and_then(Value::as_object).filter(|v|v.len()==1).ok_or(BAD)?;
+ let list=restriction.get("List").and_then(Value::as_array).ok_or(BAD)?;
+ let mut unique=HashSet::new();
+ for v in list{let t=v.as_str().ok_or(BAD)?;if !matches!(t,"FurnitureItemType_Default"|"FurnitureItemType_GroundAlteration"|"FurnitureItemType_Door"|"FurnitureItemType_Request"|"FurnitureItemType_Blocker"|"FurnitureItemType_Fence"|"FurnitureItemType_AncientMachine"|"FurnitureItemType_SnippetTrap")||!unique.insert(t){return Err(BAD);}}
+ if !unique.contains("FurnitureItemType_Default"){return Err(BAD);}
+ row.get("Inventory").and_then(Value::as_object).ok_or(BAD)
+}
+fn grid_changes(id:&str,grid:&Value,collection:&Value,allocating:bool)->Result<GridChanges,PatchError>{
+ if !valid_id(id)||id.starts_with('0')||grid.get("ID").and_then(Value::as_u64)!=id.parse::<u64>().ok()||
+ collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(id))){return Err(BAD);}
+ let objects=grid.get("Objects").and_then(Value::as_object).ok_or(BAD)?;
+ if objects.len()>100_000{return Err(BAD);}
+ let next=if allocating{
+  let n=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|v|u32::try_from(v).ok()).filter(|n|*n>0).ok_or(BAD)?;
+  if objects.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|i|i==0||i>=n||i.to_string()!=*k||v.get("ID").and_then(Value::as_u64)!=Some(u64::from(i)))){return Err(BAD);}n
+ }else{0};
+ let mut p=vec![k("World"),k("GridCollection"),k("Grids"),k(id)];let mut counter=p.clone();counter.push(k("NextGridObjectID"));p.push(k("Objects"));
+ Ok(GridChanges{remove:HashSet::new(),add:Vec::new(),next,objects_path:p,counter_path:counter})
+}
+/// Two phases are deliberately separate: the caller returns every item
+/// before changing networks and placing new objects. This function batches
+/// each ordinary phase across all affected Grids and stock entries.
+pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkPlace<'_>])->Result<GridCoordinateDraft,PatchError>{
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||pickups.is_empty()==places.is_empty()||pickups.len()+places.len()>LIMIT{return Err(BAD);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(BAD)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let inventory=checked_inventory(&root)?;
+ let mut changes=HashMap::<String,GridChanges>::new();
+ let mut delta=HashMap::<u64,i64>::new();
+ let mut anchors=HashSet::new();
+ for p in pickups{
+  let t=p.target;if t.kind!=GridObjectKind::Full||t.item_id/100_000!=400{return Err(BAD);}
+  let grid=grids.get(&t.grid_id).ok_or(BAD)?;
+  if !changes.contains_key(&t.grid_id){changes.insert(t.grid_id.clone(),grid_changes(&t.grid_id,grid,c,false)?);}
+  let change=changes.get_mut(&t.grid_id).ok_or(BAD)?;
+  if !change.remove.insert(t.object_id.clone()){return Err(BAD);}
+  let v=grid.get("Objects").and_then(|o|o.get(&t.object_id)).ok_or(BAD)?;
+  let m=v.as_object().ok_or(BAD)?;
+  let id=t.object_id.parse::<u32>().map_err(|_|BAD)?;
+  if id==0||id.to_string()!=t.object_id||m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+   !(m.len()==5||m.len()==6&&v.get("State").is_some_and(Value::is_null))||
+   v.get("ID").and_then(Value::as_u64)!=Some(u64::from(id))||v.get("ItemID").and_then(Value::as_u64)!=Some(t.item_id)||
+   v.get("X").and_then(Value::as_i64)!=Some(i64::from(p.expected.0))||v.get("Y").and_then(Value::as_i64)!=Some(i64::from(p.expected.1))||
+   v.get("Orientation").and_then(Value::as_str)!=Some(p.orientation)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation){return Err(BAD);}
+  *delta.entry(t.item_id).or_default()+=1;
+ }
+ for p in places{
+  let d=p.destination;let (x,y)=p.xy;
+  if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
+   !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
+   !OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
+  let grid=grids.get(&d.grid_id).ok_or(BAD)?;
+  let matches=|v:&Value|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&v.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+  if !matches(grid)||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
+  if !changes.contains_key(&d.grid_id){if grids.values().filter(|g|matches(g)).count()!=1{return Err(BAD);}changes.insert(d.grid_id.clone(),grid_changes(&d.grid_id,grid,c,true)?);}
+  let change=changes.get_mut(&d.grid_id).ok_or(BAD)?;
+  let objects=grid.get("Objects").and_then(Value::as_object).ok_or(BAD)?;
+  if objects.len()+change.add.len()>=100_000||objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(BAD);}
+  let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
+  change.add.push(serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation}));
+  *delta.entry(p.item_id).or_default()-=1;
+ }
+ let mut stock=Vec::new();
+ for (item,d) in delta{
+  let old=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(BAD)?;
+  let new=(old as i64+d).try_into().ok().filter(|n:&u32|*n<=i32::MAX as u32).ok_or(PatchError::InvalidQuantity)?;
+  stock.push((item,old as u32,new));
+ }
+ let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ for &(item,_,_) in &stock{locator.capture.insert(amount_path(item),None);}
+ for v in changes.values(){locator.capture.insert(v.objects_path.clone(),None);if !v.add.is_empty(){locator.capture.insert(v.counter_path.clone(),None);}}
+ locator.walk_complete()?;
+ let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
+ let mut edits=Vec::<(Range<usize>,String)>::new();
+ for &(item,old,new) in &stock{let r=span(&amount_path(item))?;if source[r.clone()].parse::<u32>().ok()!=Some(old){return Err(PatchError::AmountMismatch);}edits.push((r,new.to_string()));}
+ let mut maps=Vec::new();
+ for (id,v) in &changes{
+  let mr=span(&v.objects_path)?;
+  if !v.add.is_empty(){let cr=span(&v.counter_path)?;if source[cr.clone()].parse::<u32>().ok()!=Some(v.next-v.add.len() as u32){return Err(BAD);}edits.push((cr,v.next.to_string()));}
+  maps.push((id.clone(),mr));
+ }
+ locator.capture.clear();
+ for (id,mr) in maps{
+  let v=changes.get(&id).ok_or(BAD)?;
+  let original=grids.get(&id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
+  locator.pos=mr.start;locator.expect(b'{')?;
+  let mut members=Vec::new();let mut seen=0;let mut removed=0;
+  loop{
+   locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+   let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=v.objects_path.clone();p.push(k(&key));locator.value(&mut p)?;
+   if v.remove.contains(&key){removed+=1;}else{members.push(source[start..locator.pos].to_owned());}
+   seen+=1;locator.space();if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(BAD);}
+  }
+  if seen!=original.len()||removed!=v.remove.len(){return Err(BAD);}
+  for o in &v.add{members.push(format!("\"{}\":{}",o["ID"],o));}
+  edits.push((mr,format!("{{{}}}",members.join(","))));
+ }
+ // Compare the reconstructed document with the intended semantic mutation.
+ // Surviving lexical member bytes and all unrelated fields remain untouched.
+ for (id,v) in changes{
+  let g=root["World"]["GridCollection"]["Grids"].get_mut(&id).ok_or(BAD)?;
+  let objects=g.get_mut("Objects").and_then(Value::as_object_mut).ok_or(BAD)?;
+  for k in v.remove{objects.remove(&k).ok_or(BAD)?;}
+  for o in &v.add{objects.insert(o["ID"].to_string(),o.clone());}
+  if !v.add.is_empty(){g["NextGridObjectID"]=Value::from(v.next);}
+ }
+ for (item,_,new) in stock{root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"]=Value::from(new);}
+ edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut candidate=String::with_capacity(source.len());let mut last=0;
+ for (r,v) in edits{if r.start<last{return Err(BAD);}candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
+ if candidate.len()>MAX_PROFILE_BYTES||serde_json::from_str::<Value>(&candidate).map_err(|_|BAD)?!=root{return Err(BAD);}
+ validate_json_without_edit(&candidate)?;
+ Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
