@@ -1823,6 +1823,40 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object').length===0,{},{timeout:30000});
   await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
   await islandMap.locator('.mainland-save-object').first().waitFor({timeout:30000});
+  // Whole-island decoration captures network modes on every native grid,
+  // even when the secondary grid has not been opened in the map.
+  const islandMixedSave=structuredClone(completeIslandSave);
+  islandMixedSave.World.GridCollection.Grids['9101'].NextGridObjectID=3;
+  islandMixedSave.World.GridCollection.Grids['9101'].Objects['2']={ID:2,ItemID:40100068,X:12*sourceIslandAreas[0].factor,Y:12*sourceIslandAreas[0].factor,Orientation:'GridOrientation_Down',State:null};
+  islandMixedSave.World.GridCollection.Grids['9102'].NextGridObjectID=2;
+  islandMixedSave.World.GridCollection.Grids['9102'].Objects['1']={ID:1,ItemID:40100068,X:12*sourceIslandAreas[1].factor,Y:12*sourceIslandAreas[1].factor,Orientation:'GridOrientation_Down',State:{FenceMode:{Diagonal:true}}};
+  page.on('dialog',islandDialog);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'island-mixed.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandMixedSave))});}finally{page.off('dialog',islandDialog);}
+  await islandMap.locator('.mainland-save-object[data-area="'+sourceIslandAreas[0].key+'"]').nth(1).waitFor({timeout:30000});
+  await islandMap.getByRole('button',{name:'浮島家具Preset',exact:true}).click({timeout:30000});
+  await wholeIslandPanel.getByLabel('道・フェンスも含める',{exact:true}).check();
+  const islandMixedDownload=page.waitForEvent('download');
+  await wholeIslandPanel.getByRole('button',{name:'浮島の装飾を一括保存',exact:true}).click({timeout:30000});
+  const islandMixedDoc=JSON.parse((await readFile(await (await islandMixedDownload).path())).toString('utf8'));
+  assert.equal(islandMixedDoc.schema,'wand.preset.floating-island-decoration@1');assert.equal(islandMixedDoc.areas.length,2);
+  const islandMixedPrimary=islandMixedDoc.areas.find(a=>a.furniture.design.grid.key===sourceIslandAreas[0].key);
+  const islandMixedSecondary=islandMixedDoc.areas.find(a=>a.furniture.design.grid.key===sourceIslandAreas[1].key);
+  assert.equal(islandMixedPrimary.furniture.design.placements.length,1);assert.equal(islandMixedPrimary.network.rows.length,1);
+  assert.equal(islandMixedSecondary.network.rows[0].network.diagonal,true);
+  islandMixedPrimary.furniture.design.placements=[];islandMixedSecondary.network.rows=[];
+  await wholeIslandPanel.locator('.island-save-preset-input').setInputFiles({name:'island-mixed-clear.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandMixedDoc))});
+  await wholeIslandPanel.getByRole('button',{name:'編集コピーを検証',exact:true}).click({timeout:30000});
+  const islandMixedCopy=wholeIslandPanel.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await islandMixedCopy.waitFor({timeout:30000});
+  const islandMixedOutput=await islandMixedCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.deepEqual(islandMixedOutput.World.GridCollection.Grids['9101'].Objects,{'2':islandMixedSave.World.GridCollection.Grids['9101'].Objects['2']});
+  assert.deepEqual(islandMixedOutput.World.GridCollection.Grids['9102'].Objects,{});
+  assert.deepEqual(islandMixedOutput.World.GridCollection.Grids['101'],islandMixedSave.World.GridCollection.Grids['101']);
+  assert.equal(islandMixedOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  await wholeIslandPanel.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object').length===1,{},{timeout:30000});
+  await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
+  await islandMap.locator('.mainland-save-object').nth(1).waitFor({timeout:30000});
   // Complete multi-grid island design import includes unvisited grids,
   // persists them together, and re-exports both after selecting either.
   await islandMap.getByRole('button',{name:'装飾設計',exact:true}).click();

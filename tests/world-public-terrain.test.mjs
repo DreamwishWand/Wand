@@ -759,3 +759,26 @@ test('mixed decoration previews furniture against the final fence arrangement an
  assert.throws(()=>parseBiomeDecoration(capture.text,{...grid,gridDataPath:'GridData/Other.json'}));
  assert.equal(captureBiomeDecoration(grid,objects,0,[]),null);
 });
+
+import {captureIslandDecoration,parseIslandDecoration,reviewIslandDecoration} from '../src/lib/world/island-decoration-preset.ts';
+test('whole island mixed decoration keeps native grids separate and pools furniture returned across them',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync('static/ddv/world/steam-1.26.2/floatingislands.json','utf8')));
+ const grids=islandSaveGrids(bundle.grids.find(g=>g.layoutId.includes('FloatingIsland_AtlanteanLayout')),bundle.grids);assert.equal(grids.length,2);
+ const [a,b]=grids,id=40005160,shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1};
+ const point=(g,n,itemId,x,y,layer)=>({area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,object:{localOrdinal:n,localGridOrdinal:n,itemId:String(itemId),x,y,layer,orientation:'GridOrientation_Down',orientationCode:8,surfaceCapable:false}});
+ const furniture=point(a,1,id,5,5,'furniture'),fence=point(b,2,40700000,10*b.factor,10*b.factor,'fence');
+ const snapshot={text:'',objects:new Map([[a.key,[furniture]],[b.key,[fence]]]),summaries:[]};
+ const row={itemId:40700000,x:fence.object.x,y:fence.object.y,orientation:2,network:{kind:'fence',diagonal:false,base:40700000}};
+ const before=new Map([[a.key,[]],[b.key,[row]]]);
+ const capture=captureIslandDecoration(grids,snapshot,before);assert(capture);
+ const next=parseIslandDecoration(capture.text,grids);assert.equal(next.size,2);
+ next.get(b.key).furniture=[{...next.get(a.key).furniture[0],x:row.x,y:row.y}];next.get(a.key).furniture=[];
+ const rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(1)}]));
+ const defs=new Map(grids.map(g=>[g.key,new Map([[id,{itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[id+':8']:shape}}]])]));
+ assert.equal(reviewIslandDecoration(grids,rasters,snapshot,before,next,defs,new Map([[id,0]])),null);
+ next.get(b.key).network=[];
+ const review=reviewIslandDecoration(grids,rasters,snapshot,before,next,defs,new Map([[id,0]]));assert(review);
+ assert.deepEqual(review.missing,[]);assert.equal(review.plan[0].furniture.remove.length,1);assert.equal(review.plan[1].furniture.add.length,1);assert.equal(review.plan[1].network.after.length,0);
+ const doc=JSON.parse(capture.text);doc.areas.pop();assert.throws(()=>parseIslandDecoration(JSON.stringify(doc),grids));
+ const duplicate=JSON.parse(capture.text);duplicate.areas[1]=duplicate.areas[0];assert.throws(()=>parseIslandDecoration(JSON.stringify(duplicate),grids));
+});
