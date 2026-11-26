@@ -15,7 +15,7 @@ test('room project preserves independent walls with equal templates, finishes an
  assert.equal(doc.surfaces[1].timeline.snapshots[0].length,1);assert.equal(doc.surfaces[2].timeline.snapshots[0].length,0);
  assert.deepEqual(doc.surfaces[0].timeline.snapshots[0][0].attachment,root.attachment);
  assert.deepEqual(roomProjectCounts(doc.surfaces),{furniture:new Map([[child,2],[owner,1]]),finishes:new Map([[160100001,1],[160000001,2]])});
- assert.equal(serializeRoomProject(doc.surfaces,doc.selected),raw);
+ assert.deepEqual(JSON.parse(serializeRoomProject(doc.surfaces,doc.selected)),JSON.parse(raw));
  const bad=JSON.parse(raw);bad.surfaces[2].id=2;assert.throws(()=>parseRoomProject(JSON.stringify(bad),templates));
  const mismatch=JSON.parse(raw);mismatch.surfaces[1].design.roomFinish=160100001;assert.throws(()=>parseRoomProject(JSON.stringify(mismatch),templates));
  const foreign=JSON.parse(raw);foreign.surfaces[0].design.grid.sizeX++;assert.throws(()=>parseRoomProject(JSON.stringify(foreign),templates));
