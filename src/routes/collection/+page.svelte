@@ -3,6 +3,8 @@
   import { base } from '$app/paths';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
+  import {localSaveSession} from '$lib/ui/local-save-session';
   import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
@@ -1252,7 +1254,7 @@
       on:saveReadError={(event:CustomEvent<string>)=>infoMessage=event.detail}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
-    {#if memoryPreviewRequested}<p><a href={base+'/media/memory-preview/'}>Memory rendering comparison (development)</a></p>{/if}
+    {#if memoryPreviewRequested}<div class="info-banner" role="status">{locale==='ja'?'Memories開発用比較：セーブの記録値を使用します。解放位置は未検証です。':'Development Memory comparison: saved flags are used; exact piece mapping is unverified.'} <a href={base+'/media/memory-preview/'}>{locale==='ja'?'詳細比較':'Detailed comparison'}</a></div>{/if}
     <div class="collection-workspace">
       <div class="workspace-top">
         <div class="collection-record-switcher" role="group" aria-label={copy.record}>
@@ -1498,7 +1500,7 @@
                       <button type="button" class="item-card-body" on:click={(event)=>void showItem(item.itemId,event)}
                         aria-label={`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">
-                          <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
+                          {#if memoryPreviewRequested&&$localSaveSession.memoryFlags&&Object.hasOwn($localSaveSession.memoryFlags.entries,String(item.itemId))}<MemoryCandidateArtwork itemId={item.itemId} flags={$localSaveSession.memoryFlags} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}
                         </span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
@@ -1576,7 +1578,7 @@
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
-                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
+                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}{#if memoryPreviewRequested&&$localSaveSession.memoryFlags&&Object.hasOwn($localSaveSession.memoryFlags.entries,String(item.itemId))}<MemoryCandidateArtwork itemId={item.itemId} flags={$localSaveSession.memoryFlags} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}{/if}</span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
                         </span>
@@ -1700,7 +1702,7 @@
                   on:click={closeItem} aria-label={copy.closeDetails}>×</button>
               </div>
             </div>
-            <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
+            <div class="inspector-art">{#if memoryPreviewRequested&&$localSaveSession.memoryFlags&&Object.hasOwn($localSaveSession.memoryFlags.entries,String(selectedItem.itemId))}<MemoryCandidateArtwork itemId={selectedItem.itemId} flags={$localSaveSession.memoryFlags} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
             {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
