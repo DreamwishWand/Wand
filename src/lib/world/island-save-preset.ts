@@ -1,7 +1,7 @@
 import {islandPresetGrids,serializeIslandDesign,parseIslandDesign} from './island-design-preset.ts';
 import {parseWholeArea,serializeWholeArea} from './whole-area-preset.ts';
 import {biomeFurnitureSnapshot,biomeFurnitureReplacement,BIOME_CHANGE_LIMIT,type BiomeFurniturePlan} from './biome-furniture-preset.ts';
-import {bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {bindFloatingIslandGrid,bindMainland,sourceWorldScope,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {projectMainlandSaved,type MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {SavedShapeMap} from './saved-shape-map.ts';
 import type {TerrainScopeReceipt,TerrainRaster} from './terrain-binding.ts';
@@ -10,8 +10,11 @@ import type {DesignPlacement,DesignTimeline,DesignItemGeometry} from './design-l
 export function islandSaveGrids(grid:PublicTerrainGridRef|null,all:readonly PublicTerrainGridRef[]):MainlandGrid[]{
  return islandPresetGrids(grid,all).map(bindFloatingIslandGrid).filter((g):g is MainlandGrid=>!!g);
 }
-export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],maps:ReadonlyMap<string,SavedShapeMap>){
- if(!grids.length||grids.some(g=>g.layoutId!==grids[0].layoutId))return null;
+export function worldDecorationScope(grids:readonly MainlandGrid[]):string|null{
+ return grids.length&&grids.length<=64&&bindMainland(grids)?sourceWorldScope(grids[0]):null;
+}
+export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],maps:ReadonlyMap<string,SavedShapeMap>,world=false){
+ if(!grids.length||(world?!worldDecorationScope(grids):grids.some(g=>g.layoutId!==grids[0].layoutId)))return null;
  const layouts:Record<string,DesignTimeline>={},objects=new Map<string,readonly MainlandSavedObject[]>(),summaries:{key:string;editable:number;preserved:number}[]=[];
  const ordinals=new Set<number>();
  for(const g of grids){
@@ -20,13 +23,13 @@ export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readon
   ordinals.add(s.completeGridOrdinal);
   // Separate native coordinate planes. Never test collision across grids.
   const projected=projectMainlandSaved([g],sessions,maps,[]);
-  const snapshot=biomeFurnitureSnapshot(g,projected.objects,projected.omitted,true);if(!snapshot)return null;
+  const snapshot=biomeFurnitureSnapshot(g,projected.objects,projected.omitted,!world,undefined,world);if(!snapshot)return null;
   objects.set(g.key,projected.objects);
   layouts[g.key]={snapshots:[snapshot.placements],cursor:0,nextId:snapshot.placements.length+1};
   summaries.push({key:g.key,editable:snapshot.editable.length,preserved:snapshot.protectedObjects.length});
  }
  try{
-  const text=grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],'floating-island'):serializeIslandDesign(grids,layouts);
+  const text=world?'':grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],'floating-island'):serializeIslandDesign(grids,layouts);
   return {text,objects,summaries};
  }catch{return null;}
 }
