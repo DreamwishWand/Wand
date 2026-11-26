@@ -57,9 +57,11 @@ def scan_paths(game):
     aa = data / "StreamingAssets" / "aa"
     roots = list(data.glob("*.assets"))
     # Explicit UI groups, not substring 'ui' inside fruit/building/suit.
-    bundles = [p for p in aa.rglob("*.bundle") if
-               p.name.startswith(("ui-", "menu-", "shaders_", "urp-shaders_", "ddv_unitybuiltinshaders")) or
-               any(part.startswith(("ui-", "menu-")) for part in p.relative_to(aa).parts[:-1])]
+    def relevant(name):
+        return (name.startswith(("menu-", "shaders_", "urp-shaders_", "ddv_unitybuiltinshaders")) or
+                (name.startswith("ui-") and not name.startswith(("ui-images-", "ui-atlas-", "ui-4kspriteatlas", "ui-imagesatlas"))))
+    bundles = [p for p in aa.rglob("*.bundle") if relevant(p.name) or
+               any(relevant(part) for part in p.relative_to(aa).parts[:-1])]
     return sorted(set(roots + bundles))
 
 
