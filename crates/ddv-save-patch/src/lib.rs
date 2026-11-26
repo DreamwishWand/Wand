@@ -1322,6 +1322,22 @@ pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarge
  let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
  insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
 }
+/// Relocate an existing support parent between two exact owned room floors.
+/// The codec checks exclusive subtree ownership and external references.
+/// Keep the original lexical State and all descendants; no stock change.
+pub fn preview_indoor_support_parent_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
+ validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let from=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&target.grid_id)).ok_or(PatchError::MissingTarget)?;
+ if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||!from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|s|s.starts_with("GridData/Rooms/Room")&&s.ends_with(".json")&&!s.contains(".."))||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation)){return Err(PatchError::InvalidTarget);}
+ let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
+ let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+ locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+ let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?;
+ insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
+}
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
 /// Grid-local identities are allocated from the destination counter; stock is untouched.
 pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
