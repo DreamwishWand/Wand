@@ -1454,6 +1454,25 @@ mod browser_amount_preview {
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
             native_preset_backup::export(source,ordinal as usize).map_err(|_|fail("DB05_PRESET_UNAVAILABLE"))
         }
+        pub fn rehearse_tom_restore(&self,backup:&str)->Result<String,JsValue>{
+            let invalid=||fail("DB05_TOM_REHEARSAL_REJECTED");
+            if !self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let mut patched=native_preset_backup::tom_restore_rehearsal(original,backup).map_err(|_|invalid())?;
+            let result=(||->Result<String,JsValue>{
+                validate_profile(patched.as_bytes()).map_err(|_|invalid())?;
+                if matches!(self.kind,InputKind::EncryptedP1g){
+                    let opened=self.p1g.as_ref().ok_or_else(invalid)?;
+                    let mut archive=rezip_profile(&opened.original_zip,&opened.layout,patched.as_bytes()).map_err(|_|invalid())?;
+                    let encrypted=ecb_encrypt(&archive);archive.zeroize();
+                    let mut encrypted=encrypted.map_err(|_|invalid())?;
+                    let verified=OpenedP1g::open(&encrypted).is_ok_and(|r|r.profile==patched.as_bytes());
+                    encrypted.zeroize();if !verified{return Err(invalid());}
+                }
+                Ok(serde_json::json!({"contract":"wand.native-preset-rehearsal@1","kind":"tom","freshAllocation":true,"reopenVerified":true,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false}).to_string())
+            })();
+            patched.zeroize();result
+        }
         pub fn review_native_preset_restore(&self,backup:&str)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_PRESET_NOT_OPEN"));}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
