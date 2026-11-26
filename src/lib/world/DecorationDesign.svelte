@@ -1,6 +1,9 @@
 <script lang="ts">
+ import {captureAttachedRoomScene,designAttachments,countAttachedDesign,readDesignAttachment,attachedDesignWords,supportDirectWords,supportEditTimeline,supportEditAttachment,type EmbeddedSupportDesign,type DesignSupportAttachment} from './design-support-attachment.ts';
+ import {parseMixedScene,type MixedScenePreset} from './support-scene.ts';
+ import {replaceDesignAttachment} from './design-layout.ts';
  import {roomFinishKind,roomFinishIdValid,readRoomFinish,roomFinishDesignWords,type RoomFinishKind,type RoomFinishItem} from './room-finish-design.ts';
- import {isRoomDesign,roomDesignValid,roomDesignWords,roomSurfaceWords} from './room-design.ts';
+ import {isRoomDesign,roomDesignValid,roomDesignWords,roomSurfaceWords,type RoomDesignTemplate} from './room-design.ts';
  import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign,islandPresetWords} from './island-design-preset.ts';
  import {localSaveSession} from '../ui/local-save-session';
  import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea,wholeAreaWords,type WholeAreaKind} from './whole-area-preset.ts';
@@ -46,6 +49,37 @@
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
+ export let embedded:EmbeddedSupportDesign|null=null;
+ type DirectSupportJob={context:string;baseline:DesignTimeline;id:number;itemId:number;initial:DesignSupportAttachment|undefined;own:Worker};
+ type DirectSupportEditor={job:DirectSupportJob;template:RoomDesignTemplate;embedded:EmbeddedSupportDesign};
+ let directSupportJob:DirectSupportJob|null=null,directSupportEditor:DirectSupportEditor|null=null,directSupportRequest=0,directSupportDraft:DesignTimeline|null=null,directSupportApplying=false,embeddedInitialized=false;
+ $: dsw=supportDirectWords[locale];
+ $: if(directSupportJob&&(!active||directSupportJob.context!==contextKey||directSupportJob.baseline!==timeline||directSupportJob.own!==worker))closeDirectSupport(false);
+ $: if(embedded&&grid&&raster&&contextKey&&!embeddedInitialized){embeddedInitialized=true;layouts={...layouts,[contextKey]:embedded.start};cache={...cache,[grid.key]:new Map(embedded.definitions)};}
+ function openDirectSupport(){
+  if(!worker||!chosen||!chosenGeometry?.supportPath||!isRoomDesign(grid)||embedded||busyImport)return;
+  if(chosen.attachment?.scene.tree.objects.some(o=>!!o.child)){error=dsw[4];return;}
+  cancel();symmetry=null;directSupportJob={context:contextKey,baseline:timeline,id:chosen.id,itemId:chosen.itemId,initial:chosen.attachment,own:worker};
+  directSupportRequest=nextRequest();worker.postMessage({command:'room-design-support-open',requestId:directSupportRequest,ownerItemId:chosen.itemId,attachment:chosen.attachment,locale});
+ }
+ function closeDirectSupport(confirm=true){if(confirm&&directSupportEditor&&directSupportDraft!==directSupportEditor.embedded.start&&!window.confirm(dsw[3]))return;directSupportJob=null;directSupportEditor=null;directSupportDraft=null;directSupportApplying=false;directSupportRequest=0;}
+ function applyDirectSupport(){
+  const e=directSupportEditor,d=directSupportDraft;if(!e||!d||directSupportApplying||e.job.baseline!==timeline||e.job.own!==worker||!worker)return;
+  if(d===e.embedded.start){closeDirectSupport(false);return;}
+  const a=supportEditAttachment(d,e.template,e.job.initial);if(!a){error=dsw[6];return;}
+  directSupportApplying=true;directSupportRequest=nextRequest();worker.postMessage({command:'room-design-support-validate',requestId:directSupportRequest,ownerItemId:e.job.itemId,attachment:a});
+ }
+
+ let attachmentInput:HTMLInputElement,attachmentRequest=0,attachmentJob:{context:string;timeline:DesignTimeline;id:number;itemId:number}|null=null,attachmentReading=false;
+ $: adw=attachedDesignWords[locale];
+ $: chosenAttachment=chosen?.attachment??null;
+ $: attachmentCounts=chosenAttachment?countAttachedDesign([{itemId:chosenAttachment.scene.ownerItemId,attachment:chosenAttachment}]):new Map<number,number>();
+ $: attachedSelection=selectedPlacements.some(p=>!!p.attachment);
+ $: if(chosenAttachment)loadImages([...attachmentCounts.keys()].map(itemId=>({itemId})));
+ $: if(attachmentJob&&(!active||attachmentJob.context!==contextKey||attachmentJob.timeline!==timeline)){attachmentRequest=0;attachmentJob=null;attachmentReading=false;}
+ async function openAttachment(e:Event){const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';if(!f||!worker||!chosen||!chosenGeometry?.supportPath||busyImport)return;const own=worker,job={context:contextKey,timeline,id:chosen.id,itemId:chosen.itemId};attachmentJob=job;attachmentReading=true;error='';
+  try{if(f.size>262144)throw Error('size');const raw=await f.text();if(attachmentJob!==job||worker!==own)return;attachmentRequest=nextRequest();own.postMessage({command:'room-design-support-attachment',requestId:attachmentRequest,ownerItemId:job.itemId,raw});}catch{if(attachmentJob===job){attachmentJob=null;error=sceneText[5];}}finally{attachmentReading=false;}
+ }
  let finishValues:Record<string,number>={},finishHistory:Record<string,{values:number[];cursor:number}>={},finishCatalog:Partial<Record<RoomFinishKind,{locale:WandLanguage;items:RoomFinishItem[]}>>={},finishRequest=0,finishRequested='',finishError=false,finishOpen=false,finishQuery='',finishLimit=80;
  $: finishKind=roomFinishKind(grid);
  $: finishItems=finishKind?finishCatalog[finishKind]?.items??[]:[];
@@ -114,8 +148,8 @@
  $: rw=recoveryWords[locale]??recoveryWords.en;
  $: recoveryLocation=grid?designDraftLocation(grid,worldFrame):null;
  $: recoveryState=recoveryLocation?recovery[recoveryLocation.identity]:undefined;
- $: recoveryBlocked=active&&Boolean(recoveryLocation)&&recoveryState?.phase!=='ready';
- $: if(active&&grid&&raster&&recoveryLocation&&typeof window!=='undefined')void inspectRecovery(recoveryLocation);
+  $: recoveryBlocked=!embedded&&active&&Boolean(recoveryLocation)&&recoveryState?.phase!=='ready';
+ $: if(!embedded&&active&&grid&&raster&&recoveryLocation&&typeof window!=='undefined')void inspectRecovery(recoveryLocation);
  function setRecovery(location:DraftLocation,state:RecoveryState){recovery={...recovery,[location.identity]:state};}
  async function inspectRecovery(location:DraftLocation){
   if(recovery[location.identity])return;
@@ -148,7 +182,7 @@
  function requestRecoveryShapes(job:RecoveryJob){
   if(job.offset>=job.ids.length){finishRecovery(job);return;}
   const requestId=nextRequest();recoveryJobs.set(requestId,job);
-  try{job.own.postMessage({command:'design-shapes',requestId,key:job.grid.key,itemIds:job.ids.slice(job.offset,job.offset+128)});}
+  try{job.own.postMessage({command:'design-shapes',requestId,key:job.grid.key,itemIds:job.ids.slice(job.offset,job.offset+128),...(job.offset===0&&isRoomDesign(job.grid)?{supportAttachments:designAttachments(job.draft.timeline.snapshots.flat())}: {})});}
   catch{recoveryJobs.delete(requestId);failRecovery(job);}
  }
  function failRecovery(job:RecoveryJob){
@@ -165,6 +199,7 @@
   setRecovery(job.location,{phase:'ready',revision:state.revision,writable:true});
  }
  function persistRecovery(next:DesignTimeline){
+  if(embedded){embedded.onChange(next);return;}
   const location=recoveryLocation,state=location?recovery[location.identity]:undefined;
   if(!location||state?.phase!=='ready'||!state.writable)return;
   const originalFinish=roomFinishKind(grid)?finishValues[contextKey]??0:undefined;
@@ -256,7 +291,7 @@
   return roomChecked(validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs),g,r,defs);
  }
  function translateSelection(ids:readonly number[],dx:number,dy:number){
-  if(!dx&&!dy)return false;
+  if(!dx&&!dy)return false;if(symmetry&&currentDesign(timeline).some(p=>ids.includes(p.id)&&p.attachment)){error=adw[5];return false;}
   const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height,grid,raster);
   if(!plan&&symmetry){error=inspectionWords[3];return false;}
   return save(plan);
@@ -296,15 +331,15 @@
  let importInput:HTMLInputElement,sceneInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
  let activeScene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='center',sceneReading=false;
  $: sceneText=sceneWords[locale]??sceneWords.en;
- $: sceneCapture=grid&&selectedIds.size?captureScene(timeline,[...selectedIds],definitions,grid.factor):null;
- $: fullRoomScene=isRoomDesign(grid)&&grid&&placements.length?captureScene(timeline,placements.map(p=>p.id),definitions,grid.factor):null;
+ $: sceneCapture=grid&&selectedIds.size?(isRoomDesign(grid)?captureAttachedRoomScene(timeline,[...selectedIds],definitions,grid.factor):captureScene(timeline,[...selectedIds],definitions,grid.factor)):null;
+ $: fullRoomScene=isRoomDesign(grid)&&grid&&placements.length?captureAttachedRoomScene(timeline,placements.map(p=>p.id),definitions,grid.factor):null;
  $: rsw=roomSurfaceWords[locale];
- $: sceneRequired=activeScene?sceneItemCounts(activeScene.items):new Map<number,number>();
+ $: sceneRequired=activeScene?countAttachedDesign(pasting.length?pasting:pastePending.length?pastePending:activeScene.items):new Map<number,number>();
  $: if(activeScene)loadImages([...sceneRequired.keys()].map(itemId=>({itemId})));
  function scenePoint(p:Cell|null,clip=pasting,defs=definitions){return !p?null:activeScene?sceneOrigin(p,sceneAnchor,clip,defs):p;}
  function setSceneAnchor(value:ScenePreset['anchor']){sceneAnchor=value;hover=scenePoint(lastPoint);}
- function saveScene(scene:ScenePreset|null=sceneCapture){if(!scene||busyImport)return;try{const text=JSON.stringify(scene);parseScene(text,scene.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
- async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file||!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const scene=convertSceneFactor(parseSceneAnyFactor(await file.text()),factor);if(!scene)throw Error('incompatible scene factor');if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste([...scene.items],scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
+ function saveScene(scene:ScenePreset|MixedScenePreset|null=sceneCapture){if(!scene||busyImport)return;try{const text=JSON.stringify(scene);if(scene.schema==='wand.preset.mixed-scene@1')parseMixedScene(text);else parseScene(text,scene.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
+ async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file||!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await file.text();let scene:ScenePreset|null,clip:DesignClipItem[];try{scene=convertSceneFactor(parseSceneAnyFactor(raw),factor);if(!scene)throw Error('incompatible scene factor');clip=[...scene.items];}catch{if(!isRoomDesign(grid)||factor!==2||!grid.gridDataPath.startsWith('GridData/Rooms/'))throw Error('mixed scene context');const mixed=parseMixedScene(raw);clip=mixed.items.map(({support,...pose})=>({...pose,...(support?{attachment:{scene:support,designOnly:false}}:{})}));scene={schema:'wand.preset.scene@1',gameVersion:'1.26.2',factor:2,anchor:mixed.anchor,items:mixed.items.map(({support,...pose})=>pose)};}if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste(clip,scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
 
  let areaReview:{key:string;areaKey:string;baseline:DesignTimeline;next:DesignTimeline;preview:readonly DesignPlacement[];incoming:Map<number,DesignItemGeometry>;summary:ReturnType<typeof reviewWholeArea>}|null=null;
  $: if(areaReview&&(!active||areaReview.key!==contextKey||areaReview.baseline!==timeline||areaReview.areaKey!==areaTarget?.key||!areaKind))areaReview=null;
@@ -322,7 +357,7 @@
   'pt-BR':['Salvar','Abrir','Itens necessários','Não foi possível abrir o projeto. Verifique a área e os itens.','Substituir o projeto da área?','Abrindo…']
  } as const;
  $: words=labels[locale]??labels.en;
- $: busyImport=reading||pendingImport!==null||areaReview!==null||islandBusy||islandReview!==null||recoveryBlocked;
+ $: busyImport=directSupportJob!==null||attachmentReading||attachmentJob!==null||reading||pendingImport!==null||areaReview!==null||islandBusy||islandReview!==null||recoveryBlocked;
  $: counts=designItemCounts(placements);
  $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
  $: if(active&&showCounts)loadImages([...counts.keys()].map(itemId=>({itemId})));
@@ -430,7 +465,7 @@
    const id=nextRequest();
    if(kind&&presetTarget&&!incoming.length){if(!prepareAreaReview(presetTarget.key,[],new Map()))throw Error('AREA_PRESET_EMPTY');return;}
    pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas,...(importedFinish!==undefined?{roomFinish:importedFinish}:{}),...(kind&&presetTarget?{areaKind:kind,areaKey:presetTarget.key}:{})};
-   own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
+   own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))],...(isRoomDesign(target)?{supportAttachments:designAttachments(incoming)}:{})});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
  }
@@ -467,7 +502,7 @@
  $: if(worker!==subscribed){
    subscribed?.removeEventListener('message',receive);
    for(const job of recoveryJobs.values())failRecovery(job);recoveryJobs.clear();
-   subscribed=worker;subscribed?.addEventListener('message',receive);
+   attachmentJob=null;attachmentRequest=0;attachmentReading=false;subscribed=worker;subscribed?.addEventListener('message',receive);
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
@@ -480,6 +515,24 @@
  }
  function receive(e:MessageEvent){
    const d=e.data;
+   if(directSupportRequest&&d?.requestId===directSupportRequest){
+    const job=directSupportJob;directSupportRequest=0;
+    if(!job||job.baseline!==timeline||job.own!==worker||job.context!==contextKey){closeDirectSupport(false);return;}
+    if(directSupportApplying){
+     directSupportApplying=false;
+     if(d.kind!=='room-design-support-validate'){error=dsw[5];return;}
+     try{const a=readDesignAttachment(d,job.itemId,true),g=definitions.get(job.itemId);if(!a||!g)throw Error('attachment');const next=replaceDesignAttachment(timeline,job.id,a,g);if(!next)throw Error('attachment');closeDirectSupport(false);if(!save(next))throw Error('attachment');}catch{error=dsw[5];}return;
+    }
+    try{if(d.kind!=='room-design-support-open'||!d.template||!Array.isArray(d.defs))throw Error('support open');
+     const t=d.template as RoomDesignTemplate,start=supportEditTimeline(job.initial,t),defs=new Map<number,DesignItemGeometry>((d.defs as DesignItemGeometry[]).map(g=>[g.itemId,g]));
+     if(!start||!roomDesignValid(start,t.grid,t.raster,defs))throw Error('support geometry');
+     directSupportDraft=start;directSupportEditor={job,template:t,embedded:{start,definitions:defs,onChange:next=>{if(directSupportJob===job)directSupportDraft=next;}}};
+    }catch{closeDirectSupport(false);error=dsw[5];}return;
+   }
+   if(attachmentRequest&&d?.requestId===attachmentRequest){const job=attachmentJob;attachmentRequest=0;attachmentJob=null;
+    if(!job||!active||job.context!==contextKey||job.timeline!==timeline)return;
+    try{if(d.kind!=='room-design-support-attachment')throw Error('attachment');symmetry=null;symmetryPicking=false;const a=readDesignAttachment(d,job.itemId,true),g=definitions.get(job.itemId);if(!a||!g||!save(replaceDesignAttachment(timeline,job.id,a,g)))throw Error('attachment');}catch{error=sceneText[5];}return;
+   }
    if(finishRequest&&d?.requestId===finishRequest){finishRequest=0;
     const [kind,lang]=finishRequested.split(':') as [RoomFinishKind,WandLanguage];
     if(d.kind!=='room-finish-catalog'||d.surface!==kind||!Array.isArray(d.items)||d.items.some((i:RoomFinishItem)=>!roomFinishIdValid(i.itemId,kind)||i.itemId===0||typeof i.name!=='string')){finishError=true;return;}
@@ -512,7 +565,7 @@
      if(pending.capture&&pending.capture!==capturedLayout)return;
      const merged=new Map([...definitions,...incoming]);
      const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
-     if(!next||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
+     if(!next||embedded&&currentDesign(next).length>31||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
      const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
      selected=null;groupIds=[];cancel();
@@ -583,12 +636,13 @@
    ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
  }
  function save(next:DesignTimeline|null,defs=definitions):boolean{
-   if(recoveryBlocked||!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,defs))){error=isRoomDesign(grid)?roomDesignWords[locale][4]:worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
+   if(recoveryBlocked||!grid||!next||embedded&&currentDesign(next).length>31||!validatedMainlandPlan(worldFrame,timeline,next,defs)||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,defs))){error=isRoomDesign(grid)?roomDesignWords[locale][4]:worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
    if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}error='';return true;
  }
  function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
+   if(symmetry&&attachedSelection){error=adw[5];return;}
    if(worldFrame)delta=(4-delta)%4;
    alignmentAction=null;
    if(pasting.length){
@@ -607,14 +661,14 @@
    if(!clip.length||!grid||busyImport)return;
    if(worldFrame&&clip.some(p=>exclusiveAnchorClass(String(p.itemId)))){save(null);return;}
    if(clip.some(p=>{const g=definitions.get(p.itemId);return g&&!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}
-   cancel();selected=null;groupIds=[];activeScene=scene;sceneAnchor=scene?.anchor??'corner';
-   if(clip.every(p=>definitions.has(p.itemId))){if(scene&&!sceneBounds(clip,definitions)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint);return;}
+   cancel();selected=null;groupIds=[];if(clip.some(p=>p.attachment)){symmetry=null;symmetryPicking=false;}activeScene=scene;sceneAnchor=scene?.anchor??'corner';
+   if(clip.every(p=>definitions.has(p.itemId)&&!p.attachment)){if(scene&&!sceneBounds(clip,definitions)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint);return;}
    if(!worker)return;
    pastePending=clip;pasteRequest=nextRequest();
-   worker.postMessage({command:'design-shapes',requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))]});
+   worker.postMessage({command:'design-shapes',requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))],...(isRoomDesign(grid)?{supportAttachments:designAttachments(clip)}:{})});
  }
  function commitPaste(x:number,y:number){
-   if(placeWithSymmetry(x,y,pasting.map(p=>({itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation}))))return;
+   if(placeWithSymmetry(x,y,pasting.map(p=>({itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})}))))return;
    const next=pasteDesign(timeline,pasting,definitions,x,y,width,height);
    if(!next){save(null);return;}
    const ids=currentDesign(next).slice(-pasting.length).map(o=>o.id);if(!save(next))return;cancel();
@@ -625,7 +679,7 @@
  $: symmetricSelectedPreview=symmetry&&symmetricSelection.length?symmetricDesignItems(symmetricSelection,definitions,symmetry,false,placements):null;
  $: rawSymmetricSelectedPlan=symmetry&&symmetricSelection.length?symmetryPlan(timeline,symmetricSelection,definitions,symmetry,false,width,height):null;
  $: symmetricSelectedPlan=rawSymmetricSelectedPlan&&mainlandItemsValid(worldFrame,rawSymmetricSelectedPlan,definitions)&&(!isRoomDesign(grid)||roomChecked(commitSymmetry(timeline,rawSymmetricSelectedPlan,definitions,width,height),grid,raster,definitions))?rawSymmetricSelectedPlan:null;
- $: symmetricOriginal=hover&&placing?[{itemId:placing.itemId,x:hover.x,y:hover.y,orientation}]:hover&&pasting.length?pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation})):[];
+ $: symmetricOriginal=hover&&placing?[{itemId:placing.itemId,x:hover.x,y:hover.y,orientation}]:hover&&pasting.length?pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})})):[];
  $: symmetricPreview=symmetry&&symmetricOriginal.length?symmetricDesignItems(symmetricOriginal,definitions,symmetry,true,placements):null;
  $: rawSymmetricPlacementPlan=symmetry&&symmetricOriginal.length?symmetryPlan(timeline,symmetricOriginal,definitions,symmetry,true,width,height):null;
  $: symmetricPlacementPlan=rawSymmetricPlacementPlan&&mainlandItemsValid(worldFrame,rawSymmetricPlacementPlan,definitions)&&(!isRoomDesign(grid)||roomChecked(commitSymmetry(timeline,rawSymmetricPlacementPlan,definitions,width,height),grid,raster,definitions))?rawSymmetricPlacementPlan:null;
@@ -724,7 +778,7 @@
  function endSpace(e:KeyboardEvent){if(e.code!=='Space'||!spacePan)return;const select=!spaceUsed&&active&&!busyImport&&focusedId!==null&&!placing&&!pasting.length&&!moveMode;spacePan=false;spaceUsed=false;if(select&&focusedId!==null){e.preventDefault();focusPlaced(focusedId,true);}}
 
  function keys(e:KeyboardEvent){
-   if(!active||busyImport||!worldShortcutTarget(e,root))return;
+   if(!active||directSupportEditor||busyImport||!worldShortcutTarget(e,root))return;
    if(e.target instanceof HTMLElement&&e.target.closest('.design-plot')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     if(e.key==='['||e.key===']'){if(cyclePlaced(e.key==='['?-1:1))e.preventDefault();return;}
     if(e.code==='Space'){e.preventDefault();if(!spacePan){spacePan=true;spaceUsed=false;}return;}
@@ -750,7 +804,7 @@
 </script>
 <svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;spaceUsed=false;direct=null;roadDrag=null;}}/>
 {#if active&&grid&&raster}
- <div class="design-workspace" class:mainland-design={Boolean(worldFrame)} bind:this={root}>
+ <div class="design-workspace" class:mainland-design={Boolean(worldFrame)} inert={!!directSupportEditor} bind:this={root}>
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
@@ -790,6 +844,7 @@
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
     <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){inspectorOpen=false;placedSearchOpen=false;layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
+    {#if chosenGeometry?.supportPath&&isRoomDesign(grid)&&!embedded}<button type="button" disabled={busyImport||!worker||!!chosenAttachment?.scene.tree.objects.some(o=>!!o.child)} title={chosenAttachment?.scene.tree.objects.some(o=>!!o.child)?dsw[4]:dsw[0]} on:click={openDirectSupport}>{dsw[0]}</button><input type="file" accept=".json,application/json" hidden bind:this={attachmentInput} on:change={openAttachment}/><button type="button" disabled={busyImport||!worker} title={adw[4]} on:click={()=>attachmentInput.click()}>{adw[0]}</button>{#if chosenAttachment}<button type="button" disabled={busyImport} on:click={()=>{if(chosen&&chosenGeometry)save(replaceDesignAttachment(timeline,chosen.id,undefined,chosenGeometry));}}>{adw[2]}</button>{/if}{/if}
     {#if chosenGeometry&&grid&&(roadPitch(chosenGeometry,grid.factor)||fencePitch(chosenGeometry,grid.factor))}
      <button type="button" title={locale==='ja'?'接続範囲を選択':'Select connected network'} aria-label={locale==='ja'?'接続範囲を選択':'Select connected network'} on:click={()=>selectNetwork()}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>
      <button type="button" title={locale==='ja'?'スタイル置換':'Replace style'} aria-label={locale==='ja'?'スタイル置換':'Replace style'} on:click={()=>selectNetwork(true)}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M3 7h17l-4-4M21 17H4l4 4M20 7l-4 4M4 17l4-4"/></svg></button>
@@ -840,6 +895,7 @@
        <g class="design-object" data-design-id={o.localOrdinal} data-item-id={o.itemId} transform={'translate('+o.x+' '+o.y+')'}>
         <path class="design-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={focusedId===o.localOrdinal?'#f5cf70':selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width={focusedId===o.localOrdinal?2:1} vector-effect="non-scaling-stroke"/>
         {#if showWorldArtwork(o,shape,cellPixels)&&images.has(Number(o.itemId))}<WorldObjectArtwork href={images.get(Number(o.itemId))!} width={shape.width} height={shape.height} flipY={Boolean(worldFrame)}/>{/if}
+        {#if placementById.get(o.localOrdinal)?.attachment}<circle cx={shape.width-.35} cy=".35" r=".3" fill="#4bddcd" stroke="#27313a" stroke-width=".06" pointer-events="none"/>{/if}
         {#if o.orientationCode!==null&&cellPixels>=5&&o.layer!=='ground'&&o.layer!=='fence'}<path class="design-orientation" d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff" stroke="#28333c" stroke-width=".035" pointer-events="none"/>{/if}
        </g>
       {/if}
@@ -891,7 +947,7 @@
    <div class="design-status">
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
-    {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{/if}
+    {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small><div class="attached-art">{#each [...attachmentCounts] as [id,n]}{@const count=n-(id===chosenAttachment.scene.ownerItemId?1:0)}{#if count>0}<span>{#if images.get(id)}<img src={images.get(id)} alt="" title={definitions.get(id)?.name??adw[1]}/>{/if}×{count}</span>{/if}{/each}</div>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}
     {#if warnings.length}<span>地形属性不一致候補</span>{/if}
     
     <small>ゲーム内の配置可否は未確認</small>
@@ -906,8 +962,17 @@
 
   </div>
  </div>
+ {#if directSupportEditor}
+  <div class="direct-support-workspace" role="dialog" aria-modal="true" aria-label={dsw[0]}>
+   <div class="direct-support-header"><strong>{directSupportEditor.template.label}</strong><small>{dsw[6]}</small><button type="button" disabled={directSupportApplying} on:click={()=>closeDirectSupport()}>{dsw[2]}</button><button type="button" disabled={directSupportApplying||!directSupportDraft} on:click={applyDirectSupport}>{dsw[1]}</button>{#if directSupportApplying}<small role="status">…</small>{/if}{#if error}<small role="alert">{error}</small>{/if}</div>
+   <div class="direct-support-body" inert={directSupportApplying}>
+    <svelte:self active={true} grid={directSupportEditor.template.grid} raster={directSupportEditor.template.raster} embedded={directSupportEditor.embedded} {worker} {nextRequest} {locale}/>
+   </div>
+  </div>
+ {/if}
 {/if}
 <style>
+ .direct-support-workspace{position:absolute;inset:0;z-index:20;background:var(--wand-bg);display:flex;flex-direction:column;min-height:0}.direct-support-header{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px;background:var(--wand-card)}.direct-support-header strong{flex:1}.direct-support-body{position:relative;flex:1;min-height:0}
  .scene-placement{position:absolute;top:52px;right:8px;z-index:8;display:grid;gap:5px;padding:8px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);color:var(--wand-text)} .scene-placement div{display:flex;gap:4px;flex-wrap:wrap}.scene-placement .scene-required{display:grid;max-height:25vh;overflow:auto}.scene-required-row{align-items:center}.scene-required-row img{width:24px;height:24px;object-fit:contain}.scene-required-row span{flex:1}
  .design-capture{position:absolute;top:52px;right:8px;z-index:9;max-width:min(310px,calc(100% - 16px));display:grid;gap:5px;padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.design-capture div{display:flex;gap:6px;flex-wrap:wrap}.design-capture small{color:var(--wand-muted)}
  .stock-filter{font-size:12px;color:var(--wand-muted)}.stock-filter label{display:flex;align-items:center;gap:4px}.furniture-stock-count{font-size:10px;color:var(--wand-muted)}
@@ -926,6 +991,7 @@
  .design-item-artwork{display:block;flex:none;width:56px;height:56px;max-width:100%;pointer-events:none}
  .design-item img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+ .attached-art{display:flex;gap:4px;flex-wrap:wrap}.attached-art span{display:flex;align-items:center;gap:2px}.attached-art img{width:28px;height:28px;object-fit:contain}
  .finish-icon{width:24px;height:24px;object-fit:contain;vertical-align:middle;margin-inline-end:4px}.finish-design-panel{position:absolute;z-index:6;right:8px;top:52px;width:min(320px,90%);max-height:70%;overflow:auto;display:grid;gap:6px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:8px}.finish-design-current{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.finish-design-current img{width:64px;height:64px;object-fit:contain}.finish-design-current strong{flex:1}.finish-design-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;max-height:250px;overflow:auto}.finish-design-items button{display:grid;justify-items:center;align-content:start;gap:2px;min-width:0}.finish-design-items img{width:52px;height:52px;object-fit:contain}.finish-design-items small{overflow-wrap:anywhere}
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
  .design-plot svg{display:block;width:100%;height:100%}.design-marquee,.design-drag-ghost{pointer-events:none}

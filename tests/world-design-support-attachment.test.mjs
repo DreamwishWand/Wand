@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readDesignAttachment,captureAttachedRoomScene,supportEditTimeline,supportEditAttachment} from '../src/lib/world/design-support-attachment.ts';
+import {emptyDesign,placeDesign,replaceDesignAttachment,currentDesign,transformDesign,designClipboard,pasteDesign,designItemCounts,serializeDesign,parseDesign,travelDesign,rotateDesignClipboard} from '../src/lib/world/design-layout.ts';
+import {makeDesignDraft,parseDesignDraft,designDraftLocation} from '../src/lib/world/design-draft.ts';
+const owner=40000001,child=40000002,path='GridData/Furniture/Test-GridData.json';
+const support={scene:{schema:'wand.preset.support-scene@1',gameVersion:'1.26.2',ownerItemId:owner,tree:{factor:2,sourcePath:path,objects:[{itemId:child,x:0,y:0,orientation:'GridOrientation_Down',child:null}]}},designOnly:false};
+const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],acceptedFloorTypesFlag:1024,path:'M0 0h2v2H0Z'};
+const geometry={itemId:owner,name:'Table',layer:'furniture',surfaceCapable:true,supportPath:path,shapes:Object.fromEntries([0,4,8,12].map(n=>[owner+':'+n,shape]))},defs=new Map([[owner,geometry]]);
+const grid={key:'room-design:GridData/Rooms/Room8x8-GridData.json:'+('a'.repeat(64)),layoutId:'DesignRooms/local-only.json',gridDataPath:'GridData/Rooms/Room8x8-GridData.json',gridIdNative:0,sizeX:8,sizeY:8,factor:2};
+test('support descendants follow root movement, rotation, copy and history',()=>{
+ const placed=placeDesign(emptyDesign(),geometry,1,1,2,16,16),t=replaceDesignAttachment(placed,1,support,geometry);
+ assert.equal(currentDesign(t)[0].attachment,support);
+ const moved=transformDesign(t,1,geometry,3,4,3,16,16);assert.deepEqual(currentDesign(moved)[0].attachment,support);
+ const clip=rotateDesignClipboard(designClipboard(moved,[1]),defs,1);assert.deepEqual(clip[0].attachment,support);
+ const duplicated=pasteDesign(moved,clip,defs,8,8,16,16);
+ assert.deepEqual([...designItemCounts(currentDesign(duplicated))],[[child,2],[owner,2]]);
+ assert.equal(currentDesign(travelDesign(t,-1))[0].attachment,undefined);
+ assert.deepEqual(currentDesign(travelDesign(travelDesign(t,-1),1))[0].attachment,support);
+ assert.deepEqual(parseDesign(serializeDesign(duplicated,grid),grid),currentDesign(duplicated));
+ const location=designDraftLocation(grid,null),draft=makeDesignDraft(location,duplicated,{zoom:1,x:.5,y:.5},[1]);
+ assert.deepEqual(parseDesignDraft(draft,location).timeline,duplicated);
+ assert.equal(captureAttachedRoomScene(placed,[1],defs,2),null);
+ assert.equal(captureAttachedRoomScene(t,[1],defs,2).schema,'wand.preset.mixed-scene@1');
+ const local=replaceDesignAttachment(placed,1,{...support,designOnly:true},geometry);
+ assert.equal(captureAttachedRoomScene(local,[1],defs,2),null);
+ assert.throws(()=>readDesignAttachment({attachment:support},child,true));
+ assert.throws(()=>readDesignAttachment({attachment:support},owner,false));
+});
+
+test('direct support edit retains exact source factor and stages one parent operation',()=>{
+ const template={kind:'support',ownerItemId:owner,label:'Table',grid:{...grid,key:'room-design:support:'+owner+':'+path+':'+('a'.repeat(64))+':f1',gridDataPath:path,factor:1},raster:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64).fill(1024)}};
+ const initial={...support,scene:{...support.scene,tree:{...support.scene.tree,factor:1}}};
+ const start=supportEditTimeline(initial,template);assert.equal(start.snapshots[0][0].itemId,child);assert.equal(start.snapshots[0][0].orientation,2);
+ const next={snapshots:[start.snapshots[0],[{...start.snapshots[0][0],x:1,y:2}]],cursor:1,nextId:2};
+ const a=supportEditAttachment(next,template,initial);assert.equal(a.designOnly,false);assert.equal(a.scene.tree.factor,1);assert.equal(a.scene.tree.objects[0].x,1);assert.equal(initial.scene.tree.objects[0].x,0);
+ const room=replaceDesignAttachment(placeDesign(emptyDesign(),geometry,1,1,2,16,16),1,initial,geometry),updated=replaceDesignAttachment(room,1,a,geometry);
+ assert.equal(updated.snapshots.length,room.snapshots.length+1);assert.deepEqual(currentDesign(travelDesign(updated,-1))[0].attachment,initial);
+ assert.equal(supportEditTimeline(initial,{...template,grid:{...template.grid,factor:2}}),null);
+ const nested={...initial,scene:{...initial.scene,tree:{...initial.scene.tree,objects:[{...initial.scene.tree.objects[0],child:{factor:1,sourcePath:path,objects:[]}}]}}};
+ assert.equal(supportEditTimeline(nested,template),null);
+ const localTemplate={...template,grid:{...template.grid,factor:2}},empty=supportEditTimeline(undefined,localTemplate);
+ assert.equal(supportEditAttachment(empty,localTemplate,undefined).designOnly,true);
+ assert.equal(supportEditAttachment({snapshots:[Array.from({length:32},(_,i)=>({id:i+1,itemId:child,x:i,y:0,orientation:2}))],cursor:0,nextId:33},localTemplate,undefined),null);
+});

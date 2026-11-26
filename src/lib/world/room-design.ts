@@ -29,7 +29,7 @@ export function roomDesignValid(t:DesignTimeline,grid:PublicTerrainGridRef,raste
   const tree:SupportTree={factor:grid.factor,sourcePath:grid.gridDataPath,objects:[]};
   const shapes:Record<string,import('./source-object-map.ts').SourceObjectShape>={};for(const id of new Set(snapshot.map(p=>p.itemId)))Object.assign(shapes,defs.get(id)?.shapes??{});
   for(const p of snapshot){const g=defs.get(p.itemId),orientation=CARDINAL_ORIENTATIONS[p.orientation];
-   if(!g||g.layer!=='furniture'||g.surfaceCapable||!orientation||!supportPlacementFits(tree,shapes,raster,p.itemId,p.x,p.y,orientation))return false;
+   if(!g||g.layer!=='furniture'||g.surfaceCapable&&!g.supportPath||p.attachment&&(!g.supportPath||p.attachment.scene.ownerItemId!==p.itemId||p.attachment.scene.tree.sourcePath!==g.supportPath)||!orientation||!supportPlacementFits(tree,shapes,raster,p.itemId,p.x,p.y,orientation))return false;
    tree.objects.push({itemId:p.itemId,x:p.x,y:p.y,orientation,child:null});
   }
  }return true;
@@ -41,11 +41,11 @@ export const roomSurfaceWords={ja:['床面','壁面','面全体のSceneを保存
 /** A design-only surface for a DB-01-correlated owner/path. No Save
  * tessellation is inferred. The portable flat Scene is converted against
  * the actual target's native factor when importing into an existing support. */
-export function supportDesignTemplate(raw:unknown,ownerItemId:number,path:string,label:string):RoomDesignTemplate|null{
+export function supportDesignTemplate(raw:unknown,ownerItemId:number,path:string,label:string,factor:1|2=2):RoomDesignTemplate|null{
  if(!Number.isSafeInteger(ownerItemId)||Math.floor(ownerItemId/100000)!==400||!/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(path)||path.includes('..')||!label)return null;
  const raster=supportTerrainRow(raw,path);if(!raster||!raster.nativeFloorValues.some(v=>v!==0))return null;
  const row=(raw as {grids:unknown[][]}).grids.find(r=>Array.isArray(r)&&r[0]===path);if(!row)return null;
- const grid:PublicTerrainGridRef={key:'room-design:support:'+ownerItemId+':'+path+':'+row[3],layoutId:'DesignRooms/local-only.json',gridDataPath:path,gridIdNative:0,sizeX:raster.sizeX,sizeY:raster.sizeY,factor:2};
+ const grid:PublicTerrainGridRef={key:'room-design:support:'+ownerItemId+':'+path+':'+row[3]+(factor===1?':f1':''),layoutId:'DesignRooms/local-only.json',gridDataPath:path,gridIdNative:0,sizeX:raster.sizeX,sizeY:raster.sizeY,factor};
  return {grid,raster,label,kind:'support',ownerItemId};
 }
 /** Import a flat arrangement into an explicitly chosen existing support.
