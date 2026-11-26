@@ -15,7 +15,7 @@ wasm = ["dep:wasm-bindgen"]
 aes = "=0.8.4"
 crc32fast = "=1.5.0"
 flate2 = { version = "=1.1.5", default-features = false, features = ["rust_backend"] }
-serde_json = "=1.0.145"
+serde_json = { version = "=1.0.145", features = ["raw_value"] }
 ddv-save-patch = { path = "../ddv-save-patch" }
 sha2 = "=0.10.8"
 zeroize = "=1.8.2"
