@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onMount,onDestroy} from 'svelte';
+  import {localSaveSession} from '$lib/ui/local-save-session';
+  import {memoryCandidateFlags} from '$lib/media/saved-memory-flags';
   import {getMemorySources,type MemorySources} from '$lib/media/memory-media';
   import {MASK_PREVIEW_EVIDENCE,maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
   import {openMaskPreview,type MaskPreview} from '$lib/media/memory-mask-preview';
@@ -35,6 +37,19 @@
   }
   onMount(()=>{void load(itemId);});
   onDestroy(()=>{controller?.abort();renderer?.dispose();});
+  // Read-only comparison with the same Save session that Collection uses.
+  // This route never decodes another copy or modifies a record.
+  $: savedFlags=$localSaveSession.memoryFlags;
+  $: savedMemoryIds=Object.keys(savedFlags?.entries??{}).map(Number).filter(id=>{
+    const candidate=getMemorySources(id);
+    return candidate&&memoryMaskEvidence(candidate.mask.sha256,candidate.numberOfShards)&&
+      memoryCandidateFlags(savedFlags,id,candidate.numberOfShards)!==null;
+  }).sort((a,b)=>a-b);
+  $: candidateFlags=source?memoryCandidateFlags(savedFlags,itemId,source.numberOfShards):null;
+  function applySavedFlags(){
+    if(candidateFlags===null)return;
+    selected=candidateFlags;redraw();
+  }
 </script>
 <svelte:head>
   <title>Memory mask preview · Dreamwish Wand</title>
@@ -50,6 +65,19 @@
       {/each}
     </select>
   </label>
+  <div class="controls">
+    {#if savedMemoryIds.length}
+      <label>Memory from current local Save
+        <select value={savedMemoryIds.includes(itemId)?String(itemId):''} on:change={(event)=>{const id=Number(event.currentTarget.value);if(id>0)void load(id);}}>
+          <option value="">Select recorded Memory</option>
+          {#each savedMemoryIds as id}<option value={String(id)}>{id}</option>{/each}
+        </select>
+      </label>
+      <button type="button" disabled={candidateFlags===null||loading} on:click={applySavedFlags}>Use observed Save flags for comparison</button>
+    {:else}
+      <p>For a local Save comparison, load the Save in Collection first, then navigate here within the same session. Absent or incompatible values are not interpreted as zero.</p>
+    {/if}
+  </div>
   {#if evidence}
     <p>Exact dominant one-hot coverage: {(100*evidence[4]/evidence[5]).toFixed(3)}% · {evidence[3]} / {evidence[1]} expected dominant values</p>
     {#if source&&!maskPreviewEligible(source.mask.sha256,source.numberOfShards)}<p role="status">Exceptional mask: native arithmetic can be inspected, but piece coverage is not verified.</p>{/if}
