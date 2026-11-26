@@ -1,3 +1,6 @@
+import {readDesignAttachment,type DesignSupportAttachment} from './design-support-attachment.ts';
+import {parseSceneAnyFactor,convertSceneFactor} from './scene-preset.ts';
+import {flatSupportScene} from './room-design.ts';
 import {roomFinishRecordValid,type RoomFinishKind,type RoomFinishItem} from './room-finish-design.ts';
 import {roomDesignTemplates,supportDesignTemplate,type RoomDesignTemplate} from './room-design.ts';
 import {parseAreaScene} from './area-scene.ts';
@@ -59,6 +62,29 @@ async function boundSupportTerrain(path:unknown,owner:unknown){
  if(value?.SubGrid?.SubGridDataPath!==path)return null;
  supportCatalog??=fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/support-terrain.json').then(r=>{if(!r.ok)throw Error('support data');return r.json();}).catch(e=>{supportCatalog=null;throw e;});
  return supportTerrainRow(await supportCatalog,path);
+}
+async function validateSupportRoots(roots:readonly {itemId:number;support:import('./support-scene.ts').SupportScene|null}[]){
+ const definitions=await loadGeometry();let total=0,treeCount=0;const itemIds=new Set<number>();
+ supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+ const paths=await supportPaths;
+ async function check(owner:number,t:SupportTree,depth:number):Promise<boolean>{
+  if(depth>8||!t.sourcePath)return false;
+  const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
+  const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},t.factor);
+  for(const o of t.objects){
+   if(++total>SCENE_FURNITURE_LIMIT||++treeCount>SCENE_SUPPORT_TREE_LIMIT)return false;itemIds.add(o.itemId);
+   const code=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4,p=cache.resolve(o.itemId,code);
+   if(!p.shapeKey||p.layer!=='furniture'||nativeActionBlocked(p.editRestrictions,'select')||nativeActionBlocked(p.editRestrictions,'move')||nativeActionBlocked(p.editRestrictions,'remove'))return false;
+   const source=paths.get(o.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
+   if(o.child?source?.SubGrid?.SubGridDataPath!==o.child.sourcePath:!!source?.SubGrid?.SubGridDataPath||p.surfaceCapable)return false;
+  }
+  const staged:SupportTree={...t,objects:[]};
+  for(const o of t.objects){if(!supportPlacementFits(staged,cache.shapes,terrain,o.itemId,o.x,o.y,o.orientation))return false;staged.objects.push(o);if(o.child&&!await check(o.itemId,o.child,depth+1))return false;}
+  return true;
+ }
+ for(const root of roots){treeCount=1;itemIds.add(root.itemId);if(++total>SCENE_FURNITURE_LIMIT)return {valid:false,itemIds};const source=paths.get(root.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
+  if(root.support?!await check(root.itemId,root.support.tree,0):!!source?.SubGrid?.SubGridDataPath)return {valid:false,itemIds};}
+ return {valid:true,itemIds};
 }
 async function loadGeometry(){
   if(!geometry)geometry=(async()=>{
@@ -125,36 +151,8 @@ scope.onmessage=async({data})=>{
       const mixed=data.command==='mixed-scene-geometry'?parseMixedScene(JSON.stringify(data.scene)):null;
       const area=data.command==='area-scene-geometry'?parseAreaScene(JSON.stringify(data.scene)):null;
       const single=mixed||area?null:parseSupportScene(JSON.stringify(data.scene));
-      const definitions=await loadGeometry();let total=0,treeCount=0;
-      const itemIds=new Set<number>();
-      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
-      const paths=await supportPaths;
-      async function check(owner:number,t:SupportTree,depth:number):Promise<boolean>{
-        if(depth>8||!t.sourcePath)return false;
-        const terrain=await boundSupportTerrain(t.sourcePath,owner);if(!terrain)return false;
-        const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},t.factor);
-        for(const o of t.objects){
-          if(++total>SCENE_FURNITURE_LIMIT||++treeCount>SCENE_SUPPORT_TREE_LIMIT)return false;itemIds.add(o.itemId);
-          const code=CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4;
-          const p=cache.resolve(o.itemId,code);
-          if(!p.shapeKey||p.layer!=='furniture'||nativeActionBlocked(p.editRestrictions,'select')||nativeActionBlocked(p.editRestrictions,'move')||nativeActionBlocked(p.editRestrictions,'remove'))return false;
-          const source=(await supportPaths!).get(o.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
-          if(o.child?source?.SubGrid?.SubGridDataPath!==o.child.sourcePath:!!source?.SubGrid?.SubGridDataPath||p.surfaceCapable)return false;
-        }
-        const staged:SupportTree={...t,objects:[]};
-        for(const o of t.objects){
-          if(!supportPlacementFits(staged,cache.shapes,terrain,o.itemId,o.x,o.y,o.orientation))return false;
-          staged.objects.push(o);if(o.child&&!await check(o.itemId,o.child,depth+1))return false;
-        }
-        return true;
-      }
-      let valid=true;
       const roots=area?area.items.filter(p=>!p.network):mixed?mixed.items:single?[{itemId:single.ownerItemId,support:single}]:[];
-      for(const root of roots){
-        treeCount=1;itemIds.add(root.itemId);if(++total>SCENE_FURNITURE_LIMIT){valid=false;break;}
-        const source=paths.get(root.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined;
-        if(root.support?!await check(root.itemId,root.support.tree,0):!!source?.SubGrid?.SubGridDataPath){valid=false;break;}
-      }
+      const {valid,itemIds}=await validateSupportRoots(roots);
       const names=valid&&typeof data.locale==='string'?new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage)):new Map<number,string>();
       scope.postMessage({kind:data.command,requestId:id,valid,names:[...itemIds].flatMap(itemId=>names.has(itemId)?[[itemId,names.get(itemId)]]:[])});return;
     }
@@ -181,6 +179,23 @@ scope.onmessage=async({data})=>{
       for(let i=0;i<ids.length;i+=128){for(const item of await db.getItems(ids.slice(i,i+128))){if(item&&roomFinishRecordValid(item,kind))items.push({itemId:item.itemId,name:names.get(item.itemId)??item.names[locale]??'—'});}}
       items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'room-finish-catalog',requestId:id,surface:kind,items});return;
     }
+    if(data.command==='room-design-support-attachment'){
+      if(!release||typeof data.raw!=='string'||data.raw.length>262144||!Number.isSafeInteger(data.ownerItemId))throw Error('attachment');
+      const owner=data.ownerItemId as number;
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+      const path=((await supportPaths).get(owner) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath;
+      const terrain=path?await boundSupportTerrain(path,owner):null;if(!path||!terrain)throw Error('support template');
+      let attachment:DesignSupportAttachment;
+      try{attachment={scene:parseSupportScene(data.raw),designOnly:false};}catch{
+        const doc=convertSceneFactor(parseSceneAnyFactor(data.raw),2);if(!doc||doc.items.length>32)throw Error('flat scene');
+        const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:await loadGeometry()},2),allowed=new Set<number>();
+        for(const p of doc.items){const g=cache.resolve(p.itemId,p.orientation*4);if(g.shapeKey&&!g.surfaceCapable&&!nativeActionBlocked(g.editRestrictions,'select')&&!nativeActionBlocked(g.editRestrictions,'move')&&!nativeActionBlocked(g.editRestrictions,'remove'))allowed.add(p.itemId);}
+        const scene=flatSupportScene(data.raw,owner,{factor:2,sourcePath:path,objects:[]},cache.shapes,terrain,allowed);if(!scene)throw Error('support geometry');
+        attachment={scene,designOnly:true};
+      }
+      const a=readDesignAttachment({attachment},owner,true);if(!a||a.scene.tree.sourcePath!==path||!(await validateSupportRoots([{itemId:owner,support:a.scene}])).valid)throw Error('support geometry');
+      scope.postMessage({kind:'room-design-support-attachment',requestId:id,attachment:a});return;
+    }
     if(data.command==='support-design-templates'){
       if(!release)throw Error('source');
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
@@ -204,12 +219,20 @@ scope.onmessage=async({data})=>{
       if(!template)throw Error('room template');
       const {grid,raster}=template,mask=raster.nativeFloorValues.reduce((a,b)=>a|b,0),definitions=await loadGeometry();
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});const subgrids=await supportPaths;
-      const eligible=(itemId:number)=>{const d=definitions.get(String(itemId)),f=d?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(d);return Math.floor(itemId/100000)===400&&d?.nativeType==='Furniture'&&!!f&&!!((f.acceptedFloorTypesFlag??0)&mask)&&!subgrids.has(itemId)&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');};
+      supportCatalog??=fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/support-terrain.json').then(r=>{if(!r.ok)throw Error('support data');return r.json();}).catch(e=>{supportCatalog=null;throw e;});
+      const supportRaw=await supportCatalog;
+      const supportSurface=template.kind==='support',supportPathCache=new Map<number,string|undefined>();
+      const supportPath=(itemId:number)=>{if(supportPathCache.has(itemId))return supportPathCache.get(itemId);const path=(subgrids.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath,result=!supportSurface&&path&&supportTerrainRow(supportRaw,path)?path:undefined;supportPathCache.set(itemId,result);return result;};
+      const eligible=(itemId:number)=>{const d=definitions.get(String(itemId)),f=d?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(d);return Math.floor(itemId/100000)===400&&d?.nativeType==='Furniture'&&!!f&&!!((f.acceptedFloorTypesFlag??0)&mask)&&(!subgrids.has(itemId)||!!supportPath(itemId))&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');};
       if(data.command==='design-catalog'){const locale=data.locale as WandLanguage,names=new Map(await (await getMaster()).getBrowseNames(locale)),items:DesignCatalogItem[]=[];for(const [key,d] of definitions){const itemId=Number(key);if(eligible(itemId))items.push({itemId,name:names.get(itemId)??String(d.nativeName??'—'),layer:'furniture'});}items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;}
       const batch=data.command==='design-shapes',ids=batch?data.itemIds:[data.itemId];
       if(!Array.isArray(ids)||ids.length>DESIGN_LIMIT||new Set(ids).size!==ids.length||!ids.every(n=>Number.isSafeInteger(n)&&eligible(n)))throw Error('room furniture');
+      if(data.supportAttachments!==undefined){
+        if(!Array.isArray(data.supportAttachments)||data.supportAttachments.length>512||supportSurface&&data.supportAttachments.length)throw Error('support attachments');
+        for(const raw of data.supportAttachments){const owner=raw?.scene?.ownerItemId,a=readDesignAttachment({attachment:raw},owner,true);if(!a||!eligible(owner)||a.scene.tree.sourcePath!==supportPath(owner)||!(await validateSupportRoots([{itemId:owner,support:a.scene}])).valid)throw Error('support attachment geometry');}
+      }
       const results:DesignItemGeometry[]=[];let runs=0;
-      for(const itemId of ids){const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},grid.factor),item=cache.resolve(itemId,8);if(!item.shapeKey||item.surfaceCapable)throw Error('room shape');for(const code of [0,4,12])cache.resolve(itemId,code);runs+=Object.values(cache.shapes).reduce((n,s)=>n+s.runs.length,0);if(runs>1_000_000)throw Error('shape limit');results.push({itemId,name:item.name,layer:'furniture',surfaceCapable:false,editRestrictions:item.editRestrictions,shapes:cache.shapes});}
+      for(const itemId of ids){const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},grid.factor),item=cache.resolve(itemId,8),path=supportPath(itemId);if(!item.shapeKey||item.surfaceCapable&&!path)throw Error('room shape');for(const code of [0,4,12])cache.resolve(itemId,code);runs+=Object.values(cache.shapes).reduce((n,s)=>n+s.runs.length,0);if(runs>1_000_000)throw Error('shape limit');results.push({itemId,name:item.name,layer:'furniture',surfaceCapable:!!path,...(path?{supportPath:path}:{}),editRestrictions:item.editRestrictions,shapes:cache.shapes});}
       scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
