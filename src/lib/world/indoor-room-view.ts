@@ -163,6 +163,25 @@ export function indoorGroupMove(face:IndoorSurface|null,shapes:Readonly<Record<s
  }
  return out;
 }
+/** Rotate about the selected footprint bounds, using the shared native
+ * orientation/rectangle transform. Validate all final occupied runs. */
+export function indoorGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face),selected=new Set(indices);
+ if(!tree||!face?.terrain||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length||(turn!==1&&turn!==-1))return null;
+ const chosen=indices.map(i=>tree.objects[i]);
+ if(chosen.some((o,i)=>!o||!isCardinal(o.orientation)||!allowed.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!indoorClear(tree,shapes,indices[i])))return null;
+ const left=Math.min(...chosen.map(o=>o.x)),top=Math.min(...chosen.map(o=>o.y));
+ const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])}));
+ const rotated=rotateIndoorCut(clip,tree.factor,shapes,turn);if(!rotated)return null;
+ const stationary=tree.objects.filter((_,i)=>!selected.has(i)),final={...tree,objects:[...stationary]},out:SupportChildEdit[]=[];
+ for(let i=0;i<chosen.length;i++){
+  const o=chosen[i],p=rotated[i],x=left+p.dx*tree.factor/2,y=top+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];
+  if(p.itemId!==o.itemId||!supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,orientation)||!supportPlacementFits(final,shapes,face.terrain,p.itemId,x,y,orientation))return null;
+  out.push({index:indices[i],itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,x,y,orientation});
+  final.objects.push({...o,x,y,orientation});
+ }
+ return out;
+}
 export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Move selected furniture',fr:'Déplacer les meubles sélectionnés',it:'Sposta mobili selezionati',de:'Ausgewählte Möbel verschieben','es-ES':'Mover muebles seleccionados','zh-CN':'移动所选家具','pt-BR':'Mover móveis selecionados'} as const;
 
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
