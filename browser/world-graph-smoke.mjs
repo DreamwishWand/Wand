@@ -1630,6 +1630,37 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===1,{},{timeout:30000});
   await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===2,{},{timeout:30000});
+  // Exact native road modes survive capture; replacing the network alone
+  // retains all ordinary furniture, neighboring grids and inventory.
+  const networkSave=structuredClone(biomeSave);
+  const networkGrid=networkSave.World.GridCollection.Grids['101'];
+  networkGrid.Objects['5']={ID:5,ItemID:40100068,X:64,Y:36,Orientation:'GridOrientation_Down',State:null};
+  networkGrid.Objects['6']={ID:6,ItemID:40100068,X:66,Y:36,Orientation:'GridOrientation_Down',State:{FenceMode:{Diagonal:true}}};
+  page.on('dialog',acceptBiomeSwitch);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'biome-networks.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(networkSave))});}finally{page.off('dialog',acceptBiomeSwitch);}
+  await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(3).waitFor({timeout:30000});
+  await captureMap.getByRole('button',{name:'道・フェンスPreset',exact:true}).click({timeout:30000});
+  const networkPresetPanel=captureMap.locator('.biome-network-panel');
+  await networkPresetPanel.getByLabel('対象Biome',{exact:true}).selectOption('Meadow');
+  const networkDownload=page.waitForEvent('download');
+  await networkPresetPanel.getByRole('button',{name:'ネットワークを保存',exact:true}).click({timeout:30000});
+  const networkDoc=JSON.parse((await readFile(await (await networkDownload).path())).toString('utf8'));
+  assert.equal(networkDoc.rows.length,2);assert.equal(networkDoc.rows.filter(x=>x.network.diagonal).length,1);
+  networkDoc.rows=networkDoc.rows.filter(x=>!x.network.diagonal);
+  await networkPresetPanel.locator('.biome-network-input').setInputFiles({name:'biome-networks-subset.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(networkDoc))});
+  await networkPresetPanel.getByRole('button',{name:'編集コピーを検証',exact:true}).click({timeout:30000});
+  const networkCopy=networkPresetPanel.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await networkCopy.waitFor({timeout:30000});
+  const networkOutput=await networkCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.deepEqual(networkOutput.Player,networkSave.Player);
+  assert.deepEqual(networkOutput.World.GridCollection.Grids['102'],networkSave.World.GridCollection.Grids['102']);
+  assert.deepEqual(networkOutput.World.GridCollection.Grids['101'].Objects['5'],networkGrid.Objects['5']);
+  assert.deepEqual(networkOutput.World.GridCollection.Grids['101'].Objects['1'],networkGrid.Objects['1']);
+  assert.equal(networkOutput.World.GridCollection.Grids['101'].Objects['6'],undefined);
+  await networkPresetPanel.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===3,{},{timeout:30000});
+  await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===4,{},{timeout:30000});
   page.on('dialog',acceptBiomeSwitch);
   try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'capture-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(captureSave))});}finally{page.off('dialog',acceptBiomeSwitch);}
   await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(1).waitFor({timeout:30000});
