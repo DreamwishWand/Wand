@@ -110,12 +110,11 @@
  $: crw=captureRegionWords[locale];
  $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureRegionBounds(pasteSelection);
  $: capturePlan=captureRegion?captureRegionPlan(captureRegion,captureMembers,projection.objects,captureOptions,projection.omitted):null;
- $: captureIds=new Set(capturePlan?.items.map(p=>p.object.localOrdinal)??[]);
  $: if(captureRegion&&(!furnitureReady||furnitureBlocked||networkOpen||roadSeed||supportOpen||furniturePlacing||pasteActive||groupPickupActive||editSymmetryOpen))closeCaptureRegion();
  function closeCaptureRegion(){captureRegion=null;captureMembers=[];captureDrag=null;}
  function openCaptureRegion(){
   const r=captureRegionBounds(pasteSelection);if(!canCaptureScene||!r||!validCaptureRegion(r,extent))return;
-  resetEditSymmetry();closeFurniture();stopMove();preciseOpen=false;alignment=null;groupOpen=false;searchOpen=false;layersOpen=false;
+  resetEditSymmetry();closeFurniture();stopMove();preciseOpen=false;alignment=null;searchOpen=false;layersOpen=false;
   captureMembers=[...pasteSelection];captureOptions={roads:captureMembers.some(p=>p.object.layer==='ground'),fences:captureMembers.some(p=>p.object.layer==='fence')};captureRegion=r;
  }
  function startCaptureDrag(e:PointerEvent){
@@ -135,7 +134,7 @@
  function setCaptureDimension(k:keyof CaptureRegion,value:number){
   if(!captureRegion)return;const next={...captureRegion,[k]:value};if(validCaptureRegion(next,extent))captureRegion=next;
  }
- function confirmCaptureRegion(){if(!capturePlan?.valid||!captureRegion||!validCaptureRegion(captureRegion,extent)||!canCaptureScene)return;const items=capturePlan.items;closeCaptureRegion();pasteTools?.saveScene(items);}
+ function confirmCaptureRegion(){if(!capturePlan?.valid||!captureRegion||!validCaptureRegion(captureRegion,extent)||!furnitureReady||furnitureBlocked)return;const items=capturePlan.items;closeCaptureRegion();pasteTools?.saveScene(items);}
 $: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
  $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection);
@@ -364,7 +363,7 @@ $: cutWords=groupCutWords[locale];
   if(e.target instanceof HTMLElement&&e.target.closest('.support-panel'))return;
   const mapFocused=e.target instanceof HTMLElement&&!!e.target.closest('.mainland-map');
   if(mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.code==='Space'){spacePan=true;e.preventDefault();return;}
-  if(saveMode&&!supportOpen&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
+  if(saveMode&&!captureRegion&&!supportOpen&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
    const list=allObjects.filter(p=>layerSelectable(layerState,p.object));if(!list.length)return;
    const i=list.findIndex(p=>p.object.localOrdinal===selected),delta=e.key==='['?-1:1;
    focus(list[i<0?(delta>0?0:list.length-1):(i+delta+list.length)%list.length]);e.preventDefault();return;
@@ -508,7 +507,7 @@ $: cutWords=groupCutWords[locale];
    {#if captureRegion}
     <rect class="scene-capture-region" x={captureRegion.x} y={captureRegion.y} width={captureRegion.w} height={captureRegion.h} fill="#73cfc5" fill-opacity=".13" stroke={capturePlan?.valid?'#72e7cb':'#ef5350'} stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"/>
     {#each [[captureRegion.x,captureRegion.y],[captureRegion.x+captureRegion.w,captureRegion.y],[captureRegion.x,captureRegion.y+captureRegion.h],[captureRegion.x+captureRegion.w,captureRegion.y+captureRegion.h]] as [x,y]}<circle cx={x} cy={y} r={4/Math.max(1,cellPixels)} fill="#fff" stroke="#156e72" vector-effect="non-scaling-stroke"/>{/each}
-    {#each visibleObjects.filter(p=>captureIds.has(p.object.localOrdinal)) as p (p.object.localOrdinal)}{#if p.shape}<path class="scene-capture-member" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="none" stroke="#72e7cb" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}{/each}
+    {#each visibleMainlandSaved(capturePlan?.items??[],viewport) as p (p.object.localOrdinal)}{#if p.shape}<path class="scene-capture-member" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="none" stroke="#72e7cb" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}{/each}
     {#each [...(capturePlan?.partial??[]),...(capturePlan?.outside??[])] as p}{#if p.shape}<path class="scene-capture-boundary" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="none" stroke="#ef5350" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}{/each}
    {/if}
    {#if range?.moved}<rect x={Math.min(range.start.x,range.end.x)} y={Math.min(range.start.y,range.end.y)} width={Math.abs(range.end.x-range.start.x)} height={Math.abs(range.end.y-range.start.y)} fill="#b9c7d6" fill-opacity=".15" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
