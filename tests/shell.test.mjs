@@ -27,8 +27,11 @@ test('the supplied Large SVG is the favicon and the normal SVG is decorative, no
   assert.match(layout,/<span class="shell-brand-mark" aria-hidden="true"><img src="\{base\}\/DreamwishWand\.svg" alt=""/);
   assert.match(layout,/<a class="header-home-button" href="\{base\}\/" aria-label=\{copy\.home\}/);
   assert.ok(layout.indexOf('class="shell-brand-mark"')<layout.indexOf('class="header-home-button"'));
+  assert.match(large,/<rect id="background" width="512" height="512" rx="112" ry="112" fill="#011A60"\/>/);
+  assert.doesNotMatch(normal,/<rect\b|fill="#011A60"/);
+  assert.deepEqual([...large.matchAll(/<path\b[^>]*>/gs)].map(m=>m[0]),
+    [...normal.matchAll(/<path\b[^>]*>/gs)].map(m=>m[0]));
   for(const svg of [large,normal]){
-    assert.match(svg,/fill="#011A60"/);
     assert.match(svg,/fill="#F2F9FE"/);
     assert.match(svg,/<svg[^>]+viewBox="0 0 512 512"/);
   }
