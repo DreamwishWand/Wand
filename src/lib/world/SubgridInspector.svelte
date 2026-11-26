@@ -22,7 +22,8 @@
  import {worldShortcut,NUDGE} from './world-shortcuts.ts';
  export let open=false,parent:MainlandSavedObject|null=null,file:File|null=null,worker:Worker|null=null;
  export let roomParent:SupportParentWitness|null=null,onItems:(ids:number[])=>void=()=>{};
- export let roomPickupPlan:readonly GroupPickupRow[]|null=null;
+ export let roomPickupPlan:readonly GroupPickupRow[]|null=null,onRoomDuplicate:(needs:ReadonlyMap<number,number>)=>void=()=>{};
+ export let roomDuplicateAllowed=false;
  let roomPickupActive=false;
  $: identity=parent?{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),x:parent.object.x,y:parent.object.y}:roomParent;
  export let grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map();
@@ -38,7 +39,7 @@
  export let saveMaps:ReadonlyMap<string,SavedShapeMap>=new Map();
  let parentOrientation:string|null=null,duplicating=false,duplicateScene:SupportScene|null=null;
  $: dw=supportDuplicateWords[locale];
- $: duplicateNeeds=duplicateScene?supportSceneRootCounts(duplicateScene):parent?supportDuplicateCounts(Number(parent.object.itemId),stack[0]??null):null;
+ $: duplicateNeeds=duplicateScene?supportSceneRootCounts(duplicateScene):parent?supportDuplicateCounts(Number(parent.object.itemId),stack[0]??null):roomParent?supportDuplicateCounts(roomParent.itemId,stack[0]??null):null;
  $: duplicateReady=!!duplicateNeeds&&[...duplicateNeeds].every(([id,n])=>(counts.get(id)??0)>=n);
  $: parentShapes=parent?saveMaps.get(parent.area)?.shapes??{}:{};
  $: parentRotate=!!parent&&supportParentEligible(parent)&&!nativeActionBlocked(parent.object.editRestrictions,'rotate');
@@ -248,6 +249,10 @@
     <GroupPickupControls roomPlan={roomPickupPlan} {file} {locale} bind:active={roomPickupActive} onApplied={onClose}/>
    {/if}
    {#if !roomPickupActive}
+   {#if roomParent&&roomDuplicateAllowed&&canMove&&!loading&&!copy&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}
+    <button type="button" disabled={!duplicateReady} title={duplicateReady?dw[0]:dw[1]} on:click={()=>{if(duplicateNeeds&&duplicateReady)onRoomDuplicate(duplicateNeeds);}}>{dw[0]}</button>
+    {#if duplicateNeeds}<div class="support-list">{#each [...duplicateNeeds] as [id,n]}<small>{names.get(id)??'—'} · {dw[2]} {n}/{counts.get(id)??0}</small>{/each}</div>{/if}
+   {/if}
    {#if parent&&!loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
    {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(Number(transferTarget.object.itemId))??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
    {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
