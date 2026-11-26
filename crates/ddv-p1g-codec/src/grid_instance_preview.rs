@@ -2110,6 +2110,25 @@ mod terrain_session_tests{
         for id in ["40005160","40005161","40005162"]{assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
         assert_eq!(c["Grids"]["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
         assert_eq!(c["Grids"]["7"]["Objects"]["4"]["State"]["SubGrid"]["GridID"],22);
+        // Exceed the old aggregate 32-object limit without increasing
+        // either native tree's independent safety bound.
+        let mut expanded=mixed.clone();
+        expanded["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=Value::from(36);
+        let mut large_rows=rows.as_array().unwrap().clone();
+        for i in 0..31{
+            large_rows.push(serde_json::json!({"itemId":"40005162","x":i,"y":25,"orientation":"GridOrientation_Down","destination":witness}));
+        }
+        let large_result=group_paste_candidate(&serde_json::to_vec(&expanded).unwrap(),&serde_json::to_string(&large_rows).unwrap()).unwrap();
+        let large_result:Value=serde_json::from_str(&large_result).unwrap();
+        assert_eq!(large_result["World"]["GridCollection"]["Grids"]["7"]["Objects"].as_object().unwrap().len(),34);
+        assert_eq!(large_result["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
+        // Existing roads may share the furniture's anchor without consuming stock.
+        let mut paved=blank.clone();
+        paved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]=serde_json::json!({"ID":1,"ItemID":40100068,"X":12,"Y":12,"Orientation":"GridOrientation_Down","State":null});
+        let on_road=support_scene_place_candidate(&serde_json::to_vec(&paved).unwrap(),40005160,(12,12),&witness,"GridOrientation_Down",&scene).unwrap();
+        let on_road:Value=serde_json::from_str(&on_road.patched_json).unwrap();
+        assert_eq!(on_road["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["ItemID"],40100068);
+        assert_eq!(on_road["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]["ItemID"],40005160);
         // Failure after staging the first roots must return no candidate.
         assert!(group_paste_candidate(&raw,&rows.to_string()).is_err());
         rows[2]["x"]=Value::from(2);rows[2]["y"]=Value::from(2);
