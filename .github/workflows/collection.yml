@@ -34,6 +34,7 @@ jobs:
         env:
           BASE_PATH: /Wand
       - run: npx playwright install --with-deps chromium
+      - run: node --experimental-strip-types browser/memory-puzzle-smoke.mjs
       - run: node browser/collection-smoke.mjs
       - run: node browser/explore-viewport-smoke.mjs
       - run: node browser/guide-smoke.mjs
