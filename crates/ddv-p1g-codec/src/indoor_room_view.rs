@@ -228,7 +228,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"align"|"pickup"|"place"|"transfer"))&&["edits","align","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
+ let p=v.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"surfaceOrdinal"|"edits"|"align"|"paired"|"pickup"|"place"|"transfer"))&&["edits","align","paired","pickup","place","transfer"].iter().filter(|k|p.contains_key(**k)).count()==1).ok_or(bad)?;
  let ordinal=p.get("roomOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=2048).ok_or(bad)? as usize;
  let surface=p.get("surfaceOrdinal").and_then(Value::as_u64).filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
  let report:Value=serde_json::from_str(&project(source)?).map_err(|_|bad)?;
@@ -433,13 +433,17 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   return preview_bulk_furniture(json,&pickups,&[]).map_err(|_|CodecError::Patch);
  }
  let alignment=p.contains_key("align");
- let rows=p.get(if alignment{"align"}else{"edits"}).and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
+ let paired=p.get("paired").map(|v|v.as_object().filter(|m|m.len()==2&&m.contains_key("mode")&&m.contains_key("edits")).ok_or(bad)).transpose()?;
+ let mode=paired.map(|m|m.get("mode").and_then(Value::as_str).filter(|s|matches!(*s,"vertical"|"horizontal"|"point")).ok_or(bad)).transpose()?;
+ let rows=(if let Some(m)=paired{m.get("edits")}else{p.get(if alignment{"align"}else{"edits"})}).and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
+ if mode.is_some()&&rows.len()<2{return Err(bad);}
  let mut edits=Vec::new();
  for row in rows{
   if row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
   let (target,expected,old)=resolve(row)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+  if mode.is_some()&&(old!=orientation||xy==expected||!on_terrain(expected)||!on_terrain(xy)){return Err(bad);}
   if alignment&&(old!=orientation||!on_terrain(expected)||!on_terrain(xy)||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if rows.len()==1{
    if xy==expected&&old==orientation{return Err(bad);}
@@ -450,7 +454,21 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  }
  if edits.len()>1{
   let swap=edits.len()==2&&edits.iter().all(|e|e.orientation.is_none())&&edits[0].position==Some(edits[1].expected)&&edits[1].position==Some(edits[0].expected);
-  if alignment{
+  if let Some(mode)=mode{
+   let selected:std::collections::HashSet<_>=edits.iter().map(|e|e.target.object_id.as_str()).collect();
+   if selected.len()!=edits.len(){return Err(bad);}
+   let mut anchors=std::collections::HashSet::new();
+   let delta=|e:&GridMixedEdit|{let xy=e.position.unwrap_or(e.expected);(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))};
+   let reflect=|(x,y):(i64,i64)|{(if mode=="horizontal"{x}else{-x},if mode=="vertical"{y}else{-y})};
+   let first=delta(&edits[0]);let other=reflect(first);
+   let mut matched=vec![false;edits.len()];
+   for (i,e) in edits.iter().enumerate(){let xy=e.position.ok_or(bad)?;
+    if (delta(e)!=first&&delta(e)!=other)||!anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
+    if matched[i]{continue;}
+    let j=(i+1..edits.len()).find(|j|!matched[*j]&&edits[*j].target.item_id==e.target.item_id&&delta(&edits[*j])==reflect(delta(e))).ok_or(bad)?;
+    matched[i]=true;matched[j]=true;
+   }
+  }else if alignment{
    let selected:std::collections::HashSet<_>=edits.iter().map(|e|e.target.object_id.as_str()).collect();
    if selected.len()!=edits.len()||!edits.iter().all(|e|e.position.is_some_and(|xy|xy.0==e.expected.0))&&!edits.iter().all(|e|e.position.is_some_and(|xy|xy.1==e.expected.1)){return Err(bad);}
    let mut anchors=std::collections::HashSet::new();
@@ -486,6 +504,16 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
 #[cfg(test)]
 mod tests{
  use super::*;
+ #[test]
+ fn linked_room_move_requires_mirrored_deltas_and_exact_native_targets(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":6,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"paired":{"mode":"vertical","edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":2,"y":3,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40000001,"expectedX":6,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":5,"y":3,"orientation":"GridOrientation_Down"}]}});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();let out:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"],5);
+  assert!(d.patched_json.contains("1e2"));
+  plan["paired"]["edits"][1]["x"]=7.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  plan["paired"]["edits"][1]["x"]=5.into();plan["paired"]["mode"]="point".into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+ }
  #[test]
  fn room_alignment_is_atomic_and_single_axis(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":4,"Y":3,"Orientation":"GridOrientation_Down"},"3":{"ID":3,"ItemID":40000002,"X":1,"Y":4,"Orientation":"GridOrientation_Down"}}}}}}}"#;

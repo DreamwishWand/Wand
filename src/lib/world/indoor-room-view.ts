@@ -215,19 +215,42 @@ export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<strin
  }
  return out.length?out:null;
 }
-export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry):IndoorPlace[]|null{
+export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry,supports:ReadonlyMap<number,SupportScene>=new Map()):IndoorPlace[]|null{
  const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
- const clip:DesignClipItem[]=[],seen=new Set<string>();
- for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+ const clip:DesignClipItem[]=[],seen=new Set<string>(),scenes:(SupportScene|null)[]=[],sources:(NonNullable<IndoorPlace['supportSource']>|null)[]=[];
+ for(const i of indices){const o=tree.objects[i],support=supports.get(i);if(!o||(!support&&face.positions[i]?.plain!==true)||support&&(axis.mode!=='point'||support.ownerItemId!==o.itemId)||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
   const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},g,axis);if(!p||p.x<0||p.y<0)return null;
   const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===CARDINAL_ORIENTATIONS[p.orientation]);
-  if(same.length){if(same.length!==1||face.positions[same[0].index]?.plain!==true)return null;continue;}
+  if(same.length){if(support||same.length!==1||face.positions[same[0].index]?.plain!==true)return null;continue;}
   const k=p.itemId+':'+p.x+':'+p.y+':'+p.orientation;if(seen.has(k))continue;seen.add(k);
   clip.push({itemId:p.itemId,dx:p.x*2/tree.factor,dy:p.y*2/tree.factor,orientation:p.orientation});
+  scenes.push(support??null);sources.push(support?{index:i,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation}:null);
  }
- return clip.length?indoorGroupPlace(face,shapes,allowed,stock,clip,0,0):null;
+ if(!clip.length)return null;
+ if(!scenes.some(Boolean))return indoorGroupPlace(face,shapes,allowed,stock,clip,0,0);
+ const left=Math.min(...clip.map(p=>p.dx)),top=Math.min(...clip.map(p=>p.dy));
+ try{const relative=clip.map(p=>({...p,dx:p.dx-left,dy:p.dy-top})),doc=mixedSceneFromClip(relative,scenes,'corner');return indoorMixedPlacement(face,shapes,allowed,stock,relative,doc,'corner',left*tree.factor/2,top*tree.factor/2,sources);}catch{return null;}
 }
+/** Translate exact reflected plain pairs together. No guessed counterpart,
+ * no implicit duplication and no change to saved orientations. */
+export function indoorLinkedMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number,axis:DesignSymmetry):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face),origin=tree?.objects[anchor];if(!tree||!face?.terrain||!origin||!indices.includes(anchor)||!indices.length||new Set(indices).size!==indices.length)return null;
+ const dx=x-origin.x,dy=y-origin.y;if(!dx&&!dy)return null;
+ const targets=new Map<number,{x:number;y:number}>();
+ function put(i:number,px:number,py:number){const old=targets.get(i);if(old)return old.x===px&&old.y===py;targets.set(i,{x:px,y:py});return true;}
+ for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+  const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
+  const p={itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},before=reflectedDesignItem(p,g,axis),after=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,axis);
+  if(!before||!after)return null;const matches=tree.objects.flatMap((v,j)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===CARDINAL_ORIENTATIONS[before.orientation]?[j]:[]);
+  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!indoorClear(tree,shapes,matches[0])||!put(i,o.x+dx,o.y+dy)||!put(matches[0],after.x,after.y))return null;
+ }
+ if(targets.size>ROOM_CUT_LIMIT||targets.size%2!==0)return null;
+ const staged={...tree,objects:tree.objects.filter((_,i)=>!targets.has(i))},out:SupportChildEdit[]=[];
+ for(const [i,p] of targets){const o=tree.objects[i],q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,p.x,p.y,o.orientation);if(!q||!supportPlacementFits(staged,shapes,face.terrain,o.itemId,p.x,p.y,o.orientation))return null;out.push({...q[0],index:i});staged.objects.push({...o,...p});}
+ return out;
+}
+export const indoorLinkedWords={ja:['対称連動移動','軸・中心を指定','連動を解除'],en:['Linked symmetry move','Choose axis or center','Unlink'],fr:['Déplacement symétrique lié','Choisir axe ou centre','Dissocier'],it:['Spostamento simmetrico collegato','Scegli asse o centro','Scollega'],de:['Gekoppelte Symmetriebewegung','Achse oder Mittelpunkt wählen','Entkoppeln'],'es-ES':['Movimiento simétrico vinculado','Elegir eje o centro','Desvincular'],'zh-CN':['对称联动移动','选择轴或中心','解除联动'],'pt-BR':['Movimento simétrico vinculado','Escolher eixo ou centro','Desvincular']} as const;
 export const indoorAlignWords={
  ja:['左揃え','右揃え','上揃え','下揃え','左右中央','上下中央','横方向等間隔','縦方向等間隔','左右対称','上下対称','点対称','対称軸・中心を指定'],
  en:['Align left','Align right','Align top','Align bottom','Center horizontally','Center vertically','Space horizontally','Space vertically','Vertical symmetry','Horizontal symmetry','Point symmetry','Choose symmetry axis or center'],
