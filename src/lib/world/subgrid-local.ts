@@ -4,6 +4,7 @@ import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
+import {stockFootprintFeedback} from './save-furniture-placement.ts';
 export interface SupportTree{factor:1|2;objects:SupportObject[];sourcePath:string|null}
 export interface SupportObject{itemId:number;x:number;y:number;orientation:string;child:SupportTree|null}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -31,7 +32,7 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
 export function supportParentEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
  return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move');
 }
-export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={}){
+export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={},objects:readonly MainlandSavedObject[]=[],duplicate=false){
  if(!supportParentEligible(p)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const original=grids.find(g=>g.key===p.area),hits=mainlandTerrainHits(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
  if(!original||!g||!r||g.factor!==p.factor||original.factor!==p.factor)return null;
@@ -44,7 +45,10 @@ export function supportParentCandidate(p:MainlandSavedObject,grids:readonly Main
   const a=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,a.x,a.y);if(hits.length!==1||hits[0].key!==g.key)return null;
  }
  const witness=(g:MainlandGrid)=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY});
- return {...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{})}};
+ const occupied=duplicate?objects:objects.filter(o=>o.object.localOrdinal!==p.object.localOrdinal||o.area!==p.area);
+ const at=mainlandMapAnchor(g,x,y);
+ if(stockFootprintFeedback({area:g.key,...at,factor:g.factor,shape,plan:{action:'place',itemId:p.object.itemId,x,y,orientation},destination:witness(g)},occupied).overlaps>0)return null;
+ return {...at,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{})}};
 }
 export type SupportParentCandidate=NonNullable<ReturnType<typeof supportParentCandidate>>;
 export const supportWords={
