@@ -1514,10 +1514,15 @@ try{
   const mixed=structuredClone(worldSave);
   mixed.World.GridCollection.Grids['103']={...structuredClone(mixed.World.GridCollection.Grids['101']),ID:103,TessellationFactor:2,
     Objects:{'3':{ID:3,ItemID:40005160,X:10,Y:12,Orientation:'GridOrientation_Down'}}};
-  page.once('dialog',dialog=>dialog.accept());
-  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
-    name:'synthetic-mixed-factor.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(mixed))});
-  await publicWorld.locator('.mainland-overview').getByRole('button',{name:'閉じる',exact:true}).click({timeout:30000});
+  // Switching a synthetic fixture can prompt both checkpoint and pending
+  // autosave confirmations. Keep the handler scoped to this deliberate switch.
+  const acceptMixedSwitch=dialog=>dialog.accept();
+  page.on('dialog',acceptMixedSwitch);
+  try{
+    await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
+      name:'synthetic-mixed-factor.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(mixed))});
+    await publicWorld.locator('.mainland-overview').getByRole('button',{name:'閉じる',exact:true}).click({timeout:30000});
+  }finally{page.off('dialog',acceptMixedSwitch);}
   const gridSelect=publicWorld.locator('.saved-shape-plot').getByLabel('セーブ内Grid');
   await gridSelect.waitFor({timeout:30000});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
