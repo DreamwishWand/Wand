@@ -66,6 +66,12 @@ def main() -> None:
         except (OSError, subprocess.CalledProcessError):
             print("Unable to determine changed files; run full checks.")
     result = classify(paths, allow_offline=not args.merge_group)
+    # Exercise changes to the publication code before they reach main.
+    result["pages"] = args.full or not paths or any(
+        p == ".github/workflows/publish.yml" or p == ".github/workflows/collection.yml"
+        or p.startswith("tools/ci/") or p == "scripts/build-collection-images.py"
+        for p in paths
+    )
     print("CI scope:", result)
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
