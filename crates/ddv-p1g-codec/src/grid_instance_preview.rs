@@ -1091,13 +1091,16 @@ fn saved_db04_source_projection(
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    group_pickup_for_scope(profile,plan,2,None)
+}
+fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     if plan.len()>16384{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
-    let rows=rows.as_array().filter(|a|a.len()>=2&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
         let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
@@ -1108,6 +1111,7 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
     let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
     for (grid,ids) in by_grid{
@@ -1363,6 +1367,39 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
         working.zeroize();*working=draft.patched_json;*amount-=1;
     }
     Ok(std::mem::take(&mut *working))
+}
+
+/// One biome furniture replacement: preserve every unselected record and
+/// apply pickup + placement privately. The source witness is resolved on
+/// the immutable original; only ordinary leaf furniture is accepted by the
+/// existing stock transaction. No intermediate Save leaves this function.
+pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>120*1024{return Err(CodecError::Bounds);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
+ let witness=o.get("destination").ok_or(bad)?;
+ // Only the eight original Valley biome root layouts.
+ let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
+ if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
+ let d=resolve_plain_grid_destination(profile,witness)?;
+ let remove=o.get("remove").and_then(Value::as_array).ok_or(bad)?;
+ let add=o.get("add").and_then(Value::as_array).ok_or(bad)?;
+ if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ // Every new pose must target exactly the selected original grid. The
+ // plain writer rejects unsupported state, stock and occupied anchors.
+ if add.iter().any(|p|p.get("destination")!=Some(witness)){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ if !remove.is_empty(){
+  let r=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id))?;
+  working.zeroize();*working=r;
+ }
+ if !add.is_empty(){
+  let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  working.zeroize();*working=r;
+ }
+ Ok(std::mem::take(&mut *working))
 }
 
 /// Cut is a deferred relocation: no stock changes, no intermediate Save
