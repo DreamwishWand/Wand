@@ -1,19 +1,19 @@
 /** Source-derived fragment comparison. The assignment of textures to slots,
- * sampler settings, tint, and Save flag polarity remain candidate inputs.
+ * sampler settings and Save flag polarity remain candidate inputs.
  * No saved images or Save access. */
 import type {ItemImage} from './item-media.ts';
 import type {MemorySources} from './memory-media.ts';
 import {memoryMaskEvidence} from './memory-mask-preview-evidence.ts';
-import {puzzleFragmentGlsl} from './memory-puzzle-formula.ts';
+import {puzzleFragmentGlsl,puzzleBlendGlsl,PUZZLE_MATERIALS,type PuzzleMaterial} from './memory-puzzle-formula.ts';
 
-const vertex=`#version 300 es
+export const memoryPreviewVertex=`#version 300 es
 out vec2 uv;
 void main(){
   vec2 pos=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));
   uv=vec2(pos.x,1.0-pos.y);
   gl_Position=vec4(pos*2.0-1.0,0.0,1.0);
 }`;
-const fragment=`#version 300 es
+export const memoryPreviewFragment=`#version 300 es
 precision highp float;
 precision highp int;
 in vec2 uv;
@@ -25,19 +25,22 @@ uniform bool nativeFormula;
 uniform bool artworkSlot0;
 uniform bool invertFlags;
 uniform int completeBits;
+uniform vec3 materialTint;
+uniform float materialAlpha;
+uniform bool materialAlphaClip;
 out vec4 color;
 ${puzzleFragmentGlsl}
+${puzzleBlendGlsl}
 void main(){
   vec4 art=texture(artwork,uv);
   vec4 mask=texture(maskTex,uv);
   if(nativeFormula){
-    // Candidate input assignment only: artwork as underlay, t0 either a
-    // neutral diagnostic sample or the artwork. Never claim native tint.
+    // Runtime slot/underlay/flag assignment is still a candidate.
+    // All unassigned serialized shader texture defaults are black.
     int flags=invertFlags?(completeBits^selectedBits):selectedBits;
-    vec3 tint=vec3(0.12,0.14,0.18);
-    vec3 tex0=artworkSlot0?art.rgb:tint;
-    vec4 overlay=puzzleFragment(mask.rg,texture(outlineTex,uv).r,flags,tex0,tint,1.0);
-    color=vec4(mix(art.rgb,overlay.rgb,clamp(overlay.a,0.0,1.0)),1.0);
+    vec3 tex0=artworkSlot0?art.rgb:vec3(0.0);
+    vec4 overlay=puzzleFragment(mask.rg,texture(outlineTex,uv).r,flags,tex0,materialTint,materialAlpha);
+    color=vec4(puzzleBlend(art.rgb,overlay,materialAlphaClip),1.0);
   }else{
     ivec4 m=ivec4(floor(mask*255.0+0.5));
     int bit=m.r+256*m.g;
@@ -72,7 +75,7 @@ function compile(gl:WebGL2RenderingContext,type:number,source:string){
   return shader;
 }
 export interface MaskPreview{
-  draw(selectedBits:number,nativeFormula:boolean,artworkSlot0:boolean,invertFlags:boolean):void;
+  draw(selectedBits:number,nativeFormula:boolean,artworkSlot0:boolean,invertFlags:boolean,material:PuzzleMaterial,opacity:number,linearMask:boolean):void;
   dispose():void;
 }
 export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySources,signal:AbortSignal):Promise<MaskPreview>{
@@ -99,8 +102,8 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     gl=canvas.getContext('webgl2',{alpha:false,antialias:false});
     if(!gl)throw new Error('WebGL2 unavailable');
     const g=gl;
-    shaders.push(compile(g,g.VERTEX_SHADER,vertex));
-    shaders.push(compile(g,g.FRAGMENT_SHADER,fragment));
+    shaders.push(compile(g,g.VERTEX_SHADER,memoryPreviewVertex));
+    shaders.push(compile(g,g.FRAGMENT_SHADER,memoryPreviewFragment));
     program=g.createProgram();
     if(!program)throw new Error('Program allocation failed');
     for(const shader of shaders)g.attachShader(program,shader);
@@ -123,9 +126,18 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     const bits=g.getUniformLocation(program,'selectedBits'),native=g.getUniformLocation(program,'nativeFormula'),slot=g.getUniformLocation(program,'artworkSlot0'),invert=g.getUniformLocation(program,'invertFlags');
     g.uniform1i(g.getUniformLocation(program,'completeBits'),complete);
     g.viewport(0,0,canvas.width,canvas.height);
-    return {draw(selectedBits,nativeFormula,artworkSlot0,invertFlags){
+    return {draw(selectedBits,nativeFormula,artworkSlot0,invertFlags,material,opacity,linearMask){
       if(!program||!Number.isInteger(selectedBits)||selectedBits<0||selectedBits>complete)throw new Error('Invalid diagnostic mask');
-      g.useProgram(program);g.uniform1i(bits,selectedBits);g.uniform1i(native,nativeFormula?1:0);g.uniform1i(slot,artworkSlot0?1:0);g.uniform1i(invert,invertFlags?1:0);g.drawArrays(g.TRIANGLES,0,3);
+      if(!Number.isFinite(opacity)||opacity<0||opacity>1)throw new Error('Invalid preview opacity');
+      const preset=PUZZLE_MATERIALS[material];
+      g.useProgram(program);
+      g.uniform3f(g.getUniformLocation(program,'materialTint'),preset.tint[0],preset.tint[1],preset.tint[2]);
+      g.uniform1f(g.getUniformLocation(program,'materialAlpha'),opacity);
+      g.uniform1i(g.getUniformLocation(program,'materialAlphaClip'),preset.alphaClip?1:0);
+      g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,textures[1]);
+      const maskFilter=nativeFormula&&linearMask?g.LINEAR:g.NEAREST;
+      g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,maskFilter);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,maskFilter);
+      g.uniform1i(bits,selectedBits);g.uniform1i(native,nativeFormula?1:0);g.uniform1i(slot,artworkSlot0?1:0);g.uniform1i(invert,invertFlags?1:0);g.drawArrays(g.TRIANGLES,0,3);
     },dispose};
   }catch(error){dispose();throw error;}
   finally{for(const bitmap of bitmaps)bitmap.close();}
