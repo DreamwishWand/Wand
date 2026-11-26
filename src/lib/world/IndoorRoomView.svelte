@@ -91,7 +91,7 @@
  }
 
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
- $: cutSelection=room&&!cutIndices.some(i=>roomSupports.some(p=>p.index===i))?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable):null;
+ $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable,new Set(roomSupports.map(p=>p.index))):null;
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
  $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
  $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft;
@@ -100,7 +100,7 @@
  function beginDuplicate(){if(!editAllowed||!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
- $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>!r.supportFactor&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
+ $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>(!r.supportFactor||!!r.roomSource&&r.supportFactor===face.factor)&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
  $: itw=indoorTerrainWords[locale];
  $: cutWords=groupCutWords[locale];
  $: canCut=editAllowed&&!!file&&!!cutSelection&&!moving&&!placing&&!swap&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!stockOpen;
