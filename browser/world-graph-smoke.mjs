@@ -1424,7 +1424,10 @@ try{
   await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
   const worldThumb=publicPlot.locator('.world-object-artwork').first();
   await worldThumb.waitFor({timeout:20000});
-  assert.match(await worldThumb.getAttribute('href'),/461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec\.webp$/);
+  // Item 40005160: exact published SRC-04 256px release mapping (small original reused).
+  const expectedWorldThumb='https://media.dreamwishwand.com/images/68932b176fd0402d26b47b623fba39dec321aaa2fdedb8a539429cc64bb5a481.webp';
+  await page.waitForFunction(expected=>document.querySelector('.saved-shape-plot .world-object-artwork')?.getAttribute('href')===expected,expectedWorldThumb,{timeout:30000});
+  assert.equal(await worldThumb.getAttribute('href'),expectedWorldThumb);
   assert.equal((await page.request.get(new URL(await worldThumb.getAttribute('href'),page.url()).href)).ok(),true);
   const originOverlay=publicPlot.locator('.placement-origin-overlay');
   await originOverlay.waitFor({timeout:30000});
