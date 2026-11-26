@@ -86,11 +86,11 @@
   <button type="button" disabled={blocked} on:click={exportFile}>{w[5]}</button>
  {/if}
  <input type="file" accept=".json,application/json" hidden bind:this={input} on:change={openFile}/><button type="button" disabled={blocked||!worker} on:click={()=>input.click()}>{w[6]}</button>
- <button type="button" disabled={childBusy||validating||writePending} on:click={onClose}>{w[8]}</button>
+ <button type="button" disabled={childBusy||validating||writePending} on:click={()=>{if(!warning||!surfaces.length||window.confirm(w[19]+' '+w[8]+'?'))onClose();}}>{w[8]}</button>
 </div>
 {#if loading||validating}<div class="project-message" role="status">{w[16]}</div>{:else if recovery}<div class="project-message"><button type="button" disabled={!worker} on:click={resume}>{w[11]}</button><button type="button" on:click={discard}>{w[12]}</button>{#if error}<small role="alert">{w[10]}</small>{/if}</div>{:else if !surfaces.length}<div class="project-message">{w[17]} · {w[9]}</div>{/if}
 {#if activeSurface&&embedded}
- {#key mountKey}<DecorationDesign active={true} grid={activeSurface.template.grid} raster={activeSurface.template.raster} {embedded} {worker} {nextRequest} {locale} bind:layerState/>{/key}
+ <div class="project-editor" inert={validating}>{#key mountKey}<DecorationDesign active={true} grid={activeSurface.template.grid} raster={activeSurface.template.raster} {embedded} {worker} {nextRequest} {locale} bind:layerState/>{/key}</div>
  {/if}
 {#if error&&!recovery}<div class="project-notice" role="alert">{w[10]}</div>{:else if warning}<div class="project-notice" role="alert">{w[19]}</div>{/if}
 {#if showCounts&&surfaces.length&&!childBusy}
@@ -102,5 +102,6 @@
  </div></section>
 {/if}
 <style>
+ .project-editor{position:absolute;inset:0;min-height:0}
  .project-tools{position:absolute;left:6px;right:6px;top:6px;z-index:10;display:flex;gap:4px;overflow-x:auto;align-items:center;white-space:nowrap}.project-tools button,.project-tools select,.project-message button,.project-counts input{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px;flex:none}.project-message,.project-notice{position:absolute;top:52px;left:50%;transform:translateX(-50%);max-width:90%;z-index:11;background:var(--wand-card);padding:8px;border-radius:5px;display:flex;gap:6px;align-items:center}.project-notice{top:auto;bottom:48px}.project-counts{position:absolute;z-index:11;right:6px;top:104px;width:min(320px,75%);max-height:60%;display:flex;flex-direction:column;gap:5px;padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.project-list{overflow:auto;min-height:0;display:grid;gap:4px}.project-list>div{display:flex;align-items:center;gap:6px}.project-list span{flex:1;overflow-wrap:anywhere}.project-list img{width:32px;height:32px;object-fit:contain}
 </style>
