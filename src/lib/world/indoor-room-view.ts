@@ -131,6 +131,15 @@ export function indoorPickup(face:IndoorSurface|null,index:number,removable:Read
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
  return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
 }
+export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup[]|null{
+ if(!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const counts=new Map<number,number>(),rows:IndoorPickup[]=[];
+ for(const index of indices){const row=indoorPickup(face,index,removable,stock);if(!row)return null;
+  const count=(counts.get(row.itemId)??0)+1;if(row.expectedStock+count>2147483647)return null;
+  counts.set(row.itemId,count);rows.push(row);
+ }
+ return rows;
+}
 export const indoorEditWords={
  ja:['家具編集','個別の家具を選択','占有形状が変わらない回転・交換に対応。自由配置には原本の部屋地形が必要です。','インベントリへ戻す','編集を確認','編集済みコピーを作成できませんでした。'],
  en:['Edit furniture','Select an individual object','Rotation and swaps preserve occupied shapes. Free placement requires original room terrain.','Return to inventory','Review edit','Unable to create edited copy.'],
@@ -187,6 +196,33 @@ export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Mo
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
  const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,expectedStock:n,x,y,orientation}:null;
 }
+/** Copy only layout poses; the original objects remain in place and all
+ * new records must fit the actual room and available furniture stock. */
+export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>):DesignClipItem[]|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const counts=new Map<number,number>(),clip:DesignClipItem[]=[];
+ for(const i of indices){
+  const o=tree.objects[i];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i))return null;
+  const count=(counts.get(o.itemId)??0)+1;if(count>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,count);
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));return clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
+}
+export function indoorGroupPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],x:number,y:number):IndoorPlace[]|null{
+ const tree=indoorEditableTree(face);
+ if(!tree||!face?.terrain||!clip.length||clip.length>ROOM_CUT_LIMIT||tree.objects.length+clip.length>512||![x,y].every(Number.isSafeInteger))return null;
+ const staged={...tree,objects:[...tree.objects]},counts=new Map(stock),rows:IndoorPlace[]=[];
+ for(const p of clip){
+  const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation],n=counts.get(p.itemId);
+  if(!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!orientation||!allowed.has(p.itemId)||n===undefined||n<1||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  rows.push({itemId:p.itemId,x:px,y:py,orientation,expectedStock:n});counts.set(p.itemId,n-1);staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
+ }
+ return rows;
+}
+export const indoorGroupStockWords={
+ ja:['選択した家具を回収','選択した家具を複製'],en:['Return selected furniture','Duplicate selected furniture'],fr:['Ranger les meubles sélectionnés','Dupliquer les meubles sélectionnés'],it:['Riponi mobili selezionati','Duplica mobili selezionati'],de:['Ausgewählte Möbel einlagern','Ausgewählte Möbel duplizieren'],'es-ES':['Guardar muebles seleccionados','Duplicar muebles seleccionados'],'zh-CN':['收回所选家具','复制所选家具'],'pt-BR':['Recolher móveis selecionados','Duplicar móveis selecionados']
+} as const;
 export const indoorTerrainWords={
  ja:['部屋の原本地形','移動','在庫から配置','配置先をクリック','家具名を検索','空きマスへ配置できます。'],
  en:['Original room terrain','Move','Place from stock','Click destination','Find furniture','Place on available cells.'],
