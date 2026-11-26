@@ -17,7 +17,7 @@ export function roomDesignTemplates(raw:unknown):RoomDesignTemplate[]{
   const [path,x,y,hash,values]=row;if(!/^GridData\/Rooms\/(Room|Wall)[0-9]+x[0-9]+-GridData\.json$/.test(path)||seen.has(path)||!Number.isInteger(x)||!Number.isInteger(y)||x<1||y<1||x>256||y>256||typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash)||!Array.isArray(values)||values.length!==x*y||!values.every(n=>Number.isInteger(n)&&[0,1024,2048,3072].includes(n)))throw Error('ROOM_TERRAIN_ROW');
   seen.add(path);if(!path.startsWith('GridData/Rooms/Room'))continue;
   const grid:PublicTerrainGridRef={key:'room-design:'+path+':'+hash,layoutId:'DesignRooms/local-only.json',gridDataPath:path,gridIdNative:0,sizeX:x,sizeY:y,factor:2};
-  out.push({grid,raster:{sizeX:x,sizeY:y,nativeFloorValues:Uint32Array.from(values)},label:x+' × '+y});
+  out.push({grid,raster:{sizeX:x,sizeY:y,nativeFloorValues:Uint32Array.from(values)},label:path.split('/').at(-1)!.replace(/^Room/,'').replace('-GridData.json','').replace('x',' × ')+(path.includes('Room12x10-')?' ('+x+' × '+y+')':'')});
  }
  if(!out.length)throw Error('ROOM_TERRAIN_EMPTY');return out.sort((a,b)=>a.grid.sizeX*a.grid.sizeY-b.grid.sizeX*b.grid.sizeY||a.grid.key.localeCompare(b.grid.key,'en'));
 }
@@ -25,7 +25,7 @@ export function roomDesignValid(t:DesignTimeline,grid:PublicTerrainGridRef,raste
  if(!isRoomDesign(grid)||raster.sizeX!==grid.sizeX||raster.sizeY!==grid.sizeY)return false;
  for(const snapshot of allHistory?t.snapshots:[t.snapshots[t.cursor]]){
   const tree:SupportTree={factor:grid.factor,sourcePath:grid.gridDataPath,objects:[]};
-  const shapes=Object.assign({},...snapshot.map(p=>defs.get(p.itemId)?.shapes??{}));
+  const shapes:Record<string,import('./source-object-map.ts').SourceObjectShape>={};for(const id of new Set(snapshot.map(p=>p.itemId)))Object.assign(shapes,defs.get(id)?.shapes??{});
   for(const p of snapshot){const g=defs.get(p.itemId),orientation=CARDINAL_ORIENTATIONS[p.orientation];
    if(!g||g.layer!=='furniture'||g.surfaceCapable||!orientation||!supportPlacementFits(tree,shapes,raster,p.itemId,p.x,p.y,orientation))return false;
    tree.objects.push({itemId:p.itemId,x:p.x,y:p.y,orientation,child:null});
