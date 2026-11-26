@@ -33,7 +33,7 @@ export function parseDesignDraft(value:unknown,location:DraftLocation):DesignDra
   const ids=new Set<number>(),placements:DesignPlacement[]=[];
   for(const p of snapshot){
    if(!record(p)||!integer(p.id,1,nextId-1)||ids.has(p.id)||!integer(p.itemId,1,0xffffffff)||!integer(p.x,0,location.width-1)||!integer(p.y,0,location.height-1)||!integer(p.orientation,0,3))throw Error('DESIGN_DRAFT_PLACEMENT');
-   const attachment=readDesignAttachment(p,p.itemId,location.key.startsWith('area:room-design:GridData/Rooms/'));
+   const attachment=readDesignAttachment(p,p.itemId,(location.key.startsWith('area:room-design:GridData/Rooms/')||location.key.startsWith('area:room-design:support:')));
    ids.add(p.id);placements.push({id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation,...(attachment?{attachment}:{})});
   }
   snapshots.push(placements);
