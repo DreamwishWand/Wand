@@ -99,4 +99,16 @@ export function createItemMediaClient(activation:ItemMediaActivation=ITEM_MEDIA_
   };
 }
 // Single default instance used by all services; stays network-free until activated.
-export const itemMedia = createItemMediaClient();
+const commonItemMedia = createItemMediaClient();
+export const itemMedia = {
+  async getItemImage(itemId:number,variant:ImageVariant='thumbnail'):Promise<ItemImage|null>{
+    // Only the reviewed Story ID interval can load this small optional index.
+    // Actual membership is checked by exact Item ID, never inferred from range.
+    if(Number.isSafeInteger(itemId)&&itemId>=200000001&&itemId<=200000061){
+      const {getStoryPuzzleImage}=await import('./story-puzzle-media.ts');
+      const image=getStoryPuzzleImage(itemId,variant);
+      if(image)return image;
+    }
+    return commonItemMedia.getItemImage(itemId,variant);
+  }
+};
