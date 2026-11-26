@@ -126,8 +126,9 @@
  const symmetryModes:SymmetryMode[]=['vertical','horizontal','point'];
  $: aw=indoorAlignWords[locale];
  $: alignOptions=groupMoveReady?alignModes.map(mode=>indoorAlign(face,shapes,editable,[...selectedGroup],mode)):alignModes.map(()=>null);
+ $: if(symmetryMode&&(moving||placing||swap||stockOpen||editDraft||pickupDraft||placeDraft||transferDraft||editCopy||editWorker||finishOpen||supportParent||!positionOpen)){symmetryMode=null;symmetryAxis=null;}
  $: symmetryPreview=symmetryAxis&&symmetryMode?indoorSymmetricDuplicate(face,shapes,removable,stock,cutIndices,symmetryAxis):null;
- function startSymmetry(mode:SymmetryMode){if(!editAllowed||!face?.terrain||!cutIndices.length||mixedSelected)return;symmetryMode=mode;symmetryAxis=null;editError=false;}
+ function startSymmetry(mode:SymmetryMode){if(!editAllowed||!face?.terrain||!cutIndices.length||mixedSelected)return;panMode=false;symmetryMode=mode;symmetryAxis=null;editError=false;}
  function axisAt(e:MouseEvent):DesignSymmetry|null{const m=roomSvg?.getScreenCTM();if(!m||!symmetryMode)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());return {mode:symmetryMode,x2:Math.round(p.x*2),y2:Math.round(p.y*2)};}
  $: groupLeft=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],-1):null;
  $: groupRight=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],1):null;
