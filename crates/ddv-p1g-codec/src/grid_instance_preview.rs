@@ -564,7 +564,7 @@ fn local_subgrid_summary(collection:Option<&Map<String,Value>>,parent:Option<&Ma
 }
 /// Exact child ownership, no guessed child-to-parent transform. The
 /// receipt contains only local item geometry inputs, never native keys.
-fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&str)->Result<Value,CodecError>{
+pub(super) fn subgrid_tree(collection:&Map<String,Value>,parent_grid:&str,parent_object:&str)->Result<Value,CodecError>{
  let bad=CodecError::Json;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
  let diff=collection.get("DiffGrids").map(|v|v.as_object().ok_or(bad)).transpose()?;
