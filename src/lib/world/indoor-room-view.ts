@@ -12,7 +12,7 @@ import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,su
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
-export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster}
+export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
@@ -29,12 +29,13 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
    const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&p.plain===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{})};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
-   let terrain:TerrainRaster|undefined;
+   let terrain:TerrainRaster|undefined,sourcePath:string|undefined;
    if(s.terrain!==undefined){
     const t=s.terrain;if(s.gridStatus!=='full'||!s.factor||!record(t)||!integer(t.sizeX,1,256)||!integer(t.sizeY,1,256)||!Array.isArray(t.values)||t.values.length!==t.sizeX*t.sizeY||!t.values.every(v=>integer(v,0,0xffffffff)))throw Error('INDOOR_TERRAIN_INVALID');
     terrain={sizeX:t.sizeX,sizeY:t.sizeY,nativeFloorValues:Uint32Array.from(t.values)};
+    if(t.sourcePath!==undefined){if(typeof t.sourcePath!=='string'||!/^GridData\/Rooms\/(Room|Wall)[0-9]+x[0-9]+-GridData\.json$/.test(t.sourcePath)||!t.sourcePath.startsWith(s.kind==='floor'?'GridData/Rooms/Room':'GridData/Rooms/Wall'))throw Error('INDOOR_TERRAIN_PATH');sourcePath=t.sourcePath;}
    }
-   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{})};
+   return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
   return {ordinal:i+1,house:room.house,floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
  });
