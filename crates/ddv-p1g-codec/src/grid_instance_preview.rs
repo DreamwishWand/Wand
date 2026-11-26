@@ -2454,3 +2454,46 @@ pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,Co
  if !ids.chunks(512).all(|chunk|grid_identity_dependencies_for_ids(profile,&d.grid_id,chunk).is_ok_and(|r|r.blocking()==0&&r.historical==0)){result.draft.patched_json.zeroize();return Err(bad);}
  Ok(result.draft.patched_json)
 }
+
+/// One transaction for ordinary furniture and complete native networks.
+/// Ordinals are resolved against the immutable original before removing
+/// any other object. Network mutations occur before furniture placement,
+/// so a furniture pose may occupy a previously removed fence anchor.
+pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>2_000_000{return Err(CodecError::Bounds);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|o|o.len()==2&&o.keys().all(|k|matches!(k.as_str(),"furniture"|"network"))).ok_or(bad)?;
+ let f=o.get("furniture").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
+ let n=o.get("network").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+ let witness=f.get("destination").ok_or(bad)?;
+ if n.get("destination")!=Some(witness){return Err(bad);}
+ let dest=area_network_destination(profile,witness)?;
+ let remove=f.get("remove").and_then(Value::as_array).ok_or(bad)?;
+ let add=f.get("add").and_then(Value::as_array).ok_or(bad)?;
+ if remove.len()+add.len()>128||add.iter().any(|a|a.get("destination")!=Some(witness)){return Err(bad);}
+ let before=parse_area_network_poses(n.get("before").ok_or(bad)?)?;
+ let after=parse_area_network_poses(n.get("after").ok_or(bad)?)?;
+ let actual=parse_area_network_poses(&Value::Array(area_network_rows(profile,&dest)?))?;
+ let old:HashSet<_>=before.iter().copied().collect();
+ let desired:HashSet<_>=after.iter().copied().collect();
+ if old.len()!=before.len()||desired.len()!=after.len()||actual.len()!=old.len()||actual.into_iter().collect::<HashSet<_>>()!=old{return Err(bad);}
+ ddv_save_patch::validate_area_network(&dest,&before).map_err(|_|bad)?;
+ ddv_save_patch::validate_area_network(&dest,&after).map_err(|_|bad)?;
+ if old==desired&&remove.is_empty()&&add.is_empty(){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ if !remove.is_empty(){
+  let next=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&dest.grid_id))?;
+  working.zeroize();*working=next;
+ }
+ if old!=desired{
+  let next=biome_network_candidate(working.as_bytes(),&serde_json::to_string(n).map_err(|_|bad)?)?;
+  working.zeroize();*working=next;
+ }
+ if !add.is_empty(){
+  let next=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  working.zeroize();*working=next;
+ }
+ Ok(std::mem::take(&mut *working))
+}
