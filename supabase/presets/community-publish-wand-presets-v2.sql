@@ -6,7 +6,7 @@ update storage.buckets set allowed_mime_types=array['application/json','applicat
 CREATE OR REPLACE FUNCTION public.community_publish_wand_preset_v2(p_auth_subject uuid, p_preset_type text, p_existing_preset_artifact_id uuid, p_creator_profile_id uuid, p_title text, p_description text, p_artifact_storage_key text, p_schema_version integer, p_content_type text, p_byte_size bigint, p_checksum_sha256 text, p_metadata jsonb, p_media_ids uuid[], p_idempotency_key text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY INVOKER
+ SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'extensions', 'public', 'private'
 AS $function$
 declare
@@ -59,6 +59,10 @@ begin
     raise exception 'Idempotency key required';
   end if;
 
+  -- Service-role-only entry point: the authenticated edge must check the
+  -- current session before passing its verified auth subject. The definer
+  -- retains access to the same private helpers as the legacy transaction;
+  -- no new private schema grants or client EXECUTE grants are introduced.
   -- Server-derived receipt only; no caller-provided arbitrary metadata.
   if p_preset_type is null or p_preset_type not in ('scene','support','region','biome','floating_island','world','room','floor','building','design','network')
      or p_metadata is null or jsonb_typeof(p_metadata)<>'object'
@@ -75,7 +79,7 @@ begin
   then raise exception 'PRESET_RECEIPT_INVALID'; end if;
   if (p_metadata->>'totalObjects')::int>200000 or (p_metadata->>'distinctObjectTypes')::int>(p_metadata->>'totalObjects')::int then raise exception 'PRESET_COUNTS_INVALID'; end if;
   if coalesce(cardinality(p_media_ids),0) not between 1 and 10 then raise exception 'PUBLIC_IMAGE_REQUIRED'; end if;
-  if not exists(select 1 from storage.objects where bucket_id='wand-preset-artifacts-staging' and name=p_artifact_storage_key) then raise exception 'PRESET_STORAGE_UNAVAILABLE'; end if;
+  if not exists(select 1 from storage.objects o join storage.buckets b on b.id=o.bucket_id where o.name=p_artifact_storage_key and b.public=false and b.id in ('wand-preset-artifacts-staging','wand-preset-artifacts')) then raise exception 'PRESET_STORAGE_UNAVAILABLE'; end if;
 
   if not exists(
     select 1 from public.creator_profiles c
@@ -107,22 +111,11 @@ begin
     hashtextextended(v_account_id::text || ':' || p_idempotency_key,0)
   );
 
-  v_request_hash:=encode(digest(
-    concat_ws('|',
-      'wand_preset_product_v2',p_preset_type,
-      coalesce(p_existing_preset_artifact_id::text,'NEW'),
-      p_creator_profile_id::text,
-      btrim(p_title),
-      coalesce(p_description,''),
-      p_artifact_storage_key,
-      p_schema_version::text,
-      p_content_type,
-      p_byte_size::text,
-      lower(p_checksum_sha256),
-      coalesce(p_metadata,'{}'::jsonb)::text,
-      array_to_string(v_media_ids,',')
-    ),'sha256'
-  ),'hex');
+  v_request_hash:=encode(digest(jsonb_build_array(
+    'wand_preset_product_v2',p_preset_type,p_existing_preset_artifact_id,
+    p_creator_profile_id,btrim(p_title),p_description,p_artifact_storage_key,
+    p_schema_version,p_content_type,p_byte_size,lower(p_checksum_sha256),p_metadata,v_media_ids
+  )::text,'sha256'),'hex');
 
   select request_hash,response into v_existing_hash,v_response
   from public.idempotency_keys
@@ -432,7 +425,7 @@ grant execute on function public.community_publish_wand_preset_v2(uuid,text,uuid
 CREATE OR REPLACE FUNCTION public.community_unpublish_wand_preset_v2(p_auth_subject uuid, p_preset_artifact_id uuid, p_idempotency_key text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY INVOKER
+ SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'extensions', 'public', 'private'
 AS $function$
 declare
@@ -518,7 +511,7 @@ grant execute on function public.community_unpublish_wand_preset_v2(uuid,uuid,te
 CREATE OR REPLACE FUNCTION public.community_delete_wand_preset_v2(p_auth_subject uuid, p_preset_artifact_id uuid, p_idempotency_key text)
  RETURNS jsonb
  LANGUAGE plpgsql
- SECURITY INVOKER
+ SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'extensions', 'public', 'private'
 AS $function$
 declare
