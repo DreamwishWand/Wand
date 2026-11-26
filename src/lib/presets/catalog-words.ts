@@ -1,0 +1,10 @@
+export const catalogWords={
+ ja:['公開プリセット','検索','すべて','次へ','前へ','公開作品はありません','公開サービスに接続できません','取り込む','取り込みました','ファイルを検証できません','作者','読み込み中','取り込んだ作品はMy Presetsで利用できます。','公開サービスは未設定です','公開作品由来'],
+ en:['Public presets','Search','All','Next','Previous','No published presets','Public service unavailable','Import','Imported','Unable to verify file','Creator','Loading','Imported works are available in My Presets.','Public service is not configured','From public work'],
+ fr:['Préréglages publics','Rechercher','Tous','Suivant','Précédent','Aucune publication','Service indisponible','Importer','Importé','Fichier non vérifié','Créateur','Chargement','Retrouvez les œuvres importées dans My Presets.','Service non configuré','Œuvre publique'],
+ it:['Preset pubblici','Cerca','Tutti','Avanti','Indietro','Nessuna pubblicazione','Servizio non disponibile','Importa','Importato','Verifica file non riuscita','Autore','Caricamento','I lavori importati sono in My Presets.','Servizio non configurato','Opera pubblica'],
+ de:['Öffentliche Vorlagen','Suchen','Alle','Weiter','Zurück','Keine veröffentlichten Vorlagen','Dienst nicht verfügbar','Importieren','Importiert','Datei nicht verifiziert','Urheber','Laden','Importierte Werke befinden sich in My Presets.','Dienst nicht konfiguriert','Öffentliches Werk'],
+ 'es-ES':['Preajustes públicos','Buscar','Todos','Siguiente','Anterior','No hay publicaciones','Servicio no disponible','Importar','Importado','No se pudo verificar','Creador','Cargando','Las obras importadas están en My Presets.','Servicio sin configurar','Obra pública'],
+ 'zh-CN':['公开预设','搜索','全部','下一页','上一页','暂无公开作品','公开服务不可用','导入','已导入','文件验证失败','作者','加载中','导入的作品可在 My Presets 中使用。','未配置公开服务','来自公开作品'],
+ 'pt-BR':['Predefinições públicas','Pesquisar','Todas','Próxima','Anterior','Nenhuma publicação','Serviço indisponível','Importar','Importado','Não foi possível verificar','Criador','Carregando','Obras importadas estão em My Presets.','Serviço não configurado','Obra pública']
+} as const;
