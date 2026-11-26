@@ -1,3 +1,4 @@
+import {roomFinishRecordValid,type RoomFinishKind,type RoomFinishItem} from './room-finish-design.ts';
 import {roomDesignTemplates,supportDesignTemplate,type RoomDesignTemplate} from './room-design.ts';
 import {parseAreaScene} from './area-scene.ts';
 import {parseSupportScene,parseMixedScene,SCENE_FURNITURE_LIMIT,SCENE_SUPPORT_TREE_LIMIT} from './support-scene.ts';
@@ -171,6 +172,14 @@ scope.onmessage=async({data})=>{
       let terrain:TerrainRaster|null=null;
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
       scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
+    }
+    if(data.command==='room-finish-catalog'){
+      if(!release||!['floor','wall'].includes(data.kind))throw Error('finish kind');
+      const kind=data.kind as RoomFinishKind,locale=data.locale as WandLanguage,db=await getMaster();
+      const names=new Map(await db.getBrowseNames(locale)),ids=await db.findItemIdsByFields([{field:'itemType.code',anyOf:[{kind:'equals',value:16}]},{field:'itemType.subtypeCode',anyOf:[{kind:'equals',value:kind==='floor'?1:0}]}]);
+      const items:RoomFinishItem[]=[];
+      for(let i=0;i<ids.length;i+=128){for(const item of await db.getItems(ids.slice(i,i+128))){if(item&&roomFinishRecordValid(item,kind))items.push({itemId:item.itemId,name:names.get(item.itemId)??item.names[locale]??'—'});}}
+      items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'room-finish-catalog',requestId:id,surface:kind,items});return;
     }
     if(data.command==='support-design-templates'){
       if(!release)throw Error('source');

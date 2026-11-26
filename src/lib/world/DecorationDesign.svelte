@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {roomFinishKind,roomFinishIdValid,readRoomFinish,roomFinishDesignWords,type RoomFinishKind,type RoomFinishItem} from './room-finish-design.ts';
  import {isRoomDesign,roomDesignValid,roomDesignWords,roomSurfaceWords} from './room-design.ts';
  import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign,islandPresetWords} from './island-design-preset.ts';
  import {localSaveSession} from '../ui/local-save-session';
@@ -45,6 +46,21 @@
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
+ let finishValues:Record<string,number>={},finishHistory:Record<string,{values:number[];cursor:number}>={},finishCatalog:Partial<Record<RoomFinishKind,{locale:WandLanguage;items:RoomFinishItem[]}>>={},finishRequest=0,finishRequested='',finishError=false,finishOpen=false,finishQuery='',finishLimit=80;
+ $: finishKind=roomFinishKind(grid);
+ $: finishItems=finishKind?finishCatalog[finishKind]?.items??[]:[];
+ $: finishReady=!!finishKind&&finishCatalog[finishKind]?.locale===locale;
+ $: finishId=contextKey?finishValues[contextKey]??0:0;
+ $: finishState=finishHistory[contextKey]??{values:[finishId],cursor:0};
+ $: fw=roomFinishDesignWords[locale];
+ $: filteredFinishes=finishItems.filter(i=>i.name.toLocaleLowerCase().includes(finishQuery.trim().toLocaleLowerCase()));
+ $: if(active&&worker&&finishKind&&!finishReady&&finishRequested!==finishKind+':'+locale)requestFinishes(worker,finishKind,locale);
+ $: if(active&&finishKind&&finishId)loadImages([{itemId:finishId}]);
+ $: if(active&&finishOpen)loadImages(filteredFinishes.slice(0,finishLimit));
+ function requestFinishes(w:Worker,kind:RoomFinishKind,lang:WandLanguage){finishRequested=kind+':'+lang;finishError=false;finishRequest=nextRequest();w.postMessage({command:'room-finish-catalog',requestId:finishRequest,kind,locale:lang});}
+ function allowedFinish(kind:RoomFinishKind|null,id:number){return roomFinishIdValid(id,kind)&&(id===0||!!kind&&!!finishCatalog[kind]?.items.some(i=>i.itemId===id));}
+ function setFinish(id:number,record=true){if(!finishKind||!finishReady||!allowedFinish(finishKind,id)||recoveryBlocked||busyImport)return;if(record&&id!==finishId){const history=finishState.values.slice(0,finishState.cursor+1).concat(id).slice(-129);finishHistory={...finishHistory,[contextKey]:{values:history,cursor:history.length-1}};}finishValues={...finishValues,[contextKey]:id};persistRecovery(timeline);}
+ function travelFinish(delta:-1|1){const cursor=finishState.cursor+delta;if(cursor<0||cursor>=finishState.values.length)return;finishHistory={...finishHistory,[contextKey]:{values:finishState.values,cursor}};setFinish(finishState.values[cursor],false);}
  export let capturedLayout:SaveDesignCapture|null=null;
  export let onDismissCapture:()=>void=()=>{};
  $: captureText=captureWords[locale]??captureWords.en;
@@ -125,6 +141,7 @@
  function resumeRecovery(){
   const location=recoveryLocation,state=recoveryState;
   if(!location||state?.phase!=='offer'||!state.record||!grid||!worker)return;
+  if(state.record.roomFinish!==undefined&&(!finishReady||!allowedFinish(roomFinishKind(grid),state.record.roomFinish))){setRecovery(location,{...state,warning:'invalid'});return;}
   const draft=state.record,job:RecoveryJob={location,context:contextKey,grid,raster,frame:worldFrame,draft,ids:draftItemIds(draft),offset:0,defs:new Map(),own:worker};
   setRecovery(location,{...state,phase:'restoring'});requestRecoveryShapes(job);
  }
@@ -143,14 +160,16 @@
   const factor=isRoomDesign(job.grid)?job.grid.key:String(job.grid.factor);
   cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...job.defs])};
   layouts={...layouts,[job.context]:job.draft.timeline};
+  if(roomFinishKind(job.grid)){const id=job.draft.roomFinish??0;finishValues={...finishValues,[job.context]:id};finishHistory={...finishHistory,[job.context]:{values:[id],cursor:0}};}
   if(recoveryLocation?.identity===job.location.identity){cancel();camera=job.draft.camera;selected=job.draft.selection.length===1?job.draft.selection[0]:null;groupIds=job.draft.selection.length>1?job.draft.selection:[];}
   setRecovery(job.location,{phase:'ready',revision:state.revision,writable:true});
  }
  function persistRecovery(next:DesignTimeline){
   const location=recoveryLocation,state=location?recovery[location.identity]:undefined;
   if(!location||state?.phase!=='ready'||!state.writable)return;
+  const originalFinish=roomFinishKind(grid)?finishValues[contextKey]??0:undefined;
   const originalCamera={...camera},originalSelection=groupIds.length?[...groupIds]:selected===null?[]:[selected];
-  const draftPromise=tick().then(()=>makeDesignDraft(location,next,recoveryLocation?.identity===location.identity?camera:originalCamera,recoveryLocation?.identity===location.identity?(groupIds.length?groupIds:selected===null?[]:[selected]):originalSelection));
+  const draftPromise=tick().then(()=>makeDesignDraft(location,next,recoveryLocation?.identity===location.identity?camera:originalCamera,recoveryLocation?.identity===location.identity?(groupIds.length?groupIds:selected===null?[]:[selected]):originalSelection,originalFinish));
   const tail=recoveryWrites.get(location.identity)??Promise.resolve();
   const write=tail.then(async()=>{
    const current=recovery[location.identity];if(!current?.writable||current.phase!=='ready')return;
@@ -291,7 +310,7 @@
  $: if(areaReview&&(!active||areaReview.key!==contextKey||areaReview.baseline!==timeline||areaReview.areaKey!==areaTarget?.key||!areaKind))areaReview=null;
  function cancelAreaReview(){areaReview=null;}
  function applyAreaReview(){const r=areaReview;if(!r||!grid||r.key!==contextKey||r.baseline!==timeline||!active||recoveryBlocked)return;areaReview=null;const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...r.incoming])};selected=null;groupIds=[];cancel();if(r.next!==timeline){layouts={...layouts,[contextKey]:r.next};persistRecovery(r.next);}error='';}
- let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture;areaKind?:WholeAreaKind;areaKey?:string}|null=null;
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture;areaKind?:WholeAreaKind;areaKey?:string;roomFinish?:number}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
   en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
@@ -387,7 +406,7 @@
  }
  function exportFile(){
   if(!grid)return;
-  let content:string;try{content=worldFrame?serializeMainlandDesign(worldFrame,timeline,definitions):serializeDesign(timeline,grid);}catch{error=words[3];return;}
+  let content:string;try{content=worldFrame?serializeMainlandDesign(worldFrame,timeline,definitions):serializeDesign(timeline,grid);if(roomFinishKind(grid))content=JSON.stringify({...JSON.parse(content),roomFinish:finishId});}catch{error=words[3];return;}
   const url=URL.createObjectURL(new Blob([content],{type:'application/json'}));
   const a=document.createElement('a');a.href=url;a.download='wand-world-design-'+(worldFrame?worldFrame.scope:grid.key.replace(/[^a-zA-Z0-9_-]/g,'_'))+'.json';a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -399,7 +418,9 @@
   reading=true;error='';
   try{
    if(file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const content=await file.text(),whole=JSON.parse(content)?.schema==='wand.preset.whole-area-design@1',kind=whole?areaKind:null,sourceAreas=sourceFrame?new Map<number,string>():undefined;
+   const content=await file.text(),parsed=JSON.parse(content),kindFinish=roomFinishKind(target);
+   const importedFinish=readRoomFinish(parsed,kindFinish,kindFinish?new Set(finishCatalog[kindFinish]?.items.map(i=>i.itemId)??[]):undefined);
+   const whole=parsed?.schema==='wand.preset.whole-area-design@1',kind=whole?areaKind:null,sourceAreas=sourceFrame?new Map<number,string>():undefined;
    const presetTarget=areaTarget;
    if(whole&&(!kind||!presetTarget))throw Error('AREA_PRESET_CONTEXT');
    const incoming=kind&&presetTarget?parseWholeArea(content,presetTarget,kind):sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);
@@ -408,7 +429,7 @@
    cancel();
    const id=nextRequest();
    if(kind&&presetTarget&&!incoming.length){if(!prepareAreaReview(presetTarget.key,[],new Map()))throw Error('AREA_PRESET_EMPTY');return;}
-   pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas,...(kind&&presetTarget?{areaKind:kind,areaKey:presetTarget.key}:{})};
+   pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas,...(importedFinish!==undefined?{roomFinish:importedFinish}:{}),...(kind&&presetTarget?{areaKind:kind,areaKey:presetTarget.key}:{})};
    own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
@@ -450,7 +471,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
-   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;areaReview=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=contextKey;finishOpen=false;finishQuery='';finishLimit=80;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;areaReview=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&(locale!==catalogLocale||grid.key!==catalogKey))requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -459,6 +480,11 @@
  }
  function receive(e:MessageEvent){
    const d=e.data;
+   if(finishRequest&&d?.requestId===finishRequest){finishRequest=0;
+    const [kind,lang]=finishRequested.split(':') as [RoomFinishKind,WandLanguage];
+    if(d.kind!=='room-finish-catalog'||d.surface!==kind||!Array.isArray(d.items)||d.items.some((i:RoomFinishItem)=>!roomFinishIdValid(i.itemId,kind)||i.itemId===0||typeof i.name!=='string')){finishError=true;return;}
+    finishCatalog={...finishCatalog,[kind]:{locale:lang,items:d.items}};return;
+   }
    const job=recoveryJobs.get(d?.requestId);
    if(job){
      recoveryJobs.delete(d.requestId);
@@ -489,7 +515,9 @@
      if(!next||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
      const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;groupIds=[];cancel();if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
+     selected=null;groupIds=[];cancel();
+     if(pending.roomFinish!==undefined){if(!allowedFinish(roomFinishKind(grid),pending.roomFinish)){error=words[3];return;}finishValues={...finishValues,[contextKey]:pending.roomFinish};finishHistory={...finishHistory,[contextKey]:{values:[pending.roomFinish],cursor:0}};}
+     if(next!==timeline||pending.roomFinish!==undefined){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -751,6 +779,7 @@
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
     {#if multiIsland}<input class="file-input island-preset-input" type="file" accept=".json,application/json" bind:this={islandInput} on:change={openIsland}/><button type="button" disabled={busyImport} on:click={()=>prepareIsland()}>{iw[0]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>islandInput.click()}>{iw[1]}</button>{/if}
     {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{areaText[2]}</button>{/if}
+    {#if finishKind}<button type="button" aria-pressed={finishOpen} title={fw[0]} disabled={busyImport} on:click={()=>finishOpen=!finishOpen}>{#if finishId&&images.get(finishId)}<img class="finish-icon" src={images.get(finishId)} alt=""/>{/if}{fw[0]}</button>{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
@@ -776,7 +805,7 @@
    {#if areaReview}<div class="design-capture area-preset-review" aria-label={areaText[3]}><strong>{areaText[3]} · {areaLabel(areaReview.areaKey)}</strong><small>{areaText[4]} {areaReview.summary.retained} · {areaText[5]} {areaReview.summary.removed} · {areaText[6]} {areaReview.summary.added}</small><small>{areaText[7]} {areaReview.summary.total} · {areaText[8]} {areaReview.summary.counts.size}</small><small>{areaText[9]}</small><div><button type="button" on:click={applyAreaReview}>{areaText[10]}</button><button type="button" on:click={cancelAreaReview}>{areaText[11]}</button></div></div>{/if}
    {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
-   {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
+   {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker||recoveryState.record.roomFinish!==undefined&&!finishReady} on:click={resumeRecovery}>{rw[1]}</button>{#if recoveryState.record.roomFinish!==undefined&&finishError}<small role="alert">{fw[4]}</small><button type="button" disabled={!worker} on:click={()=>{if(worker&&finishKind)requestFinishes(worker,finishKind,locale);}}>{fw[7]}</button>{/if}{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
    {:else if recoveryBlocked}<p role="status">{rw[3]}</p>
    {:else if recoveryState?.warning}<p role="alert">{recoveryState.warning==='conflict'?rw[6]:rw[4]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
@@ -788,6 +817,13 @@
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
    {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
    {#if alignmentOpen&&selectedIds.size>=2}<div class="design-alignment-panel"><WorldAlignmentControls {locale} count={selectedIds.size} selected={alignmentAction} valid={Boolean(alignmentPlan)} busy={busyImport} onPick={pickAlignment} onCommit={commitAlignment} onCancel={()=>alignmentAction=null}/></div>{/if}
+   {#if finishKind&&finishOpen}<div class="finish-design-panel" aria-label={fw[0]}>
+     <div class="finish-design-current">{#if finishId&&images.get(finishId)}<img src={images.get(finishId)} alt=""/>{/if}<strong>{finishItems.find(i=>i.itemId===finishId)?.name??fw[1]}</strong><button type="button" on:click={()=>setFinish(0)} disabled={busyImport||!finishReady||!finishId}>{fw[1]}</button><button type="button" title={fw[5]} aria-label={fw[5]} disabled={busyImport||!finishState.cursor} on:click={()=>travelFinish(-1)}>↶</button><button type="button" title={fw[6]} aria-label={fw[6]} disabled={busyImport||finishState.cursor>=finishState.values.length-1} on:click={()=>travelFinish(1)}>↷</button></div>
+     <input type="search" aria-label={fw[2]} placeholder={fw[2]} bind:value={finishQuery} on:input={()=>finishLimit=80}/>
+     {#if finishError}<small role="alert">{fw[4]}</small><button type="button" disabled={!worker} on:click={()=>{if(worker&&finishKind)requestFinishes(worker,finishKind,locale);}}>{fw[7]}</button>{:else if !finishReady}<small role="status">…</small>{/if}
+     <div class="finish-design-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollHeight-el.scrollTop-el.clientHeight<120)finishLimit+=80;}}>{#each filteredFinishes.slice(0,finishLimit) as item (item.itemId)}<button type="button" aria-pressed={finishId===item.itemId} disabled={busyImport||!finishReady} on:click={()=>setFinish(item.itemId)}>{#if images.get(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}<small>{item.name}</small></button>{/each}</div>
+     <small>{fw[3]}</small>
+   </div>{/if}
    <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
     on:pointerdown={startDirect}
@@ -890,6 +926,7 @@
  .design-item-artwork{display:block;flex:none;width:56px;height:56px;max-width:100%;pointer-events:none}
  .design-item img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+ .finish-icon{width:24px;height:24px;object-fit:contain;vertical-align:middle;margin-inline-end:4px}.finish-design-panel{position:absolute;z-index:6;right:8px;top:52px;width:min(320px,90%);max-height:70%;overflow:auto;display:grid;gap:6px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:8px}.finish-design-current{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.finish-design-current img{width:64px;height:64px;object-fit:contain}.finish-design-current strong{flex:1}.finish-design-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;max-height:250px;overflow:auto}.finish-design-items button{display:grid;justify-items:center;align-content:start;gap:2px;min-width:0}.finish-design-items img{width:52px;height:52px;object-fit:contain}.finish-design-items small{overflow-wrap:anywhere}
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
  .design-plot svg{display:block;width:100%;height:100%}.design-marquee,.design-drag-ghost{pointer-events:none}
  small,.design-status{font-size:12px;color:var(--wand-muted)}

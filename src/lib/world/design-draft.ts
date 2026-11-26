@@ -1,4 +1,5 @@
 /** Device-local work recovery only. No game save, private identifiers or ghost state. */
+import {readRoomFinish,roomFinishDraftKind} from './room-finish-design.ts';
 import {DESIGN_LIMIT,designCandidateValid,type DesignTimeline,type DesignPlacement,type DesignItemGeometry} from './design-layout.ts';
 import {mainlandItemsValid,type MainlandDesignFrame} from './mainland-design-frame.ts';
 import {PUBLIC_TERRAIN_ROOT,type PublicTerrainGridRef} from './public-terrain-projection.ts';
@@ -12,12 +13,12 @@ export function designDraftLocation(grid:PublicTerrainGridRef,frame:MainlandDesi
  const basis=frame?[frame.minX,frame.minZ,...frame.grids.map(g=>[...gridIdentity(g),...g.origin.position,g.bounds.x,g.bounds.y,g.bounds.w,g.bounds.h]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'en'))]:gridIdentity(grid);
  return {key,identity:JSON.stringify([PUBLIC_TERRAIN_ROOT,width,height,basis]),width,height};
 }
-export interface DesignDraft{schema:'wand.local-design-draft@1';identity:string;timeline:DesignTimeline;camera:MapCamera;selection:number[]}
+export interface DesignDraft{schema:'wand.local-design-draft@1';identity:string;timeline:DesignTimeline;camera:MapCamera;selection:number[];roomFinish?:number}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(n:unknown,min:number,max:number):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=min&&n<=max;
-export function makeDesignDraft(location:DraftLocation,timeline:DesignTimeline,camera:MapCamera,selection:readonly number[]):DesignDraft{
+export function makeDesignDraft(location:DraftLocation,timeline:DesignTimeline,camera:MapCamera,selection:readonly number[],roomFinish?:number):DesignDraft{
  const ids=new Set(timeline.snapshots[timeline.cursor].map(p=>p.id));
- return {schema:'wand.local-design-draft@1',identity:location.identity,timeline,camera:{...camera},selection:[...new Set(selection)].filter(id=>ids.has(id))};
+ return {schema:'wand.local-design-draft@1',identity:location.identity,timeline,camera:{...camera},selection:[...new Set(selection)].filter(id=>ids.has(id)),...(roomFinish===undefined?{}:{roomFinish:readRoomFinish({roomFinish},roomFinishDraftKind(location.key))})};
 }
 export function parseDesignDraft(value:unknown,location:DraftLocation):DesignDraft{
  const fail=()=>{throw Error('DESIGN_DRAFT_INVALID');};
@@ -40,7 +41,7 @@ export function parseDesignDraft(value:unknown,location:DraftLocation):DesignDra
  const bound=(n:number)=>Math.max(.5/zoom,Math.min(1-.5/zoom,n));
  const selected=new Set(snapshots[cursor].map(p=>p.id));
  if(value.selection.length>DESIGN_LIMIT||!value.selection.every(id=>integer(id,1,nextId-1)&&selected.has(id)))fail();
- return {schema:'wand.local-design-draft@1',identity:location.identity,timeline:{snapshots,cursor,nextId},camera:{zoom,x:bound(x),y:bound(y)},selection:[...new Set(value.selection as number[])]};
+ return {schema:'wand.local-design-draft@1',identity:location.identity,timeline:{snapshots,cursor,nextId},camera:{zoom,x:bound(x),y:bound(y)},selection:[...new Set(value.selection as number[])],...(Object.prototype.hasOwnProperty.call(value,'roomFinish')?{roomFinish:readRoomFinish(value,roomFinishDraftKind(location.key))}:{})};
 }
 export function draftItemIds(draft:DesignDraft):number[]{
  const ids=new Set<number>();for(const snapshot of draft.timeline.snapshots)for(const p of snapshot)ids.add(p.itemId);return [...ids];
