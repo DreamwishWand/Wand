@@ -291,7 +291,7 @@
   return roomChecked(validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs),g,r,defs);
  }
  function translateSelection(ids:readonly number[],dx:number,dy:number){
-  if(!dx&&!dy)return false;if(symmetry&&currentDesign(timeline).some(p=>ids.includes(p.id)&&p.attachment)){error=adw[5];return false;}
+  if(!dx&&!dy)return false;if(symmetry&&symmetry.mode!=='point'&&currentDesign(timeline).some(p=>ids.includes(p.id)&&p.attachment)){error=adw[5];return false;}
   const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height,grid,raster);
   if(!plan&&symmetry){error=inspectionWords[3];return false;}
   return save(plan);
@@ -643,7 +643,7 @@
  function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
-   if(symmetry&&attachedSelection){error=adw[5];return;}
+   if(symmetry&&symmetry.mode!=='point'&&attachedSelection){error=adw[5];return;}
    if(worldFrame)delta=(4-delta)%4;
    alignmentAction=null;
    if(pasting.length){
@@ -662,7 +662,7 @@
    if(!clip.length||!grid||busyImport)return;
    if(worldFrame&&clip.some(p=>exclusiveAnchorClass(String(p.itemId)))){save(null);return;}
    if(clip.some(p=>{const g=definitions.get(p.itemId);return g&&!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}
-   cancel();selected=null;groupIds=[];if(clip.some(p=>p.attachment)){symmetry=null;symmetryPicking=false;}activeScene=scene;sceneAnchor=scene?.anchor??'corner';
+   cancel();selected=null;groupIds=[];if(clip.some(p=>p.attachment)&&symmetry?.mode!=='point'){symmetry=null;symmetryPicking=false;}activeScene=scene;sceneAnchor=scene?.anchor??'corner';
    if(clip.every(p=>definitions.has(p.itemId)&&!p.attachment)){if(scene&&!sceneBounds(clip,definitions)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint);return;}
    if(!worker)return;
    pastePending=clip;pasteRequest=nextRequest();
