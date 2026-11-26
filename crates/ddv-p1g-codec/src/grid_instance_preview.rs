@@ -2497,3 +2497,31 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  }
  Ok(std::mem::take(&mut *working))
 }
+
+#[cfg(test)]
+mod biome_decoration_tests{
+ use super::*;
+ #[test]
+ fn combined_replacement_keeps_stock_and_native_retained_rows_and_rejects_stale_network(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null},"3":{"ID":3,"ItemID":40100068,"X":6,"Y":4,"Orientation":"GridOrientation_Down","State":{"FenceMode":{"Diagonal":true}}}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","Unknown":123}}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+  let before=serde_json::json!([{"itemId":40100068,"x":4,"y":4,"orientation":2,"network":{"kind":"road","diagonal":false}},{"itemId":40100068,"x":6,"y":4,"orientation":2,"network":{"kind":"road","diagonal":true}}]);
+  let mut plan=serde_json::json!({"furniture":{"destination":dest,"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[{"itemId":"40000001","destination":dest,"x":6,"y":4,"orientation":"GridOrientation_Left"}]},"network":{"destination":dest,"before":before,"after":[before[0].clone()]}});
+  let bytes=serde_json::to_vec(&raw).unwrap();
+  let result=biome_decoration_candidate(&bytes,&plan.to_string()).unwrap();
+  let output:Value=serde_json::from_str(&result).unwrap();
+  let old=&raw["World"]["GridCollection"]["Grids"];let new=&output["World"]["GridCollection"]["Grids"];
+  assert_eq!(output["Player"],raw["Player"]);assert_eq!(new["43"],old["43"]);
+  assert_eq!(new["42"]["Objects"]["2"],old["42"]["Objects"]["2"]);
+  assert!(new["42"]["Objects"].get("1").is_none());assert!(new["42"]["Objects"].get("3").is_none());
+  assert_eq!(new["42"]["Objects"]["5"]["X"],6);assert_eq!(new["42"]["NextGridObjectID"],6);
+  plan["network"]["before"][1]["network"]["diagonal"]=Value::Bool(false);
+  assert!(biome_decoration_candidate(&bytes,&plan.to_string()).is_err());
+  plan["network"]["before"]=before;
+  plan["furniture"]["add"][0]["itemId"]=Value::from("40000002");
+  assert!(biome_decoration_candidate(&bytes,&plan.to_string()).is_err());
+  assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(),raw);
+ }
+}
