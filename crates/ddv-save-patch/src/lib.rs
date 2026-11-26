@@ -9,6 +9,7 @@ use std::ops::Range;
 pub mod fence_topology;
 pub mod fence_erase;
 pub mod support_clone;
+pub mod bulk_furniture;
 
 pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;

@@ -775,7 +775,8 @@ pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,ite
 fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
  let tree=m.get("tree").ok_or(CodecError::Json)?;
- let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|CodecError::Json)?;
+ static CATALOG:std::sync::OnceLock<Result<Value,()>>=std::sync::OnceLock::new();
+ let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|())).as_ref().map_err(|_|CodecError::Json)?;
  fn check(tree:&Value,catalog:&Value,count:&mut usize,depth:usize)->Result<(),CodecError>{
   let bad=CodecError::Json;if depth>8{return Err(bad);}
   let factor=tree.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as usize;
@@ -791,7 +792,7 @@ fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
    let child=o.get("child").ok_or(bad)?;if !child.is_null(){check(child,catalog,count,depth+1)?;}
   }Ok(())
  }
- check(tree,&catalog,&mut 1,0)?;
+ check(tree,catalog,&mut 1,0)?;
  Ok(tree)
 }
 pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
@@ -1189,6 +1190,15 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         stock.insert(t.item_id,amount);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+        let pickups=targets.iter().zip(&selections).zip(&support_flags).filter_map(|((target,selection),flag)|(!*flag).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
+        if !pickups.is_empty(){
+            let mut draft=preview_bulk_furniture(&working,&pickups,&[]).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+    }else{
     for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
         if *flag{continue;}
         let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
@@ -1199,11 +1209,22 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         }
         working.zeroize();*working=draft.patched_json;*amount=next;
     }
+    }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::BulkPickup;
+        let pickups=targets.iter().zip(&selections).zip(&support_flags).filter_map(|((target,selection),flag)|(*flag).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
+        if !pickups.is_empty(){
+            let mut draft=ddv_save_patch::support_clone::preview_bulk_support_pickup(&working,&pickups).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+    }else{
     for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
         if !flag{continue;}
         let mut draft=ddv_save_patch::support_clone::preview_support_tree_pickup(&working,target,selection.2).map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+    }
     }
     Ok(std::mem::take(&mut *working))
 }
@@ -1354,6 +1375,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
     let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=limit).ok_or(bad)?;
     let mut total=0usize;
     let mut anchors=HashSet::new();
+    let mut destinations=HashMap::<String,ddv_save_patch::PlainGridDestination>::new();
     fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
         if depth>8{return Err(CodecError::Bounds);}
         for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{
@@ -1367,8 +1389,10 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let xy=(int("x")?,int("y")?);
-        let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
-        if !anchors.insert((d.grid_id,xy)){return Err(bad);}
+        let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
+        if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
+        let d=destinations.get(&key).ok_or(bad)?;
+        if !anchors.insert((d.grid_id.clone(),xy)){return Err(bad);}
         total+=1;
         if let Some(scene)=o.get("scene"){
             let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
@@ -1376,8 +1400,37 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }
         if total>limit{return Err(CodecError::Bounds);}
     }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_scene_place};
+        let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+        if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+        let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+        let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();
+        for row in rows{
+            let witness=&row["destination"];let d=destinations.get(&witness.to_string()).ok_or(bad)?;
+            let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
+            let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let orientation=row["orientation"].as_str().ok_or(bad)?;
+            let tree=if let Some(scene)=row.get("scene"){
+                let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
+                if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
+                Some(checked_support_scene(item,scene)?)
+            }else{None};
+            let ids=allocated.entry(d.grid_id.clone()).or_default();
+            let next=grids.get(&d.grid_id).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
+            let id=next.checked_add(ids.len() as u64).filter(|n|*n<u32::MAX as u64).ok_or(bad)?.to_string();ids.push(id);
+            places.push(BulkScenePlace{pose:BulkPlace{destination:d,item_id:item,xy:(x,y),orientation},tree});
+        }
+        for (grid,ids) in allocated{for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}}
+        let mut draft=preview_bulk_scene_place(std::str::from_utf8(profile).map_err(|_|bad)?,&places).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+        return Ok(draft.patched_json);
+    }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
-    for row in rows{
+    let mut cursor=0;
+    while cursor<rows.len(){
+        let row=&rows[cursor];
         if let Some(scene)=row.get("scene"){
             let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
             let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
@@ -1385,10 +1438,11 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let orientation=row["orientation"].as_str().ok_or(bad)?;
             let mut draft=support_scene_place_candidate(working.as_bytes(),item,(x,y),&row["destination"],orientation,scene)?;
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
-            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);cursor+=1;
         }else{
-            let plan=serde_json::to_string(&[row]).map_err(|_|bad)?;
-            let draft=plain_group_paste_candidate(working.as_bytes(),&plan)?;
+            let end=if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{cursor+rows[cursor..].iter().take_while(|r|r.get("scene").is_none()).count()}else{cursor+1};
+            let plan=serde_json::to_string(&rows[cursor..end]).map_err(|_|bad)?;
+            let draft=plain_group_paste_bounded(working.as_bytes(),&plan,limit)?;cursor=end;
             working.zeroize();*working=draft;
         }
     }
@@ -1434,6 +1488,13 @@ fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String
         let next=grids.get(&grid).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+    }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPlace,preview_bulk_furniture};
+        let places=poses.iter().map(|(key,item,xy,orientation)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation})).collect::<Result<Vec<_>,CodecError>>()?;
+        let mut draft=preview_bulk_furniture(std::str::from_utf8(profile).map_err(|_|bad)?,&[],&places).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        return Ok(draft.patched_json);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for (key,item,xy,orientation) in poses{
