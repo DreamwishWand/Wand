@@ -1869,8 +1869,10 @@ try{
   assert.equal(islandMixedPrimary.furniture.design.placements.length,1);assert.equal(islandMixedPrimary.network.rows.length,1);
   assert.equal(islandMixedSecondary.network.rows[0].network.diagonal,true);
   islandMixedPrimary.furniture.design.placements=[];islandMixedSecondary.network.rows=[];
+  await wholeIslandPanel.getByLabel('道・フェンスも含める',{exact:true}).uncheck();
   await wholeIslandPanel.locator('.island-save-preset-input').setInputFiles({name:'island-mixed-clear.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(islandMixedDoc))});
   await wholeIslandPanel.getByRole('button',{name:'編集コピーを検証',exact:true}).click({timeout:30000});
+  assert.equal(await wholeIslandPanel.getByLabel('道・フェンスも含める',{exact:true}).isChecked(),true);
   const islandMixedCopy=wholeIslandPanel.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
   await islandMixedCopy.waitFor({timeout:30000});
   const islandMixedOutput=await islandMixedCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
