@@ -1582,6 +1582,28 @@ mod tests{
     }
 
     #[test]
+    fn biome_replacement_reuses_returned_stock_and_preserves_unselected_state(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json","GridDataPath":"GridData/Villages/Village04-UrbanLevel-GridData.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+        let d=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!({"destination":d,"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[{"itemId":"40000001","destination":d,"x":5,"y":5,"orientation":"GridOrientation_Left"}]});
+        let result=biome_furniture_candidate(raw,&plan.to_string()).unwrap();
+        let old:Value=serde_json::from_slice(raw).unwrap();let new:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(new["Player"],old["Player"]);assert_eq!(new["World"]["GridCollection"]["Grids"]["43"],old["World"]["GridCollection"]["Grids"]["43"]);
+        assert_eq!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],old["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);
+        assert!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+        assert_eq!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["X"],5);
+        assert!(result.contains("\"Marker\":1e2"));
+        plan["remove"][0]["localOrdinal"]=Value::from(3);
+        assert!(biome_furniture_candidate(raw,&plan.to_string()).is_err());
+        plan["remove"][0]["localOrdinal"]=Value::from(1);
+        plan["add"][0]["x"]=Value::from(2);plan["add"][0]["y"]=Value::from(2);
+        assert!(biome_furniture_candidate(raw,&plan.to_string()).is_err());
+        plan["add"][0]["x"]=Value::from(5);plan["add"][0]["y"]=Value::from(5);
+        let mut stateful=old;stateful["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Unknown":5});
+        assert!(biome_furniture_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+    }
+
+    #[test]
     fn group_cut_preserves_stock_and_same_grid_ids_and_checks_cross_grid_refs(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
         let a=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
