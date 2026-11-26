@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {createItemMediaClient} from '../src/lib/media/item-media.ts';
+import {createItemMediaClient,ITEM_MEDIA_ACTIVATION} from '../src/lib/media/item-media.ts';
 import {publicImageKey,parsePublicImageKey,publicImageUrl} from '../src/lib/media/public-image-key.ts';
 const sha='a'.repeat(64);
 const origin='https://media.dreamwishwand.com';
@@ -30,7 +30,7 @@ test('common image keys have no version, service or language',()=>{
   assert.throws(()=>publicImageUrl('https://example.com','thumbnail',sha),/origin/);
 });
 test('unpublished client never fetches',async()=>{
-  assert.equal(await createItemMediaClient(undefined,()=>{throw Error('network');}).getItemImage(257),null);
+  assert.equal(await createItemMediaClient({state:'unpublished'},()=>{throw Error('network');}).getItemImage(257),null);
 });
 test('Item ID lookup loads one shard on demand, reuses it for all variants, skips empty shards',async()=>{
   const f=fixture(),c=createItemMediaClient(f.config,f.fetcher);
@@ -51,4 +51,8 @@ test('standard Item thumbnail limit is 256px',async()=>{
   assert.equal((await createItemMediaClient(f.config,f.fetcher).getItemImage(257)).width,256);
   const bad=fixture('published',257);
   await assert.rejects(createItemMediaClient(bad.config,bad.fetcher).getItemImage(257),/image dimensions/);
+});
+
+test('default activation pins the R2-readback verified 256px release',()=>{
+  assert.deepEqual(ITEM_MEDIA_ACTIVATION,{state:'published',publicationAuthorized:true,publicReadbackVerified:true,origin,gameVersion:'steam-1.26.2',manifest:{sha256:'cccc75bd916a3a5fed6ad7bcf45f95cbf38a178ea2614bfa9639fe352699d007',bytes:29888}});
 });
