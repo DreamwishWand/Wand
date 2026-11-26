@@ -130,3 +130,27 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
  validate_json_without_edit(&candidate)?;
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Other":1e2,"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"ItemMarker_Favorite"},"40000002":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":null},"3":{"ID":3,"ItemID":40000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"Objects":{}}}}}}"#;
+ fn target(id:&str,item_id:u64)->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:id.into(),item_id}}
+ #[test]fn bulk_matches_sequential_stock_and_grid_semantics_without_normalizing_survivors(){
+  let a=target("1",40000001);let b=target("2",40000002);let c=target("3",40000001);
+  let rows=[BulkPickup{target:&a,expected:(1,1),orientation:"GridOrientation_Down"},BulkPickup{target:&b,expected:(2,2),orientation:"GridOrientation_Down"}];
+  let bulk=preview_bulk_furniture(SOURCE,&rows,&[]).unwrap();
+  let s=preview_furniture_stock_transaction(SOURCE,2,FurnitureStockAction::Pickup{target:&a,expected:(1,1)}).unwrap();
+  let sequential=preview_furniture_stock_transaction(&s.patched_json,0,FurnitureStockAction::Pickup{target:&b,expected:(2,2)}).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&bulk.patched_json).unwrap(),serde_json::from_str::<Value>(&sequential.patched_json).unwrap());
+  assert!(bulk.patched_json.contains("\"Other\":1e2"));assert!(bulk.patched_json.contains("\"Unknown\":1e2"));
+  assert!(preview_bulk_furniture(SOURCE,&[BulkPickup{target:&c,expected:(3,3),orientation:"GridOrientation_Down"}],&[]).is_err());
+  let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:1,size:(16,16)};
+  let places=[BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_Left"},BulkPlace{destination:&d,item_id:40000002,xy:(5,5),orientation:"GridOrientation_Down"}];
+  let result=preview_bulk_furniture(&bulk.patched_json,&[],&places).unwrap();
+  let one=preview_furniture_stock_transaction(&sequential.patched_json,3,FurnitureStockAction::Place{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_Left"}).unwrap();
+  let two=preview_furniture_stock_transaction(&one.patched_json,1,FurnitureStockAction::Place{destination:&d,item_id:40000002,xy:(5,5),orientation:"GridOrientation_Down"}).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&result.patched_json).unwrap(),serde_json::from_str::<Value>(&two.patched_json).unwrap());
+  assert!(preview_bulk_furniture(SOURCE,&[],&places).is_err()); // second item unavailable
+ }
+}
