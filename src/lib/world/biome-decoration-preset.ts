@@ -25,6 +25,7 @@ export function parseBiomeDecoration(text:string,grid:MainlandGrid){
  return {furniture:parseWholeArea(JSON.stringify(doc.furniture),grid,'biome'),network:parseBiomeNetwork(JSON.stringify(doc.network),grid)};
 }
 function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
+ if(g.plan.action!=='place')throw Error('GHOST_POSE');
  return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:CARDINAL_ORIENTATIONS.indexOf(g.plan.orientation as typeof CARDINAL_ORIENTATIONS[number])*4,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
 }
 export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[]},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>){
