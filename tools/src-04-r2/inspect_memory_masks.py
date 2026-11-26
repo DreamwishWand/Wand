@@ -2,7 +2,7 @@
 """Offline native memory mask evidence. No writes to images, save or R2.
 
 Reports exact RGBA values, channel histograms, dominant color bounding boxes
-and connectivity. A color/region count does not establish shard-bit order.
+and transparent RGB statistics. A color/region count does not establish shard-bit order.
 """
 import argparse
 import hashlib
