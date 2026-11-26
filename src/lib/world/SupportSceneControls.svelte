@@ -4,6 +4,7 @@
  import {supportShapeKey,type SupportTree} from './subgrid-local.ts';
  import type {SourceObjectShape} from './source-object-map.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
+ import type {SupportParentWitness} from './indoor-support.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
@@ -11,7 +12,9 @@
  import {testSaveWords} from './test-save-export.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {worldArtwork} from './world-artwork.ts';
- export let tree:SupportTree,ownerItemId:number,parent:MainlandSavedObject,file:File|null,worker:Worker|null,path:readonly number[],counts:ReadonlyMap<number,number>,names:ReadonlyMap<number,string>,base:string,locale:WandLanguage,canMove:boolean,nextRequest:()=>number,onBack:()=>void,onApplied:()=>void,onDuplicate:((scene:SupportScene)=>void)|null=null;
+ export let tree:SupportTree,ownerItemId:number,parent:MainlandSavedObject|null=null,file:File|null,worker:Worker|null,path:readonly number[],counts:ReadonlyMap<number,number>,names:ReadonlyMap<number,string>,base:string,locale:WandLanguage,canMove:boolean,nextRequest:()=>number,onBack:()=>void,onApplied:()=>void,onDuplicate:((scene:SupportScene)=>void)|null=null;
+ export let roomParent:SupportParentWitness|null=null;
+ $: witness=parent?{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),x:parent.object.x,y:parent.object.y}:roomParent;
  let scene:SupportScene|null=null,shapes:Readonly<Record<string,SourceObjectShape>>={},terrain:TerrainRaster|null=null,allowed=new Set<number>(),request=0,reading=false,error=false,own:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,epoch=0,source:File|null=null;
  let images=new Map<number,string>(),geometryRequest=0,geometryValid=false;
  $: createWords=supportSceneCreateWords[locale];
@@ -49,11 +52,11 @@
  function requestGeometry(doc:SupportScene){geometryValid=false;geometryRequest=0;if(!worker||!onDuplicate||path.length||!supportSceneTemplateCompatible(doc,ownerItemId,tree))return;geometryRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:geometryRequest,scene:doc});}
  function receive(e:MessageEvent){const d=e.data;if(geometryRequest&&d?.requestId===geometryRequest){geometryRequest=0;geometryValid=d.kind==='support-scene-geometry'&&d.valid===true;return;}if(!request||d?.requestId!==request)return;request=0;if(d.kind!=='support-shapes'||!d.shapes||!(d.terrain?.nativeFloorValues instanceof Uint32Array)){error=true;return;}shapes=d.shapes;terrain=d.terrain;allowed=new Set(Array.isArray(d.removable)?d.removable.filter(Number.isSafeInteger):[]);}
  function validate(){
-  if(!plan||!file||source!==file||!canMove||own||copy||!tree.sourcePath)return;
+  if(!plan||!file||source!==file||!canMove||own||copy||!tree.sourcePath||!witness)return;
   const f=file,session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'}),token=epoch;own=session;error=false;
   const done=(d:any)=>{session.terminate();if(own!==session||file!==f||epoch!==token){d?.bytes?.fill(0);return;}own=null;try{if(d?.kind!=='support-child-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{error=true;}};
   session.onmessage=e=>done(e.data);session.onerror=()=>done(null);session.onmessageerror=()=>done(null);
-  session.postMessage({command:'support-child-copy',file:f,allowExperimentalCopy:true,plan:{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),expectedX:parent.object.x,expectedY:parent.object.y,path:[...path],terrainPath:tree.sourcePath,stock:plan}});
+  session.postMessage({command:'support-child-copy',file:f,allowExperimentalCopy:true,plan:{localOrdinal:witness.localOrdinal,itemId:witness.itemId,expectedX:witness.x,expectedY:witness.y,path:[...path],terrainPath:tree.sourcePath,stock:plan}});
  }
  function apply(){if(!copy||!file||source!==file||!canMove||!commitWorldCheckpoint(file,copy.file)){error=true;return;}onApplied();}
  onDestroy(()=>{reset();subscribed?.removeEventListener('message',receive);});
