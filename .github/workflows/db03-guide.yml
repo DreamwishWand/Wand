@@ -1,17 +1,8 @@
 name: DB-03 Guide source contract
 
 on:
-  pull_request:
-    paths:
-      - 'tools/src-03-guide/**'
-      - '.github/workflows/db03-guide.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'tools/src-03-guide/**'
-      - '.github/workflows/db03-guide.yml'
+  workflow_call:
   workflow_dispatch:
-
 permissions:
   contents: read
 

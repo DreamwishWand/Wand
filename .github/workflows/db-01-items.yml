@@ -1,20 +1,10 @@
 name: DB-01 item database checks
 
 on:
-  pull_request:
-    paths:
-      - 'tools/src-01-items/**'
-      - 'tools/db-01-items/**'
-      - 'src/lib/items/**'
-      - '.github/workflows/db-01-items.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'tools/src-01-items/**'
-      - 'tools/db-01-items/**'
-      - 'src/lib/items/**'
-      - '.github/workflows/db-01-items.yml'
+  workflow_call:
   workflow_dispatch:
+permissions:
+  contents: read
 
 jobs:
   item-parser-tests:
