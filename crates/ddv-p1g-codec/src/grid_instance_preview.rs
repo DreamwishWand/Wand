@@ -341,9 +341,36 @@ pub(super) fn resolve_grid_mixed_targets(
            orientation.as_ref().is_some_and(|o|Some(o.as_str())!=observed_orientation){
             return Err(CodecError::Json);
         }
+        if target.item_id/10_000_000==2{
+            validate_building_transform(profile,target)?;
+        }
         out.push(target.clone());
     }
     Ok(out)
+}
+
+/// Existing on-grid buildings only. Keep native identity, require a simple
+/// full record and reject known/unknown inbound dependencies rather than
+/// attempting to repair entrances, progression or linked scene state.
+fn validate_building_transform(profile:&[u8],target:&GridCoordinateTarget)->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    if target.kind!=GridObjectKind::Full||!matches!((target.item_id%10_000_000)/100_000,0|1|2|3|5){return Err(bad);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
+    if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
+    let grid=collection.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
+    if grid.get("ID").and_then(Value::as_u64)!=key_id(&target.grid_id){return Err(bad);}
+    let obj=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
+    if obj.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id)||
+       obj.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+       obj.get("State").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty()))||
+       !obj.get("Orientation").and_then(Value::as_str).is_some_and(|v|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&v)){
+        return Err(bad);
+    }
+    let refs=grid_identity_dependencies(profile,target)?;
+    if refs.blocking()>0{return Err(bad);}
+    Ok(())
 }
 
 /// Inbound identity classification from the archived native grid identity
@@ -2550,6 +2577,24 @@ mod terrain_session_tests{
         assert!(inspect_subgrid_json(&serde_json::to_vec(&alias).unwrap(),1,40005160,(4,6)).is_err());
         let mut cycle:Value=serde_json::from_slice(save).unwrap();cycle["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":7}});
         assert!(inspect_subgrid_json(&serde_json::to_vec(&cycle).unwrap(),1,40005160,(4,6)).is_err());
+    }
+    #[test]
+    fn building_mixed_transform_preserves_identity_and_rejects_linked_or_unknown_state(){
+        let source=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"Objects":{"2":{"ID":2,"ItemID":20000001,"X":4,"Y":5,"Orientation":"GridOrientation_Down","State":null}}}}}}});
+        let check=|v:&Value,item:u64|resolve_grid_mixed_targets(&serde_json::to_vec(v).unwrap(),&[(1,item,(4,5),"full".into(),Some("GridOrientation_Down".into()))]);
+        let targets=check(&source,20000001).unwrap();
+        let raw=source.to_string();
+        let draft=ddv_save_patch::preview_existing_grid_mixed_batch(&raw,&[ddv_save_patch::GridMixedEdit{target:targets[0].clone(),expected:(4,5),position:Some((6,7)),orientation:Some(("GridOrientation_Down".into(),"GridOrientation_Left".into()))}]).unwrap();
+        let mut expected=source.clone();
+        let obj=&mut expected["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"];
+        obj["X"]=6.into();obj["Y"]=7.into();obj["Orientation"]="GridOrientation_Left".into();
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        let mut linked=source.clone();linked["World"]["LastUsedLinkedEnvironmentEnter"]=serde_json::json!({"GridID":10,"GridObjectID":2});
+        assert!(check(&linked,20000001).is_err());
+        let mut state=source.clone();state["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":true});
+        assert!(check(&state,20000001).is_err());
+        let mut offgrid=source.clone();offgrid["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["ItemID"]=20400001.into();
+        assert!(check(&offgrid,20400001).is_err());
     }
     #[test]
     fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
