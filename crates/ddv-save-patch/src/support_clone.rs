@@ -157,10 +157,7 @@ pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestinati
 fn install(source:&str,root:&Value,target:&GridCoordinateTarget,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,next:u32,tree:CloneTree<'_>,state:Value)->Result<GridCoordinateDraft,PatchError>{
  let reserved=(next..tree.next).collect::<HashSet<_>>();
  if reserved_ref(root,&reserved,false){return Err(BAD);}
- let inventory=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(Value::as_object).ok_or(BAD)?;
- let mut amounts=HashMap::new();for i in &tree.stock{let v=inventory.get(&i.to_string()).and_then(|v|v.get("Amount")).ok_or(BAD)?;amounts.insert(*i,id(v)?);}
- let mut working=source.to_owned();
- for i in tree.stock{let amount=amounts.get_mut(&i).ok_or(BAD)?;let draft=preview_default_furniture_stock(&working,i,*amount,-1)?;*amount=amount.checked_sub(1).ok_or(BAD)?;working=draft.patched_json;}
+ let working=super::bulk_furniture::preview_bulk_stock(source,&tree.stock,false)?;
  let mut locator=JsonLocator::grid_axis(&working,target,"X")?;
  locator.signed_path=None;locator.item_path=None;
  let gp=vec![k("World"),k("GridCollection"),k("Grids")];let cp=vec![k("World"),k("GridCollection"),k("NextGridID")];
@@ -198,9 +195,7 @@ pub fn preview_support_tree_pickup(source:&str,target:&GridCoordinateTarget,expe
  for id in &removed{map.remove(&id.to_string()).ok_or(BAD)?;}
  map.get_mut(&target.grid_id).and_then(|g|g.get_mut("Objects")).and_then(Value::as_object_mut).and_then(|m|m.remove(&target.object_id)).ok_or(BAD)?;
  if reserved_ref(&root,&removed,false){return Err(BAD);}
- let inventory=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(Value::as_object).ok_or(BAD)?;
- let mut amounts=HashMap::new();for i in &stock{amounts.insert(*i,id(inventory.get(&i.to_string()).and_then(|v|v.get("Amount")).ok_or(BAD)?)?);}
- let mut working=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?.patched_json;
+ let working=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?.patched_json;
  // Delete complete child Grid members, preserving surviving lexical bytes.
  let path=vec![k("World"),k("GridCollection"),k("Grids")];
  let mut locator=JsonLocator::grid_axis(&working,target,"X")?;locator.signed_path=None;locator.item_path=None;
@@ -217,7 +212,7 @@ pub fn preview_support_tree_pickup(source:&str,target:&GridCoordinateTarget,expe
  if seen.len()!=removed.len(){return Err(BAD);}
  let mut candidate=String::with_capacity(working.len());candidate.push_str(&working[..range.start]);candidate.push('{');candidate.push_str(&members.join(","));candidate.push('}');candidate.push_str(&working[range.end..]);
  if serde_json::from_str::<Value>(&candidate).map_err(|_|BAD)?!=root{return Err(BAD);}
- for i in stock{let amount=amounts.get_mut(&i).ok_or(BAD)?;let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(BAD)?;working=preview_default_furniture_stock(&candidate,i,*amount,1)?.patched_json;candidate=working;*amount=next;}
+ candidate=super::bulk_furniture::preview_bulk_stock(&candidate,&stock,true)?;
  validate_json_without_edit(&candidate)?;
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
