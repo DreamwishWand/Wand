@@ -66,7 +66,7 @@ export function symmetricMoveTargets(t:DesignTimeline,ids:readonly number[],defs
   if(byPose.get(key(p))?.length!==1)return null;
   const mirror=reflectedDesignItem(p,g,s),next=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,s);
   if(!mirror||!next)return null;
-  const matches=byPose.get(key(mirror));if(matches?.length!==1)return null;
+  const matches=byPose.get(key(mirror));if(matches?.length!==1||byId.get(matches[0])?.attachment)return null;
   if(!put(id,p.x+dx,p.y+dy)||!put(matches[0],next.x,next.y))return null;
  }
  return [...targets.values()];
@@ -100,7 +100,7 @@ export function symmetricRotateDesign(t:DesignTimeline,ids:readonly number[],def
   const before=reflectedDesignItem(p,g,s),after=reflectedDesignItem(next,g,s);
   if(!before||!after)return null;
   const matches=byPose.get(key(before));
-  if(matches?.length!==1||!put(id,next)||!put(matches[0],after))return null;
+  if(matches?.length!==1||byId.get(matches[0])?.attachment||!put(id,next)||!put(matches[0],after))return null;
  }
  return translateDesignTargets(t,[...targets.values()],defs,width,height);
 }
