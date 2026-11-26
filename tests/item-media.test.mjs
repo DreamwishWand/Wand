@@ -6,11 +6,11 @@ import {publicImageKey,parsePublicImageKey,publicImageUrl} from '../src/lib/medi
 const sha='a'.repeat(64);
 const origin='https://media.dreamwishwand.com';
 const packed=doc=>{const data=Buffer.from(JSON.stringify(doc));return {data,pin:{sha256:createHash('sha256').update(data).digest('hex'),bytes:data.length}}};
-function fixture(state='published'){
+function fixture(state='published',thumbnailWidth=128){
   const files={},payloads=new Map();
   for(let n=0;n<256;n++){
     const bucket=n.toString(16).padStart(2,'0');
-    const items=n===1?[{id:257,thumbnail:{key:publicImageKey('thumbnail',sha),width:128,height:64},original:{key:publicImageKey('original',sha),width:128,height:64}}]:[];
+    const items=n===1?[{id:257,thumbnail:{key:publicImageKey('thumbnail',sha),width:thumbnailWidth,height:64},original:{key:publicImageKey('original',sha),width:128,height:64}}]:[];
     const p=packed({schema:'wand.media.distribution-shard@1',bucket,items});
     files['id/'+bucket+'.json']={...p.pin,count:items.length};
     payloads.set('id/'+bucket+'.json',p.data);
@@ -44,4 +44,11 @@ test('Item ID lookup loads one shard on demand, reuses it for all variants, skip
 test('candidate manifest cannot activate media',async()=>{
   const f=fixture('candidate_unpublished');
   await assert.rejects(createItemMediaClient(f.config,f.fetcher).getItemImage(257),/published manifest/);
+});
+
+test('standard Item thumbnail limit is 256px',async()=>{
+  const f=fixture('published',256);
+  assert.equal((await createItemMediaClient(f.config,f.fetcher).getItemImage(257)).width,256);
+  const bad=fixture('published',257);
+  await assert.rejects(createItemMediaClient(bad.config,bad.fetcher).getItemImage(257),/image dimensions/);
 });
