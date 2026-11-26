@@ -18,7 +18,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {sceneWords,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import {DESIGN_FILE_LIMIT} from './design-layout.ts';
- import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMixedScene,indoorMixedPlacement,captureIndoorMixedScene,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorAlign,indoorSymmetricDuplicate,indoorLinkedMove,indoorLinkedWords,indoorAlignWords,type IndoorAlignMode,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
+ import {parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMixedScene,indoorMixedPlacement,captureIndoorMixedScene,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorAlign,indoorSymmetricDuplicate,indoorLinkedMove,indoorLinkedRotate,indoorLinkedPlacement,indoorLinkedWords,indoorAlignWords,type IndoorAlignMode,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldFurnitureCut,worldFurnitureClipboard,groupCutWords,ROOM_CUT_LIMIT,type CutClipboard} from './group-paste.ts';
  import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
@@ -33,7 +33,7 @@
  let supportParents:IndoorSupportWitness[]=[],supportParent:IndoorSupportWitness|null=null,supportFile:File|null=null;
  let supportClone:IndoorPlace['supportSource']|null=null;
  $: supportCloneReady=!!supportParent&&!!face?.terrain&&removable.has(supportParent.itemId)&&!!roomPickupPlan;
- function beginSupportDuplicate(needs:ReadonlyMap<number,number>){
+ function beginSupportDuplicate(needs:ReadonlyMap<number,number>){if(linkedAxis){editError=true;return;}
   const p=supportParent,pose=p&&face?.positions[p.index];
   if(!p||!pose||pose.orientationCode===null||!supportCloneReady||!editAllowed||[...needs].some(([id,n])=>(stock.get(id)??0)<n))return;
   const witness={index:p.index,expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[pose.orientationCode/4]};
@@ -91,7 +91,7 @@
    if(chosen.size>DESIGN_FILE_LIMIT)throw Error('size');
    const raw=await chosen.text(),mixed=indoorMixedScene(raw);
    const value=mixed?{clip:mixed.items.map(({support,...pose})=>pose),anchor:mixed.anchor}:indoorSceneClip(raw,target.factor!);
-   if(value.clip.length>ROOM_CUT_LIMIT||mixed&&!terrainWorker)throw Error('scene limit');
+   if(value.clip.length>ROOM_CUT_LIMIT||mixed&&(!terrainWorker||linkedAxis))throw Error('scene limit');
    if(epoch!==sceneEpoch||file!==source||face!==target||!editAllowed||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft)return;
    resetObject();sceneActive=true;sceneAnchor=value.anchor;cloneClip=value.clip;sceneExtra=[...new Set(value.clip.map(p=>p.itemId))];placing=true;
    if(mixed){mixedDoc=mixed;mixedValid=false;mixedRequest=nextRequest();terrainWorker!.postMessage({command:'mixed-scene-geometry',requestId:mixedRequest,scene:mixed,locale});}
@@ -102,11 +102,12 @@
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
  $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable,new Set(roomSupports.map(p=>p.index))):null;
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
- $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y,mixedSources):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
- $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft??symmetryPreview;
+ $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y,mixedSources):null:linkedAxis?indoorLinkedPlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y,linkedAxis):indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y)):null;
+ $: linkedStockPreview=placing&&linkedAxis&&!supportClone&&!cutSource&&!cloneClip.length&&hoverCell?indoorLinkedPlacement(face,shapes,removable,stock,[{itemId:stockId,dx:0,dy:0,orientation:CARDINAL_ORIENTATIONS.indexOf(stockOrientation)}],'corner',hoverCell.x,hoverCell.y,linkedAxis):null;
+ $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft??symmetryPreview??linkedStockPreview;
  $: groupPickup=indoorGroupPickup(face,cutIndices,removable,stock,new Set(roomSupports.map(p=>p.index)));
  $: duplicateClip=cutIndices.some(i=>roomSupports.some(p=>p.index===i))?null:indoorDuplicateClip(face,cutIndices,shapes,removable,stock);
- function beginDuplicate(){if(!editAllowed||sceneCaptureWorker)return;if(mixedSelected){captureRoomMixed(cutIndices,true);return;}if(!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
+ function beginDuplicate(){if(!editAllowed||sceneCaptureWorker)return;if(mixedSelected){if(linkedAxis){editError=true;return;}captureRoomMixed(cutIndices,true);return;}if(!duplicateClip)return;const clip=duplicateClip;resetObject();cloneClip=clip;placing=true;}
 
 
  $: availableCut=$worldFurnitureCut&&$worldFurnitureCut.file===file&&$worldFurnitureCut.rows.length>0&&$worldFurnitureCut.rows.length<=ROOM_CUT_LIMIT&&face?.kind==='floor'&&face.terrain&&$worldFurnitureCut.rows.every(r=>(!r.supportFactor||!!r.roomSource&&r.supportFactor===face.factor)&&(!r.roomSource||r.roomSource.roomOrdinal!==room?.ordinal))?$worldFurnitureCut:null;
@@ -123,11 +124,15 @@
  $: moveShape=tree&&selectedObject>=0&&tree.objects[selectedObject]&&isCardinal(tree.objects[selectedObject].orientation)?shapes[tree.objects[selectedObject].itemId+':'+CARDINAL_ORIENTATIONS.indexOf(tree.objects[selectedObject].orientation as typeof CARDINAL_ORIENTATIONS[number])*4]:null;
  $: groupMoveReady=!!face?.terrain&&selectedGroup.size>1&&!!tree&&selectedGroup.has(selectedObject)&&[...selectedGroup].every(i=>!!tree?.objects[i]&&editable.has(tree.objects[i].itemId));
  let alignmentDraft=false,symmetryMode:SymmetryMode|null=null,symmetryAxis:DesignSymmetry|null=null;
- let linkedAxis:DesignSymmetry|null=null,linkPicking=false,pairedDraft:SymmetryMode|null=null,pointSupports=new Map<number,SupportScene>(),pointRequest=0,pointValid=false;
+ let linkedAxis:DesignSymmetry|null=null,linkPicking=false,pairedDraft:SymmetryMode|null=null,pairedRotation=false,pointSupports=new Map<number,SupportScene>(),pointRequest=0,pointValid=false;
  $: lw=indoorLinkedWords[locale];
  $: displayAxis=symmetryAxis??linkedAxis;
  function moveDraft(indices:readonly number[],index:number,x:number,y:number){return linkedAxis?indoorLinkedMove(face,shapes,editable,indices,index,x,y,linkedAxis):roomDragDraft(face,shapes,editable,indices,index,x,y);}
- function stageMove(d:SupportChildEdit[]){pairedDraft=linkedAxis?.mode??null;editDraft=d;editError=false;}
+ function stageMove(d:SupportChildEdit[]){pairedDraft=linkedAxis?.mode??null;pairedRotation=false;editDraft=d;editError=false;}
+ function stageRotation(d:SupportChildEdit[]|null){if(!d)return;pairedDraft=linkedAxis?.mode??null;pairedRotation=!!linkedAxis;editDraft=d;editError=false;}
+ function rotateDraft(indices:readonly number[],turn:-1|1){return linkedAxis?indoorLinkedRotate(face,shapes,editable,indices,turn,linkedAxis):indices.length>1?indoorGroupRotate(face,shapes,editable,indices,turn):indoorFurnitureEdits(face,shapes,editable,indices[0]??-1,null,turn);}
+ function placeClipAt(clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number){return linkedAxis?indoorLinkedPlacement(face,shapes,removable,stock,clip,anchor,x,y,linkedAxis):indoorScenePlacement(face,shapes,removable,stock,clip,anchor,x,y);}
+ function stockAt(x:number,y:number){if(linkedAxis&&!supportClone)return indoorLinkedPlacement(face,shapes,removable,stock,[{itemId:stockId,dx:0,dy:0,orientation:CARDINAL_ORIENTATIONS.indexOf(stockOrientation)}],'corner',x,y,linkedAxis);const d=indoorPlace(face,shapes,removable,stock,stockId,x,y,stockOrientation);return d?[supportClone?{...d,supportSource:supportClone}:d]:null;}
  function beginLink(mode:SymmetryMode){if(!editAllowed||!face?.terrain)return;pointSupports=new Map();pointRequest=0;pointValid=false;linkPicking=true;symmetryMode=mode;symmetryAxis=null;panMode=false;}
  const alignModes:IndoorAlignMode[]=['left','right','top','bottom','centerX','centerY','spaceX','spaceY'];
  const symmetryModes:SymmetryMode[]=['vertical','horizontal','point'];
@@ -137,11 +142,11 @@
  $: symmetryPreview=!linkPicking&&symmetryAxis&&symmetryMode&&(!mixedSelected||pointValid)?indoorSymmetricDuplicate(face,shapes,removable,stock,cutIndices,symmetryAxis,pointSupports):null;
  function startSymmetry(mode:SymmetryMode){if(!editAllowed||!face?.terrain||!cutIndices.length||mixedSelected&&mode!=='point'||sceneCaptureWorker)return;panMode=false;linkPicking=false;pointSupports=new Map();pointRequest=0;pointValid=false;symmetryMode=mode;symmetryAxis=null;editError=false;if(mixedSelected)captureRoomMixed(cutIndices,false,true);}
  function axisAt(e:MouseEvent):DesignSymmetry|null{const m=roomSvg?.getScreenCTM();if(!m||!symmetryMode)return null;const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());return {mode:symmetryMode,x2:Math.round(p.x*2),y2:Math.round(p.y*2)};}
- $: groupLeft=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],-1):null;
- $: groupRight=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],1):null;
+ $: groupLeft=groupMoveReady?(linkedAxis?indoorLinkedRotate(face,shapes,editable,[...selectedGroup],-1,linkedAxis):indoorGroupRotate(face,shapes,editable,[...selectedGroup],-1)):null;
+ $: groupRight=groupMoveReady?(linkedAxis?indoorLinkedRotate(face,shapes,editable,[...selectedGroup],1,linkedAxis):indoorGroupRotate(face,shapes,editable,[...selectedGroup],1)):null;
  $: groupMovePreview=moving&&(selectedGroup.size>1||linkedAxis)&&hoverCell?(linkedAxis?indoorLinkedMove(face,shapes,editable,cutIndices,selectedObject,hoverCell.x,hoverCell.y,linkedAxis):indoorGroupMove(face,shapes,editable,[...selectedGroup],selectedObject,hoverCell.x,hoverCell.y)):null;
  $: previewShape=placing&&!cutSource&&!cloneClip.length?stockShape:moving&&!linkedAxis&&selectedGroup.size<=1?moveShape:null;
- $: previewValid=hoverCell?placing?(cutSource?!!cutPreview:!!indoorPlace(face,shapes,removable,stock,stockId,hoverCell.x,hoverCell.y,stockOrientation)):moving?!!indoorMove(face,shapes,editable,selectedObject,hoverCell.x,hoverCell.y):false:false;
+ $: previewValid=hoverCell?placing?(cutSource?!!cutPreview:linkedAxis&&!supportClone&&!cloneClip.length?!!linkedStockPreview:!!indoorPlace(face,shapes,removable,stock,stockId,hoverCell.x,hoverCell.y,stockOrientation)):moving?!!indoorMove(face,shapes,editable,selectedObject,hoverCell.x,hoverCell.y):false:false;
  $: requestCatalog(face,terrainWorker,stock,locale);
  function requestCatalog(f:IndoorSurface|null,wk:Worker|null,counts:ReadonlyMap<number,number>,lang:WandLanguage){catalog=[];catalogRequest=0;if(!wk||!f?.terrain)return;const ids=[...counts].filter(([,n])=>n>0).map(([id])=>id);if(!ids.length)return;const mask=f.terrain.nativeFloorValues.reduce((a,b)=>a|b,0);catalogRequest=nextRequest();wk.postMessage({command:'indoor-catalog',requestId:catalogRequest,itemIds:ids,mask,locale:lang});}
  function chooseStock(id:number){if(!editAllowed||!catalog.some(i=>i.itemId===id)||!face?.terrain)return;resetObject();stockId=id;stockOrientation='GridOrientation_Down';placing=true;void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});}
@@ -159,8 +164,8 @@
  $: ew=childEditWords[locale];
  $: tree=indoorEditableTree(face);
  $: editAllowed=testExport&&!blocked&&!!tree&&!finishOpen&&!editWorker&&!editCopy;
- $: left=indoorFurnitureEdits(face,shapes,editable,selectedObject,null,-1);
- $: right=indoorFurnitureEdits(face,shapes,editable,selectedObject,null,1);
+ $: left=linkedAxis?indoorLinkedRotate(face,shapes,editable,[selectedObject],-1,linkedAxis):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,-1);
+ $: right=linkedAxis?indoorLinkedRotate(face,shapes,editable,[selectedObject],1,linkedAxis):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,1);
  $: partners=indoorSwapPartners(face,shapes,editable,selectedObject);
  $: pickup=roomSupports.some(p=>p.index===selectedObject)?null:indoorPickup(face,selectedObject,removable,stock);
  $: pw=positionWords[locale]??positionWords.en;
@@ -209,7 +214,7 @@
  const testExport=browser&&testSaveExportEnabled(window.location);
  let finishCopy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: cw=checkpointWords[locale];
- function clearEdit(){alignmentDraft=false;pairedDraft=null;linkPicking=false;pointSupports=new Map();pointRequest=0;pointValid=false;symmetryMode=null;symmetryAxis=null;objectDrag=null;panDrag=null;sceneCaptureWorker?.terminate();sceneCaptureWorker=null;mixedDoc=null;mixedSources=null;mixedRequest=0;mixedValid=false;supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
+ function clearEdit(){alignmentDraft=false;pairedDraft=null;pairedRotation=false;linkPicking=false;pointSupports=new Map();pointRequest=0;pointValid=false;symmetryMode=null;symmetryAxis=null;objectDrag=null;panDrag=null;sceneCaptureWorker?.terminate();sceneCaptureWorker=null;mixedDoc=null;mixedSources=null;mixedRequest=0;mixedValid=false;supportClone=null;sceneEpoch++;sceneReading=false;sceneActive=false;sceneExtra=[];sceneAnchor='corner';sceneError=false;cloneClip=[];cutSource=null;cutClip=[];transferDraft=null;moving=false;placing=false;stockOpen=false;stockId=0;placeDraft=null;hoverCell=null;editWorker?.terminate();editWorker=null;if(editCopy)URL.revokeObjectURL(editCopy.url);editCopy=null;editDraft=null;pickupDraft=null;swap=false;editError=false;}
  function resetObject(){clearEdit();selectedObject=-1;selectedGroup=new Set();}
  function chooseObject(i:number,add=false){if(!tree||!tree.objects[i]||editWorker||editCopy||editDraft||pickupDraft||moving||placing||placeDraft||transferDraft)return;if(swap){const e=indoorFurnitureEdits(face,shapes,editable,selectedObject,i,1);if(e){editDraft=e;swap=false;}return;}if(add&&!swap){const next=new Set(selectedGroup.size?selectedGroup:selectedObject>=0?[selectedObject]:[]);if(next.has(i))next.delete(i);else if(next.size<ROOM_CUT_LIMIT)next.add(i);selectedGroup=next;selectedObject=next.has(i)?i:[...next].at(-1)??-1;}else{selectedGroup=new Set();selectedObject=i;}highlight=selectedObject>=0?tree.objects[selectedObject].itemId:null;}
  function pickObject(e:MouseEvent){
@@ -219,8 +224,8 @@
    const draft=indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,p.x,p.y);
    if(draft){transferDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
-  if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y,mixedSources):null:indoorScenePlacement(face,shapes,removable,stock,cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
-  if(placing){const draft=indoorPlace(face,shapes,removable,stock,stockId,p.x,p.y,stockOrientation);if(draft){placeDraft=[supportClone?{...draft,supportSource:supportClone}:draft];placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y,mixedSources):null:placeClipAt(cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
+  if(placing){const draft=stockAt(p.x,p.y);if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
   if(moving){const draft=moveDraft(cutIndices,selectedObject,p.x,p.y);if(draft){stageMove(draft);moving=false;hoverCell=null;editError=false;}else editError=true;return;}
   const hits=supportHitIndices(tree,shapes,p.x,p.y).filter(i=>!swap||partners.includes(i));if(hits.length)chooseObject(hits[(hits.indexOf(selectedObject)+1)%hits.length],e.ctrlKey||e.metaKey||e.shiftKey);
  }
@@ -229,7 +234,7 @@
   const source=file,edits=editDraft,pickup=pickupDraft,place=placeDraft,transfer=transferDraft,worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});editWorker=worker;editError=false;
   const done=(d:any)=>{worker.terminate();if(editWorker!==worker||file!==source||editDraft!==edits||pickupDraft!==pickup||placeDraft!==place||transferDraft!==transfer){d?.bytes?.fill(0);return;}editWorker=null;try{if(d?.kind!=='indoor-furniture-copy')throw Error('copy');editCopy=experimentalCopyDownload(d,source);}catch{editError=true;}};
   worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
-  worker.postMessage({command:'indoor-furniture-export',file:source,allowExperimentalCopy:true,plan:{roomOrdinal:room.ordinal,surfaceOrdinal:face.ordinal,...(transfer?{transfer}:place?{place}:pickup?{pickup}:pairedDraft?{paired:{mode:pairedDraft,edits}}:alignmentDraft?{align:edits}:{edits})}});
+  worker.postMessage({command:'indoor-furniture-export',file:source,allowExperimentalCopy:true,plan:{roomOrdinal:room.ordinal,surfaceOrdinal:face.ordinal,...(transfer?{transfer}:place?{place}:pickup?{pickup}:pairedDraft?(pairedRotation?{pairedRotate:{mode:pairedDraft,edits}}:{paired:{mode:pairedDraft,edits}}):alignmentDraft?{align:edits}:{edits})}});
  }
  function applyFurniture(){if(!testExport||blocked||!file||!editCopy||cutSource&&(cutSource!==$worldFurnitureCut||cutSource.file!==file)||!commitWorldCheckpoint(file,editCopy.file)){editError=true;return;}if(cutSource){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}resetObject();}
  function applyFinishCopy(){if(!testExport||blocked||!file||!finishCopy||previewStatus!=='valid')return;if(!commitWorldCheckpoint(file,finishCopy.file)){previewStatus='error';return;}cancelPreview();}
@@ -265,7 +270,7 @@
   if(symmetryMode||moving||placing||swap||stockOpen||editDraft||pickupDraft||placeDraft||transferDraft||selectedObject<0)return false;
   const turn=e.shiftKey?-1:1;
   let draft:SupportChildEdit[]|null=null;
-  if(e.key.toLowerCase()==='r')draft=selectedGroup.size>1?indoorGroupRotate(face,shapes,editable,[...selectedGroup],turn):indoorFurnitureEdits(face,shapes,editable,selectedObject,null,turn);
+  if(e.key.toLowerCase()==='r'){draft=rotateDraft(cutIndices,turn);if(draft){stageRotation(draft);return true;}}
   else if(e.key==='Delete'||e.key==='Backspace'){const rows=groupPickup;if(rows){pickupDraft=rows;editError=false;}return true;}
   else{const delta=roomKeyDelta(e.key,e.shiftKey?face.factor??1:1);const origin=tree.objects[selectedObject];if(!delta||!origin)return false;draft=moveDraft(cutIndices,selectedObject,origin.x+delta.x,origin.y+delta.y);if(draft){stageMove(draft);return true;}}
   if(draft){editDraft=draft;editError=false;}else editError=true;return true;
@@ -310,8 +315,8 @@
     {#if positionOpen&&tree}<div class="indoor-edit"><small>{isw[1]}</small><button type="button" disabled={(!selectedScene&&!mixedSelected)||!!sceneCaptureWorker||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>mixedSelected?captureRoomMixed(cutIndices):saveRoomScene(selectedScene)}>{sw[0]}</button><button type="button" disabled={(!surfaceScene&&!mixedSurface)||!!sceneCaptureWorker||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||!!editCopy} on:click={()=>mixedSurface?captureRoomMixed(face.positions.map((_,i)=>i)):saveRoomScene(surfaceScene)}>{isw[0]}</button>{#if testExport}<input type="file" accept=".json,application/json" hidden bind:this={sceneInput} on:change={openRoomScene}/><button type="button" disabled={!editAllowed||!face.terrain||sceneReading||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft||stockOpen} on:click={()=>sceneInput.click()}>{sw[1]}</button>{/if}{#if sceneError}<small role="alert">{isw[2]}</small>{/if}{#if sceneActive}<select aria-label={sw[6]} bind:value={sceneAnchor} disabled={!placing}><option value="corner">{sw[3]}</option><option value="center">{sw[2]}</option></select><small>{mixedRequest?'…':sceneMissing?isw[2]:cloneClip.length}</small>{#if mixedDoc}<div class="indoor-edit">{#each [...sceneCounts] as [id,n]}<small>{name(id,records,locale,w[12])} · {stock.get(id)??0}/{n}</small>{/each}</div>{/if}{/if}</div>{/if}
     {#if positionOpen&&tree&&testExport}<div class="indoor-edit"><strong>{iw[0]}</strong><small>{face.terrain?itw[5]:iw[2]}</small>
      <select aria-label={iw[1]} value={selectedObject} disabled={!!editDraft||!!pickupDraft||!!editCopy||!!editWorker||moving||placing||!!placeDraft||!!transferDraft||stockOpen} on:change={e=>chooseObject(Number(e.currentTarget.value))}><option value={-1} disabled>{iw[1]}</option>{#each tree.objects as o,i}<option value={i} disabled={swap&&!partners.includes(i)}>{name(o.itemId,records,locale,w[12])} · {o.x}, {o.y}</option>{/each}</select>
-     {#if selectedObject>=0&&selectedGroup.size<=1&&!editDraft&&!pickupDraft&&!editCopy&&!moving&&!placing&&!placeDraft&&!transferDraft&&!stockOpen}<button type="button" disabled={!editAllowed||!left||swap} on:click={()=>editDraft=left}>{ew[0]}</button><button type="button" disabled={!editAllowed||!right||swap} on:click={()=>editDraft=right}>{ew[1]}</button><button type="button" disabled={!editAllowed||!partners.length||swap} on:click={()=>swap=true}>{ew[2]}</button><button type="button" disabled={!editAllowed||!pickup||swap} on:click={()=>{if(pickup)pickupDraft=[pickup];}}>{iw[3]}</button>{#if face.terrain}<button type="button" disabled={!editAllowed||!moveShape||!editable.has(tree.objects[selectedObject].itemId)||swap} on:click={()=>{moving=true;editError=false;}}>{itw[1]}</button>{/if}{/if}
-     {#if selectedGroup.size>1&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<button type="button" disabled={!editAllowed||!groupMoveReady} on:click={()=>{moving=true;editError=false;}}>{indoorGroupMoveWords[locale]} · {selectedGroup.size}</button><button type="button" disabled={!editAllowed||!groupLeft} on:click={()=>editDraft=groupLeft}>{ew[0]}</button><button type="button" disabled={!editAllowed||!groupRight} on:click={()=>editDraft=groupRight}>{ew[1]}</button>{#each alignModes as mode,i}<button type="button" disabled={!editAllowed||!alignOptions[i]||!!symmetryMode} on:click={()=>{alignmentDraft=true;editDraft=alignOptions[i];}}>{aw[i]}</button>{/each}{/if}
+     {#if selectedObject>=0&&selectedGroup.size<=1&&!editDraft&&!pickupDraft&&!editCopy&&!moving&&!placing&&!placeDraft&&!transferDraft&&!stockOpen}<button type="button" disabled={!editAllowed||!left||swap} on:click={()=>stageRotation(left)}>{ew[0]}</button><button type="button" disabled={!editAllowed||!right||swap} on:click={()=>stageRotation(right)}>{ew[1]}</button><button type="button" disabled={!editAllowed||!partners.length||swap||!!linkedAxis} on:click={()=>swap=true}>{ew[2]}</button><button type="button" disabled={!editAllowed||!pickup||swap} on:click={()=>{if(pickup)pickupDraft=[pickup];}}>{iw[3]}</button>{#if face.terrain}<button type="button" disabled={!editAllowed||!moveShape||!editable.has(tree.objects[selectedObject].itemId)||swap} on:click={()=>{moving=true;editError=false;}}>{itw[1]}</button>{/if}{/if}
+     {#if selectedGroup.size>1&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<button type="button" disabled={!editAllowed||!groupMoveReady} on:click={()=>{moving=true;editError=false;}}>{indoorGroupMoveWords[locale]} · {selectedGroup.size}</button><button type="button" disabled={!editAllowed||!groupLeft} on:click={()=>stageRotation(groupLeft)}>{ew[0]}</button><button type="button" disabled={!editAllowed||!groupRight} on:click={()=>stageRotation(groupRight)}>{ew[1]}</button>{#each alignModes as mode,i}<button type="button" disabled={!editAllowed||!alignOptions[i]||!!symmetryMode||!!linkedAxis} on:click={()=>{alignmentDraft=true;editDraft=alignOptions[i];}}>{aw[i]}</button>{/each}{/if}
      {#if selectedObject>=0&&face?.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}{#each symmetryModes as mode,i}<button type="button" disabled={!editAllowed||mixedSelected&&mode!=='point'||!!sceneCaptureWorker} aria-pressed={symmetryMode===mode&&!linkPicking} on:click={()=>startSymmetry(mode)}>{aw[8+i]}</button>{/each}{/if}
      {#if face?.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<span>{lw[0]}</span>{#each symmetryModes as mode,i}<button type="button" disabled={!editAllowed} aria-pressed={linkedAxis?.mode===mode||linkPicking&&symmetryMode===mode} on:click={()=>beginLink(mode)}>{aw[8+i]}</button>{/each}{#if linkedAxis}<button type="button" on:click={()=>linkedAxis=null}>{lw[2]}</button>{/if}{/if}
      {#if symmetryMode}<small>{linkPicking?lw[1]:aw[11]}{#if sceneCaptureWorker||pointRequest} …{/if}</small><button type="button" on:click={()=>{symmetryMode=null;symmetryAxis=null;linkPicking=false;pointRequest=0;pointValid=false;}}>{w[7]}</button>{/if}
@@ -319,7 +324,7 @@
      {#if stockOpen}<input type="search" bind:value={stockQuery} placeholder={itw[4]} aria-label={itw[4]}/><select aria-label={itw[2]} value={0} on:change={e=>chooseStock(Number(e.currentTarget.value))}><option value={0} disabled>{itw[2]}</option>{#each options as o}<option value={o.itemId}>{o.name} · {stock.get(o.itemId)}</option>{/each}</select>{/if}
      {#if selectedObject>=0&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}
       {#if selectedGroup.size>1||mixedSelected}<button type="button" disabled={!editAllowed||!groupPickup} on:click={()=>pickupDraft=groupPickup}>{mixedSelected?supportPickupWords[locale][0]:indoorGroupStockWords[locale][0]} · {cutIndices.length}</button>{/if}
-      <button type="button" disabled={!editAllowed||!!sceneCaptureWorker||!duplicateClip&&!mixedSelected} on:click={beginDuplicate}>{indoorGroupStockWords[locale][1]}{#if selectedGroup.size>1} · {selectedGroup.size}{/if}</button>
+      <button type="button" disabled={!editAllowed||!!sceneCaptureWorker||!duplicateClip&&!mixedSelected||!!linkedAxis&&mixedSelected} on:click={beginDuplicate}>{indoorGroupStockWords[locale][1]}{#if selectedGroup.size>1} · {selectedGroup.size}{/if}</button>
      {/if}
      {#if canCut}<button type="button" on:click={captureRoomCut}>{cutWords[0]}{#if cutIndices.length>1} · {cutIndices.length}{/if}</button>{/if}
      {#if $worldFurnitureCut?.file===file&&$worldFurnitureCut?.scope==='indoor'&&!cutSource}<small role="status">{cutWords[1]} · {$worldFurnitureCut.rows.length}</small>{/if}
@@ -340,7 +345,7 @@
   </div>
  </div>
  {/if}
- {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 </div>
 <style>
