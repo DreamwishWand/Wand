@@ -38,7 +38,7 @@ impl<'a> Context<'a>{
   if uint(&g["ID"])?!=gid||!empty(g.get("DiffGrids")){return Err(BAD);}
   Ok(g)
  }
- fn objects(&mut self,g:&Value)->Result<Vec<(u32,&Value)>,CodecError>{
+ fn objects(&mut self,g:&'a Value)->Result<Vec<(u32,&'a Value)>,CodecError>{
   let m=map(&g["Objects"])?;let next=uint(&g["NextGridObjectID"])?;
   if next==0||m.len()>ROOT_LIMIT||self.objects.checked_add(m.len()).is_none_or(|n|n>ROOT_LIMIT){return Err(BAD);}
   self.objects+=m.len();let mut sorted=BTreeMap::new();
