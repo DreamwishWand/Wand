@@ -3,7 +3,7 @@
  * equate a subgrid with a mainland root or invent placement for unresolved
  * objects. Projection is read-only; existing local Rust edit route remains
  * authoritative. */
-import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,mainlandTerrainHits,sourceWorldScope,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {projectWorldEdits,stageWorldEdit,currentWorldEdits,WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,stageWorldTargets,groupTargets,type GroupTarget,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
@@ -219,10 +219,13 @@ export interface MainlandTransferPlan{
  readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string};
 }
 export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,timeline:WorldEditTimeline,worldX:number,worldY:number):MainlandTransferPlan|null{
- if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p)||p.object.layer!=='furniture'||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove')||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ const landscape=p.object.layer==='landscape'&&Math.floor(Number(p.object.itemId)/100000)===402;
+ if(landscape&&(p.object.editRestrictions?.move!=='allowedFlag'||p.object.editRestrictions?.switchGrid!=='allowedFlag'))return null;
+ if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p)||p.object.layer!=='furniture'&&!landscape||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove')||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const hit=mainlandTerrainHits(grids,rasters,worldX,worldY);
  if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
  const g=hit[0],r=rasters.get(g.key),shape=p.shape;
+ if(landscape){const from=grids.find(q=>q.key===p.area);if(!from||sourceWorldScope(from)!==sourceWorldScope(g)||!['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'].includes(sourceWorldScope(g)))return null;}
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  if(!r||x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||shape.cellCount>65536)return null;
  if(terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
