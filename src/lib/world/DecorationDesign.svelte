@@ -53,6 +53,7 @@
  $: adw=attachedDesignWords[locale];
  $: chosenAttachment=chosen?.attachment??null;
  $: attachmentCounts=chosenAttachment?countAttachedDesign([{itemId:chosenAttachment.scene.ownerItemId,attachment:chosenAttachment}]):new Map<number,number>();
+ $: attachedSelection=selectedPlacements.some(p=>!!p.attachment);
  $: if(chosenAttachment)loadImages([...attachmentCounts.keys()].map(itemId=>({itemId})));
  $: if(attachmentJob&&(!active||attachmentJob.context!==contextKey||attachmentJob.timeline!==timeline)){attachmentRequest=0;attachmentJob=null;attachmentReading=false;}
  async function openAttachment(e:Event){const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';if(!f||!worker||!chosen||!chosenGeometry?.supportPath||busyImport)return;const own=worker,job={context:contextKey,timeline,id:chosen.id,itemId:chosen.itemId};attachmentJob=job;attachmentReading=true;error='';
@@ -268,7 +269,7 @@
   return roomChecked(validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs),g,r,defs);
  }
  function translateSelection(ids:readonly number[],dx:number,dy:number){
-  if(!dx&&!dy)return false;
+  if(!dx&&!dy)return false;if(symmetry&&currentDesign(timeline).some(p=>ids.includes(p.id)&&p.attachment)){error=adw[5];return false;}
   const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height,grid,raster);
   if(!plan&&symmetry){error=inspectionWords[3];return false;}
   return save(plan);
@@ -479,7 +480,7 @@
  $: if(worker!==subscribed){
    subscribed?.removeEventListener('message',receive);
    for(const job of recoveryJobs.values())failRecovery(job);recoveryJobs.clear();
-   subscribed=worker;subscribed?.addEventListener('message',receive);
+   attachmentJob=null;attachmentRequest=0;attachmentReading=false;subscribed=worker;subscribed?.addEventListener('message',receive);
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
@@ -494,7 +495,7 @@
    const d=e.data;
    if(attachmentRequest&&d?.requestId===attachmentRequest){const job=attachmentJob;attachmentRequest=0;attachmentJob=null;
     if(!job||!active||job.context!==contextKey||job.timeline!==timeline)return;
-    try{if(d.kind!=='room-design-support-attachment')throw Error('attachment');const a=readDesignAttachment(d,job.itemId,true),g=definitions.get(job.itemId);if(!a||!g||!save(replaceDesignAttachment(timeline,job.id,a,g)))throw Error('attachment');}catch{error=sceneText[5];}return;
+    try{if(d.kind!=='room-design-support-attachment')throw Error('attachment');symmetry=null;symmetryPicking=false;const a=readDesignAttachment(d,job.itemId,true),g=definitions.get(job.itemId);if(!a||!g||!save(replaceDesignAttachment(timeline,job.id,a,g)))throw Error('attachment');}catch{error=sceneText[5];}return;
    }
    if(finishRequest&&d?.requestId===finishRequest){finishRequest=0;
     const [kind,lang]=finishRequested.split(':') as [RoomFinishKind,WandLanguage];
@@ -605,6 +606,7 @@
  function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
+   if(symmetry&&attachedSelection){error=adw[5];return;}
    if(worldFrame)delta=(4-delta)%4;
    alignmentAction=null;
    if(pasting.length){
@@ -909,7 +911,7 @@
    <div class="design-status">
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
-    {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}
+    {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small><div class="attached-art">{#each [...attachmentCounts] as [id,n]}{@const count=n-(id===chosenAttachment.scene.ownerItemId?1:0)}{#if count>0}<span>{#if images.get(id)}<img src={images.get(id)} alt="" title={definitions.get(id)?.name??adw[1]}/>{/if}×{count}</span>{/if}{/each}</div>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}
     {#if warnings.length}<span>地形属性不一致候補</span>{/if}
     
     <small>ゲーム内の配置可否は未確認</small>
@@ -944,6 +946,7 @@
  .design-item-artwork{display:block;flex:none;width:56px;height:56px;max-width:100%;pointer-events:none}
  .design-item img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+ .attached-art{display:flex;gap:4px;flex-wrap:wrap}.attached-art span{display:flex;align-items:center;gap:2px}.attached-art img{width:28px;height:28px;object-fit:contain}
  .finish-icon{width:24px;height:24px;object-fit:contain;vertical-align:middle;margin-inline-end:4px}.finish-design-panel{position:absolute;z-index:6;right:8px;top:52px;width:min(320px,90%);max-height:70%;overflow:auto;display:grid;gap:6px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:8px}.finish-design-current{display:flex;align-items:center;gap:4px;flex-wrap:wrap}.finish-design-current img{width:64px;height:64px;object-fit:contain}.finish-design-current strong{flex:1}.finish-design-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;max-height:250px;overflow:auto}.finish-design-items button{display:grid;justify-items:center;align-content:start;gap:2px;min-width:0}.finish-design-items img{width:52px;height:52px;object-fit:contain}.finish-design-items small{overflow-wrap:anywhere}
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
  .design-plot svg{display:block;width:100%;height:100%}.design-marquee,.design-drag-ghost{pointer-events:none}
