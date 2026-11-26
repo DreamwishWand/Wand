@@ -78,8 +78,8 @@ export interface MaskPreview{
   draw(selectedBits:number,nativeFormula:boolean,artworkSlot0:boolean,invertFlags:boolean,material:PuzzleMaterial,opacity:number,linearMask:boolean):void;
   dispose():void;
 }
-export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySources,signal:AbortSignal):Promise<MaskPreview>{
-  if(!memoryMaskEvidence(source.mask.sha256,source.numberOfShards)||source.numberOfShards>10)throw new Error('Unknown diagnostic mask layout');
+export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySources,signal:AbortSignal,outlineOnly=false):Promise<MaskPreview>{
+  if(!outlineOnly&&(!memoryMaskEvidence(source.mask.sha256,source.numberOfShards)||source.numberOfShards>10))throw new Error('Unknown diagnostic mask layout');
   const bitmaps:ImageBitmap[]=[];
   let gl:WebGL2RenderingContext|null=null;
   let program:WebGLProgram|null=null;
@@ -94,7 +94,7 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     textures.length=0;shaders.length=0;program=null;
   };
   try{
-    for(const image of [source.thumbnail,source.mask,source.outline]){
+    for(const image of outlineOnly?[source.thumbnail,source.outline]:[source.thumbnail,source.mask,source.outline]){
       bitmaps.push(await verifiedBitmap(image,signal));
     }
     if(signal.aborted)throw new DOMException('Aborted','AbortError');
@@ -112,7 +112,8 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     g.useProgram(program);
     g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);
     g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
-    for(const [unit,bitmap] of bitmaps.entries()){
+    for(const [index,bitmap] of bitmaps.entries()){
+      const unit=outlineOnly&&index===1?2:index;
       const texture=g.createTexture();if(!texture)throw new Error('Texture allocation failed');
       textures.push(texture);g.activeTexture(g.TEXTURE0+unit);g.bindTexture(g.TEXTURE_2D,texture);
       const filter=unit===1?g.NEAREST:g.LINEAR;
@@ -121,6 +122,7 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
       g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,bitmap);
       g.uniform1i(g.getUniformLocation(program,['artwork','maskTex','outlineTex'][unit]),unit);
     }
+    if(outlineOnly)g.uniform1i(g.getUniformLocation(program,'maskTex'),2);
     if(g.getError()!==g.NO_ERROR)throw new Error('GPU upload failed');
     const complete=2**source.numberOfShards-1;
     const bits=g.getUniformLocation(program,'selectedBits'),native=g.getUniformLocation(program,'nativeFormula'),slot=g.getUniformLocation(program,'artworkSlot0'),invert=g.getUniformLocation(program,'invertFlags');
@@ -128,15 +130,18 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
     g.viewport(0,0,canvas.width,canvas.height);
     return {draw(selectedBits,nativeFormula,artworkSlot0,invertFlags,material,opacity,linearMask){
       if(!program||!Number.isInteger(selectedBits)||selectedBits<0||selectedBits>complete)throw new Error('Invalid diagnostic mask');
+      if(outlineOnly&&(!nativeFormula||!invertFlags||selectedBits!==complete))throw new Error('Outline-only renderer cannot interpret piece flags');
       if(!Number.isFinite(opacity)||opacity<0||opacity>1)throw new Error('Invalid preview opacity');
       const preset=PUZZLE_MATERIALS[material];
       g.useProgram(program);
       g.uniform3f(g.getUniformLocation(program,'materialTint'),preset.tint[0],preset.tint[1],preset.tint[2]);
       g.uniform1f(g.getUniformLocation(program,'materialAlpha'),opacity);
       g.uniform1i(g.getUniformLocation(program,'materialAlphaClip'),preset.alphaClip?1:0);
-      g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,textures[1]);
-      const maskFilter=nativeFormula&&linearMask?g.LINEAR:g.NEAREST;
-      g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,maskFilter);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,maskFilter);
+      if(!outlineOnly){
+        g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,textures[1]);
+        const maskFilter=nativeFormula&&linearMask?g.LINEAR:g.NEAREST;
+        g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,maskFilter);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,maskFilter);
+      }
       g.uniform1i(bits,selectedBits);g.uniform1i(native,nativeFormula?1:0);g.uniform1i(slot,artworkSlot0?1:0);g.uniform1i(invert,invertFlags?1:0);g.drawArrays(g.TRIANGLES,0,3);
     },dispose};
   }catch(error){dispose();throw error;}
