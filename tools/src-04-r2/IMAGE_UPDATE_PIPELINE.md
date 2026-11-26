@@ -1,6 +1,6 @@
 # SRC-04 — future-version image delta workflow
 
-Steam v1.26.2 media is finished: 13,202 items, 9,542 GUIDs, 19,054 verified lossless WebP variants uploaded to private R2. Do not repeat extraction or upload for that version.
+Steam v1.26.2 Item media: 13,202 items, 9,542 GUIDs; 14,742 canonical public WebP objects and 257 index objects verified by R2 receipts. Preserve the native originals and the 256px cache; do not repeat extraction or upload for this version. Historical private 128px staging is not the future release path.
 
 **Scope:** tools/src-04-r2/plan_media_update.py uses versioned SRC-00 file scans, SRC-01 native item exports and SRC-04 private v2 image identities to produce a private, source-pinned delta report. It does not change images, game files, R2, DNS, or publication settings.
 
@@ -48,13 +48,10 @@ The probe returns a *partial exact-link ledger* with complete=false if some GUID
 This metadata-only proof cannot resolve every possible indirect Unity asset reference; unresolved new-version GUIDs still require the specialized game-source dependency parser. Every next-version change must be tested with actual game files when available.
 
 
-## Build a complete next-version private v2 overlay
+## Build the next-version 256px Item release
 
 After plan_media_update.py has no unresolved jobs and metadata-only proofs
-have been obtained, build_next_media_v2.py reuses old lossless WebP files and
-decodes only the exact new/changed Unity objects. It writes an atomic new
-private directory with source-items/items.jsonl, source-manifest.json,
-images-v2/{thumbnail,original}/, 256 private overlay shards, and a build report.
+have been obtained, the existing build_next_media_v2.py CLI invokes build_next_item_256.py. It reuses prior verified native WebP files, the prior root's item-thumbnails-256 encoded-hash cache, and decodes only exact new/changed Unity objects. New list variants use long edge 256 with maximum lossless WebP settings. Small originals are reused as-is. It writes an atomic new local directory with the next source, original/thumbnail overlay, canonical 256px cache, candidate index and generation report.
 
     python tools/src-04-r2/build_next_media_v2.py --base-root OLD_MEDIA_ROOT --base-scan OLD_SCAN --target-scan NEW_SCAN --target-items NEW_ITEMS --target-proofs NEW_PROOFS --target-game NEW_STEAM_GAME --out NEW_PRIVATE_MEDIA_ROOT
 
@@ -66,9 +63,9 @@ WebP aborts before a complete new snapshot can appear. Local copies of the
 unchanged images are SHA-verified; shared media files are deduplicated within
 the target directory. The result has no public URLs or R2 upload side effects.
 
-## Private R2 delta staging (changed encoded bytes only)
+## Legacy private R2 staging — historical only
 
-stage_media_update.py uses the prior successful private upload report (or
+Do **not** use this section for new Item releases. The old staging tool remains for the historical 128px private overlay and its regression tests. The current CLI builds the 256px local overlay instead. For historical reference, stage_media_update.py uses the prior successful private upload report (or
 the prior update's verified private source map) plus the new v2 index. It
 references previously staged WebP bytes by their exact encoded SHA-256 and
 creates new-version objects ONLY for byte-new WebP files. Earlier version
@@ -97,6 +94,20 @@ These tools do not run automatically or on a schedule. When the next genuine
 Steam update arrives, all version-specific source evidence still needs to be
 supplied by SRC-00/SRC-01. The future-game end-to-end acceptance gate remains
 unrun until that source exists.
+
+## Current direct public R2 delta publication
+
+After reviewing the build report, use its `gameVersion`, `sourceItemsSha256` and `privateOverlayManifestSha256` as explicit pins. The root must be the new local build (not the old extraction).
+
+    python tools/src-04-r2/migrate_item_thumbnails_256.py --root NEW_PRIVATE_MEDIA_ROOT --resume --version X.Y.Z --source-items-sha ITEMS_SHA --overlay-sha OVERLAY_SHA
+
+This reconstructs publication inputs without resizing. To publish only missing canonical keys, add `--r2 --prior-receipt OLD_PUBLIC_ITEM_RECEIPT --max-new-uploads N --max-new-bytes N`. The previous verified receipt is intersected with the actual public R2 inventory; unchanged hashes are not uploaded or redundantly HEAD-checked. Pending objects are verified before conditional writes; over-budget plans stop. Review the account-wide free allowance before approving the bounded upload.
+
+Then prepare the new distribution index from the actual image publication receipt:
+
+    python tools/src-04-r2/publish_item_256_index.py --root NEW_PRIVATE_MEDIA_ROOT/item-thumbnails-256 --version steam-X.Y.Z
+
+Review the manifest hash, item count and exact index size. Repeat with `--r2 --expected-manifest MANIFEST_SHA --max-index-bytes N` only after confirming remaining free allowance. The index tool writes/reads back 257 immutable JSON files and no images. Activate the common TypeScript resolver only after verified publication; retain the prior release and all old objects until their references are migrated. Never upload the private source overlay.
 
 ## Result classification
 
