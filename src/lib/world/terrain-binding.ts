@@ -8,12 +8,12 @@
 import type {SourceObjectShape} from './source-object-map.ts';
 import {parseSavedSubgridSummary,type SavedNumericPoint,type SourceGridWitness,type SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
 export interface TerrainRaster{readonly sizeX:number;readonly sizeY:number;readonly nativeFloorValues:Uint32Array}
-export interface TerrainBinding{readonly raster:TerrainRaster;readonly factor:1|2;readonly verifiedGridOrdinals:readonly number[];readonly completeGridOrdinal?:number}
+export interface TerrainBinding{readonly raster:TerrainRaster;readonly factor:1|2;readonly verifiedGridOrdinals:readonly number[]}
 export interface TerrainWarningRun{readonly x:number;readonly y:number;readonly width:number;readonly reason:'outside'|'floor-mismatch'}
 const rec=(x:unknown):x is Record<string,unknown>=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const uint=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>=0&&x<=0xffffffff;
 const int=(x:unknown):x is number=>typeof x==='number'&&Number.isInteger(x)&&x>=-2147483648&&x<=2147483647;
-export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[]}
+export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[];readonly completeGridOrdinal?:number}
 export function projectTerrainSession(value:unknown,scopes:readonly {key:string;witness:SourceGridWitness}[]):TerrainScopeReceipt[]{
   if(!rec(value)||value.contract!=='wand.db05.db04-terrain-session@1'||!Array.isArray(value.rows)||value.rows.length>20000||
     !Array.isArray(value.bindings)||value.bindings.length>value.rows.length||value.sourceCoverageComplete!==false||

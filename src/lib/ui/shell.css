@@ -7,17 +7,18 @@
   padding:0 clamp(10px,1.3vw,22px);background:#1c1525f4;
   border-bottom:1px solid #a68bbd43;box-shadow:none
 }
-/* Decorative brand mark stays distinct from the actionable Home button.
-   The supplied SVG is never recolored; its border follows the active palette. */
+/* Transparent silver brand mark, distinct from the actionable Home button. */
 .site-shell .shell-brand-mark{
   flex:none;display:grid;place-items:center;pointer-events:none;
-  width:40px;height:40px;border-radius:11px;
-  border:1px solid var(--wand-accent,#C6D6F2);
-  background:var(--wand-header-hover,#ffffff12);
-  box-shadow:0 0 0 1px var(--wand-line,#52638A),0 0 13px var(--wand-header-hover,#ffffff12)
+  width:40px;height:40px;
+  background:transparent;border:0;box-shadow:none
 }
 .site-shell .shell-brand-mark img{
-  display:block;width:34px;height:34px;border-radius:8px
+  display:block;width:34px;height:34px
+}
+/* Preserve the supplied silver mark on legacy light headers until Wish migrates. */
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .site-shell .shell-brand-mark img{
+  filter:drop-shadow(0 0 1px var(--wand-header-text)) drop-shadow(0 0 1px var(--wand-header-text))
 }
 .site-shell .header-home-button,
 .site-shell .header-icon-button{
