@@ -1,3 +1,4 @@
+import type {SymmetryMode} from './design-symmetry.ts';
 import {stockSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
 import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
