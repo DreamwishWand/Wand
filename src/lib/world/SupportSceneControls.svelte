@@ -1,5 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
+ import {flatSupportScene,supportDesignWords} from './room-design.ts';
+ import {parseSceneAnyFactor,convertSceneFactor} from './scene-preset.ts';
  import {captureSupportScene,parseSupportScene,supportSceneCounts,supportScenePlan,supportSceneWords,supportSceneRootCounts,supportSceneTemplateCompatible,supportSceneCreateWords,type SupportScene} from './support-scene.ts';
  import {supportShapeKey,type SupportTree} from './subgrid-local.ts';
  import type {SourceObjectShape} from './source-object-map.ts';
@@ -16,21 +18,22 @@
  export let roomParent:SupportParentWitness|null=null;
  $: witness=parent?{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),x:parent.object.x,y:parent.object.y}:roomParent;
  let scene:SupportScene|null=null,shapes:Readonly<Record<string,SourceObjectShape>>={},terrain:TerrainRaster|null=null,allowed=new Set<number>(),request=0,reading=false,error=false,own:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,epoch=0,source:File|null=null;
- let images=new Map<number,string>(),geometryRequest=0,geometryValid=false;
+ let images=new Map<number,string>(),geometryRequest=0,geometryValid=false,flatRaw:string|null=null,flatImport=false;
+ $: sdw=supportDesignWords[locale];
  $: createWords=supportSceneCreateWords[locale];
  $: createNeeds=scene?supportSceneRootCounts(scene):new Map<number,number>();
  $: compatible=!!scene&&path.length===0&&supportSceneTemplateCompatible(scene,ownerItemId,tree);
- $: createReady=!!scene&&!!onDuplicate&&canMove&&source===file&&compatible&&geometryValid&&[...createNeeds].every(([id,n])=>(counts.get(id)??0)>=n);
+ $: createReady=!!scene&&!flatImport&&!!onDuplicate&&canMove&&source===file&&compatible&&geometryValid&&[...createNeeds].every(([id,n])=>(counts.get(id)??0)>=n);
  $: w=supportSceneWords[locale];
  $: tw=testSaveWords[locale];
  $: cw=checkpointWords[locale];
  $: capture=captureSupportScene(ownerItemId,tree);
  $: needed=scene?supportSceneCounts(scene.tree):new Map<number,number>();
- $: plan=scene&&source===file&&canMove?supportScenePlan(scene,ownerItemId,tree,shapes,terrain,counts,allowed):null;
+ $: plan=scene&&source===file&&canMove&&(!flatImport||geometryValid)?supportScenePlan(scene,ownerItemId,tree,shapes,terrain,counts,allowed):null;
  let subscribed:Worker|null=null;
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(scene){requestShapes(scene);requestGeometry(scene);}}
  $: if(source&&source!==file)reset();
- function reset(){epoch++;reading=false;own?.terminate();own=null;request=0;geometryRequest=0;geometryValid=false;scene=null;source=null;shapes={};terrain=null;allowed=new Set();images=new Map();if(copy)URL.revokeObjectURL(copy.url);copy=null;error=false;}
+ function reset(){epoch++;reading=false;own?.terminate();own=null;request=0;geometryRequest=0;geometryValid=false;scene=null;flatRaw=null;flatImport=false;source=null;shapes={};terrain=null;allowed=new Set();images=new Map();if(copy)URL.revokeObjectURL(copy.url);copy=null;error=false;}
  function save(){
   if(!capture)return;
   const url=URL.createObjectURL(new Blob([JSON.stringify(capture)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='wand-support-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -39,7 +42,12 @@
   const input=e.currentTarget as HTMLInputElement,f=input.files?.[0];input.value='';
   if(!f||!file||!canMove)return;
   reset();const token=epoch,original=file;source=original;reading=true;
-  try{if(f.size>262144)throw Error('size');const doc=parseSupportScene(await f.text());if(epoch!==token||file!==original)return;scene=doc;requestShapes(doc);requestGeometry(doc);
+  try{if(f.size>262144)throw Error('size');const raw=await f.text();if(epoch!==token||file!==original)return;
+   let doc:SupportScene;try{doc=parseSupportScene(raw);}catch{
+    const flat=convertSceneFactor(parseSceneAnyFactor(raw),tree.factor);if(!flat||!tree.sourcePath||tree.objects.length||flat.items.length>32||!worker)throw Error('flat scene');
+    flatRaw=raw;flatImport=true;const items=[...new Set(flat.items.map(p=>p.itemId))].flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));
+    request=nextRequest();worker.postMessage({command:'support-shapes',requestId:request,factor:tree.factor,items,sourcePath:tree.sourcePath,ownerItemId});return;
+   }scene=doc;requestShapes(doc);requestGeometry(doc);
    for(const id of supportSceneCounts(doc.tree).keys())void worldArtwork(base,id).then(url=>{if(url&&epoch===token)images=new Map(images).set(id,url);}).catch(()=>{});
   }catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
  }
@@ -49,8 +57,10 @@
   const items=[...new Set(doc.tree.objects.map(o=>o.itemId))].flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));
   request=nextRequest();worker.postMessage({command:'support-shapes',requestId:request,factor:tree.factor,items,sourcePath:tree.sourcePath,ownerItemId});
  }
- function requestGeometry(doc:SupportScene){geometryValid=false;geometryRequest=0;if(!worker||!onDuplicate||path.length||!supportSceneTemplateCompatible(doc,ownerItemId,tree))return;geometryRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:geometryRequest,scene:doc});}
- function receive(e:MessageEvent){const d=e.data;if(geometryRequest&&d?.requestId===geometryRequest){geometryRequest=0;geometryValid=d.kind==='support-scene-geometry'&&d.valid===true;return;}if(!request||d?.requestId!==request)return;request=0;if(d.kind!=='support-shapes'||!d.shapes||!(d.terrain?.nativeFloorValues instanceof Uint32Array)){error=true;return;}shapes=d.shapes;terrain=d.terrain;allowed=new Set(Array.isArray(d.removable)?d.removable.filter(Number.isSafeInteger):[]);}
+ function requestGeometry(doc:SupportScene){geometryValid=false;geometryRequest=0;if(!worker||!flatImport&&(!onDuplicate||path.length||!supportSceneTemplateCompatible(doc,ownerItemId,tree)))return;geometryRequest=nextRequest();worker.postMessage({command:'support-scene-geometry',requestId:geometryRequest,scene:doc});}
+ function receive(e:MessageEvent){const d=e.data;if(geometryRequest&&d?.requestId===geometryRequest){geometryRequest=0;geometryValid=d.kind==='support-scene-geometry'&&d.valid===true;return;}if(!request||d?.requestId!==request)return;request=0;if(d.kind!=='support-shapes'||!d.shapes||!(d.terrain?.nativeFloorValues instanceof Uint32Array)){error=true;return;}shapes=d.shapes;terrain=d.terrain;allowed=new Set(Array.isArray(d.removable)?d.removable.filter(Number.isSafeInteger):[]);
+  if(flatRaw){const raw=flatRaw;flatRaw=null;const doc=flatSupportScene(raw,ownerItemId,tree,shapes,terrain!,allowed);if(!doc){error=true;return;}scene=doc;requestGeometry(doc);const token=epoch;for(const id of supportSceneCounts(doc.tree).keys())void worldArtwork(base,id).then(url=>{if(url&&epoch===token)images=new Map(images).set(id,url);}).catch(()=>{});}
+ }
  function validate(){
   if(!plan||!file||source!==file||!canMove||own||copy||!tree.sourcePath||!witness)return;
   const f=file,session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'}),token=epoch;own=session;error=false;
@@ -64,7 +74,7 @@
 <div class="scene">
  <div class="actions"><strong>{w[0]}</strong><button type="button" on:click={onBack}>{w[7]}</button></div>
  <button type="button" disabled={!capture||!!own} on:click={save}>{w[1]}</button>
- <label>{w[2]}<input type="file" accept=".json,application/json" disabled={!canMove||!!own||!!copy} on:change={load}/></label>
+ <label title={sdw[2]}>{w[2]}<input type="file" accept=".json,application/json" disabled={!canMove||!!own||!!copy} on:change={load}/></label>
  {#if reading||request||geometryRequest||own}<small role="status">…</small>{/if}
  {#if scene}
   <strong>{names.get(scene.ownerItemId)??'—'} · {w[4]}</strong>
@@ -75,7 +85,7 @@
   </svg>{/if}
   {#if !plan&&!reading&&!request}<small role="status">{w[5]}</small>{/if}
   {#if !copy}<button type="button" disabled={!plan||!!own} on:click={validate}>{w[3]}</button>{/if}
-  {#if onDuplicate&&path.length===0&&!copy}<small>{createWords[1]}</small><div class="required"><div><span>{names.get(scene.ownerItemId)??'—'}</span><span class:shortage={(counts.get(scene.ownerItemId)??0)<(createNeeds.get(scene.ownerItemId)??0)}>{counts.get(scene.ownerItemId)??0}/{createNeeds.get(scene.ownerItemId)??0}</span></div></div><button type="button" disabled={!createReady||!!own} on:click={()=>{if(scene&&createReady)onDuplicate?.(scene);}}>{createWords[0]}</button>{#if !createReady&&!reading&&!geometryRequest}<small>{createWords[2]}</small>{/if}{/if}
+  {#if onDuplicate&&!flatImport&&path.length===0&&!copy}<small>{createWords[1]}</small><div class="required"><div><span>{names.get(scene.ownerItemId)??'—'}</span><span class:shortage={(counts.get(scene.ownerItemId)??0)<(createNeeds.get(scene.ownerItemId)??0)}>{counts.get(scene.ownerItemId)??0}/{createNeeds.get(scene.ownerItemId)??0}</span></div></div><button type="button" disabled={!createReady||!!own} on:click={()=>{if(scene&&createReady)onDuplicate?.(scene);}}>{createWords[0]}</button>{#if !createReady&&!reading&&!geometryRequest}<small>{createWords[2]}</small>{/if}{/if}
  {/if}
  {#if copy}<small>{tw[1]}</small><button type="button" disabled={!canMove} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
  {#if error}<small role="alert">{w[6]}</small>{/if}

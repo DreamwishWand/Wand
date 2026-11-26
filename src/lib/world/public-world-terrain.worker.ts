@@ -1,4 +1,4 @@
-import {roomDesignTemplates,type RoomDesignTemplate} from './room-design.ts';
+import {roomDesignTemplates,supportDesignTemplate,type RoomDesignTemplate} from './room-design.ts';
 import {parseAreaScene} from './area-scene.ts';
 import {parseSupportScene,parseMixedScene,SCENE_FURNITURE_LIMIT,SCENE_SUPPORT_TREE_LIMIT} from './support-scene.ts';
 import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
@@ -172,11 +172,27 @@ scope.onmessage=async({data})=>{
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
       scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
     }
+    if(data.command==='support-design-templates'){
+      if(!release)throw Error('source');
+      supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+      supportCatalog??=fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/support-terrain.json').then(r=>{if(!r.ok)throw Error('support data');return r.json();}).catch(e=>{supportCatalog=null;throw e;});
+      const [paths,raw,names,defs]=await Promise.all([supportPaths,supportCatalog,getMaster().then(db=>db.getBrowseNames(data.locale as WandLanguage)),loadGeometry()]);
+      const labels=new Map(names),templates:RoomDesignTemplate[]=[];
+      for(const [owner,value] of paths){const path=(value as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath,def=defs.get(String(owner));if(!path||def?.nativeType!=='Furniture'||nativeActionBlocked(sourceEditRestrictions(def),'select'))continue;const t=supportDesignTemplate(raw,owner,path,labels.get(owner)??String(def.nativeName??'—'));if(t)templates.push(t);}
+      templates.sort((a,b)=>a.label.localeCompare(b.label,data.locale)||a.ownerItemId!-b.ownerItemId!);scope.postMessage({kind:'support-design-templates',requestId:id,templates});return;
+    }
     if(data.command==='room-design-templates'){
       if(!release)throw Error('source');scope.postMessage({kind:'room-design-templates',requestId:id,templates:await loadRoomTemplates()});return;
     }
     if(typeof data.key==='string'&&data.key.startsWith('room-design:')&&['design-catalog','design-shape','design-shapes'].includes(data.command)){
-      const template=(await loadRoomTemplates()).find(t=>t.grid.key===data.key);if(!template)throw Error('room template');
+      let template:RoomDesignTemplate|undefined;
+      if(data.key.startsWith('room-design:support:')){
+        const match=/^room-design:support:(\d+):(GridData\/Furniture\/[^:]+):[a-f0-9]{64}$/.exec(data.key);if(!match)throw Error('support template');
+        const owner=Number(match[1]),path=match[2];if(!await boundSupportTerrain(path,owner))throw Error('support template');
+        template=supportDesignTemplate(await supportCatalog!,owner,path,'—')??undefined;
+        if(template?.grid.key!==data.key)throw Error('support template digest');
+      }else template=(await loadRoomTemplates()).find(t=>t.grid.key===data.key);
+      if(!template)throw Error('room template');
       const {grid,raster}=template,mask=raster.nativeFloorValues.reduce((a,b)=>a|b,0),definitions=await loadGeometry();
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});const subgrids=await supportPaths;
       const eligible=(itemId:number)=>{const d=definitions.get(String(itemId)),f=d?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(d);return Math.floor(itemId/100000)===400&&d?.nativeType==='Furniture'&&!!f&&!!((f.acceptedFloorTypesFlag??0)&mask)&&!subgrids.has(itemId)&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');};

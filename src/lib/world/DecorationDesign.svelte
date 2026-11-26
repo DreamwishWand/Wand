@@ -1,5 +1,5 @@
 <script lang="ts">
- import {isRoomDesign,roomDesignValid,roomDesignWords} from './room-design.ts';
+ import {isRoomDesign,roomDesignValid,roomDesignWords,roomSurfaceWords} from './room-design.ts';
  import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign,islandPresetWords} from './island-design-preset.ts';
  import {localSaveSession} from '../ui/local-save-session';
  import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea,wholeAreaWords,type WholeAreaKind} from './whole-area-preset.ts';
@@ -225,26 +225,27 @@
  function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch);if(!point){save(null);return;}roadDrag={id:e.pointerId,points:[point],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
  function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow||roadTool==='flood')return;const p=cell(e);if(!p)return;const point=networkSnap(p,pitch,roadDrag.points[0]),last=roadDrag.points[roadDrag.points.length-1];if(!point){roadDrag={...roadDrag,overflow:true};return;}if(last?.x===point.x&&last.y===point.y)return;const points=roadFreehand(roadTool)?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
  function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=networkStroke(drag.points,roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);}return true;}
- $: dragPlan=direct?.moved&&direct.kind==='move'?movePlan(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds,worldFrame,width,height):null;
+ $: dragPlan=direct?.moved&&direct.kind==='move'?movePlan(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds,worldFrame,width,height,grid,raster):null;
  $: dragTargets=direct?.moved&&direct.kind==='move'?moveTargets(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,symmetry,editableIds):[];
  function moveTargets(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>){
   const idSet=new Set(ids),ordinary=currentDesign(t).filter(p=>idSet.has(p.id)).map(p=>({id:p.id,x:p.x+dx,y:p.y+dy}));
   return s?symmetricMoveTargets(t,ids,defs,s,dx,dy,eligible)??ordinary:ordinary;
  }
- function movePlan(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>,frame:MainlandDesignFrame|null,w:number,h:number){
+ function roomChecked(next:DesignTimeline|null,g:PublicTerrainGridRef|null,r:TerrainRaster|null,defs:ReadonlyMap<number,DesignItemGeometry>){return next&&(!isRoomDesign(g)||g&&r&&roomDesignValid(next,g,r,defs))?next:null;}
+ function movePlan(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,s:DesignSymmetry|null,eligible:ReadonlySet<number>,frame:MainlandDesignFrame|null,w:number,h:number,g:PublicTerrainGridRef|null,r:TerrainRaster|null){
   if(ids.some(id=>!eligible.has(id)))return null;
-  return validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs);
+  return roomChecked(validatedMainlandPlan(frame,t,s?symmetricMoveDesign(t,ids,defs,s,dx,dy,eligible,w,h):transformDesignGroup(t,ids,defs,dx,dy,0,w,h),defs),g,r,defs);
  }
  function translateSelection(ids:readonly number[],dx:number,dy:number){
   if(!dx&&!dy)return false;
-  const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height);
+  const plan=movePlan(timeline,ids,definitions,dx,dy,symmetry,editableIds,worldFrame,width,height,grid,raster);
   if(!plan&&symmetry){error=inspectionWords[3];return false;}
   return save(plan);
  }
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
  $: alignmentPreview=alignmentAction&&map?alignmentTargets(map,objects.filter(o=>selectedIds.has(o.localOrdinal)),alignmentAction):null;
- $: alignmentPlan=alignmentAction&&map?validatedMainlandPlan(worldFrame,timeline,alignDesign(timeline,map,[...selectedIds],definitions,alignmentAction,width,height),definitions):null;
+ $: alignmentPlan=alignmentAction&&map?roomChecked(validatedMainlandPlan(worldFrame,timeline,alignDesign(timeline,map,[...selectedIds],definitions,alignmentAction,width,height),definitions),grid,raster,definitions):null;
  $: if(selectedIds.size<2){alignmentAction=null;alignmentOpen=false;}
  function pickAlignment(mode:MapAlignment){alignmentAction=mode;direct=null;moveMode=false;}
  function commitAlignment(){if(alignmentPlan){save(alignmentPlan);alignmentAction=null;}}
@@ -277,11 +278,13 @@
  let activeScene:ScenePreset|null=null,sceneAnchor:ScenePreset['anchor']='center',sceneReading=false;
  $: sceneText=sceneWords[locale]??sceneWords.en;
  $: sceneCapture=grid&&selectedIds.size?captureScene(timeline,[...selectedIds],definitions,grid.factor):null;
+ $: fullRoomScene=isRoomDesign(grid)&&grid&&placements.length?captureScene(timeline,placements.map(p=>p.id),definitions,grid.factor):null;
+ $: rsw=roomSurfaceWords[locale];
  $: sceneRequired=activeScene?sceneItemCounts(activeScene.items):new Map<number,number>();
  $: if(activeScene)loadImages([...sceneRequired.keys()].map(itemId=>({itemId})));
  function scenePoint(p:Cell|null,clip=pasting,defs=definitions){return !p?null:activeScene?sceneOrigin(p,sceneAnchor,clip,defs):p;}
  function setSceneAnchor(value:ScenePreset['anchor']){sceneAnchor=value;hover=scenePoint(lastPoint);}
- function saveScene(){if(!sceneCapture||busyImport)return;try{const text=JSON.stringify(sceneCapture);parseScene(text,sceneCapture.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
+ function saveScene(scene:ScenePreset|null=sceneCapture){if(!scene||busyImport)return;try{const text=JSON.stringify(scene);parseScene(text,scene.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
  async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file||!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const scene=convertSceneFactor(parseSceneAnyFactor(await file.text()),factor);if(!scene)throw Error('incompatible scene factor');if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste([...scene.items],scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
 
  let areaReview:{key:string;areaKey:string;baseline:DesignTimeline;next:DesignTimeline;preview:readonly DesignPlacement[];incoming:Map<number,DesignItemGeometry>;summary:ReturnType<typeof reviewWholeArea>}|null=null;
@@ -537,7 +540,7 @@
  $: ghostGeometry=placing??(moveMode?chosenGeometry:null);
  $: ghostOrientation=placing?orientation:chosen?.orientation??2;
  $: ghostShape=ghostGeometry?.shapes[ghostGeometry.itemId+':'+ghostOrientation*4];
- $: hoverMovePlan=moveMode&&chosen&&hover?movePlan(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds,worldFrame,width,height):null;
+ $: hoverMovePlan=moveMode&&chosen&&hover?movePlan(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds,worldFrame,width,height,grid,raster):null;
  $: hoverMoveTargets=moveMode&&chosen&&hover?moveTargets(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds):[];
  $: ghostValid=Boolean(hover&&ghostGeometry&&designCandidateValid(placements,
    {id:moveMode&&chosen?chosen.id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation},ghostGeometry,width,height)&&mainlandItemsValid(worldFrame,[{itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}],definitions)&&(!isRoomDesign(grid)||!!grid&&!!raster&&roomDesignValid({snapshots:[[...placements.filter(p=>!moveMode||p.id!==chosen?.id),{id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}]],cursor:0,nextId:timeline.nextId+1},grid,raster,definitions)));
@@ -589,15 +592,15 @@
    const ids=currentDesign(next).slice(-pasting.length).map(o=>o.id);if(!save(next))return;cancel();
    selected=ids.length===1?ids[0]:null;groupIds=ids.length>1?ids:[];
  }
- $: pasteValid=Boolean(hover&&pasting.length&&canPasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height)&&mainlandItemsValid(worldFrame,pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation})),definitions));
+ $: pasteValid=Boolean(hover&&pasting.length&&canPasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height)&&mainlandItemsValid(worldFrame,pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation})),definitions)&&(!isRoomDesign(grid)||roomChecked(pasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height),grid,raster,definitions)));
  $: symmetricSelection=symmetry&&selectedIds.size&&!placing&&!pasting.length&&!moveMode?placements.filter(p=>selectedIds.has(p.id)):[];
  $: symmetricSelectedPreview=symmetry&&symmetricSelection.length?symmetricDesignItems(symmetricSelection,definitions,symmetry,false,placements):null;
  $: rawSymmetricSelectedPlan=symmetry&&symmetricSelection.length?symmetryPlan(timeline,symmetricSelection,definitions,symmetry,false,width,height):null;
- $: symmetricSelectedPlan=rawSymmetricSelectedPlan&&mainlandItemsValid(worldFrame,rawSymmetricSelectedPlan,definitions)?rawSymmetricSelectedPlan:null;
+ $: symmetricSelectedPlan=rawSymmetricSelectedPlan&&mainlandItemsValid(worldFrame,rawSymmetricSelectedPlan,definitions)&&(!isRoomDesign(grid)||roomChecked(commitSymmetry(timeline,rawSymmetricSelectedPlan,definitions,width,height),grid,raster,definitions))?rawSymmetricSelectedPlan:null;
  $: symmetricOriginal=hover&&placing?[{itemId:placing.itemId,x:hover.x,y:hover.y,orientation}]:hover&&pasting.length?pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation})):[];
  $: symmetricPreview=symmetry&&symmetricOriginal.length?symmetricDesignItems(symmetricOriginal,definitions,symmetry,true,placements):null;
  $: rawSymmetricPlacementPlan=symmetry&&symmetricOriginal.length?symmetryPlan(timeline,symmetricOriginal,definitions,symmetry,true,width,height):null;
- $: symmetricPlacementPlan=rawSymmetricPlacementPlan&&mainlandItemsValid(worldFrame,rawSymmetricPlacementPlan,definitions)?rawSymmetricPlacementPlan:null;
+ $: symmetricPlacementPlan=rawSymmetricPlacementPlan&&mainlandItemsValid(worldFrame,rawSymmetricPlacementPlan,definitions)&&(!isRoomDesign(grid)||roomChecked(commitSymmetry(timeline,rawSymmetricPlacementPlan,definitions,width,height),grid,raster,definitions))?rawSymmetricPlacementPlan:null;
  $: symmetryPreviewItems=symmetricOriginal.length?symmetricPreview:symmetricSelectedPreview;
  $: symmetryPreviewValid=symmetricOriginal.length?Boolean(symmetricPlacementPlan):Boolean(symmetricSelectedPlan);
  function changeSymmetry(next:DesignSymmetry|null){roadDrag=null;symmetry=next;symmetryPicking=false;alignmentAction=null;direct=null;moveMode=false;}
@@ -744,7 +747,7 @@
     <button type="button" aria-label={inspectionWords[1]} title={inspectionWords[1]} aria-pressed={placedSearchOpen} disabled={busyImport} on:click={togglePlacedSearch}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg></button>
     <button type="button" aria-label={inspectionWords[0]} title={inspectionWords[0]} aria-pressed={inspectorOpen} disabled={busyImport||!selectedIds.size} on:click={toggleInspector}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 17h18M7 3v18M17 3v18"/><circle cx="12" cy="12" r="2"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
-    <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={saveScene}>{sceneText[0]}</button><button type="button" disabled={busyImport||sceneReading||!worker} on:click={()=>sceneInput.click()}>{sceneText[1]}</button>
+    <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={()=>saveScene()}>{sceneText[0]}</button>{#if isRoomDesign(grid)}<button type="button" disabled={busyImport||!fullRoomScene} title={rsw[3]} on:click={()=>saveScene(fullRoomScene)}>{rsw[2]}</button>{/if}<button type="button" disabled={busyImport||sceneReading||!worker} on:click={()=>sceneInput.click()}>{sceneText[1]}</button>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
     {#if multiIsland}<input class="file-input island-preset-input" type="file" accept=".json,application/json" bind:this={islandInput} on:change={openIsland}/><button type="button" disabled={busyImport} on:click={()=>prepareIsland()}>{iw[0]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>islandInput.click()}>{iw[1]}</button>{/if}
     {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{areaText[2]}</button>{/if}
