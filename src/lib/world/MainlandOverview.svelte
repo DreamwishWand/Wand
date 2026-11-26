@@ -1,6 +1,8 @@
 <script lang="ts">
  import {captureRegionBounds,validCaptureRegion,resizeCaptureRegion,captureRegionPlan,captureRegionWords,type CaptureRegion,type CaptureOptions} from './scene-capture-region.ts';
  import {onDestroy} from 'svelte';
+ import BiomeFurniturePreset from './BiomeFurniturePreset.svelte';
+ import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import SubgridInspector from './SubgridInspector.svelte';
  import {supportWords,supportParentEligible,supportParentCandidate,type SupportParentCandidate} from './subgrid-local.ts';
  import SaveFurniturePalette from './SaveFurniturePalette.svelte';
@@ -59,6 +61,11 @@
  export let onIndoor:()=>void=()=>{};
  import {indoorWords} from './indoor-room-view.ts';
  $: indoorText=indoorWords[locale]??indoorWords.en;
+ let biomeOpen=false,biomeGhosts:readonly StockCandidate[]=[],biomeRemoved:readonly MainlandSavedObject[]=[];
+ $: bpw=biomeFurnitureWords[locale];
+ function closeBiome(){biomeOpen=false;biomeGhosts=[];biomeRemoved=[];}
+ function openBiome(){if(!furnitureReady||furnitureBlocked||worldKey!=='Village04')return;beginPaste();biomeOpen=true;}
+ $: if(biomeOpen&&(!furnitureReady||furnitureBlocked||networkOpen||roadSeed||supportOpen||furnitureOpen||pasteActive||groupPickupActive||editSymmetryOpen))closeBiome();
  let captureError=false;
  $: cw=captureWords[locale]??captureWords.en;
  $: canCapture=saveMode&&!!bound&&bound.every(g=>g.factor===1)&&!saveLoading&&!saveFailed&&!pending.size&&!failed&&projection.objects.length>0;
@@ -93,7 +100,7 @@
  let moving=false,hover:{x:number;y:number}|null=null;
  let saveRevision=-1;
  $: if($localSaveSession.revision!==saveRevision){saveRevision=$localSaveSession.revision;resetSaveSelection();}
- function resetSaveSelection(){closeCaptureRegion();resetEditSymmetry();pasteTools?.cancel();closeSupport();closeRoad();selected=null;clearGroup();stopMove();preciseOpen=false;multiMode=false;overlaps=[];furnitureTools?.cancel();}
+ function resetSaveSelection(){closeBiome();closeCaptureRegion();resetEditSymmetry();pasteTools?.cancel();closeSupport();closeRoad();selected=null;clearGroup();stopMove();preciseOpen=false;multiMode=false;overlaps=[];furnitureTools?.cancel();}
  let supportOpen=false,supportPlacing=false,supportGhost:SupportParentCandidate|null=null,supportPreview:SupportParentCandidate|null=null,supportInspector:SubgridInspector;
  let initialSupportPoint:{x:number;y:number}|null=null;
  $: supportDisplay= supportGhost??supportPreview??directParentPreview;
@@ -139,7 +146,7 @@ $: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
  $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection);
  $: canCopyFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection);
- function beginPaste(){closeCaptureRegion();resetEditSymmetry();closeSupport();closeRoad();closeFurniture();clearGroup();stopMove();selected=null;preciseOpen=false;searchOpen=false;layersOpen=false;multiMode=false;}
+ function beginPaste(){closeBiome();closeCaptureRegion();resetEditSymmetry();closeSupport();closeRoad();closeFurniture();clearGroup();stopMove();selected=null;preciseOpen=false;searchOpen=false;layersOpen=false;multiMode=false;}
  $: furnitureWords=stockToolWords[locale]??stockToolWords.en;
  $: furnitureBlocked=!!currentWorldEdits(timeline).length;
  $: furnitureReady=!saveLoading&&!saveFailed&&!pending.size&&!failed&&!!bound&&saveMode;
@@ -314,6 +321,7 @@ $: cutWords=groupCutWords[locale];
  }
  function startPointer(e:PointerEvent){
   suppressClick=false;clearTransfer();
+  if(biomeOpen){gesture.begin(e,camera.zoom>1);return;}
   if(captureRegion){if(!startCaptureDrag(e))gesture.begin(e,camera.zoom>1);return;}
   if(editSymmetryPicking){gesture.begin(e,camera.zoom>1&&(e.button===1||spacePan||e.shiftKey||e.pointerType==='touch'));return;}
   if(roadSeed&&beginRoadStroke(e))return;
@@ -363,7 +371,7 @@ $: cutWords=groupCutWords[locale];
   if(e.target instanceof HTMLElement&&e.target.closest('.support-panel'))return;
   const mapFocused=e.target instanceof HTMLElement&&!!e.target.closest('.mainland-map');
   if(mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.code==='Space'){spacePan=true;e.preventDefault();return;}
-  if(saveMode&&!captureRegion&&!supportOpen&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
+  if(saveMode&&!biomeOpen&&!captureRegion&&!supportOpen&&mapFocused&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')){
    const list=allObjects.filter(p=>layerSelectable(layerState,p.object));if(!list.length)return;
    const i=list.findIndex(p=>p.object.localOrdinal===selected),delta=e.key==='['?-1:1;
    focus(list[i<0?(delta>0?0:list.length-1):(i+delta+list.length)%list.length]);e.preventDefault();return;
@@ -371,6 +379,7 @@ $: cutWords=groupCutWords[locale];
   const action=worldShortcut(e);if(!action)return;
   if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
   if(!saveMode)return;
+  if(biomeOpen){if(action==='cancel'){e.preventDefault();closeBiome();}return;}
   if(captureRegion){if(action==='cancel'){e.preventDefault();closeCaptureRegion();}else if(action==='confirm'&&mapFocused){e.preventDefault();confirmCaptureRegion();}return;}
   if(supportOpen){if(action==='cancel'){e.preventDefault();if(supportPlacing||supportGhost)supportInspector?.cancel();else closeSupport();}else if((supportPlacing||supportGhost)&&(action==='rotate-left'||action==='rotate-right')){e.preventDefault();supportInspector?.turnParent(action==='rotate-left'?-1:1);}return;}
   if(roadSeed||networkOpen){if(action==='cancel'){e.preventDefault();closeRoad();}return;}
@@ -466,7 +475,7 @@ $: cutWords=groupCutWords[locale];
   if(gesture.consumeClick()||e.detail===0||!bound||pending.size||failed)return;
   const m=svg.getScreenCTM();if(!m)return;
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
-  if(captureRegion)return;
+  if(biomeOpen||captureRegion)return;
   if(saveMode&&supportPlacing){supportInspector?.pick(p);return;}
   if(supportOpen)return;
   if(saveMode&&roadSeed){roadPick(p);return;}if(networkOpen)return;
@@ -484,7 +493,7 @@ $: cutWords=groupCutWords[locale];
 </script>
 <svelte:window on:keydown={keys} on:keyup={e=>{if(e.code==='Space')spacePan=false;}} on:blur={()=>{spacePan=false;objectDrag=null;range=null;if(captureDrag){captureRegion=captureDrag.region;captureDrag=null;}if(roadPointer!==null)resetRoad();}}/>
 <section class="mainland-overview" bind:this={root} aria-label={title||words[0]}>
- <div class="overview-tools">{#if worldOptions.length>1}<select aria-label={tw[6]} value={worldKey} on:change={e=>onWorldChange(e.currentTarget.value)}>{#each worldOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}</select>{:else}<strong>{title||words[0]}</strong>{/if}{#if saveMode}<button type="button" aria-label={indoorText[0]} title={indoorText[0]} on:click={onIndoor}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v11H3zM10 21v-7h4v7"/></svg></button><button type="button" aria-label={furnitureWords[0]} title={furnitureWords[0]} aria-pressed={furnitureOpen} on:click={toggleFurniture}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16M13 8h5M13 12h5M13 16h5"/></svg></button>{#if testExport}<button type="button" aria-label={nw[0]} title={nw[0]} aria-pressed={networkOpen||isNetworkStyle(roadSeed)} disabled={!furnitureReady||furnitureBlocked} on:click={()=>networkOpen||isNetworkStyle(roadSeed)?closeRoad():openNetwork()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h7v7H3zM14 13h7v7h-7zM10 7h4v10M3 16h7M6 13v6"/></svg></button>{/if}{#if testExport}<button type="button" aria-label={pasteWords[1]} title={pasteWords[1]} disabled={!$worldFurnitureClipboard.length||!furnitureReady||furnitureBlocked||pasteActive||networkOpen||!!roadSeed||groupPickupActive||supportOpen||furniturePlacing} on:click={()=>pasteTools?.begin()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="2" width="6" height="5" rx="1"/></svg></button>{/if}{#if testExport}<button type="button" aria-label={sceneText[1]} title={sceneText[1]} disabled={!furnitureReady||furnitureBlocked||pasteActive||networkOpen||!!roadSeed||groupPickupActive||supportOpen||furniturePlacing} on:click={()=>pasteTools?.chooseScene()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3zM12 11v6m-3-3 3 3 3-3"/></svg></button>{/if}<button type="button" aria-label={cw[0]} title={cw[0]} disabled={!canCapture} on:click={()=>copyLayout(false)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></svg></button><button type="button" aria-label={designWords[locale]} title={designWords[locale]} on:click={onDesign}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 12-12 4 4L7 21H3zM12 8l4 4M3 21h18"/></svg></button><button type="button" aria-label={linkedText[0]} title={linkedText[0]} aria-pressed={editSymmetryOpen||!!editSymmetry} disabled={!furnitureReady||pasteActive||!!roadSeed||networkOpen||supportOpen||groupPickupActive||furniturePlacing} on:click={toggleEditSymmetry}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button><button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+ <div class="overview-tools">{#if worldOptions.length>1}<select aria-label={tw[6]} value={worldKey} on:change={e=>onWorldChange(e.currentTarget.value)}>{#each worldOptions as option (option.key)}<option value={option.key}>{option.label}</option>{/each}</select>{:else}<strong>{title||words[0]}</strong>{/if}{#if saveMode}{#if worldKey==='Village04'}<button type="button" aria-label={bpw[0]} title={bpw[0]} aria-pressed={biomeOpen} disabled={!furnitureReady||furnitureBlocked||networkOpen||!!roadSeed||supportOpen||furniturePlacing||pasteActive||groupPickupActive} on:click={()=>biomeOpen?closeBiome():openBiome()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3zM8 5v14M3 11h18M13 8h4M13 15h4"/></svg></button>{/if}<button type="button" aria-label={indoorText[0]} title={indoorText[0]} on:click={onIndoor}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v11H3zM10 21v-7h4v7"/></svg></button><button type="button" aria-label={furnitureWords[0]} title={furnitureWords[0]} aria-pressed={furnitureOpen} on:click={toggleFurniture}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16M13 8h5M13 12h5M13 16h5"/></svg></button>{#if testExport}<button type="button" aria-label={nw[0]} title={nw[0]} aria-pressed={networkOpen||isNetworkStyle(roadSeed)} disabled={!furnitureReady||furnitureBlocked} on:click={()=>networkOpen||isNetworkStyle(roadSeed)?closeRoad():openNetwork()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h7v7H3zM14 13h7v7h-7zM10 7h4v10M3 16h7M6 13v6"/></svg></button>{/if}{#if testExport}<button type="button" aria-label={pasteWords[1]} title={pasteWords[1]} disabled={!$worldFurnitureClipboard.length||!furnitureReady||furnitureBlocked||pasteActive||networkOpen||!!roadSeed||groupPickupActive||supportOpen||furniturePlacing} on:click={()=>pasteTools?.begin()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="16" rx="2"/><rect x="9" y="2" width="6" height="5" rx="1"/></svg></button>{/if}{#if testExport}<button type="button" aria-label={sceneText[1]} title={sceneText[1]} disabled={!furnitureReady||furnitureBlocked||pasteActive||networkOpen||!!roadSeed||groupPickupActive||supportOpen||furniturePlacing} on:click={()=>pasteTools?.chooseScene()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3zM12 11v6m-3-3 3 3 3-3"/></svg></button>{/if}<button type="button" aria-label={cw[0]} title={cw[0]} disabled={!canCapture} on:click={()=>copyLayout(false)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></svg></button><button type="button" aria-label={designWords[locale]} title={designWords[locale]} on:click={onDesign}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 12-12 4 4L7 21H3zM12 8l4 4M3 21h18"/></svg></button><button type="button" aria-label={linkedText[0]} title={linkedText[0]} aria-pressed={editSymmetryOpen||!!editSymmetry} disabled={!furnitureReady||pasteActive||!!roadSeed||networkOpen||supportOpen||groupPickupActive||furniturePlacing} on:click={toggleEditSymmetry}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button><button type="button" aria-label={gw[0]} title={gw[0]} aria-pressed={multiMode} on:click={()=>{multiMode=!multiMode;if(!multiMode)clearGroup();}}>▧</button><button type="button" aria-label={sw[0]} aria-pressed={searchOpen} on:click={()=>searchOpen=!searchOpen}><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg></button><button type="button" aria-label={sw[1]} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5M3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>{/if}<button type="button" aria-label={words[1]} title={words[1]} on:click={onClose}><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  <button class="mainland-map" type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={startPointer} on:pointermove={follow}
@@ -504,6 +513,7 @@ $: cutWords=groupCutWords[locale];
      {#if p.object.subgrid}<circle cx={(p.shape?.width??1)/2} cy={(p.shape?.height??1)/2} r={Math.min(1.5,4*p.factor/Math.max(1,cellPixels))} fill="#d6a6ef" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
     </g>
    {/each}
+   {#if biomeOpen}{#each biomeRemoved as p (p.object.localOrdinal)}{#if p.shape}<path class="biome-preset-remove" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="#ef5350" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{#each biomeGhosts as g}<path class="biome-preset-add" d={g.shape.path} transform={'translate('+g.x+' '+g.y+') scale('+1/g.factor+' '+(-1/g.factor)+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
    {#if captureRegion}
     <rect class="scene-capture-region" x={captureRegion.x} y={captureRegion.y} width={captureRegion.w} height={captureRegion.h} fill="#73cfc5" fill-opacity=".13" stroke={capturePlan?.valid?'#72e7cb':'#ef5350'} stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"/>
     {#each [[captureRegion.x,captureRegion.y],[captureRegion.x+captureRegion.w,captureRegion.y],[captureRegion.x,captureRegion.y+captureRegion.h],[captureRegion.x+captureRegion.w,captureRegion.y+captureRegion.h]] as [x,y]}<circle cx={x} cy={y} r={4/Math.max(1,cellPixels)} fill="#fff" stroke="#156e72" vector-effect="non-scaling-stroke"/>{/each}
@@ -531,7 +541,8 @@ $: cutWords=groupCutWords[locale];
  {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} objects={projection.objects} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
  {#if saveMode}<GroupPasteControls bind:this={pasteTools} bind:active={pasteActive} bind:ghost={pasteGhost} bind:axis={pasteAxis} items={pasteSelection} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} omitted={projection.omitted} {locale} blocked={!furnitureReady||furnitureBlocked||!!roadSeed||networkOpen||supportOpen||furniturePlacing||groupPickupActive} {nextRequest} onBegin={beginPaste}/>{/if}
  {#if saveMode}<SaveFurniturePalette bind:this={furnitureTools} open={furnitureOpen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {chosen} objects={projection.objects} omitted={projection.omitted} {locale} blocked={furnitureBlocked} canStart={furnitureReady} {nextRequest} onBegin={beginFurniture} onClose={closeFurniture} bind:placing={furniturePlacing} bind:ghost={furnitureGhost}/>{/if}
- {#if captureRegion}<aside class="scene-capture-panel" aria-label={crw[0]}>
+ {#if biomeOpen}<BiomeFurniturePreset file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} {sessions} omitted={projection.omitted} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{/if}
+  {#if captureRegion}<aside class="scene-capture-panel" aria-label={crw[0]}>
    <strong>{crw[0]}</strong><small>{crw[10]}</small>
    <div class="capture-dimensions">{#each ['x','y','w','h'] as dim}<label>{dim.toUpperCase()} <input type="number" step=".5" aria-label={dim.toUpperCase()} value={captureRegion[dim as keyof CaptureRegion]} on:change={e=>setCaptureDimension(dim as keyof CaptureRegion,e.currentTarget.valueAsNumber)}/></label>{/each}</div>
    <label><input type="checkbox" bind:checked={captureOptions.roads}/>{crw[1]}</label>
