@@ -3,7 +3,7 @@ import {stockSourceEligible,type StockDestination} from './save-furniture-placem
 import {groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-placement.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-import {mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
@@ -15,17 +15,17 @@ const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
 export function supportAreaEligible(p:MainlandSavedObject){return !!p.object.subgrid&&!!groupPickupPlan([p]);}
 export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
-export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false,supports?:SupportAreaTrees){
- if(omitted||(island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
+export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false,supports?:SupportAreaTrees,world=false){
+ if(omitted||(world?!bindMainlandGrid(grid):island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
  const editable=area.filter(p=>eligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
  if(supports&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number])}));
- try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
+ try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,world?'world-grid':island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
 }
-export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees}){
- const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before);if(!snapshot)return null;
+export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees},world=false){
+ const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before,world);if(!snapshot)return null;
  if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
  const sceneKey=(scene:SupportScene|undefined)=>{
   if(!scene)return '';
