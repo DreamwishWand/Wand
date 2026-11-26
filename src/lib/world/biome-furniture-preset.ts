@@ -7,41 +7,47 @@ import {mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './main
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
-import type {GroupPickupRow} from './group-pickup.ts';
+import {groupPickupPlan,type GroupPickupRow} from './group-pickup.ts';
+import {supportSceneRootCounts,type SupportScene} from './support-scene.ts';
 export const BIOME_CHANGE_LIMIT=128;
-export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:GroupPasteRow[]}
+export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:(GroupPasteRow&{scene?:SupportScene})[]}
 const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
-export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false){
+export function supportAreaEligible(p:MainlandSavedObject){return !!p.object.subgrid&&!!groupPickupPlan([p]);}
+export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
+export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false,supports?:SupportAreaTrees){
  if(omitted||(island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
- const editable=area.filter(eligible),protectedObjects=area.filter(p=>!eligible(p));
+ const editable=area.filter(p=>eligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
+ if(supports&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number])}));
- try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,island?'floating-island':'biome');return {editable,protectedObjects,placements,text};}catch{return null;}
+ try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
 }
-export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false){
- const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island);if(!snapshot)return null;
+export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees}){
+ const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before);if(!snapshot)return null;
  if(incoming.some(p=>{const d=defs.get(p.itemId);return !d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
+ const sceneKey=(scene:SupportScene|undefined)=>scene?JSON.stringify(scene.tree):'';
  const existing=new Map<string,MainlandSavedObject[]>();
- for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}
+ for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]))+':'+sceneKey(supports?.before.get(p.object.localOrdinal));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}
  const added:DesignPlacement[]=[],retained:MainlandSavedObject[]=[];
- for(const p of incoming){const match=existing.get(key(p.itemId,p.x,p.y,p.orientation))?.shift();if(match)retained.push(match);else added.push(p);}
+ for(const p of incoming){const match=existing.get(key(p.itemId,p.x,p.y,p.orientation)+':'+sceneKey(supports?.after.get(p.id)))?.shift();if(match)retained.push(match);else added.push(p);}
  const removed=[...existing.values()].flat();
  if(removed.length+added.length>BIOME_CHANGE_LIMIT)return null;
- const removedIds=new Set(removed.map(p=>p.object.localOrdinal));
- const remaining=objects.filter(p=>!removedIds.has(p.object.localOrdinal)),capacity=new Map(stock);
- for(const p of removed){const id=Number(p.object.itemId);if(!capacity.has(id))return null;capacity.set(id,capacity.get(id)!+1);}
- const required=new Map<number,number>();for(const p of added)required.set(p.itemId,(required.get(p.itemId)??0)+1);
+ const removedIds=new Set(removed.map(p=>p.object.localOrdinal)),remaining=objects.filter(p=>!removedIds.has(p.object.localOrdinal)),capacity=new Map(stock),returned=new Map<number,number>(),required=new Map<number,number>();
+ const count=(id:number,scene:SupportScene|undefined)=>scene?supportSceneRootCounts(scene):new Map([[id,1]]);
+ for(const p of removed){for(const [id,n] of count(Number(p.object.itemId),supports?.before.get(p.object.localOrdinal))){if(!capacity.has(id))return null;capacity.set(id,capacity.get(id)!+n);returned.set(id,(returned.get(id)??0)+n);}}
+ for(const p of added)for(const [id,n] of count(p.itemId,supports?.after.get(p.id)))required.set(id,(required.get(id)??0)+n);
+ const changeCount=[...returned.values(),...required.values()].reduce((a,b)=>a+b,0);if(changeCount>BIOME_CHANGE_LIMIT)return null;
  const missing=[...required].filter(([id,n])=>(capacity.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(capacity.get(itemId)??0)}));
  const geometry:GroupGeometry=new Map([...defs].map(([id,d])=>[id,new Map([[grid.factor,d]])]));
  const positions=added.map(p=>({itemId:p.itemId,...mainlandMapAnchor(grid,p.x,p.y),orientation:p.orientation}));
  const q:GroupPasteCandidate|null=added.length?groupAbsoluteCandidate(positions,grids,rasters,geometry,required,remaining,omitted):{rows:[],ghosts:[]};
  if(!q||q.ghosts.some(p=>p.area!==grid.key))return null;
  const destination:StockDestination={layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY};
- const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!})).sort((a,b)=>a.localOrdinal-b.localOrdinal);
- const plan:BiomeFurniturePlan={destination,remove,add:q.rows};
- return {plan,ghosts:q.ghosts,removed,retained,protectedObjects:snapshot.protectedObjects,missing,changed:remove.length+q.rows.length>0};
+ const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!,...(supports?.before.has(p.object.localOrdinal)?{includeSupport:true as const}:{})})).sort((a,b)=>a.localOrdinal-b.localOrdinal);
+ const plan:BiomeFurniturePlan={destination,remove,add:q.rows.map((row,i)=>{const scene=supports?.after.get(added[i].id);return scene?{...row,scene}:row;})};
+ return {plan,ghosts:q.ghosts,removed,retained,protectedObjects:snapshot.protectedObjects,returned,required,changeCount,missing,changed:remove.length+q.rows.length>0};
 }
 export const biomeFurnitureWords={
  ja:['Biome家具Preset','対象Biome','家具配置を保存','家具Presetを開く','維持','回収','追加','対象外・保持','在庫不足','編集コピーを検証','取消','現在の対象Biomeの通常家具だけを置換します。道・フェンス・支持家具などは保持します。','配置または対象範囲を確認できません。','変更なし','配置を確認中…','家具配置の取り込み対象'],
