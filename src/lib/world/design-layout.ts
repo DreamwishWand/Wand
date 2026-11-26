@@ -1,4 +1,5 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
+import {readDesignAttachment,countAttachedDesign,type DesignSupportAttachment} from './design-support-attachment.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import {fencePitch,knownFenceBaseId,fenceComponent} from './fence-design.ts';
 import {roadPitch,roadComponent,localNetworkScope,type RoadPoint,type NetworkScope} from './road-design.ts';
@@ -12,11 +13,11 @@ export interface DesignCatalogItem{
 }
 export interface DesignItemGeometry{
  readonly itemId:number;readonly name:string|null;readonly layer:MapObjectLayer;
- readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;
+ readonly surfaceCapable:boolean;readonly supportPath?:string;readonly editRestrictions?:NativeEditRestrictions;
  readonly shapes:Readonly<Record<string,SourceObjectShape>>;
 }
 export interface DesignPlacement{
- readonly id:number;readonly itemId:number;readonly x:number;readonly y:number;readonly orientation:number;
+ readonly id:number;readonly itemId:number;readonly x:number;readonly y:number;readonly orientation:number;readonly attachment?:DesignSupportAttachment;
 }
 export interface DesignTimeline{
  readonly snapshots:readonly (readonly DesignPlacement[])[];readonly cursor:number;readonly nextId:number;
@@ -34,6 +35,7 @@ function commit(t:DesignTimeline,placements:readonly DesignPlacement[],nextId=t.
 export function designCandidateValid(placements:readonly DesignPlacement[],candidate:DesignPlacement,
  geometry:DesignItemGeometry,width:number,height:number):boolean{
  const shape=geometry.shapes[geometry.itemId+':'+candidate.orientation*4];
+ if(candidate.attachment&&(!geometry.supportPath||candidate.attachment.scene.ownerItemId!==candidate.itemId||candidate.attachment.scene.tree.sourcePath!==geometry.supportPath))return false;
  if(candidate.itemId!==geometry.itemId||!shape||!Number.isSafeInteger(candidate.x)||!Number.isSafeInteger(candidate.y)||
    candidate.x<0||candidate.y<0||candidate.x+shape.width>width||candidate.y+shape.height>height||
    nativeActionBlocked(geometry.editRestrictions,'select'))return false;
@@ -83,7 +85,7 @@ function gridIdentity(grid:DesignGridIdentity):DesignGridIdentity {
  return {key:grid.key,layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,gridIdNative:grid.gridIdNative,sizeX:grid.sizeX,sizeY:grid.sizeY,factor:grid.factor};
 }
 export function serializeDesign(t:DesignTimeline,grid:DesignGridIdentity):string{
- return JSON.stringify({schema:'wand.world-design@1',grid:gridIdentity(grid),placements:currentDesign(t).map(({id,itemId,x,y,orientation})=>({id,itemId,x,y,orientation}))});
+ return JSON.stringify({schema:'wand.world-design@1',grid:gridIdentity(grid),placements:currentDesign(t).map(({id,itemId,x,y,orientation,attachment})=>({id,itemId,x,y,orientation,...(attachment?{attachment}:{})}))});
 }
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const bounded=(n:unknown,min:number,max:number):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=min&&n<=max;
@@ -97,7 +99,8 @@ export function parseDesign(text:string,grid:DesignGridIdentity):DesignPlacement
  return value.placements.map(p=>{
   if(!record(p)||!bounded(p.id,1,Number.MAX_SAFE_INTEGER-1)||ids.has(p.id)||!bounded(p.itemId,1,0xffffffff)||
      !bounded(p.x,0,grid.sizeX*grid.factor-1)||!bounded(p.y,0,grid.sizeY*grid.factor-1)||!bounded(p.orientation,0,3))throw Error('DESIGN_PLACEMENT_INVALID');
-  ids.add(p.id);return {id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation};
+  const attachment=readDesignAttachment(p,p.itemId,grid.layoutId==='DesignRooms/local-only.json'&&grid.gridDataPath.startsWith('GridData/Rooms/'));
+  ids.add(p.id);return {id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation,...(attachment?{attachment}:{})};
  });
 }
 /** Restore as one undoable edit after resolving every footprint from the current DB.
@@ -116,24 +119,22 @@ export function restoreDesign(t:DesignTimeline,placements:readonly DesignPlaceme
  return commit(t,placements.map(p=>({...p})),nextId);
 }
 export function designItemCounts(placements:readonly DesignPlacement[]):Map<number,number>{
- const counts=new Map<number,number>();
- for(const p of placements)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);
- return counts;
+ return countAttachedDesign(placements);
 }
 
 /** Clipboard carries only synthetic design data; no OS clipboard or Save bytes. */
-export interface DesignClipItem{readonly itemId:number;readonly dx:number;readonly dy:number;readonly orientation:number}
+export interface DesignClipItem{readonly itemId:number;readonly dx:number;readonly dy:number;readonly orientation:number;readonly attachment?:DesignSupportAttachment}
 export function designClipboard(t:DesignTimeline,ids:readonly number[]):DesignClipItem[]{
  const chosen=currentDesign(t).filter(p=>ids.includes(p.id));if(!chosen.length)return [];
  const x=Math.min(...chosen.map(p=>p.x)),y=Math.min(...chosen.map(p=>p.y));
- return chosen.map(p=>({itemId:p.itemId,dx:p.x-x,dy:p.y-y,orientation:p.orientation}));
+ return chosen.map(p=>({itemId:p.itemId,dx:p.x-x,dy:p.y-y,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})}));
 }
 /** Rotate a temporary clipboard group with the same footprint and restriction
  * checks as committed group rotation. No IDs or history escape this preview. */
 export function rotateDesignClipboard(clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,turns:number):DesignClipItem[]|null{
  if(!clip.length||clip.length>DESIGN_LIMIT||!Number.isSafeInteger(turns)||clip.some(p=>!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3))return null;
  if(turns%4===0)return [...clip];
- const placements=clip.map((p,i)=>({id:i+1,itemId:p.itemId,x:p.dx,y:p.dy,orientation:p.orientation}));
+ const placements=clip.map((p,i)=>({id:i+1,itemId:p.itemId,x:p.dx,y:p.dy,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})}));
  const preview:DesignTimeline={snapshots:[placements],cursor:0,nextId:placements.length+1};
  const rotated=transformDesignGroup(preview,placements.map(p=>p.id),defs,0,0,turns,Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER);
  return rotated?designClipboard(rotated,placements.map(p=>p.id)):null;
@@ -144,7 +145,7 @@ function pasteCandidates(t:DesignTimeline,clip:readonly DesignClipItem[],defs:Re
  for(const p of old){const kind=exclusiveAnchorClass(String(p.itemId));if(kind)occupied.add(kind+':'+p.x+':'+p.y);}
  const added:DesignPlacement[]=[];
  for(const p of clip){
-  const g=defs.get(p.itemId),candidate={id:t.nextId+added.length,itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation};
+  const g=defs.get(p.itemId),candidate={id:t.nextId+added.length,itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})};
   if(!g||!designCandidateValid([],candidate,g,width,height))return null;
   const kind=exclusiveAnchorClass(String(candidate.itemId));if(kind){const key=kind+':'+candidate.x+':'+candidate.y;if(occupied.has(key))return null;occupied.add(key);}
   added.push(candidate);
@@ -290,4 +291,11 @@ export function replaceDesignNetwork(t:DesignTimeline,seed:number,target:DesignI
   if(!designCandidateValid([], {...p,itemId:target.itemId},target,width,height))return null;
  }
  return commit(t,old.map(p=>ids.has(p.id)?{...p,itemId:target.itemId}:p));
+}
+
+export function replaceDesignAttachment(t:DesignTimeline,id:number,attachment:DesignSupportAttachment|undefined,g:DesignItemGeometry):DesignTimeline|null{
+ const old=currentDesign(t),p=old.find(p=>p.id===id);if(!p||p.itemId!==g.itemId||!g.supportPath||nativeActionBlocked(g.editRestrictions,'move'))return null;
+ if(attachment&&(attachment.scene.ownerItemId!==p.itemId||attachment.scene.tree.sourcePath!==g.supportPath))return null;
+ if(!attachment&&!p.attachment)return null;
+ const {attachment:previous,...root}=p;return commit(t,old.map(o=>o.id===id?{...root,...(attachment?{attachment}:{})}:o));
 }
