@@ -131,7 +131,7 @@ export async function openMaskPreview(canvas:HTMLCanvasElement,source:MemorySour
       if(!Number.isFinite(opacity)||opacity<0||opacity>1)throw new Error('Invalid preview opacity');
       const preset=PUZZLE_MATERIALS[material];
       g.useProgram(program);
-      g.uniform3f(g.getUniformLocation(program,'materialTint'),...preset.tint);
+      g.uniform3f(g.getUniformLocation(program,'materialTint'),preset.tint[0],preset.tint[1],preset.tint[2]);
       g.uniform1f(g.getUniformLocation(program,'materialAlpha'),opacity);
       g.uniform1i(g.getUniformLocation(program,'materialAlphaClip'),preset.alphaClip?1:0);
       g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,textures[1]);
