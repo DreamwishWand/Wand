@@ -627,3 +627,37 @@ test('capture region uses explicit furniture selection, independent network togg
  assert.equal(validCaptureRegion(wide,extent),true);
  assert.equal(validCaptureRegion({...wide,x:2.1},extent),false);
 });
+
+import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea} from '../src/lib/world/whole-area-preset.ts';
+test('whole-area preset requires exact source identity and reviews multiset replacement',()=>{
+ const g={key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:100,sizeY:100};
+ const island={...g,key:'beach-island',layoutId:'SceneLayouts/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachLayout.json',gridDataPath:'GridData/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachGrid-GridData.json'};
+ assert.equal(wholeAreaKind(g,[g,island]),'biome');
+ assert.equal(wholeAreaKind(island,[g,island]),'floating-island');
+ assert.equal(wholeAreaKind(island,[island,{...island,key:'second',gridIdNative:1}]),null);
+ assert.equal(wholeAreaKind(island,[]),null);
+ const a={id:1,itemId:40005160,x:1,y:2,orientation:2},b={...a,id:2},c={...a,id:3,x:5};
+ const t={snapshots:[[a,b]],cursor:0,nextId:3},incoming={snapshots:[[b,c]],cursor:0,nextId:4};
+ const raw=serializeWholeArea(incoming,g,'biome');
+ assert.deepEqual(parseWholeArea(raw,g,'biome'),[b,c]);
+ assert.throws(()=>parseWholeArea(raw,{...g,gridDataPath:'GridData/Other.json'},'biome'));
+ assert.throws(()=>parseWholeArea(raw,g,'floating-island'));
+ const doc=JSON.parse(raw);doc.design.placements[0].playerId='private';assert.throws(()=>parseWholeArea(JSON.stringify(doc),g,'biome'));
+ const review=reviewWholeArea(t,[b,c]);assert.equal(review.retained,1);assert.equal(review.removed,1);assert.equal(review.added,1);assert.equal(review.total,2);
+ assert.deepEqual(parseWholeArea(serializeWholeArea({snapshots:[[]],cursor:0,nextId:1},g,'biome'),g,'biome'),[]);
+});
+
+test('Biome replacement on the continuous world map preserves all other areas and one Undo',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
+ const rasters=new Map(bundle.grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:Uint32Array.from(inflateSync(Buffer.from(g.data,'base64')),i=>g.palette[i])}]));
+ const f=composeMainlandDesignFrame(bundle.grids,rasters),w=f.raster.sizeX,h=f.raster.sizeY;
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z'};
+ const item={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{'40005160:8':shape}},defs=new Map([[item.itemId,item]]);
+ const first=key=>{const i=f.owners.indexOf(f.grids.findIndex(g=>g.key===key)+1);return {x:i%w,y:Math.floor(i/w)};};
+ const a=first('Urban'),b=first('Meadow'),one=placeDesign(emptyDesign(),item,a.x,a.y,2,w,h),two=placeDesign(one,item,b.x,b.y,2,w,h);
+ const split=splitWorldArea(f,two,'Meadow',defs);assert.equal(split.local.length,1);assert.equal(split.other[0].id,1);
+ const q=replaceWorldArea(f,two,'Meadow',[],defs);assert(q);assert.deepEqual(currentDesign(q.next),currentDesign(one));assert.equal(q.summary.removed,1);
+ const r=replaceWorldArea(f,two,'Meadow',[{...split.local[0],id:1}],defs);assert(r);assert.equal(currentDesign(r.next).length,2);assert.equal(currentDesign(r.next)[0].id,1);assert.notEqual(r.added[0].id,1);
+ assert.deepEqual(currentDesign(travelDesign(r.next,-1)),currentDesign(two));
+ assert.equal(replaceWorldArea(f,two,'Meadow',[{...split.local[0],x:100000}],defs),null);
+});

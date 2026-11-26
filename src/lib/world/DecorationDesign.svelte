@@ -1,5 +1,6 @@
 <script lang="ts">
  import {localSaveSession} from '../ui/local-save-session';
+ import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea,wholeAreaWords,type WholeAreaKind} from './whole-area-preset.ts';
  import {captureScene,parseScene,parseSceneAnyFactor,convertSceneFactor,sceneOrigin,sceneBounds,sceneItemCounts,sceneWords,type ScenePreset} from './scene-preset.ts';
  import {parseFurnitureStock,furnitureStockWords} from './furniture-stock-view.ts';
  import {captureWords,mergeSaveDesign,type SaveDesignCapture} from './save-design-capture.ts';
@@ -54,6 +55,13 @@
  export let grid:PublicTerrainGridRef|null=null;
  export let raster:TerrainRaster|null=null;
  export let worldFrame:MainlandDesignFrame|null=null;
+ export let sourceGrids:readonly PublicTerrainGridRef[]=[];
+ let areaTargetKey='';
+ $: availableAreaPresets=(worldFrame?worldFrame.grids:grid?[grid]:[]).filter(g=>wholeAreaKind(g,sourceGrids));
+ $: if(!availableAreaPresets.some(g=>g.key===areaTargetKey))areaTargetKey=availableAreaPresets[0]?.key??'';
+ $: areaTarget=availableAreaPresets.find(g=>g.key===areaTargetKey)??null;
+ $: areaKind=wholeAreaKind(areaTarget,sourceGrids);
+ $: areaText=wholeAreaWords[locale];
  $: contextKey=worldFrame?'@world-'+worldFrame.scope+'-1.26.2':grid?.key??'';
  export let areaLabel:(key:string)=>string=key=>key;
  const areaWords={ja:['エリアへ移動','エリア設計を追加','エリア設計を追加できません。地形範囲または重複を確認してください。'],en:['Jump to area','Add area designs','Unable to add area designs. Check terrain bounds or duplicates.'],fr:['Aller à la zone','Ajouter les plans de zones','Impossible d’ajouter les plans de zones.'],it:['Vai alla zona','Aggiungi progetti delle zone','Impossibile aggiungere i progetti.'],de:['Zum Bereich','Bereichsentwürfe hinzufügen','Bereichsentwürfe konnten nicht hinzugefügt werden.'],'es-ES':['Ir a zona','Añadir diseños de zonas','No se pudieron añadir los diseños.'],'zh-CN':['前往区域','添加区域设计','无法添加区域设计，请检查地形或重复物品。'],'pt-BR':['Ir à área','Adicionar projetos de áreas','Não foi possível adicionar os projetos.']} as const;
@@ -271,7 +279,11 @@
  function saveScene(){if(!sceneCapture||busyImport)return;try{const text=JSON.stringify(sceneCapture);parseScene(text,sceneCapture.factor);const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-scene.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=sceneText[5];}}
  async function openScene(event:Event){const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file||!grid||busyImport||sceneReading||!worker)return;const context=contextKey,original=timeline,own=worker,factor=grid.factor;sceneReading=true;error='';try{if(file.size>DESIGN_FILE_LIMIT)throw Error('size');const scene=convertSceneFactor(parseSceneAnyFactor(await file.text()),factor);if(!scene)throw Error('incompatible scene factor');if(!active||contextKey!==context||timeline!==original||worker!==own)return;beginPaste([...scene.items],scene);}catch{error=sceneText[5];}finally{sceneReading=false;}}
 
- let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture}|null=null;
+ let areaReview:{key:string;areaKey:string;baseline:DesignTimeline;next:DesignTimeline;preview:readonly DesignPlacement[];incoming:Map<number,DesignItemGeometry>;summary:ReturnType<typeof reviewWholeArea>}|null=null;
+ $: if(areaReview&&(!active||areaReview.key!==contextKey||areaReview.baseline!==timeline||areaReview.areaKey!==areaTarget?.key||!areaKind))areaReview=null;
+ function cancelAreaReview(){areaReview=null;}
+ function applyAreaReview(){const r=areaReview;if(!r||!grid||r.key!==contextKey||r.baseline!==timeline||!active||recoveryBlocked)return;areaReview=null;const factor=String(grid.factor);cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...r.incoming])};selected=null;groupIds=[];cancel();if(r.next!==timeline){layouts={...layouts,[contextKey]:r.next};persistRecovery(r.next);}error='';}
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture;areaKind?:WholeAreaKind;areaKey?:string}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
   en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
@@ -283,10 +295,13 @@
   'pt-BR':['Salvar','Abrir','Itens necessários','Não foi possível abrir o projeto. Verifique a área e os itens.','Substituir o projeto da área?','Abrindo…']
  } as const;
  $: words=labels[locale]??labels.en;
- $: busyImport=reading||pendingImport!==null||recoveryBlocked;
+ $: busyImport=reading||pendingImport!==null||areaReview!==null||recoveryBlocked;
  $: counts=designItemCounts(placements);
  $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
  $: if(active&&showCounts)loadImages([...counts.keys()].map(itemId=>({itemId})));
+ function exportAreaPreset(){
+  if(!areaTarget||!areaKind||busyImport)return;try{const split=worldFrame?splitWorldArea(worldFrame,timeline,areaTarget.key,definitions):null;if(worldFrame&&!split)throw Error('AREA_OWNER');const t=split?{snapshots:[split.local],cursor:0,nextId:timeline.nextId}:timeline;const text=serializeWholeArea(t,areaTarget,areaKind),url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-'+areaKind+'-'+areaTarget.key.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{error=areaText[12];}
+ }
  function exportFile(){
   if(!grid)return;
   let content:string;try{content=worldFrame?serializeMainlandDesign(worldFrame,timeline,definitions):serializeDesign(timeline,grid);}catch{error=words[3];return;}
@@ -301,15 +316,26 @@
   reading=true;error='';
   try{
    if(file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const content=await file.text(),sourceAreas=sourceFrame?new Map<number,string>():undefined,incoming=sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);
+   const content=await file.text(),whole=JSON.parse(content)?.schema==='wand.preset.whole-area-design@1',kind=whole?areaKind:null,sourceAreas=sourceFrame?new Map<number,string>():undefined;
+   const presetTarget=areaTarget;
+   if(whole&&(!kind||!presetTarget))throw Error('AREA_PRESET_CONTEXT');
+   const incoming=kind&&presetTarget?parseWholeArea(content,presetTarget,kind):sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);
    if(epoch!==importEpoch||worldFrame!==sourceFrame||grid?.key!==target.key||timeline!==original||worker!==own||!active)return;
-   if(currentDesign(original).length&&!window.confirm(words[4]))return;
+   if(!kind&&currentDesign(original).length&&!window.confirm(words[4]))return;
    cancel();
    const id=nextRequest();
-   pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas};
+   if(kind&&presetTarget&&!incoming.length){if(!prepareAreaReview(presetTarget.key,[],new Map()))throw Error('AREA_PRESET_EMPTY');return;}
+   pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas,...(kind&&presetTarget?{areaKind:kind,areaKey:presetTarget.key}:{})};
    own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
+ }
+ function prepareAreaReview(key:string,incoming:readonly DesignPlacement[],defs:Map<number,DesignItemGeometry>){
+  if(!grid||!areaTarget||areaTarget.key!==key)return false;
+  const merged=new Map([...definitions,...defs]);
+  if(worldFrame){const result=replaceWorldArea(worldFrame,timeline,key,incoming,merged);if(!result)return false;areaReview={key:contextKey,areaKey:key,baseline:timeline,next:result.next,preview:result.added,incoming:merged,summary:result.summary};return true;}
+  const next=restoreDesign(timeline,incoming,defs,width,height);if(!next)return false;
+  areaReview={key:contextKey,areaKey:key,baseline:timeline,next,preview:incoming,incoming:defs,summary:reviewWholeArea(timeline,incoming)};return true;
  }
  function addCapturedLayout(){
   const capture=visibleCapture;if(!capture||!grid||!worldFrame||!worker||busyImport)return;
@@ -341,7 +367,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(contextKey!==lastGrid){
-   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;areaReview=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -372,6 +398,7 @@
      if(!grid||!active||grid.key!==pending.key||timeline!==pending.timeline)return;
      if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
      const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
+     if(pending.areaKind){if(areaKind!==pending.areaKind||!pending.areaKey||!prepareAreaReview(pending.areaKey,pending.placements,incoming))error=areaText[12];return;}
      if(worldFrame&&(!pending.sourceAreas||!mainlandImportMatches(worldFrame,pending.placements,incoming,pending.sourceAreas))){error=words[3];return;}
      if(pending.capture&&pending.capture!==capturedLayout)return;
      const merged=new Map([...definitions,...incoming]);
@@ -639,6 +666,7 @@
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <input class="file-input scene-file-input" type="file" accept=".json,application/json" bind:this={sceneInput} on:change={openScene}/><button type="button" disabled={busyImport||!sceneCapture} on:click={saveScene}>{sceneText[0]}</button><button type="button" disabled={busyImport||sceneReading||!worker} on:click={()=>sceneInput.click()}>{sceneText[1]}</button>
     {#if worldFrame}<select aria-label={aw[0]} value="" on:change={e=>{jumpArea(e.currentTarget.value);e.currentTarget.value='';}}><option value="" disabled>{aw[0]}</option>{#each worldFrame.grids as area (area.key)}<option value={area.key}>{areaLabel(area.key)}</option>{/each}</select>{#if hasAreaDrafts}<button type="button" disabled={busyImport} on:click={addAreaDrafts}>{aw[1]}</button>{/if}{/if}
+    {#if areaKind}{#if worldFrame}<select aria-label={aw[0]+' · Preset'} bind:value={areaTargetKey} disabled={busyImport}>{#each availableAreaPresets as g (g.key)}<option value={g.key}>{areaLabel(g.key)}</option>{/each}</select>{/if}<button type="button" disabled={busyImport} on:click={exportAreaPreset}>{areaText[areaKind==='biome'?0:1]}</button><button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{areaText[2]}</button>{/if}
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
@@ -659,6 +687,7 @@
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
    {#if activeScene}<div class="scene-placement"><strong>Scene · {activeScene.items.length}</strong><small>{sceneText[6]}</small><div class="scene-required">{#each [...sceneRequired] as [itemId,count] (itemId)}<div class="scene-required-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>{/each}</div><div><button type="button" aria-pressed={sceneAnchor==='center'} on:click={()=>setSceneAnchor('center')}>{sceneText[2]}</button><button type="button" aria-pressed={sceneAnchor==='corner'} on:click={()=>setSceneAnchor('corner')}>{sceneText[3]}</button><button type="button" on:click={cancel}>{sceneText[4]}</button></div></div>{/if}
+   {#if areaReview}<div class="design-capture area-preset-review" aria-label={areaText[3]}><strong>{areaText[3]} · {areaLabel(areaReview.areaKey)}</strong><small>{areaText[4]} {areaReview.summary.retained} · {areaText[5]} {areaReview.summary.removed} · {areaText[6]} {areaReview.summary.added}</small><small>{areaText[7]} {areaReview.summary.total} · {areaText[8]} {areaReview.summary.counts.size}</small><small>{areaText[9]}</small><div><button type="button" on:click={applyAreaReview}>{areaText[10]}</button><button type="button" on:click={cancelAreaReview}>{areaText[11]}</button></div></div>{/if}
    {#if visibleCapture}<div class="design-capture" aria-label={captureText[6]}><strong>{captureText[6]} · {visibleCapture.count}</strong>{#if visibleCapture.omitted}<small>{captureText[3]}: {visibleCapture.omitted}</small>{/if}<small>{captureText[7]}</small><div><button type="button" disabled={busyImport} on:click={addCapturedLayout}>{captureText[2]}</button><button type="button" disabled={pendingImport?.capture===visibleCapture} on:click={onDismissCapture}>{captureText[4]}</button></div></div>{/if}
    <div class="design-messages">{#if reading||pendingImport}<p role="status">{words[5]}</p>{/if}
    {#if recoveryState?.phase==='offer'}<div class="draft-offer"><p role="status">{recoveryState.warning==='invalid'?rw[5]:recoveryState.warning==='conflict'?rw[6]:rw[0]}</p>{#if recoveryState.record}<button type="button" disabled={!worker} on:click={resumeRecovery}>{rw[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{rw[2]}</button>{#if recoveryState.warning}<button type="button" on:click={continueWithoutRecovery}>{continueWords[locale]??continueWords.en}</button>{/if}</div>
@@ -693,6 +722,7 @@
        </g>
       {/if}
      {/each}
+     {#if areaReview}{#each areaReview.preview.filter(p=>p.x>=viewport.x-10&&p.x<=viewport.x+viewport.w+10&&p.y>=viewport.y-10&&p.y<=viewport.y+viewport.h+10) as p (p.id)}{@const shape=areaReview.incoming.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="area-preset-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#each fenceDrawEdges as edge (edge.key)}
       {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges&&!originalFenceEdgeKeys.has(edge.key)?'#4bddcd':selectedIds.has(edge.a)&&selectedIds.has(edge.b)?'#fff':'#e5d2b1'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
      {/each}

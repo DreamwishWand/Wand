@@ -1103,6 +1103,32 @@ try{
   assert.equal(await mainland.locator('.design-object').count(),2);
   await mainland.getByLabel('設計を取り消す').click();assert.equal(await mainland.locator('.design-object').count(),1);
   await mainland.getByLabel('設計をやり直す').click();assert.equal(await mainland.locator('.design-object').count(),2);
+  // Whole-area preset in the continuous map must not replace its neighbors.
+  await mainland.getByLabel('エリアへ移動 · Preset',{exact:true}).selectOption('Meadow');
+  const biomeDownloadPromise=page.waitForEvent('download');
+  await mainland.getByRole('button',{name:'Biomeを保存',exact:true}).click();
+  const biomeDownload=await biomeDownloadPromise;
+  const biomeDoc=JSON.parse((await readFile(await biomeDownload.path())).toString('utf8'));
+  assert.equal(biomeDoc.schema,'wand.preset.whole-area-design@1');
+  assert.equal(biomeDoc.kind,'biome');assert.equal(biomeDoc.design.grid.key,'Meadow');
+  assert.equal(biomeDoc.design.placements.length,1);
+  const emptyBiome=structuredClone(biomeDoc);emptyBiome.design.placements=[];
+  const areaInput=mainland.locator('.file-input:not(.scene-file-input)');
+  await areaInput.setInputFiles({name:'empty-biome.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(emptyBiome))});
+  const areaReview=mainland.locator('.area-preset-review');await areaReview.waitFor({timeout:30000});
+  assert.match(await areaReview.innerText(),/除去 1/);
+  assert.equal(await mainland.locator('.design-object').count(),2);
+  await areaReview.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal(await mainland.locator('.design-object').count(),2);
+  await areaInput.setInputFiles({name:'empty-biome.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(emptyBiome))});
+  await areaReview.getByRole('button',{name:'適用',exact:true}).click();
+  assert.equal(await mainland.locator('.design-object').count(),1);
+  await areaInput.setInputFiles({name:'biome.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(biomeDoc))});
+  await areaReview.waitFor({timeout:30000});assert.match(await areaReview.innerText(),/追加 1/);
+  await areaReview.getByRole('button',{name:'適用',exact:true}).click();
+  assert.equal(await mainland.locator('.design-object').count(),2);
+  await mainland.getByLabel('設計を取り消す').click();assert.equal(await mainland.locator('.design-object').count(),1);
+  await mainland.getByLabel('設計をやり直す').click();assert.equal(await mainland.locator('.design-object').count(),2);
   // Keep the world design when temporarily returning to local-area tools.
   await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
   await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
