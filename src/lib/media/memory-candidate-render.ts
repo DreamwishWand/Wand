@@ -24,7 +24,7 @@ export function enqueueMemoryCandidate(
     const renderer=await openMaskPreview(gpu,input,signal,flags===null);
     try{
       if(signal.aborted)throw new DOMException('Aborted','AbortError');
-      renderer.draw(flags??(2**source.numberOfShards-1),true,false,true,'mask',1,false);
+      renderer.draw(flags??(2**source.numberOfShards-1),true,false,true,'mask',1,false,true);
       const target=destination.getContext('2d');
       if(!target)throw new Error('Canvas2D unavailable');
       destination.width=gpu.width;destination.height=gpu.height;
