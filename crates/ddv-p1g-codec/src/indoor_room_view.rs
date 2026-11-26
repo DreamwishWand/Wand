@@ -563,6 +563,20 @@ mod tests{
   assert_eq!(out["World"]["GridCollection"]["NextGridID"],51);
   assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
   assert!(d.patched_json.contains("1e2"));
+  // A portable scene restores into a room with no native support template.
+  let mut blank=orig.clone();
+  blank["World"]["GridCollection"]["Grids"]["42"]["Objects"]=json!({});
+  blank["World"]["GridCollection"]["Grids"].as_object_mut().unwrap().remove("43");
+  blank["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=3.into();
+  let scene=json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":{"factor":2,"sourcePath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","objects":[{"itemId":40005162,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null},{"itemId":40005162,"x":2,"y":0,"orientation":"GridOrientation_Down","child":null}]}});
+  let mut mixed=json!({"roomOrdinal":1,"surfaceOrdinal":1,"place":[{"itemId":40005160,"expectedStock":1,"x":4,"y":4,"orientation":"GridOrientation_Down","scene":scene},{"itemId":40005162,"expectedStock":1,"x":8,"y":8,"orientation":"GridOrientation_Left"}]});
+  let bytes=serde_json::to_vec(&blank).unwrap();
+  let restored:Value=serde_json::from_str(&furniture_candidate(&bytes,&mixed.to_string()).unwrap().patched_json).unwrap();
+  assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],50);
+  assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["ItemID"],40005162);
+  assert_eq!(restored["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
+  mixed["place"][1]["expectedStock"]=3.into();assert!(furniture_candidate(&bytes,&mixed.to_string()).is_err());
+  mixed["place"][1]["expectedStock"]=1.into();mixed["place"][1]["x"]=4.into();mixed["place"][1]["y"]=4.into();assert!(furniture_candidate(&bytes,&mixed.to_string()).is_err());
   let mut shortage=orig.clone();shortage["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"]=1.into();
   assert!(furniture_candidate(&serde_json::to_vec(&shortage).unwrap(),&plan.to_string()).is_err());
   plan["place"][0]["x"]=4.into();plan["place"][0]["y"]=4.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
