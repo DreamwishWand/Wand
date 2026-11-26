@@ -1053,6 +1053,25 @@ impl CollectionEngine {
 mod tests {
     use super::*;
     #[test]
+    fn memory_piece_records_are_atomic_and_backward_compatible(){
+        let mut core=CollectionEngine::default();
+        let id=130000001;
+        core.set_entry_impl(id,r#"{"memoryPieces":513}"#).unwrap();
+        let state:Value=serde_json::from_str(&core.state_json()).unwrap();
+        let entry=&state["workspaces"][0]["entries"]["130000001"];
+        assert_eq!(entry["memoryPieces"],513);assert_eq!(entry["status"],"missing");
+        assert!(core.set_entry_impl(id,r#"{"memoryPieces":1024}"#).is_err());
+        assert!(core.set_entry_impl(40005160,r#"{"memoryPieces":1}"#).is_err());
+        assert_eq!(serde_json::from_str::<Value>(&core.state_json()).unwrap(),state);
+        core.set_entry_impl(id,r#"{"memoryPieces":1023}"#).unwrap();
+        let state:Value=serde_json::from_str(&core.state_json()).unwrap();
+        assert_eq!(state["workspaces"][0]["entries"]["130000001"]["status"],"owned");
+        core.bulk_impl("[130000001]","missing").unwrap();
+        let state:Value=serde_json::from_str(&core.state_json()).unwrap();
+        let entry=&state["workspaces"][0]["entries"]["130000001"];
+        assert_eq!(entry["status"],"missing");assert!(entry.get("memoryPieces").is_none());
+    }
+    #[test]
     fn published_catalog_loads_and_queries_all_12552_records() {
         let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../static/ddv/collection/v1.25");
