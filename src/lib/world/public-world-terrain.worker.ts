@@ -221,13 +221,14 @@ scope.onmessage=async({data})=>{
       supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});const subgrids=await supportPaths;
       supportCatalog??=fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/support-terrain.json').then(r=>{if(!r.ok)throw Error('support data');return r.json();}).catch(e=>{supportCatalog=null;throw e;});
       const supportRaw=await supportCatalog;
-      const supportPath=(itemId:number)=>{const path=(subgrids.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath;return template.kind!=='support'&&path&&supportTerrainRow(supportRaw,path)?path:undefined;};
+      const supportSurface=template.kind==='support',supportPathCache=new Map<number,string|undefined>();
+      const supportPath=(itemId:number)=>{if(supportPathCache.has(itemId))return supportPathCache.get(itemId);const path=(subgrids.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath,result=!supportSurface&&path&&supportTerrainRow(supportRaw,path)?path:undefined;supportPathCache.set(itemId,result);return result;};
       const eligible=(itemId:number)=>{const d=definitions.get(String(itemId)),f=d?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(d);return Math.floor(itemId/100000)===400&&d?.nativeType==='Furniture'&&!!f&&!!((f.acceptedFloorTypesFlag??0)&mask)&&(!subgrids.has(itemId)||!!supportPath(itemId))&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');};
       if(data.command==='design-catalog'){const locale=data.locale as WandLanguage,names=new Map(await (await getMaster()).getBrowseNames(locale)),items:DesignCatalogItem[]=[];for(const [key,d] of definitions){const itemId=Number(key);if(eligible(itemId))items.push({itemId,name:names.get(itemId)??String(d.nativeName??'—'),layer:'furniture'});}items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;}
       const batch=data.command==='design-shapes',ids=batch?data.itemIds:[data.itemId];
       if(!Array.isArray(ids)||ids.length>DESIGN_LIMIT||new Set(ids).size!==ids.length||!ids.every(n=>Number.isSafeInteger(n)&&eligible(n)))throw Error('room furniture');
       if(data.supportAttachments!==undefined){
-        if(template.kind==='support'||!Array.isArray(data.supportAttachments)||data.supportAttachments.length>512)throw Error('support attachments');
+        if(!Array.isArray(data.supportAttachments)||data.supportAttachments.length>512||supportSurface&&data.supportAttachments.length)throw Error('support attachments');
         for(const raw of data.supportAttachments){const owner=raw?.scene?.ownerItemId,a=readDesignAttachment({attachment:raw},owner,true);if(!a||!eligible(owner)||a.scene.tree.sourcePath!==supportPath(owner)||!(await validateSupportRoots([{itemId:owner,support:a.scene}])).valid)throw Error('support attachment geometry');}
       }
       const results:DesignItemGeometry[]=[];let runs=0;
