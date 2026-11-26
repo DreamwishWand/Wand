@@ -129,3 +129,22 @@ test('indoor Scene shares the portable format, requires plain witnesses and exac
  assert.equal(captureIndoorScene({...full,positions:[full.positions[0],{...full.positions[1],plain:undefined}]},[0,1],shapes,allowed),null);
  assert.throws(()=>indoorSceneClip(JSON.stringify({...scene,items:[{...scene.items[0],itemId:40200001}]}),1));
 });
+
+test('portable mixed indoor Scene preserves support closure and charges child stock before the next root',async()=>{
+ const {captureIndoorMixedScene,indoorMixedScene,indoorMixedPlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const full={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8},{itemId:40000002,x:3,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape,'40000002:8':shape},allowed=new Set([40000001,40000002]);
+ const support={schema:'wand.preset.support-scene@1',gameVersion:'1.26.2',ownerItemId:40000001,tree:{factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:40000002,x:0,y:0,orientation:'GridOrientation_Down',child:null}]}};
+ const scene=captureIndoorMixedScene(full,[0,1],shapes,allowed,new Map([[0,support]]));
+ assert.equal(scene.schema,'wand.preset.mixed-scene@1');assert.deepEqual(scene.items.map(p=>p.dx),[0,4]);
+ assert.deepEqual(indoorMixedScene(JSON.stringify(scene)),scene);
+ const clip=scene.items.map(({support,...pose})=>pose);
+ const stock=new Map([[40000001,1],[40000002,2]]);
+ const result=indoorMixedPlacement(full,shapes,allowed,stock,clip,scene,'corner',1,3);
+ assert.deepEqual(result.map(r=>[r.x,r.y,r.expectedStock]),[[1,3,1],[3,3,1]]);
+ assert.deepEqual(result[0].scene,support);
+ assert.equal(indoorMixedPlacement(full,shapes,allowed,new Map([[40000001,1],[40000002,1]]),clip,scene,'corner',1,3),null);
+ assert.equal(captureIndoorMixedScene(full,[0,1],shapes,allowed,new Map()),null);
+ assert.equal(indoorMixedPlacement(full,shapes,allowed,stock,clip,scene,'corner',1,1),null);
+});
