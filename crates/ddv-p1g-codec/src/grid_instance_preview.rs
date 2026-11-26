@@ -1400,6 +1400,33 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }
         if total>limit{return Err(CodecError::Bounds);}
     }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_scene_place};
+        let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+        if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+        let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+        let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();
+        for row in rows{
+            let witness=&row["destination"];let d=destinations.get(&witness.to_string()).ok_or(bad)?;
+            let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
+            let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+            let orientation=row["orientation"].as_str().ok_or(bad)?;
+            let tree=if let Some(scene)=row.get("scene"){
+                let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
+                if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
+                Some(checked_support_scene(item,scene)?)
+            }else{None};
+            let ids=allocated.entry(d.grid_id.clone()).or_default();
+            let next=grids.get(&d.grid_id).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
+            let id=next.checked_add(ids.len() as u64).filter(|n|*n<u32::MAX as u64).ok_or(bad)?.to_string();ids.push(id);
+            places.push(BulkScenePlace{pose:BulkPlace{destination:d,item_id:item,xy:(x,y),orientation},tree});
+        }
+        for (grid,ids) in allocated{for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}}
+        let mut draft=preview_bulk_scene_place(std::str::from_utf8(profile).map_err(|_|bad)?,&places).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+        return Ok(draft.patched_json);
+    }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     let mut cursor=0;
     while cursor<rows.len(){
