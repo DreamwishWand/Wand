@@ -7,16 +7,17 @@ const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMess
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null,copy:Uint8Array|null=null;
  try{
-  const pickup=data?.command==='group-pickup-export',paste=data?.command==='group-paste-export',cut=data?.command==='group-cut-export',biome=data?.command==='biome-furniture-export',island=data?.command==='island-furniture-export';
-  const exporting=data?.command==='furniture-stock-export'||pickup||paste||cut||biome||island;
+  const pickup=data?.command==='group-pickup-export',paste=data?.command==='group-paste-export',cut=data?.command==='group-cut-export',biome=data?.command==='biome-furniture-export',island=data?.command==='island-furniture-export',network=data?.command==='biome-network-export',inspect=data?.command==='inspect-area-network';
+  const exporting=data?.command==='furniture-stock-export'||pickup||paste||cut||biome||network||island;
   if(exporting&&(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true))throw Error('test-only');
-  if((!exporting&&data?.command!=='furniture-stock-preview')||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||!data.plan||typeof data.plan!=='object')throw Error('request');
+  if((!exporting&&!inspect&&data?.command!=='furniture-stock-preview')||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||!data.plan||typeof data.plan!=='object')throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
   wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
+  if(inspect){scope.postMessage({kind:'area-network',rows:JSON.parse(wasm.inspect_area_network(JSON.stringify(data.plan)))});return;}
   if(exporting){
-   const length=island?wasm.prepare_island_furniture_experimental_copy(JSON.stringify(data.plan),true):biome?wasm.prepare_biome_furniture_experimental_copy(JSON.stringify(data.plan),true):cut?wasm.prepare_group_cut_experimental_copy(JSON.stringify(data.plan),true):pickup?wasm.prepare_group_pickup_experimental_copy(JSON.stringify(data.plan),true):paste?wasm.prepare_group_paste_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_furniture_stock_experimental_copy(JSON.stringify(data.plan),JSON.stringify(data.destination??null),true);
+   const length=island?wasm.prepare_island_furniture_experimental_copy(JSON.stringify(data.plan),true):network?wasm.prepare_biome_network_experimental_copy(JSON.stringify(data.plan),true):biome?wasm.prepare_biome_furniture_experimental_copy(JSON.stringify(data.plan),true):cut?wasm.prepare_group_cut_experimental_copy(JSON.stringify(data.plan),true):pickup?wasm.prepare_group_pickup_experimental_copy(JSON.stringify(data.plan),true):paste?wasm.prepare_group_paste_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_furniture_stock_experimental_copy(JSON.stringify(data.plan),JSON.stringify(data.destination??null),true);
    if(!Number.isSafeInteger(length)||length<1||length>32*1024*1024)throw Error('copy size');
    copy=new Uint8Array(length);
    for(let i=0;i<length;i+=1048576){const n=Math.min(1048576,length-i),part=wasm.take_copy_chunk(n);if(part.byteLength!==n){part.fill(0);throw Error('copy chunk');}copy.set(part,i);part.fill(0);}

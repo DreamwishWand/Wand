@@ -2199,3 +2199,140 @@ mod structural_tests{
   assert!(preview_plain_grid_structure(SOURCE,&target(),(3,2),action).is_err());
  }
 }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,PartialOrd,Ord)]
+pub struct AreaNetworkPose{pub item:u32,pub x:i32,pub y:i32,pub left:bool,pub diagonal:bool}
+/// Exact whole-grid native network representation. Do not regenerate adjacent
+/// roads or silently normalize a fence; its known parts must round-trip.
+pub fn validate_area_network(d:&PlainGridDestination,rows:&[AreaNetworkPose])->Result<(),PatchError>{
+ if !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536{return Err(PatchError::InvalidTarget);}
+ use fence_topology::{FencePart,decompile_fence,compile_fence_with_posts};
+ let q=d.tessellation as i32;let w=(d.size.0*d.tessellation) as i32;let h=(d.size.1*d.tessellation) as i32;
+ let mut anchors=HashSet::new();let mut groups=std::collections::BTreeMap::<(u32,bool),Vec<FencePart>>::new();let mut roads=0;let mut fences=0;
+ for p in rows{
+  let kind=p.item/100_000;
+  if p.x<0||p.y<0||p.x>=w||p.y>=h||p.x%q!=0||p.y%q!=0||!anchors.insert((kind,p.x,p.y)){return Err(PatchError::InvalidTarget);}
+  match kind{
+   401=>{roads+=1;if p.left||p.x%(2*q)!=0||p.y%(2*q)!=0||p.x+2*q>w||p.y+2*q>h{return Err(PatchError::InvalidTarget);}},
+   407=>{
+    fences+=1;let base=fence_topology::family_for_part(p.item,p.diagonal).ok_or(PatchError::InvalidTarget)?;
+    if p.item==base&&p.left{return Err(PatchError::InvalidTarget);}
+    let k=fence_topology::part_key(base,p.diagonal,p.item).ok_or(PatchError::InvalidTarget)?.max(1) as i32;
+    let (dx,dy)=if p.diagonal{(k*q,k*q)}else if p.left{(q,k*q)}else{(k*q,q)};
+    if p.x+dx>w||p.y+dy>h{return Err(PatchError::InvalidTarget);}
+    groups.entry((base,p.diagonal)).or_default().push(FencePart{item:p.item,x:p.x,y:p.y,left:p.left,diagonal:p.diagonal});
+   },_=>return Err(PatchError::InvalidTarget)
+  }
+ }
+ if roads>4096||fences>512{return Err(PatchError::InvalidTarget);}
+ for ((base,diag),parts) in &groups{
+  let (nodes,edges)=decompile_fence(*base,d.tessellation,*diag,parts)?;
+  let posts=parts.iter().filter(|p|p.item==*base).map(|p|(p.x,p.y)).collect();
+  let rebuilt=compile_fence_with_posts(*base,d.tessellation,*diag,&nodes,&edges,&posts)?;
+  if rebuilt.into_iter().collect::<std::collections::BTreeSet<_>>()!=parts.iter().copied().collect(){return Err(PatchError::InvalidTarget);}
+  if groups.iter().any(|(k,other)|*k!=(*base,*diag)&&other.iter().any(|p|nodes.iter().any(|&(x,y)|i64::from(p.x).abs_diff(i64::from(x))<=8*q as u64&&i64::from(p.y).abs_diff(i64::from(y))<=8*q as u64))){return Err(PatchError::AmbiguousTarget);}
+ }
+ Ok(())
+}
+pub struct AreaNetworkDraft{pub draft:GridCoordinateDraft,pub removed:Vec<String>,pub allocated:Vec<String>}
+/// Retain unchanged native IDs and raw members. Only exact known network
+/// records are removed; all furniture, unknown state and inventory stay put.
+pub fn preview_area_network_replacement(source:&str,d:&PlainGridDestination,before:&[AreaNetworkPose],after:&[AreaNetworkPose])->Result<AreaNetworkDraft,PatchError>{
+ use serde_json::Value;
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||!valid_id(&d.grid_id)||full_grid_scope(&d.layout_path).is_none(){return Err(PatchError::InvalidTarget);}
+ validate_area_network(d,before)?;validate_area_network(d,after)?;
+ let old:HashSet<_>=before.iter().copied().collect();let desired:HashSet<_>=after.iter().copied().collect();
+ if old==desired||old.len()!=before.len()||desired.len()!=after.len(){return Err(PatchError::InvalidTarget);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
+ let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
+ let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
+ let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(PatchError::InvalidTarget)?;
+ if map.len()>100_000||map.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n==0||n>=next||n.to_string()!=*k||v.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(PatchError::AmbiguousTarget);}
+ let mut actual=HashSet::new();let mut removed=Vec::new();
+ for (id,v) in map{
+  let item=v.get("ItemID").and_then(Value::as_u64).ok_or(PatchError::InvalidTarget)?;
+  if !matches!(item/100_000,401|407){continue;}
+  if v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(PatchError::InvalidTarget);}
+  let int=|k:&str|v.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(PatchError::InvalidTarget);
+  let orientation=v.get("Orientation").and_then(Value::as_str).ok_or(PatchError::InvalidTarget)?;
+  if !matches!(orientation,"GridOrientation_Down"|"GridOrientation_Left"){return Err(PatchError::InvalidTarget);}
+  let p=AreaNetworkPose{item:u32::try_from(item).map_err(|_|PatchError::InvalidTarget)?,x:int("X")?,y:int("Y")?,left:orientation=="GridOrientation_Left",diagonal:road_mode(v).ok_or(PatchError::InvalidTarget)?};
+  if !actual.insert(p)||!old.contains(&p){return Err(PatchError::AmbiguousTarget);}
+  if !desired.contains(&p){removed.push(id.clone());}
+ }
+ if actual!=old{return Err(PatchError::MissingTarget);}
+ let mut added:Vec<_>=desired.difference(&old).copied().collect();added.sort_unstable();
+ let following=next.checked_add(added.len() as u32).filter(|n|*n<u32::MAX).ok_or(PatchError::InvalidTarget)?;
+ if map.len()+added.len()>100_000{return Err(PatchError::InvalidTarget);}
+ let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id:40100068};
+ let mut locator=JsonLocator::grid_axis(source,&selector,"X")?;locator.signed_path=None;locator.item_path=None;
+ let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&d.grid_id)];
+ let mut parent=prefix.clone();parent.push(k("Objects"));let mut counter=prefix;counter.push(k("NextGridObjectID"));
+ locator.capture.insert(parent.clone(),None);locator.capture.insert(counter.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let cr=locator.capture.get(&counter).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ if source[cr.clone()].parse::<u32>().ok()!=Some(next){return Err(PatchError::InvalidTarget);}
+ let removing:HashSet<_>=removed.iter().collect();locator.capture.clear();locator.pos=mr.start;locator.expect(b'{')?;
+ let mut members=Vec::new();let mut visited=0;
+ loop{
+  locator.space();if locator.bytes.get(locator.pos)==Some(&b'}'){break;}
+  let start=locator.pos;let key=locator.string()?;locator.expect(b':')?;let mut p=parent.clone();p.push(k(&key));locator.value(&mut p)?;
+  if !removing.contains(&key){members.push(source[start..locator.pos].to_owned());}
+  visited+=1;locator.space();
+  if locator.bytes.get(locator.pos)==Some(&b','){locator.pos+=1;}else if locator.bytes.get(locator.pos)==Some(&b'}'){break;}else{return Err(PatchError::InvalidDocument);}
+ }
+ if visited!=map.len(){return Err(PatchError::InvalidDocument);}
+ let mut additions=Vec::new();let mut allocated=Vec::new();
+ for (i,p) in added.iter().enumerate(){
+  let id=next+i as u32;let state=if p.diagonal{serde_json::json!({"FenceMode":{"Diagonal":true}})}else{Value::Null};
+  let v=serde_json::json!({"ID":id,"ItemID":p.item,"X":p.x,"Y":p.y,"Orientation":if p.left{"GridOrientation_Left"}else{"GridOrientation_Down"},"State":state});
+  let key=id.to_string();members.push(format!("\"{}\":{}",id,v));allocated.push(key.clone());additions.push((key,v));
+ }
+ let mut edits=vec![(mr,format!("{{{}}}",members.join(",")))];if !added.is_empty(){edits.push((cr,following.to_string()));}edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut candidate=String::new();let mut last=0;for (r,v) in edits{candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}candidate.push_str(&source[last..]);
+ if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+ let target=root["World"]["GridCollection"]["Grids"][&d.grid_id].as_object_mut().ok_or(PatchError::MissingTarget)?;
+ let objects=target.get_mut("Objects").and_then(Value::as_object_mut).ok_or(PatchError::MissingTarget)?;
+ for id in &removed{objects.remove(id);}for (id,v) in additions{objects.insert(id,v);}
+ if !added.is_empty(){target.insert("NextGridObjectID".into(),Value::from(following));}
+ if serde_json::from_str::<Value>(&candidate).map_err(|_|PatchError::InvalidDocument)?!=root{return Err(PatchError::InvalidDocument);}
+ validate_json_without_edit(&candidate)?;
+ Ok(AreaNetworkDraft{draft:GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false},removed,allocated})
+}
+
+#[cfg(test)]
+mod area_network_tests{
+ use super::*;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"Inventory":{"40100068":{"Amount":17}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40100068,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40000001,"X":8,"Y":4,"Orientation":"GridOrientation_Down","Unknown":1e2},"3":{"ID":3,"ItemID":40100068,"X":8,"Y":4,"Orientation":"GridOrientation_Down","State":{"FenceMode":{"Diagonal":true}}}}},"8":{"ID":8,"Objects":{"1":{"ID":1,"ItemID":40100068}}}}}}}"#;
+ fn dest()->PlainGridDestination{PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:2,size:(40,40)}}
+ fn road(item:u32,x:i32,y:i32,diagonal:bool)->AreaNetworkPose{AreaNetworkPose{item,x,y,left:false,diagonal}}
+ #[test]fn full_network_replacement_keeps_unchanged_ids_and_unrelated_lexical_members(){
+  let old=[road(40100068,4,4,false),road(40100068,8,4,true)];
+  let next=[old[0],road(40100038,12,4,true)];
+  let result=preview_area_network_replacement(SOURCE,&dest(),&old,&next).unwrap();
+  assert_eq!(result.removed,vec!["3"]);assert_eq!(result.allocated,vec!["4"]);
+  assert!(result.draft.patched_json.contains("\"Unknown\":1e2"));assert!(!result.draft.export_authorized);
+  let a:serde_json::Value=serde_json::from_str(SOURCE).unwrap();let b:serde_json::Value=serde_json::from_str(&result.draft.patched_json).unwrap();
+  assert_eq!(a["Player"],b["Player"]);let g=&b["World"]["GridCollection"]["Grids"];let old_g=&a["World"]["GridCollection"]["Grids"];
+  assert_eq!(old_g["8"],g["8"]);assert_eq!(g["7"]["Objects"]["1"],old_g["7"]["Objects"]["1"]);assert_eq!(g["7"]["Objects"]["2"],old_g["7"]["Objects"]["2"]);
+  assert!(g["7"]["Objects"].get("3").is_none());assert_eq!(g["7"]["Objects"]["4"]["ItemID"],40100038);assert_eq!(g["7"]["Objects"]["4"]["State"]["FenceMode"]["Diagonal"],true);
+  assert_eq!(g["7"]["NextGridObjectID"],5);
+  assert!(preview_area_network_replacement(SOURCE,&dest(),&old[..1],&next).is_err());
+  assert!(preview_area_network_replacement(SOURCE,&dest(),&old,&[next[0],road(40100038,4,4,true)]).is_err());
+  let stale=SOURCE.replace("\"Diagonal\":true","\"Diagonal\":false");assert!(preview_area_network_replacement(&stale,&dest(),&old,&next).is_err());
+  let removed=preview_area_network_replacement(SOURCE,&dest(),&old,&[]).unwrap();assert_eq!(removed.removed.len(),2);assert!(removed.allocated.is_empty());
+ }
+ #[test]fn whole_fence_network_round_trips_original_parts(){
+  let nodes=vec![(20,20),(22,20),(24,20)];let edges=nodes.windows(2).map(|p|(p[0],p[1])).collect::<Vec<_>>();
+  let original=fence_topology::compile_fence_with_posts(40700000,2,false,&nodes,&edges,&std::collections::BTreeSet::new()).unwrap();
+  let next=original.iter().map(|p|AreaNetworkPose{item:p.item,x:p.x,y:p.y,left:p.left,diagonal:p.diagonal}).collect::<Vec<_>>();
+  let old=[road(40100068,4,4,false),road(40100068,8,4,true)];
+  let result=preview_area_network_replacement(SOURCE,&dest(),&old,&next).unwrap();
+  assert_eq!(result.allocated.len(),original.len());
+  let mut invalid=next.clone();invalid[0].x=1;assert!(preview_area_network_replacement(SOURCE,&dest(),&old,&invalid).is_err());
+ }
+}
