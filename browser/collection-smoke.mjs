@@ -1456,6 +1456,25 @@ try{
   await incidentPage.locator('.shell-history-head button').click();
   await incidentPage.close();
 
+  // Same browser session: explicit development mode consumes real Rust/WASM
+  // MemoryShards projection. No CDN/GPU availability assertion here; synthetic
+  // GPU arithmetic is tested separately, and fallback is allowed.
+  const memoryPage=await context.newPage();
+  await memoryPage.goto(url+'?memoryPreview=1&item=130000001');
+  await memoryPage.locator('.item-inspector').waitFor({timeout:25000});
+  assert.equal(await memoryPage.locator('[data-memory-candidate]').count(),0);
+  await memoryPage.locator('input[aria-hidden="true"][accept*=".profile"]').setInputFiles({
+    name:'synthetic-memory.profile',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({
+      GameInfo:{Version:643},Player:{MemoryShards:{130000001:3}},World:{Stores:[]}
+    }))
+  });
+  await memoryPage.locator('.item-inspector [data-memory-candidate]').waitFor({timeout:25000});
+  // In-app link retains the in-memory save projection; no second decoder.
+  await memoryPage.locator('a[href="/Wand/media/memory-preview/"]').click();
+  await memoryPage.locator('select').filter({has:memoryPage.locator('option[value="130000001"]')}).first().waitFor();
+  await memoryPage.getByRole('button',{name:'Use observed Save flags for comparison'}).waitFor({timeout:25000});
+  await memoryPage.close();
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
