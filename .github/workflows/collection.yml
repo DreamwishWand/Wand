@@ -84,11 +84,17 @@ jobs:
         if: steps.scope.outputs.collection == 'true'
       - run: npm run check
         if: steps.scope.outputs.product == 'true'
+      - name: Prepare publication assets when deployment code changed
+        if: steps.scope.outputs.pages == 'true'
+        run: python3 scripts/build-collection-images.py
       - run: npm run build
         if: steps.scope.outputs.product == 'true'
         id: build
         env:
           BASE_PATH: /Wand
+      - name: Verify changed publication contract using built artifact
+        if: steps.scope.outputs.pages == 'true'
+        run: python3 tools/ci/pages_receipt.py --build build --commit "$GITHUB_SHA"
       - run: npx playwright install --with-deps chromium
         if: steps.scope.outputs.product == 'true'
         id: chromium
