@@ -221,3 +221,28 @@ mod tests{
   assert!(preview_bulk_furniture(SOURCE,&[],&places).is_err()); // second item unavailable
  }
 }
+
+#[cfg(test)]
+mod mixed_placement_tests{
+ use super::*;
+ #[test]
+ fn mixed_batch_preserves_native_allocation_order_and_matches_sequential_writer(){
+  let layout="SceneLayouts/Village04/Test.json";let data="GridData/Test.json";let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let src=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":2},"40005161":{"Amount":3}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":8,"Y":8,"Orientation":"GridOrientation_Down","Unknown":100.0}}},"8":{"ID":8,"Objects":{}}}}}});
+  let source=src.to_string().replace("\"Unknown\":100.0","\"Unknown\":1e2");
+  let d=PlainGridDestination{grid_id:"7".into(),layout_path:layout.into(),data_path:data.into(),tessellation:1,size:(16,16)};
+  let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
+  let pose=|item_id,xy|BulkPlace{destination:&d,item_id,xy,orientation:"GridOrientation_Down"};
+  let rows=[BulkScenePlace{pose:pose(40005160,(1,1)),tree:Some(&tree)},BulkScenePlace{pose:pose(40005161,(2,2)),tree:None},BulkScenePlace{pose:pose(40005160,(3,3)),tree:Some(&tree)}];
+  let one=crate::support_clone::preview_support_scene_place(&source,40005160,&d,(1,1),"GridOrientation_Down",&tree).unwrap();
+  let two=preview_furniture_stock_transaction(&one.patched_json,2,FurnitureStockAction::Place{destination:&d,item_id:40005161,xy:(2,2),orientation:"GridOrientation_Down"}).unwrap();
+  let three=crate::support_clone::preview_support_scene_place(&two.patched_json,40005160,&d,(3,3),"GridOrientation_Down",&tree).unwrap();
+  let batch=preview_bulk_scene_place(&source,&rows).unwrap();let actual:Value=serde_json::from_str(&batch.patched_json).unwrap();
+  assert_eq!(actual,serde_json::from_str::<Value>(&three.patched_json).unwrap());
+  assert_eq!(actual["World"]["GridCollection"]["NextGridID"],102);
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
+  assert!(batch.patched_json.contains("\"Unknown\":1e2"));
+  let mut stale=src.clone();stale["ExternalGridID"]=Value::from(101);assert!(preview_bulk_scene_place(&stale.to_string(),&rows).is_err());
+  let mut low=src;low["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(2);assert!(preview_bulk_scene_place(&low.to_string(),&rows).is_err());
+ }
+}
