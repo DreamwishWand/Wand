@@ -1116,6 +1116,17 @@ fn saved_db04_source_projection(
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     group_pickup_for_scope(profile,plan,2,None)
 }
+fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize)->Result<(),CodecError>{
+ let bad=CodecError::Json;
+ if depth>8{return Err(bad);}
+ let child=grids.get(grid).and_then(|g|g.get("Objects")).and_then(|o|o.get(object)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
+ if !seen.insert(child.clone()){return Err(bad);}
+ let objects=grids.get(&child).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
+ let ids:Vec<_>=objects.keys().cloned().collect();
+ if !ids.is_empty(){let refs=grid_identity_dependencies_for_ids(profile,&child,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+ for (id,v) in objects{*total+=1;if *total>MAX_SCENE_FURNITURE{return Err(bad);}if v.get("State").and_then(|s|s.get("SubGrid")).is_some(){support_pickup_references(profile,grids,&child,id,seen,total,depth+1)?;}}
+ Ok(())
+}
 fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
@@ -1126,7 +1137,7 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
     let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
-        let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
+        let o=v.as_object().filter(|o|(o.len()==5||o.len()==6&&o.get("includeSupport").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"))).ok_or(CodecError::Json)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
@@ -1134,6 +1145,20 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
     let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    let support_flags:Vec<_>=rows.iter().map(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)).collect();
+    let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let mut tree_count=0usize;let mut child_ids=HashSet::new();
+    for (target,flag) in targets.iter().zip(&support_flags){
+      tree_count+=1;
+      if !flag{continue;}
+      let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
+      let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":target.item_id,"tree":tree});
+      checked_support_scene(target.item_id,&scene)?;
+      support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0)?;
+      if grid_identity_dependencies(profile,target)?.historical>0{return Err(CodecError::Json);}
+    }
+    if tree_count>MAX_SCENE_FURNITURE||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
     if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
@@ -1142,13 +1167,15 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
     }
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let mut stock=HashMap::<u64,u32>::new();
-    for t in &targets{
+    for (t,flag) in targets.iter().zip(&support_flags){
+        if *flag{continue;}
         if stock.contains_key(&t.item_id){continue;}
         let amount=inventory.get(&t.item_id.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
         stock.insert(t.item_id,amount);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
-    for (target,selection) in targets.iter().zip(&selections){
+    for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
+        if *flag{continue;}
         let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
         let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(CodecError::Bounds)?;
         let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Pickup{target,expected:selection.2}).map_err(|_|CodecError::Patch)?;
@@ -1156,6 +1183,12 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
             draft.patched_json.zeroize();return Err(CodecError::Patch);
         }
         working.zeroize();*working=draft.patched_json;*amount=next;
+    }
+    for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
+        if !flag{continue;}
+        let mut draft=ddv_save_patch::support_clone::preview_support_tree_pickup(&working,target,selection.2).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        working.zeroize();*working=std::mem::take(&mut draft.patched_json);
     }
     Ok(std::mem::take(&mut *working))
 }
