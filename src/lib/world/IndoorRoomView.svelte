@@ -71,7 +71,7 @@
    try{if(d?.kind!=='subgrids-local'||!Array.isArray(d.results)||d.results.length!==parents.length)throw Error('receipt');const supports=new Map<number,SupportScene>();
     for(const p of parents){const result=d.results.find((v:any)=>v.localOrdinal===p.localOrdinal);const scene=captureSupportScene(p.itemId,parseSupportTree(result?.result));if(!scene)throw Error('tree');supports.set(p.index,scene);}
     const scene=captureIndoorMixedScene(target,selection,sh,allowed,supports);if(!scene)throw Error('scene');
-    if(pointSymmetry){if(!symmetryMode||symmetryMode!=='point'||selection.join(',')!==cutIndices.join(','))return;pointSupports=supports;pointRequest=nextRequest();pointValid=false;terrainWorker!.postMessage({command:'mixed-scene-geometry',requestId:pointRequest,scene,locale});return;}
+    if(pointSymmetry){if(linkPicking||!symmetryMode||symmetryMode!=='point'||selection.join(',')!==cutIndices.join(','))return;pointSupports=supports;pointRequest=nextRequest();pointValid=false;terrainWorker!.postMessage({command:'mixed-scene-geometry',requestId:pointRequest,scene,locale});return;}
     if(!duplicate){saveRoomScene(scene);return;}
     if([...mixedSceneCounts(scene.items)].some(([id,n])=>(stock.get(id)??0)<n))throw Error('stock');
     const sources=selection.map(i=>{const p=target.positions[i];return supports.has(i)&&p.orientationCode!==null?{index:i,expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[p.orientationCode/4]}:null;});
@@ -140,7 +140,7 @@
  $: groupLeft=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],-1):null;
  $: groupRight=groupMoveReady?indoorGroupRotate(face,shapes,editable,[...selectedGroup],1):null;
  $: groupMovePreview=moving&&(selectedGroup.size>1||linkedAxis)&&hoverCell?(linkedAxis?indoorLinkedMove(face,shapes,editable,cutIndices,selectedObject,hoverCell.x,hoverCell.y,linkedAxis):indoorGroupMove(face,shapes,editable,[...selectedGroup],selectedObject,hoverCell.x,hoverCell.y)):null;
- $: previewShape=placing&&!cutSource&&!cloneClip.length?stockShape:moving&&selectedGroup.size<=1?moveShape:null;
+ $: previewShape=placing&&!cutSource&&!cloneClip.length?stockShape:moving&&!linkedAxis&&selectedGroup.size<=1?moveShape:null;
  $: previewValid=hoverCell?placing?(cutSource?!!cutPreview:!!indoorPlace(face,shapes,removable,stock,stockId,hoverCell.x,hoverCell.y,stockOrientation)):moving?!!indoorMove(face,shapes,editable,selectedObject,hoverCell.x,hoverCell.y):false:false;
  $: requestCatalog(face,terrainWorker,stock,locale);
  function requestCatalog(f:IndoorSurface|null,wk:Worker|null,counts:ReadonlyMap<number,number>,lang:WandLanguage){catalog=[];catalogRequest=0;if(!wk||!f?.terrain)return;const ids=[...counts].filter(([,n])=>n>0).map(([id])=>id);if(!ids.length)return;const mask=f.terrain.nativeFloorValues.reduce((a,b)=>a|b,0);catalogRequest=nextRequest();wk.postMessage({command:'indoor-catalog',requestId:catalogRequest,itemIds:ids,mask,locale:lang});}
@@ -174,7 +174,7 @@
  $: directDraft=objectDrag?.changed&&hoverCell?(linkedAxis?indoorLinkedMove(face,shapes,editable,objectDrag.indices,objectDrag.index,hoverCell.x,hoverCell.y,linkedAxis):roomDragDraft(face,shapes,editable,objectDrag.indices,objectDrag.index,hoverCell.x,hoverCell.y)):null;
  let panDrag:{id:number;clientX:number;clientY:number;start:RoomCamera;inverse:DOMMatrix;changed:boolean}|null=null;
  $: cameraIdentity=(room?.ordinal??0)+':'+(face?.ordinal??0)+':'+roomBounds;
- $: if(cameraIdentity!==cameraKey){cameraKey=cameraIdentity;linkedAxis=null;camera=null;panDrag=null;objectDrag=null;panMode=false;hoverCell=null;}
+ $: if(cameraIdentity!==cameraKey){cameraKey=cameraIdentity;camera=null;panDrag=null;objectDrag=null;panMode=false;hoverCell=null;}
  $: cameraBounds=roomCameraBounds(roomBounds);
  $: cameraView=camera??cameraBounds;
  $: roomViewBox=[cameraView.x,cameraView.y,cameraView.w,cameraView.h].join(' ');
@@ -279,7 +279,7 @@
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen&&finishChoice?[finishChoice]:[])]);
  function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
- function load(next:File|null){closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
+ function load(next:File|null){closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;if(!keep)linkedAxis=null;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
   const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);supportParents=parseIndoorSupportParents(v,rooms);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
   worker.onmessage=e=>done(e.data?.kind==='indoor-rooms'?e.data.result:null,e.data?.stock);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);worker.postMessage({command:'indoor-rooms',file:next});
@@ -288,7 +288,7 @@
   if(fresh.length){db??=openCurrentItemDatabase(base);void db.then(async d=>{for(let i=0;i<fresh.length;i+=128){const rows=await d.getItems(fresh.slice(i,i+128));const next=new Map(records);for(const row of rows)if(row)next.set(row.itemId,row);records=next;resolved=new Set([...resolved,...fresh.slice(i,i+128)]);}}).catch(()=>{itemLoadFailed=true;});}
   for(const id of new Set([...(room?.surfaces.map(s=>s.finish)??[]),room?.ceiling,...art]))if(typeof id==='number'&&id>0&&!images.has(id)){images=new Map(images).set(id,'');void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});}
  }
- function choose(i:number){resetObject();cancelPreview();finishOpen=false;selected=i;surface=0;query='';highlight=null;limit=80;}
+ function choose(i:number){linkedAxis=null;resetObject();cancelPreview();finishOpen=false;selected=i;surface=0;query='';highlight=null;limit=80;}
  onDestroy(()=>{own?.terminate();clearEdit();cancelPreview();shapeWorker?.removeEventListener('message',receiveShapes);});
 </script>
 <div class="indoor-room-view" role="dialog" aria-label={w[0]} aria-modal="true" bind:this={root} on:keydown={keys}>
@@ -299,7 +299,7 @@
   <div class="room-content">
    <div class="finish-heading"><strong>{w[15]}</strong><button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>
    <div class="finishes">
-    {#each room.surfaces as s,i}<button type="button" class="finish-card" aria-pressed={surface===i} on:click={()=>{resetObject();cancelPreview();surface=i;query='';highlight=null;limit=80;}}><span>{i===0?w[4]:w[5]+' '+i}</span>{#if s.finish&&images.get(s.finish)}<img src={images.get(s.finish)} alt="" loading="lazy"/>{/if}<small>{s.finish===0?w[11]:name(s.finish,records,locale,w[12])}</small></button>{/each}
+    {#each room.surfaces as s,i}<button type="button" class="finish-card" aria-pressed={surface===i} on:click={()=>{linkedAxis=null;resetObject();cancelPreview();surface=i;query='';highlight=null;limit=80;}}><span>{i===0?w[4]:w[5]+' '+i}</span>{#if s.finish&&images.get(s.finish)}<img src={images.get(s.finish)} alt="" loading="lazy"/>{/if}<small>{s.finish===0?w[11]:name(s.finish,records,locale,w[12])}</small></button>{/each}
     <div class="finish-card"><span>{w[6]}</span>{#if room.ceiling&&images.get(room.ceiling)}<img src={images.get(room.ceiling)} alt="" loading="lazy"/>{/if}<small>{room.ceiling===0?w[11]:name(room.ceiling,records,locale,w[12])}</small></div>
    </div>
    {#if finishOpen}<div class="finish-picker">{#if surface>0}<label><input type="checkbox" bind:checked={allWalls} disabled={previewStatus==='working'} on:change={resetFinishStatus}/> {fw[2]}</label>{/if}<select aria-label={fw[0]} bind:value={finishChoice} disabled={previewStatus==='working'} on:change={resetFinishStatus}><option value={0} disabled>{fw[0]}</option>{#each choices as id}<option value={id}>{name(id,records,locale,w[12])}</option>{/each}</select>{#if finishChoice&&images.get(finishChoice)}<img class="finish-preview-art" src={images.get(finishChoice)} alt=""/>{/if}<button type="button" disabled={!choices.includes(finishChoice)||previewStatus==='working'} on:click={checkFinish}>{fw[3]}</button>{#if itemLoadFailed}<small role="alert">{w[10]}</small>{:else if finishLoading}<small role="status">{w[8]}</small>{:else if !choices.length}<small>{fw[6]}</small>{/if}{#if previewStatus!=='idle'}<small role="status">{previewStatus==='valid'?fw[4]:previewStatus==='working'?fw[7]:fw[5]}</small>{/if}{#if testExport&&previewStatus==='valid'&&blocked}<small>{stockToolWords[locale][12]}</small>{:else if testExport&&previewStatus==='valid'}<small>{copyWords[1]}</small><button type="button" on:click={()=>runFinish(true)}>{copyWords[0]}</button>{#if finishCopy}<button type="button" on:click={applyFinishCopy}>{cw[0]}</button><a class="test-copy-link" href={finishCopy.url} download={finishCopy.name}>{copyWords[2]}</a>{/if}{/if}</div>{/if}
