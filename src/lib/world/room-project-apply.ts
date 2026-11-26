@@ -10,7 +10,7 @@ export interface RoomApplyRow{surfaceOrdinal:number;sourcePath:string;factor:1|2
 export interface RoomApplyPlan{roomOrdinal:number;surfaces:RoomApplyRow[]}
 export function roomApplyMatches(s:RoomProjectSurface,face:IndoorSurface):boolean{
  const t=face.terrain,r=s.template.raster;
- return s.template.kind===face.kind&&face.gridStatus==='full'&&!!face.factor&&face.missingPositions===0&&!!t&&t.sizeX===r.sizeX&&t.sizeY===r.sizeY&&t.nativeFloorValues.length===r.nativeFloorValues.length&&t.nativeFloorValues.every((v,i)=>v===r.nativeFloorValues[i]);
+ return s.template.kind===face.kind&&face.sourcePath===s.template.grid.gridDataPath&&face.gridStatus==='full'&&!!face.factor&&face.missingPositions===0&&!!t&&t.sizeX===r.sizeX&&t.sizeY===r.sizeY&&t.nativeFloorValues.length===r.nativeFloorValues.length&&t.nativeFloorValues.every((v,i)=>v===r.nativeFloorValues[i]);
 }
 export function roomApplyShortages(surfaces:readonly RoomProjectSurface[],stock:ReadonlyMap<number,number>){
  return [...roomProjectCounts(surfaces).furniture].flatMap(([itemId,required])=>{const available=stock.get(itemId)??0;return required>available?[{itemId,required,available}]:[];});
