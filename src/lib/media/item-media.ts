@@ -8,7 +8,15 @@ export type ItemMediaActivation = {readonly state:'unpublished'} | {
   readonly state:'published'; readonly publicationAuthorized:true; readonly publicReadbackVerified:true;
   readonly origin:string; readonly gameVersion:string; readonly manifest:ItemMediaPin;
 };
-export const ITEM_MEDIA_ACTIVATION:ItemMediaActivation = {state:'unpublished'};
+// Owner publication receipt: all 257 JSON objects read back byte-for-byte from
+// the public R2 bucket; 14,742 canonical image objects metadata-verified.
+// CDN transport is checked by the actual runtime (pinned JSON + fallback),
+// not asserted by the R2 receipt.
+export const ITEM_MEDIA_ACTIVATION:ItemMediaActivation = {
+  state:'published',publicationAuthorized:true,publicReadbackVerified:true,
+  origin:'https://media.dreamwishwand.com',gameVersion:'steam-1.26.2',
+  manifest:{sha256:'cccc75bd916a3a5fed6ad7bcf45f95cbf38a178ea2614bfa9639fe352699d007',bytes:29888}
+};
 export interface ItemImage { readonly url:string; readonly sha256:string; readonly width:number; readonly height:number }
 type Images = Readonly<Record<ImageVariant,ItemImage>>;
 type ShardPin = ItemMediaPin & {readonly count:number};
@@ -98,7 +106,7 @@ export function createItemMediaClient(activation:ItemMediaActivation=ITEM_MEDIA_
     }
   };
 }
-// Single default instance used by all services; stays network-free until activated.
+// Single default instance; manifest and shards are fetched only on demand.
 const commonItemMedia = createItemMediaClient();
 export const itemMedia = {
   async getItemImage(itemId:number,variant:ImageVariant='thumbnail'):Promise<ItemImage|null>{
