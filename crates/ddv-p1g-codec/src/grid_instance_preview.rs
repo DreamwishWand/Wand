@@ -1091,13 +1091,16 @@ fn saved_db04_source_projection(
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    group_pickup_for_scope(profile,plan,2,None)
+}
+fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     if plan.len()>16384{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
-    let rows=rows.as_array().filter(|a|a.len()>=2&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
         let o=v.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(CodecError::Json)?;
@@ -1108,6 +1111,7 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
     let targets=resolve_grid_mixed_targets(profile,&selections)?;
+    if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
     for (grid,ids) in by_grid{
@@ -1365,6 +1369,39 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
     Ok(std::mem::take(&mut *working))
 }
 
+/// One biome furniture replacement: preserve every unselected record and
+/// apply pickup + placement privately. The source witness is resolved on
+/// the immutable original; only ordinary leaf furniture is accepted by the
+/// existing stock transaction. No intermediate Save leaves this function.
+pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>120*1024{return Err(CodecError::Bounds);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
+ let witness=o.get("destination").ok_or(bad)?;
+ // Only the eight original Valley biome root layouts.
+ let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
+ if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
+ let d=resolve_plain_grid_destination(profile,witness)?;
+ let remove=o.get("remove").and_then(Value::as_array).ok_or(bad)?;
+ let add=o.get("add").and_then(Value::as_array).ok_or(bad)?;
+ if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ // Every new pose must target exactly the selected original grid. The
+ // plain writer rejects unsupported state, stock and occupied anchors.
+ if add.iter().any(|p|p.get("destination")!=Some(witness)){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ if !remove.is_empty(){
+  let r=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id))?;
+  working.zeroize();*working=r;
+ }
+ if !add.is_empty(){
+  let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  working.zeroize();*working=r;
+ }
+ Ok(std::mem::take(&mut *working))
+}
+
 /// Cut is a deferred relocation: no stock changes, no intermediate Save
 /// output. Same-grid objects retain their native identities; cross-grid
 /// ordinary leaves require unreferenced old and newly allocated identities.
@@ -1542,6 +1579,28 @@ mod tests{
         let mut invalid:Value=serde_json::from_slice(raw).unwrap();
         invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":5});
         assert!(group_pickup_candidate(&serde_json::to_vec(&invalid).unwrap(),&rows.to_string()).is_err());
+    }
+
+    #[test]
+    fn biome_replacement_reuses_returned_stock_and_preserves_unselected_state(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json","GridDataPath":"GridData/Villages/Village04-UrbanLevel-GridData.json","NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+        let d=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":16,"sizeY":16});
+        let mut plan=serde_json::json!({"destination":d,"remove":[{"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"}],"add":[{"itemId":"40000001","destination":d,"x":5,"y":5,"orientation":"GridOrientation_Left"}]});
+        let result=biome_furniture_candidate(raw,&plan.to_string()).unwrap();
+        let old:Value=serde_json::from_slice(raw).unwrap();let new:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(new["Player"],old["Player"]);assert_eq!(new["World"]["GridCollection"]["Grids"]["43"],old["World"]["GridCollection"]["Grids"]["43"]);
+        assert_eq!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],old["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);
+        assert!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+        assert_eq!(new["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["X"],5);
+        assert!(result.contains("\"Marker\":1e2"));
+        plan["remove"][0]["localOrdinal"]=Value::from(3);
+        assert!(biome_furniture_candidate(raw,&plan.to_string()).is_err());
+        plan["remove"][0]["localOrdinal"]=Value::from(1);
+        plan["add"][0]["x"]=Value::from(2);plan["add"][0]["y"]=Value::from(2);
+        assert!(biome_furniture_candidate(raw,&plan.to_string()).is_err());
+        plan["add"][0]["x"]=Value::from(5);plan["add"][0]["y"]=Value::from(5);
+        let mut stateful=old;stateful["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Unknown":5});
+        assert!(biome_furniture_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
     }
 
     #[test]

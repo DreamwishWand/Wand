@@ -1602,6 +1602,37 @@ try{
   await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'capture-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(captureSave))});
   const captureMap=publicWorld.locator('.mainland-overview');
   await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(1).waitFor({timeout:30000});
+  // The independent Biome test uses only source-verified native grids.
+  const biomeSave=structuredClone(captureSave);
+  biomeSave.World.GridCollection.Grids['102'].TessellationFactor=1;
+  biomeSave.World.GridCollection.Grids['102'].NextGridObjectID=3;
+  const acceptBiomeSwitch=dialog=>dialog.accept();page.on('dialog',acceptBiomeSwitch);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'biome-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(biomeSave))});}finally{page.off('dialog',acceptBiomeSwitch);}
+  await captureMap.getByRole('button',{name:'Biome家具Preset',exact:true}).click({timeout:30000});
+  const biomePanel=captureMap.locator('.biome-furniture-panel');
+  await biomePanel.getByLabel('対象Biome',{exact:true}).selectOption('Meadow');
+  const biomeSaveDownload=page.waitForEvent('download');
+  await biomePanel.getByRole('button',{name:'家具配置を保存',exact:true}).click({timeout:30000});
+  const biomeSavedDoc=JSON.parse((await readFile(await (await biomeSaveDownload).path())).toString('utf8'));
+  assert.equal(biomeSavedDoc.design.placements.length,2);
+  const biomeSubset=structuredClone(biomeSavedDoc);biomeSubset.design.placements.pop();
+  const biomeInput=biomePanel.locator('.biome-preset-input');
+  await biomeInput.setInputFiles({name:'biome-subset.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(biomeSubset))});
+  await biomePanel.getByRole('button',{name:'編集コピーを検証',exact:true}).click({timeout:30000});
+  const biomeCopy=biomePanel.getByRole('link',{name:'テスト用セーブコピーを保存',exact:true});
+  await biomeCopy.waitFor({timeout:30000});
+  const biomeOutput=await biomeCopy.evaluate(async el=>JSON.parse(await (await fetch(el.href)).text()));
+  assert.equal(Object.keys(biomeOutput.World.GridCollection.Grids['101'].Objects).length,1);
+  assert.deepEqual(biomeOutput.World.GridCollection.Grids['102'],biomeSave.World.GridCollection.Grids['102']);
+  assert.equal(biomeOutput.Player.ListInventories['0'].Inventory['40005160'].Amount,4);
+  assert.equal(await captureMap.locator('.mainland-save-object[data-area="Meadow"]').count(),2);
+  await biomePanel.getByRole('button',{name:'作業セーブに適用',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===1,{},{timeout:30000});
+  await publicWorld.locator('.checkpoint-controls').getByRole('button',{name:'元に戻す',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.mainland-save-object[data-area="Meadow"]').length===2,{},{timeout:30000});
+  page.on('dialog',acceptBiomeSwitch);
+  try{await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({name:'capture-ground.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(captureSave))});}finally{page.off('dialog',acceptBiomeSwitch);}
+  await captureMap.locator('.mainland-save-object[data-area="Meadow"]').nth(1).waitFor({timeout:30000});
   await captureMap.getByRole('button',{name:'配置を装飾設計へコピー',exact:true}).click({timeout:30000});
   const capturePanel=publicWorld.locator('.design-capture');
   await capturePanel.waitFor({timeout:30000}).catch(async error=>{throw Error('Capture did not open: '+(await publicWorld.innerText()).slice(0,2000),{cause:error});});
