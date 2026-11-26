@@ -11,17 +11,17 @@ const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'
 // These plans are authored exclusively by the existing editor and revalidated
 // by the same Rust writer at replay. Reject non-JSON data, blobs, unexpected
 // top-level fields and dangerous object keys before any persistence.
-function plain(v:unknown,depth=0,arrayLimit=2048):boolean{
- if(depth>16)return false;
+function plain(v:unknown,depth=0,arrayLimit=2048,depthLimit=16):boolean{
+ if(depth>depthLimit)return false;
  if(v===null||typeof v==='boolean'||typeof v==='string'&&v.length<=1024||typeof v==='number'&&Number.isSafeInteger(v))return true;
- if(Array.isArray(v))return v.length<=arrayLimit&&v.every(x=>plain(x,depth+1,arrayLimit));
- return object(v)&&(Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null)&&Object.keys(v).length<=64&&Object.entries(v).every(([k,x])=>!['__proto__','constructor','prototype'].includes(k)&&/^[A-Za-z][A-Za-z0-9_]*$/.test(k)&&plain(x,depth+1,arrayLimit));
+ if(Array.isArray(v))return v.length<=arrayLimit&&v.every(x=>plain(x,depth+1,arrayLimit,depthLimit));
+ return object(v)&&(Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null)&&Object.keys(v).length<=64&&Object.entries(v).every(([k,x])=>!['__proto__','constructor','prototype'].includes(k)&&/^[A-Za-z][A-Za-z0-9_]*$/.test(k)&&plain(x,depth+1,arrayLimit,depthLimit));
 }
 export function parseReplayStep(v:unknown):WorldReplayStep{
  if(!object(v)||!COMMANDS.includes(v.command as ReplayCommand)||Object.keys(v).some(k=>!['command','plan','destination'].includes(k))||
- !v.plan||typeof v.plan!=='object'||!plain(v.plan,0,(v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?4608:2048)||'destination'in v&&(v.command!=='furniture-stock-export'||!plain(v.destination)))throw Error('CHECKPOINT_STEP');
+ !v.plan||typeof v.plan!=='object'||!plain(v.plan,0,(v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?4608:2048,(v.command==='biome-decoration-export'||v.command==='island-decoration-export')?40:16)||'destination'in v&&(v.command!=='furniture-stock-export'||!plain(v.destination)))throw Error('CHECKPOINT_STEP');
  const step={command:v.command as ReplayCommand,plan:v.plan,...('destination'in v?{destination:v.destination}:{})};
- const text=JSON.stringify(step);if(text.length>((v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?v.command==='island-decoration-export'?3_500_000:1_500_000:MAX_STEP))throw Error('CHECKPOINT_STEP_LIMIT');return JSON.parse(text) as WorldReplayStep;
+ const text=JSON.stringify(step);if(text.length>((v.command==='biome-network-export'||v.command==='biome-decoration-export'||v.command==='island-decoration-export')?v.command==='island-decoration-export'?3_500_000:1_500_000:(v.command==='biome-furniture-export'||v.command==='island-furniture-export')?1_500_000:MAX_STEP))throw Error('CHECKPOINT_STEP_LIMIT');return JSON.parse(text) as WorldReplayStep;
 }
 export function parseCheckpointJournal(v:unknown):CheckpointJournal{
  if(!object(v)||Object.keys(v).length!==3||!Array.isArray(v.steps)||!v.steps.length||v.steps.length>MAX_REPLAY_STEPS||

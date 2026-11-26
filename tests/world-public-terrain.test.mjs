@@ -799,3 +799,15 @@ test('support-aware area presets preserve unchanged roots and count all children
  assert.equal(reviewBiomeDecoration(grid,grids,rasters,[p],0,[],incoming,defs,stock),null);
  const invalid=JSON.parse(capture.text);invalid.supports[0].scene.ownerItemId=child;assert.throws(()=>parseBiomeDecoration(JSON.stringify(invalid),grid));
 });
+
+test('area preview supports more than 128 changed roots without relaxing the group operation bound',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bundle.grids.map(bindMainlandGrid);
+ const g=grids.find(g=>g.key==='Meadow'),rasters=new Map(grids.map(x=>[x.key,{sizeX:x.sizeX,sizeY:x.sizeY,nativeFloorValues:new Uint32Array(x.sizeX*x.sizeY).fill(x.key==='Meadow'?1:0)}]));
+ const id=40005160,shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1};
+ const defs=new Map([[id,{itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[id+':8']:shape}}]]);
+ const incoming=Array.from({length:160},(_,i)=>({id:i+1,itemId:id,x:i%20+1,y:Math.floor(i/20)+1,orientation:2}));
+ const q=reviewBiomeDecoration(g,grids,rasters,[],0,[],{furniture:incoming,network:[]},defs,new Map([[id,160]]));
+ assert(q);assert.equal(q.furniture.changeCount,160);assert.equal(q.plan.furniture.add.length,160);assert.deepEqual(q.missing,[]);
+ const shortage=reviewBiomeDecoration(g,grids,rasters,[],0,[],{furniture:incoming,network:[]},defs,new Map([[id,159]]));assert(shortage);assert.deepEqual(shortage.missing,[{itemId:id,quantity:1}]);
+ assert.equal(reviewBiomeDecoration(g,grids,rasters,[],0,[],{furniture:[...incoming,{...incoming[0],id:161}],network:[]},defs,new Map([[id,161]])),null);
+});

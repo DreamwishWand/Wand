@@ -9,7 +9,7 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 import {groupPickupPlan,type GroupPickupRow} from './group-pickup.ts';
 import {supportSceneRootCounts,type SupportScene} from './support-scene.ts';
-export const BIOME_CHANGE_LIMIT=128;
+export const BIOME_CHANGE_LIMIT=2048;
 export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:(GroupPasteRow&{scene?:SupportScene})[]}
 const eligible=(p:MainlandSavedObject)=>stockSourceEligible(p);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
@@ -48,7 +48,7 @@ export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly Mainl
  const missing=[...required].filter(([id,n])=>(capacity.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(capacity.get(itemId)??0)}));
  const geometry:GroupGeometry=new Map([...defs].map(([id,d])=>[id,new Map([[grid.factor,d]])]));
  const positions=added.map(p=>({itemId:p.itemId,...mainlandMapAnchor(grid,p.x,p.y),orientation:p.orientation}));
- const q:GroupPasteCandidate|null=added.length?groupAbsoluteCandidate(positions,grids,rasters,geometry,required,remaining,omitted):{rows:[],ghosts:[]};
+ const q:GroupPasteCandidate|null=added.length?groupAbsoluteCandidate(positions,grids,rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT):{rows:[],ghosts:[]};
  if(!q||q.ghosts.some(p=>p.area!==grid.key))return null;
  const destination:StockDestination={layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY};
  const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!,...(supports?.before.has(p.object.localOrdinal)?{includeSupport:true as const}:{})})).sort((a,b)=>a.localOrdinal-b.localOrdinal);

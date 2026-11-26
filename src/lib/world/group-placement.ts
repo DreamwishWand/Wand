@@ -64,8 +64,8 @@ export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:numb
 export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
 /** All poses share map coordinates; each independently resolves its exact
  * source Grid. The bounding rectangle's empty corner need not be on land. */
-export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number):GroupPasteCandidate|null{
- if(!poses.length||poses.length>WORLD_BATCH_LIMIT||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT):GroupPasteCandidate|null{
+ if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
   const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3)return null;
