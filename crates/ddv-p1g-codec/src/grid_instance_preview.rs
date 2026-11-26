@@ -1118,7 +1118,7 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
     let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
     group_pickup_for_scope(profile,plan,if single{1}else{2},None)
 }
-fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize)->Result<(),CodecError>{
+fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize,limit:usize)->Result<(),CodecError>{
  let bad=CodecError::Json;
  if depth>8{return Err(bad);}
  let child=grids.get(grid).and_then(|g|g.get("Objects")).and_then(|o|o.get(object)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
@@ -1126,17 +1126,20 @@ fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,ob
  let objects=grids.get(&child).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
  let ids:Vec<_>=objects.keys().cloned().collect();
  if !ids.is_empty(){let refs=grid_identity_dependencies_for_ids(profile,&child,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
- for (id,v) in objects{*total+=1;if *total>MAX_SCENE_FURNITURE{return Err(bad);}if v.get("State").and_then(|s|s.get("SubGrid")).is_some(){support_pickup_references(profile,grids,&child,id,seen,total,depth+1)?;}}
+ for (id,v) in objects{*total+=1;if *total>limit{return Err(bad);}if v.get("State").and_then(|s|s.get("SubGrid")).is_some(){support_pickup_references(profile,grids,&child,id,seen,total,depth+1,limit)?;}}
  Ok(())
 }
 fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>)->Result<String,CodecError>{
+    group_pickup_bounded(profile,plan,minimum,scope,ddv_save_patch::MAX_GRID_MIXED_EDITS)
+}
+fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>,limit:usize)->Result<String,CodecError>{
     use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
-    if plan.len()>65536{return Err(CodecError::Bounds);}
+    if plan.len()>if limit>MAX_SCENE_FURNITURE{1_000_000}else{65536}{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(CodecError::Json);}
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
-    let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=limit).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
         let o=v.as_object().filter(|o|(o.len()==5||o.len()==6&&o.get("includeSupport").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"))).ok_or(CodecError::Json)?;
@@ -1167,15 +1170,15 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
       let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
       let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":target.item_id,"tree":tree});
       checked_support_scene(target.item_id,&scene)?;
-      support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0)?;
+      support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0,limit)?;
       if grid_identity_dependencies(profile,target)?.historical>0{return Err(CodecError::Json);}
     }
-    if support_flags.iter().any(|v|*v)&&tree_count>MAX_SCENE_FURNITURE||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
+    if support_flags.iter().any(|v|*v)&&tree_count>limit||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
     if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
     for (grid,ids) in by_grid{
-        if grid_identity_dependencies_for_ids(profile,&grid,&ids)?.blocking()>0{return Err(CodecError::Json);}
+        for chunk in ids.chunks(512){if grid_identity_dependencies_for_ids(profile,&grid,chunk)?.blocking()>0{return Err(CodecError::Json);}}
     }
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let mut stock=HashMap::<u64,u32>::new();
@@ -1343,9 +1346,12 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
 /// One private staging transaction. Reuse the same exact destination and
 /// allocator checks for each root and never expose a partially placed scene.
 fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
+    mixed_scene_bounded(profile,value,MAX_SCENE_FURNITURE)
+}
+fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=MAX_SCENE_FURNITURE).ok_or(bad)?;
+    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=limit).ok_or(bad)?;
     let mut total=0usize;
     let mut anchors=HashSet::new();
     fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
@@ -1368,7 +1374,7 @@ fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
             let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
             total+=subtree-1;
         }
-        if total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
+        if total>limit{return Err(CodecError::Bounds);}
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for row in rows{
@@ -1389,14 +1395,17 @@ fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
     Ok(std::mem::take(&mut *working))
 }
 fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
+    plain_group_paste_bounded(profile,plan,ddv_save_patch::MAX_GRID_MIXED_EDITS)
+}
+fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String,CodecError>{
     use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    if plan.len()>120*1024{return Err(CodecError::Bounds);}
+    if plan.len()>if limit>MAX_SCENE_FURNITURE{2_000_000}else{120*1024}{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
-    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=limit).ok_or(bad)?;
     let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
@@ -1441,10 +1450,11 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
 /// apply pickup + placement privately. The source witness is resolved on
 /// the immutable original; only ordinary leaf furniture is accepted by the
 /// existing stock transaction. No intermediate Save leaves this function.
+const MAX_AREA_FURNITURE_CHANGES:usize=2048;
 pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
- if plan.len()>120*1024{return Err(CodecError::Bounds);}
+ if plan.len()>2_000_000{return Err(CodecError::Bounds);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
  let witness=o.get("destination").ok_or(bad)?;
@@ -1454,17 +1464,17 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
  let d=resolve_plain_grid_destination(profile,witness)?;
  let remove=o.get("remove").and_then(Value::as_array).ok_or(bad)?;
  let add=o.get("add").and_then(Value::as_array).ok_or(bad)?;
- if remove.len()+add.len()==0||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ if remove.len()+add.len()==0||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  // Every new pose must target exactly the selected original grid. The
  // plain writer rejects unsupported state, stock and occupied anchors.
  if add.iter().any(|p|p.get("destination")!=Some(witness)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
-  let r=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id))?;
+  let r=group_pickup_bounded(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id),MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=r;
  }
  if !add.is_empty(){
-  let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  let r=plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=r;
  }
  Ok(std::mem::take(&mut *working))
@@ -1495,7 +1505,7 @@ pub(super) fn island_decoration_candidate(profile:&[u8],plan:&str)->Result<Strin
 fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
- if plan.len()>if decoration{6_000_000}else{120*1024}{return Err(CodecError::Bounds);}
+ if plan.len()>if decoration{6_000_000}else{2_000_000}{return Err(CodecError::Bounds);}
  let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
  let (scan,_)=scan_grid_instances(profile)?;
@@ -1535,11 +1545,11 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
  if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
- if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
-  let r=group_pickup_for_scope(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None)?;
+  let r=group_pickup_bounded(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None,MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=r;
  }
  for n in networks{
@@ -1547,7 +1557,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let r=if decoration&&add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)}?;
+  let r=if decoration&&add.iter().any(|r|r.get("scene").is_some()){mixed_scene_bounded(working.as_bytes(),&Value::Array(add.clone()),MAX_AREA_FURNITURE_CHANGES)}else{plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)}?;
   working.zeroize();*working=r;
  }
  Ok(std::mem::take(&mut *working))
@@ -2578,11 +2588,11 @@ pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,Co
 fn check_area_support_change_count(profile:&[u8],remove:&[Value],add:&[Value])->Result<(),CodecError>{
  let bad=CodecError::Json;
  let mut total=remove.len()+add.len();
- if total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
+ if total>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  fn count(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
   if depth>8{return Err(CodecError::Bounds);}
   for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{
-   *total+=1;if *total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
+   *total+=1;if *total>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
    let c=o.get("child").ok_or(CodecError::Json)?;if !c.is_null(){count(c,total,depth+1)?;}
   }Ok(())
  }
@@ -2613,7 +2623,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  let dest=area_network_destination(profile,witness)?;
  let remove=f.get("remove").and_then(Value::as_array).ok_or(bad)?;
  let add=f.get("add").and_then(Value::as_array).ok_or(bad)?;
- if remove.len()+add.len()>128||add.iter().any(|a|a.get("destination")!=Some(witness)){return Err(bad);}
+ if remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES||add.iter().any(|a|a.get("destination")!=Some(witness)){return Err(bad);}
  let before=parse_area_network_poses(n.get("before").ok_or(bad)?)?;
  let after=parse_area_network_poses(n.get("after").ok_or(bad)?)?;
  let actual=parse_area_network_poses(&Value::Array(area_network_rows(profile,&dest)?))?;
@@ -2626,7 +2636,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  check_area_support_change_count(profile,remove,add)?;
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
-  let next=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&dest.grid_id))?;
+  let next=group_pickup_bounded(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&dest.grid_id),MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=next;
  }
  if old!=desired{
@@ -2634,7 +2644,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let next=if add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)}?;
+  let next=if add.iter().any(|r|r.get("scene").is_some()){mixed_scene_bounded(working.as_bytes(),&Value::Array(add.clone()),MAX_AREA_FURNITURE_CHANGES)}else{plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)}?;
   working.zeroize();*working=next;
  }
  Ok(std::mem::take(&mut *working))
