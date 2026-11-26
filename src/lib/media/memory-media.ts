@@ -48,6 +48,7 @@ export function createMemoryMediaReader(input:unknown,version='1.26.2'){
   return {get:(id:number)=>rows.get(id)??null};
 }
 const reader=createMemoryMediaReader(release);
+export function memoryItemIds():readonly number[]{return Object.keys(release.items).map(Number).sort((a,b)=>a-b);}
 export function getMemorySources(itemId:number):MemorySources|null{return reader.get(itemId);}
 export function getMemoryImage(itemId:number,variant:ImageVariant='thumbnail'):ItemImage|null{
   if(variant!=='original'&&variant!=='thumbnail')return null;

@@ -28,6 +28,8 @@ export interface CollectionEntry {
   quantity?: number;
   discovered?: boolean;
   favorite?: boolean;
+  /** Manual Memory shape bits, independent of unverified native Save flags. */
+  memoryPieces?:number;
 }
 
 /** Internal projection produced only after a decoder has verified the save
@@ -560,7 +562,7 @@ export class CollectionRuntime {
       this.busy = false;
     }
   }
-  setEntry(itemId: number,patch: {status?: 'owned'|'missing'|null; quantity?:number|null; discovered?:boolean|null; favorite?:boolean|null}):Promise<void> {
+  setEntry(itemId: number,patch: {status?: 'owned'|'missing'|null; quantity?:number|null; discovered?:boolean|null; favorite?:boolean|null; memoryPieces?:number}):Promise<void> {
     return this.mutate(() => this.engine.set_entry(BigInt(itemId),JSON.stringify(patch)));
   }
   setBulk(ids:number[],status:'owned'|'missing'|'unknown'):Promise<void> {

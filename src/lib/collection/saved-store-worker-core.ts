@@ -11,6 +11,7 @@ import {parseSafeJson} from './safe-profile-json.mjs';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
+import type {SavedMemoryFlags} from '../media/saved-memory-flags.ts';
 import type {SavedCollectionDiscoveryProjection} from './saved-collection-discovery.ts';
 import { projectPositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
 import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
@@ -18,7 +19,7 @@ import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-refe
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 export type SaveDiscoveryProjector=
-  (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection>;
+  (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection & {memoryFlags?:SavedMemoryFlags}>;
 
 export async function inspectEncryptedSavedStore(
   ciphertext: Uint8Array,
@@ -49,6 +50,7 @@ async function projectSavedRoot(
     summary: createSavedStorePreview(evidence, []),
     collection: createSavedCollectionPresence(root),
     discovery: projectedDiscovery,
+    ...(projectedDiscovery.memoryFlags?{memoryFlags:projectedDiscovery.memoryFlags}:{}),
     positiveOwnership: projectPositiveListInventoryOwnership(root),
     gridFurniture: projectSavedGridFurnitureReferences(root)
   });

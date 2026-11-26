@@ -46,7 +46,14 @@ try{
       if(g.getError()!==g.NO_ERROR)throw Error('GPU operation failed');
       return Array.from({length:4},(_,j)=>Array.from(pixels.slice(4*j,4*j+3)));
     }
-    return {first:draw(1,'mask'),green:draw(512,'mask'),inverted:draw(1022,'mask',true),show:draw(1,'show')};
+    const first=draw(1,'mask'),green=draw(512,'mask'),inverted=draw(1022,'mask',true),show=draw(1,'show');
+    // Outline-only path binds the contour to the unused mask sampler. All
+    // bits are selected only to force zero intersection, not to infer progress.
+    i('maskTex',2);
+    const contours=draw(1023,'mask',true);
+    i('collectionContours',1);
+    const blueContours=draw(1023,'mask',true);
+    return {first,green,inverted,show,contours,blueContours};
   },{vertex:memoryPreviewVertex,fragment:memoryPreviewFragment,materials:PUZZLE_MATERIALS});
   const art=[200,100,50],black=[0,0,0];
   assert.deepEqual(result.first,[black,art,art,black]);
@@ -54,5 +61,10 @@ try{
   assert.deepEqual(result.green.slice(0,3),[art,art,black]);
   assert.ok(result.green[3].every((v,i)=>Math.abs(v-art[i]*128/255)<=1),'contour interpolation');
   assert.deepEqual(result.show,[art,art,art,art]);
+  assert.deepEqual(result.contours.slice(0,3),[art,art,art]);
+  assert.ok(result.contours[3].every((v,i)=>Math.abs(v-art[i]*128/255)<=1),'standalone contour without mask');
+  assert.deepEqual(result.blueContours.slice(0,3),[art,art,art]);
+  const blue=[.38*255,.75*255,255];
+  assert.ok(result.blueContours[3].every((v,i)=>Math.abs(v-(art[i]*128/255+blue[i]*127/255))<=1),'blue original boundary without Save');
   console.log('Memory Puzzle GPU smoke passed (synthetic textures; not game runtime parity)');
 }finally{await browser.close();}
