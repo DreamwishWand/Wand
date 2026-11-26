@@ -148,3 +148,14 @@ test('portable mixed indoor Scene preserves support closure and charges child st
  assert.equal(captureIndoorMixedScene(full,[0,1],shapes,allowed,new Map()),null);
  assert.equal(indoorMixedPlacement(full,shapes,allowed,stock,clip,scene,'corner',1,1),null);
 });
+
+test('room cut carries support witness only to matching native factor',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)};
+ const source={...face,positions:[{itemId:40000001,x:1,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape},allowed=new Set([40000001]);
+ const group=captureIndoorCut(source,1,[0],shapes,allowed,allowed,new Set([0]));
+ assert.equal(group.rows[0].supportFactor,1);
+ const dest={...source,positions:[]};
+ assert.equal(indoorGroupTransfer(dest,shapes,allowed,group.rows,group.clip,2,2)[0].supportFactor,1);
+ assert.equal(indoorGroupTransfer({...dest,factor:2},shapes,allowed,group.rows,group.clip,2,2),null);
+});
