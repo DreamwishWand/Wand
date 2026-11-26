@@ -111,6 +111,7 @@ export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly Mainland
    if(hits.length!==1||hits[0].key!==g.key){valid=false;break outer;}
   }
  }
+ if(valid&&p.object.nativeType==='Building'&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)valid=false;
  if(geometryOnly)return {...anchor,shape,valid,next:null};
  const next=valid?stageWorldEdit(m,timeline,p.object.localOrdinal,x,y,orientation,terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length?'原本地形属性不一致候補・衝突未判定':'衝突・上下関係未判定'):null;
  return {...anchor,shape,valid:!!next,next};
