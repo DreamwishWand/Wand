@@ -1144,8 +1144,18 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
         let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
-    let targets=resolve_grid_mixed_targets(profile,&selections)?;
     let support_flags:Vec<_>=rows.iter().map(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)).collect();
+    // The ordinary resolver deliberately rejects support parents. Resolve
+    // only explicitly marked support roots here, without weakening it.
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+    let mut selected=HashSet::new();let mut targets=Vec::new();
+    for ((ordinal,item,expected,_,orientation),flag) in selections.iter().zip(&support_flags){
+      if *ordinal==0||!selected.insert(*ordinal)||scan.subgrid_parents.contains(ordinal)!=*flag{return Err(CodecError::Json);}
+      let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(CodecError::Json)?;
+      if target.kind!=GridObjectKind::Full||target.item_id!=*item||*xy!=Some(*expected)||scan.rows.get(ordinal-1).and_then(|r|r.get("orientation")).and_then(Value::as_str)!=orientation.as_deref(){return Err(CodecError::Json);}
+      targets.push(target.clone());
+    }
     let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
     let mut tree_count=0usize;let mut child_ids=HashSet::new();
@@ -1158,7 +1168,7 @@ fn group_pickup_for_scope(profile:&[u8],plan:&str,minimum:usize,scope:Option<&st
       support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0)?;
       if grid_identity_dependencies(profile,target)?.historical>0{return Err(CodecError::Json);}
     }
-    if tree_count>MAX_SCENE_FURNITURE||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
+    if support_flags.iter().any(|v|*v)&&tree_count>MAX_SCENE_FURNITURE||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
     if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
