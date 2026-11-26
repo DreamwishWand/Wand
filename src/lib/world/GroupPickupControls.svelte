@@ -5,14 +5,15 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {groupPickupPlan,groupPickupWords,supportPickupWords} from './group-pickup.ts';
+ import {groupPickupPlan,groupPickupWords,supportPickupWords,type GroupPickupRow} from './group-pickup.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let items:readonly MainlandSavedObject[]=[],file:File|null=null,locale:WandLanguage='ja',blocked=false,active=false;
  export let onApplied:()=>void=()=>{};
+ export let roomPlan:readonly GroupPickupRow[]|null=null;
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,error=false,source:File|null=null,expected='';
- $: plan=groupPickupPlan(items);
+ $: plan=roomPlan??groupPickupPlan(items);
  $: key=JSON.stringify(plan);
  $: w=groupPickupWords[locale];$: sw=supportPickupWords[locale];$: includesSupport=!!plan?.some(p=>p.includeSupport);
  $: cw=checkpointWords[locale];
@@ -35,7 +36,7 @@
  <div class="group-pickup">
   {#if !active}<button type="button" title={includesSupport?sw[1]:w[1]} disabled={blocked||!plan} on:click={prepare}>{includesSupport?sw[0]:w[0]}</button>{/if}
   {#if worker}<small role="status">{w[2]}</small>{/if}
-  {#if copy}{#if includesSupport}<small>{sw[1]}</small>{/if}<small role="status">{w[3]} · {items.length}</small><small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
+  {#if copy}{#if includesSupport}<small>{sw[1]}</small>{/if}<small role="status">{w[3]} · {plan?.length??0}</small><small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
   {#if active}<button type="button" on:click={cancel}>{w[5]}</button>{/if}
   {#if error}<small role="alert">{w[4]}</small>{/if}
  </div>
