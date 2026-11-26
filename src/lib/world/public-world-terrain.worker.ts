@@ -171,6 +171,11 @@ scope.onmessage=async({data})=>{
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
       scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
     }
+    if(data.command==='room-project-names'){
+      if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>0))throw Error('room names');
+      const ids=new Set(data.itemIds),names=await (await getMaster()).getBrowseNames(data.locale as WandLanguage);
+      scope.postMessage({kind:data.command,requestId:id,names:names.filter(([itemId])=>ids.has(itemId))});return;
+    }
     if(data.command==='room-finish-catalog'){
       if(!release||!['floor','wall'].includes(data.kind))throw Error('finish kind');
       const kind=data.kind as RoomFinishKind,locale=data.locale as WandLanguage,db=await getMaster();

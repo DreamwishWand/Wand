@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {roomDesignTemplates} from '../src/lib/world/room-design.ts';
+import {newRoomSurface,serializeRoomProject,parseRoomProject,roomProjectCounts} from '../src/lib/world/room-project-design.ts';
+const templates=roomDesignTemplates(JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/room-terrain.json',import.meta.url),'utf8')));
+const floor=templates.find(t=>t.kind==='floor'),wall=templates.find(t=>t.kind==='wall');
+const owner=40000001,child=40000002;
+const root={id:1,itemId:owner,x:0,y:0,orientation:2,attachment:{scene:{schema:'wand.preset.support-scene@1',gameVersion:'1.26.2',ownerItemId:owner,tree:{factor:2,sourcePath:'GridData/Furniture/Test-GridData.json',objects:[{itemId:child,x:0,y:0,orientation:'GridOrientation_Down',child:null}]}},designOnly:true}};
+const timeline=p=>({snapshots:[p],cursor:0,nextId:2});
+test('room project preserves independent walls with equal templates, finishes and support attachments',()=>{
+ const surfaces=[{...newRoomSurface(1,floor),timeline:timeline([root]),finish:160100001},{...newRoomSurface(2,wall),timeline:timeline([{id:1,itemId:child,x:0,y:0,orientation:2}]),finish:160000001},{...newRoomSurface(3,wall),finish:160000001}];
+ const raw=serializeRoomProject(surfaces,3),doc=parseRoomProject(raw,templates);
+ assert.equal(doc.selected,3);assert.equal(doc.surfaces.length,3);assert.equal(doc.surfaces[1].template.grid.key,doc.surfaces[2].template.grid.key);
+ assert.equal(doc.surfaces[1].timeline.snapshots[0].length,1);assert.equal(doc.surfaces[2].timeline.snapshots[0].length,0);
+ assert.deepEqual(doc.surfaces[0].timeline.snapshots[0][0].attachment,root.attachment);
+ assert.deepEqual(roomProjectCounts(doc.surfaces),{furniture:new Map([[child,2],[owner,1]]),finishes:new Map([[160100001,1],[160000001,2]])});
+ assert.deepEqual(JSON.parse(serializeRoomProject(doc.surfaces,doc.selected)),JSON.parse(raw));
+ const bad=JSON.parse(raw);bad.surfaces[2].id=2;assert.throws(()=>parseRoomProject(JSON.stringify(bad),templates));
+ const mismatch=JSON.parse(raw);mismatch.surfaces[1].design.roomFinish=160100001;assert.throws(()=>parseRoomProject(JSON.stringify(mismatch),templates));
+ const foreign=JSON.parse(raw);foreign.surfaces[0].design.grid.sizeX++;assert.throws(()=>parseRoomProject(JSON.stringify(foreign),templates));
+ assert.throws(()=>parseRoomProject(serializeRoomProject([newRoomSurface(1,wall)],1),templates));
+});
