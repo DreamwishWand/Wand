@@ -327,21 +327,30 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    if xy==expected&&old==orientation{return Err(bad);}
    if xy!=expected&&(!on_terrain(expected)||!on_terrain(xy)||!empty_anchor(xy,Some(target.object_id.as_str()))){return Err(bad);}
    if terrain.is_some()&&(!on_terrain(expected)||!on_terrain(xy)){return Err(bad);}
-  }else if xy==expected||old!=orientation{return Err(bad);}
+  }else if xy==expected&&old==orientation{return Err(bad);}
   edits.push(GridMixedEdit{target,expected,position:(xy!=expected).then_some(xy),orientation:(old!=orientation).then(||(old,orientation.to_owned()))});
  }
  if edits.len()>1{
-  let swap=edits.len()==2&&edits[0].position==Some(edits[1].expected)&&edits[1].position==Some(edits[0].expected);
+  let swap=edits.len()==2&&edits.iter().all(|e|e.orientation.is_none())&&edits[0].position==Some(edits[1].expected)&&edits[1].position==Some(edits[0].expected);
   if !swap{
-   let first=edits[0].position.ok_or(bad)?;
+   let turn=|e:&GridMixedEdit|->Option<usize>{
+    let (a,b)=e.orientation.as_ref()?;
+    let names=ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS;
+    let before=names.iter().position(|v|*v==a.as_str())?;
+    let after=names.iter().position(|v|*v==b.as_str())?;
+    Some((after+4-before)%4)
+   };
+   let rotation=turn(&edits[0]);
+   if rotation.is_some_and(|n|!matches!(n,1|3)){return Err(bad);}
+   let first=edits[0].position.unwrap_or(edits[0].expected);
    let delta=(i64::from(first.0)-i64::from(edits[0].expected.0),i64::from(first.1)-i64::from(edits[0].expected.1));
    let selected:std::collections::HashSet<_>=edits.iter().map(|e|e.target.object_id.as_str()).collect();
    if selected.len()!=edits.len(){return Err(bad);}
    let mut anchors=std::collections::HashSet::new();
    for e in &edits{
-    let xy=e.position.ok_or(bad)?;
-    if e.orientation.is_some()||!on_terrain(e.expected)||!on_terrain(xy)||
-       (i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))!=delta||
+    let xy=e.position.unwrap_or(e.expected);
+    if turn(e)!=rotation||!on_terrain(e.expected)||!on_terrain(xy)||
+       rotation.is_none()&&(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))!=delta||
        !anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
    }
   }
@@ -467,6 +476,14 @@ mod tests{
   p["edits"][0]["x"]=3.into();p["edits"][1]["x"]=4.into();
   assert!(furniture_candidate(raw,&p.to_string()).is_err());
   p["edits"][0]["x"]=2.into();p["edits"][1]["x"]=5.into();
+  assert!(furniture_candidate(raw,&p.to_string()).is_err());
+  p["edits"][0]["x"]=1.into();p["edits"][1]["x"]=1.into();p["edits"][1]["y"]=2.into();
+  p["edits"][0]["orientation"]="GridOrientation_Right".into();p["edits"][1]["orientation"]="GridOrientation_Right".into();
+  let d=furniture_candidate(raw,&p.to_string()).unwrap();
+  let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["Y"],2);
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["Orientation"],"GridOrientation_Right");
+  p["edits"][1]["orientation"]="GridOrientation_Left".into();
   assert!(furniture_candidate(raw,&p.to_string()).is_err());
  }
  #[test]
