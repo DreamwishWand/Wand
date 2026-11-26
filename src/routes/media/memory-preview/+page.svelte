@@ -4,6 +4,7 @@
   import {MASK_PREVIEW_EVIDENCE,maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
   import {openMaskPreview,type MaskPreview} from '$lib/media/memory-mask-preview';
 
+  import {PUZZLE_MATERIALS,type PuzzleMaterial} from '$lib/media/memory-puzzle-formula';
   let canvas:HTMLCanvasElement;
   let itemId=130000001;
   let source:MemorySources|null=null;
@@ -11,6 +12,10 @@
   let nativeFormula=true;
   let artworkSlot0=false;
   let invertFlags=true;
+  let material:PuzzleMaterial='mask';
+  let opacity:number=PUZZLE_MATERIALS.mask.alpha;
+  let linearMask=false;
+  function selectMaterial(value:PuzzleMaterial){material=value;opacity=PUZZLE_MATERIALS[value].alpha;redraw();}
   let error='';
   let loading=false;
   let renderer:MaskPreview|null=null;
@@ -18,7 +23,7 @@
   $: evidence=source?memoryMaskEvidence(source.mask.sha256,source.numberOfShards):null;
   $: eligible=source!==null&&memoryMaskEvidence(source.mask.sha256,source.numberOfShards)!==null;
   function redraw(){
-    try{renderer?.draw(selected,nativeFormula,artworkSlot0,invertFlags);}catch(e){error=e instanceof Error?e.message:String(e);}
+    try{renderer?.draw(selected,nativeFormula,artworkSlot0,invertFlags,material,opacity,linearMask);}catch(e){error=e instanceof Error?e.message:String(e);}
   }
   async function load(id:number){
     controller?.abort();renderer?.dispose();renderer=null;
@@ -42,7 +47,7 @@
 </svelte:head>
 <main class="preview">
   <h1>Memory mask preview</h1>
-  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Texture slot assignment, sampler state, tint, and saved-bit polarity are candidate inputs. No Save is loaded or modified.</p>
+  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Serialized Material tint, alpha and blend are source-derived. Texture slot assignment, sampler state, runtime opacity and saved-bit polarity remain candidate inputs. No Save is loaded or modified.</p>
   <label>Representative Memory
     <select value={itemId} on:change={(event)=>void load(Number(event.currentTarget.value))}>
       {#each MASK_PREVIEW_EVIDENCE as row}
@@ -63,7 +68,16 @@
       <button type="button" on:click={()=>{selected=2**(source?.numberOfShards??0)-1;redraw();}}>All</button>
       <label><input type="checkbox" checked={nativeFormula} on:change={(event)=>{nativeFormula=event.currentTarget.checked;redraw();}}/> Native fragment arithmetic</label>
       {#if nativeFormula}
-        <label><input type="checkbox" checked={artworkSlot0} on:change={(event)=>{artworkSlot0=event.currentTarget.checked;redraw();}}/> Use artwork in candidate t0 slot</label>
+        <label>Material
+          <select value={material} on:change={(event)=>selectMaterial(event.currentTarget.value==='show'?'show':'mask')}>
+            <option value="mask">mat_Puzzle_mask</option>
+            <option value="show">mat_Puzzle_show</option>
+          </select>
+        </label>
+        <label>Opacity <input type="range" min="0" max="1" step="0.01" value={opacity} on:input={(event)=>{opacity=Number(event.currentTarget.value);redraw();}}/> {opacity.toFixed(2)}</label>
+        <button type="button" on:click={()=>{selected=PUZZLE_MATERIALS[material].pieces&((2**(source?.numberOfShards??0))-1);invertFlags=false;opacity=PUZZLE_MATERIALS[material].alpha;redraw();}}>Serialized flags (within piece count)</button>
+        <label><input type="checkbox" checked={linearMask} on:change={(event)=>{linearMask=event.currentTarget.checked;redraw();}}/> Linear mask sampling (candidate)</label>
+        <label><input type="checkbox" checked={artworkSlot0} on:change={(event)=>{artworkSlot0=event.currentTarget.checked;redraw();}}/> Use artwork instead of black in candidate t0 slot</label>
         <label><input type="checkbox" checked={invertFlags} on:change={(event)=>{invertFlags=event.currentTarget.checked;redraw();}}/> Invert selected flags (candidate)</label>
       {/if}
     </div>
