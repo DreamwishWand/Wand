@@ -1194,11 +1194,12 @@ pub(super) fn inspect_scene_network(profile:&[u8],plan:&str)->Result<String,Code
 }
 /// Stage networks and furniture together, preserving stock semantics.
 /// No intermediate candidate is returned even if a later network fails.
+const MAX_SCENE_FURNITURE:usize=128;
 fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  use ddv_save_patch::fence_topology::{FencePart,decompile_fence,compile_fence_with_posts};
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
- if rows.is_empty()||rows.len()>416{return Err(bad);}
+ if rows.is_empty()||rows.len()>MAX_SCENE_FURNITURE+256+128{return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let mut ordinary=Vec::new();
@@ -1227,7 +1228,7 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
    },_=>return Err(bad)
   }
  }
- if ordinary.len()>32||roads.values().map(Vec::len).sum::<usize>()>256||fences.values().map(Vec::len).sum::<usize>()>128{return Err(bad);}
+ if ordinary.len()>MAX_SCENE_FURNITURE||roads.values().map(Vec::len).sum::<usize>()>256||fences.values().map(Vec::len).sum::<usize>()>128{return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !ordinary.is_empty(){let draft=group_paste_candidate(profile,&serde_json::to_string(&ordinary).map_err(|_|bad)?)?;working.zeroize();*working=draft;}
  let install=|working:&mut Zeroizing<String>,d:&ddv_save_patch::PlainGridDestination,mut draft:ddv_save_patch::GridCoordinateDraft,count:usize|->Result<(),CodecError>{
@@ -1272,7 +1273,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
 fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=32).ok_or(bad)?;
+    let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=MAX_SCENE_FURNITURE).ok_or(bad)?;
     let mut total=0usize;
     let mut anchors=HashSet::new();
     fn descendants(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
@@ -1290,10 +1291,12 @@ fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
         let xy=(int("x")?,int("y")?);
         let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
         if !anchors.insert((d.grid_id,xy)){return Err(bad);}
-        total+=1;if total>32{return Err(CodecError::Bounds);}
+        total+=1;
         if let Some(scene)=o.get("scene"){
-            descendants(checked_support_scene(item,scene)?,&mut total,0)?;
+            let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
+            total+=subtree-1;
         }
+        if total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for row in rows{
@@ -1317,7 +1320,7 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
     use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
-    if plan.len()>32768{return Err(CodecError::Bounds);}
+    if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
