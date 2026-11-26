@@ -6,6 +6,7 @@
  import {sessionPresets,rememberPreset,savePresetFile,downloadPresetFile,removeSessionPreset,renameSessionPreset} from '$lib/presets/preset-session.ts';
  import {presetDomain,type PresetDomain,type PresetKind,type SessionPreset} from '$lib/presets/preset-session-format.ts';
  import {readPresetText,compactPresetFile,PRESET_ACCEPT} from '$lib/presets/preset-file.ts';
+ import {createShareFile} from '$lib/presets/preset-share-file.ts';
  import {presetItems} from '$lib/presets/preset-items.ts';
  import {presetPickerWords} from '$lib/world/preset-picker-words.ts';
  import {serviceWords} from '$lib/presets/service-words.ts';
@@ -15,6 +16,7 @@
  type NativeIndex={contract:string;gameSchema:number;groups:{group:string;status:string;count:number|null}[];rows:NativeRow[];writerAuthorized:false};
  let locale:WandLanguage='ja',root:'wand'|'tom'|'game'|'my'='my',myDomain:PresetDomain='wand',view:'current'|'backups'|'published'='backups',kind:PresetKind|'all'='all',query='',selected=0,alias='',input:HTMLInputElement,reading=false,error=false;
  let job:Worker|null=null,index:NativeIndex|null=null,source:File|null=null,nativeError=false,nativeBusy=false,alive=true,epoch=0;
+ let sharing=false,shareError=false;
  let counts:Map<number,number>|null=null,images=new Map<number,string>(),names=new Map<number,string>(),packedSize:number|null=null,detailsEpoch=0,code='',purpose:'decoration'|'shop'='decoration',codeView='';
  const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21,'tom-furniture':22,'tom-clothing':23,'native-decoration':24,'decoration-code':25,'shop-code':26};
  const domains:PresetDomain[]=['wand','tom','game'];
@@ -54,6 +56,11 @@
     else throw Error('native');}catch{nativeError=true;}
   };own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command,file,ordinal});
  }
+ async function shareFile(entry:SessionPreset){
+  if(sharing||entry.domain!=='wand')return;sharing=true;shareError=false;
+  try{const packed=await createShareFile(entry.file,entry.name+'-shared',base);if(!alive)return;const url=URL.createObjectURL(packed),a=document.createElement('a');a.href=url;a.download=packed.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  catch{if(alive)shareError=true;}finally{if(alive)sharing=false;}
+ }
  function saveCode(){const value=code.trim();if(!value||value.length>128||/[\u0000-\u001f\u007f]/.test(value)){error=true;return;}savePresetFile(JSON.stringify({schema:'wand.preset.game-code@1',purpose,code:value,status:'unverified'}),'wand-'+purpose+'-code.json');code='';}
 </script>
 <svelte:head><title>Presets · Dreamwish Wand</title></svelte:head>
@@ -78,9 +85,9 @@
   {#if counts}<small>{counts.size} / {[...counts.values()].reduce((n,v)=>n+v,0)}</small><div class="item-list">{#each [...counts].slice(0,120) as [id,n] (id)}<div>{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{names.get(id)??'—'}</span><strong>×{n}</strong></div>{/each}</div>{/if}
   {#if codeView}<code>{codeView}</code><small>{w[12]}</small>{/if}
   <div class="toolbar"><input bind:value={alias} maxlength="160" aria-label={p[4]}/><button type="button" on:click={()=>{if(current&&!renameSessionPreset(current.id,alias))error=true;}}>{p[4]}</button></div>
-  <div class="toolbar"><button type="button" on:click={()=>{if(current)void downloadPresetFile(current.file,current.name).catch(()=>error=true);}}>{p[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{p[5]}</button>{#if current.domain==='wand'}<a href={base+'/world/'}>{w[9]}</a>{/if}</div></aside>{/if}</div>
+  <div class="toolbar"><button type="button" on:click={()=>{if(current)void downloadPresetFile(current.file,current.name).catch(()=>error=true);}}>{p[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{p[5]}</button>{#if current.domain==='wand'}<button type="button" disabled={sharing} on:click={()=>current&&void shareFile(current)}>{w[22]}</button><a href={base+'/world/'}>{w[9]}</a>{/if}</div></aside>{/if}</div>
  {/if}
- {#if error}<small role="alert">{p[10]}</small>{/if}
+ {#if error}<small role="alert">{p[10]}</small>{/if}{#if shareError}<small role="alert">{w[23]}</small>{/if}
 </section>
 <style>
  .preset-service{display:grid;gap:10px;padding:14px;min-width:0}h1{margin:0;font-size:1.4rem}nav,.toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}button,input,select,a{color:inherit;font:inherit}button,input,select{padding:7px;border-radius:5px;border:1px solid var(--wand-line);background:var(--wand-card)}button[aria-pressed=true]{outline:2px solid var(--wand-accent,currentColor);outline-offset:-2px}button:disabled{opacity:.5}a{padding:7px}
