@@ -1,4 +1,7 @@
 <script lang="ts">
+ import PresetFilePicker from './PresetFilePicker.svelte';
+ import {savePresetFile,rememberPreset} from './preset-session.ts';
+
  import {onDestroy} from 'svelte';
  import {biomeFurnitureSnapshot,biomeFurnitureReplacement,biomeFurnitureWords} from './biome-furniture-preset.ts';
  import {parseWholeArea,wholeAreaKind} from './whole-area-preset.ts';
@@ -28,12 +31,14 @@
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  function cancel(){epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
- function exportPreset(){if(!snapshot||!grid||blocked||busy)return;const url=URL.createObjectURL(new Blob([snapshot.text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-biome-furniture-'+grid.key+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ function exportPreset(){if(!snapshot||!grid||blocked||busy)return;savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
  async function open(e:Event){
-  const element=e.currentTarget as HTMLInputElement,f=element.files?.[0];element.value='';if(!f||!file||!worker||!grid||!snapshot||blocked||!allowed)return;
+  const element=e.currentTarget as HTMLInputElement,f=element.files?.[0];element.value='';if(f)void openFile(f);
+ }
+ async function openFile(f:File){if(!file||!worker||!grid||!snapshot||blocked||!allowed||busy||copy)return;
   cancel();const own=worker,g=grid,activeFile=file,activeObjects=objects,token=epoch;source=activeFile;sourceObjects=activeObjects;sourceKey=g.key;reading=true;
   try{
-   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const rows=parseWholeArea(await f.text(),g,'biome');
+   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await f.text(),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
    incoming=rows;
    if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();
@@ -58,7 +63,7 @@
  <small>{w[11]}</small>
  {#if snapshot}<small>{w[15]} {snapshot.editable.length} · {w[7]} {snapshot.protectedObjects.length}</small>{/if}
  <input class="biome-preset-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
- <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={()=>input.click()}>{w[3]}</button>{/if}</div>
+ <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={['biome']} disabled={!snapshot||blocked||busy||!!copy} label={w[3]} onPick={f=>void openFile(f)}/>{/if}</div>
  {#if busy}<small role="status">{w[14]}</small>{/if}
  {#if result}
   <small>{w[4]} {result.retained.length} · {w[5]} {result.removed.length} · {w[6]} {result.plan.add.length} · {w[7]} {result.protectedObjects.length}</small>

@@ -1,4 +1,7 @@
 <script lang="ts">
+ import PresetFilePicker from './PresetFilePicker.svelte';
+ import {savePresetFile,rememberPreset} from './preset-session.ts';
+
  import {onDestroy} from 'svelte';
  import {readAreaSupportTrees,validateAreaSupportTrees,supportAreaWords} from './area-support-trees.ts';
  import type {SupportAreaTrees} from './biome-furniture-preset.ts';
@@ -51,9 +54,9 @@
     if(d?.kind!=='area-network')throw Error('read');
     const rows=networkRows(d.rows,g);
     if(download&&full&&withSupport){if(!worker)throw Error('worker');const ac=new AbortController();supportAbort=ac;currentSupports=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted)return;}
-    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-biome-'+(full?'decoration-':'network-')+g.key+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');savePresetFile(text,'wand-biome-'+(full?'decoration-':'network-')+g.key+'.json');return;}
     if(!preset||!worker||preset.size>(full?BIOME_DECORATION_FILE_LIMIT:1_000_000))throw Error('file');
-    const text=await preset.text(),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);
+    const text=await preset.text(),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);void rememberPreset(preset,text).catch(()=>{});
     if(epoch!==token||source!==file||sourceObjects!==objects||sourceKey!==key)return;
     if(combined?.supports){const ac=new AbortController();supportAbort=ac;const trees=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);await validateAreaSupportTrees(worker,combined.supports.values(),nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted||source!==file||sourceObjects!==objects||sourceKey!==key)return;currentSupports=trees;incomingSupports=combined.supports;includeSupport=true;}else includeSupport=false;
     before=rows;after=incoming;incomingFurniture=combined?.furniture??null;
@@ -84,7 +87,7 @@
  {#if includeFurniture}<label><input type="checkbox" checked={includeSupport} disabled={busy||!!copy} on:change={e=>setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}
  <small>{includeFurniture?(includeSupport?sw[1]:dw[3]):w[3]}</small>
  <input class="biome-network-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
- <div><button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>inspect(true)}>{includeFurniture?dw[1]:w[1]}</button>{#if allowed}<button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>input.click()}>{includeFurniture?dw[2]:w[2]}</button>{/if}</div>
+ <div><button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>inspect(true)}>{includeFurniture?dw[1]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={includeFurniture?['wand.preset.biome-decoration@1']:['wand.preset.biome-network@1']} disabled={!grid||blocked||busy||!!copy||!!omitted} label={includeFurniture?dw[2]:w[2]} onPick={f=>inspect(false,f)}/>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}{#if decorationReview}<small>{dw[4]} · {bw[4]} {decorationReview.furniture.retained.length} · {bw[5]} {decorationReview.furniture.removed.length} · {bw[6]} {decorationReview.furniture.ghosts.length}</small><small>{dw[5]} · {bw[4]} {decorationReview.network.retained} · {bw[5]} {decorationReview.network.removed.length} · {bw[6]} {decorationReview.network.ghosts.length}</small><small>{bw[7]} {decorationReview.protectedCount}</small>{#if decorationReview.missing.length}<small role="alert">{bw[8]} · {decorationReview.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}{:else if networkReview}<small>{bw[4]} {networkReview.retained} · {bw[5]} {networkReview.removed.length} · {bw[6]} {networkReview.ghosts.length}</small>{/if}{#if !result.changed}<small>{bw[13]}</small>{/if}{#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!decorationReview?.missing.length} on:click={validate}>{bw[9]}</button>{/if}{:else if after&&!busy}<small role="alert">{bw[12]}</small>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
