@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Inspect local Steam Memory rendering evidence; no game, save, or R2 writes.
 
-Names identify candidates only. Material-to-shader linkage requires a unique
-serialized PPtr target. D3D bytecode disassembly is private analysis evidence,
+Names identify candidates only. Material-to-shader candidate linkage requires a unique
+serialized PPtr target within the scanned sources. D3D bytecode disassembly is private analysis evidence,
 not proof that a particular shader variant is selected by game runtime.
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ import argparse
 import ctypes
 import hashlib
 import json
+import math
 import re
 import struct
 from collections import defaultdict
@@ -20,7 +21,8 @@ BUNDLE_TERM = re.compile(r"ui|shader|material|memory|shard|puzzle", re.I)
 PROP_MASK = re.compile(r"mask|shard|piece", re.I)
 PROP_OUTLINE = re.compile(r"outline|border", re.I)
 MAX_SEGMENT = 128 * 1024 * 1024
-MAX_DXBC = 2048
+MAX_DXBC = 512
+MAX_DISASSEMBLY_BYTES = 32 * 1024 * 1024
 
 
 def get(obj, name, default=None):
@@ -58,11 +60,11 @@ def material_info(reader, material):
     saved = get(material, "m_SavedProperties")
     name = str(get(material, "m_Name", ""))
     textures = sorted(str(k) for k, _ in pairs(get(saved, "m_TexEnvs")))
-    floats = {str(k): float(v) for k, v in pairs(get(saved, "m_Floats")) if type(v) in (int, float)}
+    floats = {str(k): float(v) for k, v in pairs(get(saved, "m_Floats")) if type(v) in (int, float) and math.isfinite(v)}
     ints = {str(k): v for k, v in pairs(get(saved, "m_Ints")) if type(v) is int}
     colors = {}
     for key, value in pairs(get(saved, "m_Colors")):
-        if all(type(get(value, c)) in (int, float) for c in "rgba"):
+        if all(type(get(value, c)) in (int, float) and math.isfinite(get(value, c)) for c in "rgba"):
             colors[str(key)] = [get(value, c) for c in "rgba"]
     props = textures + list(floats) + list(ints) + list(colors)
     candidate = bool(TERM.search(name) or (any(PROP_MASK.search(k) for k in props) and
@@ -213,7 +215,7 @@ def inspect(game, broad):
         linked = shaders.get(ptr, []) if ptr else []
         if m["candidateByMaterial"] or any(s["candidate"] for s in linked):
             m["shaderCandidates"] = linked
-            m["uniqueShaderPointer"] = len(linked) == 1
+            m["uniqueScannedShaderPointer"] = len(linked) == 1
             selected.append(m)
             if len(linked) == 1:
                 targets.add((linked[0]["source"], linked[0]["assetFile"], linked[0]["pathId"]))
@@ -226,6 +228,7 @@ def inspect(game, broad):
         by_source[source].add((asset, pid))
     disassembly = {}
     results = []
+    disassembly_bytes = 0
     for rel, wanted in sorted(by_source.items()):
         path = game / rel
         try:
@@ -248,7 +251,12 @@ def inspect(game, broad):
                                 if len(disassembly) >= MAX_DXBC:
                                     raise ValueError("DXBC program budget exceeded")
                                 try:
-                                    disassembly[digest] = {"text": disassemble(chunk), "bytes": len(chunk)}
+                                    listing = disassemble(chunk)
+                                    listing_size = len(listing.encode("utf-8"))
+                                    if disassembly_bytes + listing_size > MAX_DISASSEMBLY_BYTES:
+                                        raise ValueError("Total disassembly text budget exceeded")
+                                    disassembly_bytes += listing_size
+                                    disassembly[digest] = {"text": listing, "bytes": len(chunk)}
                                 except Exception as exc:
                                     disassembly[digest] = {"error": type(exc).__name__ + ": " + str(exc)[:160]}
                             row["programs"].append({"segment": segment, "sha256": digest})
