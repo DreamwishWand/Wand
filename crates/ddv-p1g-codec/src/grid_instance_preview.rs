@@ -1601,6 +1601,17 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
 /// destination must belong to the same playable island. All removals resolve
 /// on the immutable source before any ordinal can shift. Returned inventory
 /// is available to every destination, and no intermediate copy is emitted.
+/// Match an exact source-published world grid and its dimensions.
+fn world_grid_scope(witness:&Value)->Result<(String,usize),CodecError>{
+ let bad=CodecError::Json;
+ let layout=witness["layoutId"].as_str().ok_or(bad)?;
+ let scope=layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?;
+ let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
+ let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
+ let grids=entry["grids"].as_array().filter(|g|!g.is_empty()&&g.len()<=64).ok_or(bad)?;
+ if grids.iter().filter(|g|g["layoutId"]==witness["layoutId"]&&g["gridDataPath"]==witness["gridDataPath"]&&g["sizeX"]==witness["sizeX"]&&g["sizeY"]==witness["sizeY"]).count()!=1{return Err(bad);}
+ Ok((scope.to_owned(),grids.len()))
+}
 fn island_scope(witness:&Value)->Result<(String,usize),CodecError>{
  let bad=CodecError::Json;
   let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
@@ -1624,18 +1635,18 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let bad=CodecError::Json;
  if plan.len()>if decoration{6_000_000}else{2_000_000}{return Err(CodecError::Bounds);}
  let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=16).ok_or(bad)?;
+ let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=if decoration{64}else{16}).ok_or(bad)?;
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
- let mut layout_id=None::<String>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
+ let mut layout_id=None::<String>;let mut world_mode=None::<bool>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
  let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();
  for row in rows{
   let (row,network)=if decoration{let m=row.as_object().filter(|m|m.len()==2&&m.contains_key("furniture")&&m.contains_key("network")).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?))}else{(row,None)};
   let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
   let witness=o.get("destination").ok_or(bad)?;
-  let (layout,expected)=island_scope(witness)?;
-  if layout_id.as_ref().is_some_and(|s|s!=&layout){return Err(bad);}
-  layout_id=Some(layout);expected_grids=expected;
+  let (layout,expected,world)=match island_scope(witness){Ok((s,n))=>(s,n,false),Err(_) if decoration=>{let (s,n)=world_grid_scope(witness)?;(s,n,true)},Err(e)=>return Err(e)};
+  if layout_id.as_ref().is_some_and(|s|s!=&layout)||world_mode.is_some_and(|v|v!=world){return Err(bad);}
+  layout_id=Some(layout);world_mode=Some(world);expected_grids=expected;
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
   if let Some(network)=network{
@@ -1661,7 +1672,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  if grids.len()!=expected_grids{return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
- if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
+ if full.iter().filter(|(_,g)|{let layout=g.get("GridDefaultLayoutPath").and_then(Value::as_str);if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}}).any(|(key,_)|!grids.contains(key)){return Err(bad);}
  if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
@@ -2650,7 +2661,7 @@ mod terrain_session_tests{
 fn area_network_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
  let bad=CodecError::Json;
  let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
- if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){island_scope(witness)?;}
+ if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){if island_scope(witness).is_err(){world_grid_scope(witness)?;}}
  resolve_plain_grid_destination(profile,witness)
 }
 fn area_network_rows(profile:&[u8],d:&ddv_save_patch::PlainGridDestination)->Result<Vec<Value>,CodecError>{

@@ -1,7 +1,7 @@
 import {currentDesign,serializeDesign,parseDesign,designItemCounts,restoreDesign,DESIGN_FILE_LIMIT,DESIGN_LIMIT,type DesignTimeline,type DesignPlacement,type DesignItemGeometry} from './design-layout.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
 import {resolveMainlandDesign,mainlandFrameOffset,mainlandItemsValid,type MainlandDesignFrame} from './mainland-design-frame.ts';
-export type WholeAreaKind='biome'|'floating-island';
+export type WholeAreaKind='biome'|'floating-island'|'world-grid';
 const biomeKeys=new Set(['Urban','DarkMountains','Meadow','Savannah','Wetland','Forest','Cliff','Beach']);
 /** A biome is one of the original eight mainland source grids. An island
  * with several source grids is not a single-grid whole-island preset.

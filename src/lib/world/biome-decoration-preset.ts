@@ -10,20 +10,20 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 export const BIOME_DECORATION_FILE_LIMIT=1_500_000;
-export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false,supports?:SupportAreaTrees){
- const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island,supports);if(!furniture)return null;
+export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false,supports?:SupportAreaTrees,world=false){
+ const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island,supports,world);if(!furniture)return null;
  const existing=objects.filter(p=>p.area===grid.key&&['ground','fence'].includes(p.object.layer));
  if(existing.length!==networks.length||networks.some(p=>existing.filter(o=>Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]).length!==1))return null;
  try{
-  const text=JSON.stringify({schema:island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks)),...(supports?{supports:furniture.supports}:{})});
-  parseBiomeDecoration(text,grid,island);return {text,furnitureCount:furniture.editable.length,networkCount:networks.length,protectedCount:furniture.protectedObjects.length-networks.length};
+  const text=JSON.stringify({schema:world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks)),...(supports?{supports:furniture.supports}:{})});
+  parseBiomeDecoration(text,grid,island,world);return {text,furnitureCount:furniture.editable.length,networkCount:networks.length,protectedCount:furniture.protectedObjects.length-networks.length};
  }catch{return null;}
 }
-export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false){
+export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false,world=false){
  if(text.length>BIOME_DECORATION_FILE_LIMIT)throw Error('DECORATION_LIMIT');
  const doc=JSON.parse(text);
- if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).length!==(Object.prototype.hasOwnProperty.call(doc,'supports')?5:4)||doc.schema!==(island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
- const furniture=parseWholeArea(JSON.stringify(doc.furniture),grid,island?'floating-island':'biome'),network=parseBiomeNetwork(JSON.stringify(doc.network),grid);
+ if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).length!==(Object.prototype.hasOwnProperty.call(doc,'supports')?5:4)||doc.schema!==(world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
+ const furniture=parseWholeArea(JSON.stringify(doc.furniture),grid,world?'world-grid':island?'floating-island':'biome'),network=parseBiomeNetwork(JSON.stringify(doc.network),grid);
  let supports:Map<number,ReturnType<typeof parseSupportScene>>|undefined;
  if(Object.prototype.hasOwnProperty.call(doc,'supports')){
   if(!Array.isArray(doc.supports)||doc.supports.length>furniture.length)throw Error('SUPPORT_CONTEXT');supports=new Map();
@@ -35,10 +35,10 @@ function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
  if(g.plan.action!=='place')throw Error('GHOST_POSE');
  return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:CARDINAL_ORIENTATIONS.indexOf(g.plan.orientation as typeof CARDINAL_ORIENTATIONS[number])*4,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
 }
-export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees){
+export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees,world=false){
  if(incoming.supports&&!currentSupports)return null;
  const supportContext=incoming.supports&&currentSupports?{before:currentSupports,after:incoming.supports}:undefined;
- if(!captureBiomeDecoration(grid,objects,omitted,before,island,supportContext?.before))return null;
+ if(!captureBiomeDecoration(grid,objects,omitted,before,island,supportContext?.before,world))return null;
  const desired=new Set(incoming.network.map(networkKey)),deletedNetworkOrdinals=new Set<number>();
  for(const row of before){
   if(desired.has(networkKey(row)))continue;
@@ -46,7 +46,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
   if(!p)return null;deletedNetworkOrdinals.add(p.object.localOrdinal);
  }
  // Furniture may occupy a removed fence but never a retained fence.
- const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)),omitted,incoming.furniture,defs,stock,island,supportContext);
+ const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)),omitted,incoming.furniture,defs,stock,island,supportContext,world);
  if(!furniture)return null;
  const removedFurniture=new Set(furniture.removed.map(o=>o.object.localOrdinal));
  const finalFurniture=objects.filter(o=>!removedFurniture.has(o.object.localOrdinal));
