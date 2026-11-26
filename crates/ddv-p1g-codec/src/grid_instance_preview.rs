@@ -2354,7 +2354,6 @@ pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,Co
  if parse_area_network_poses(&Value::Array(actual))?.into_iter().collect::<HashSet<_>>()!=before.iter().copied().collect(){return Err(bad);}
  let mut result=ddv_save_patch::preview_area_network_replacement(std::str::from_utf8(profile).map_err(|_|bad)?,&d,&before,&after).map_err(|_|bad)?;
  let ids:Vec<_>=result.removed.iter().chain(&result.allocated).cloned().collect();
- let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&ids);
- if !refs.is_ok_and(|r|r.blocking()==0&&r.historical==0){result.draft.patched_json.zeroize();return Err(bad);}
+ if !ids.chunks(512).all(|chunk|grid_identity_dependencies_for_ids(profile,&d.grid_id,chunk).is_ok_and(|r|r.blocking()==0&&r.historical==0)){result.draft.patched_json.zeroize();return Err(bad);}
  Ok(result.draft.patched_json)
 }
