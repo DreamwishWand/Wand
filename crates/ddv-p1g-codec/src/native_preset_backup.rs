@@ -208,6 +208,51 @@ pub(super) fn tom_restore_rehearsal(source:&[u8],backup:&str)->Result<String,Cod
  Ok(candidate)
 }
 
+
+fn display_text(raw:Option<&&RawValue>,max:usize)->Option<String>{
+ let value:String=serde_json::from_str(raw?.get()).ok()?;
+ if value.is_empty()||value.len()>max||value.chars().any(char::is_control){return None;}Some(value)
+}
+/// Bounded local inspection for the Presets detail UI. Unlike native backups,
+/// the response contains only public Item IDs, aggregate counts and the
+/// creator's visible display name. This never validates a public artifact.
+pub(super) fn inspect_backup(raw:&str)->Result<String,CodecError>{
+ if raw.len()>MAX_FILE||ddv_save_patch::validate_json_without_edit(raw).is_err(){return Err(BAD);}
+ let doc:Map=serde_json::from_str(raw).map_err(|_|BAD)?;
+ if doc.len()!=6||serde_json::from_str::<String>(get(&doc,"schema")?.get()).map_err(|_|BAD)?!="wand.preset.native-backup@1"||!matches!(number(get(&doc,"gameSchema")?)?,624|626|643){return Err(BAD);}
+ let kind:String=serde_json::from_str(get(&doc,"kind")?.get()).map_err(|_|BAD)?;
+ let storage:String=serde_json::from_str(get(&doc,"storage")?.get()).map_err(|_|BAD)?;
+ let base:Option<u32>=serde_json::from_str(get(&doc,"baseItemId")?.get()).map_err(|_|BAD)?;
+ let payload=obj(get(&doc,"payload")?)?;
+ let mut counts=BTreeMap::<u32,usize>::new();let mut creator=None;let mut decals=None;let mut textures=None;let mut name=None;let mut complete=true;
+ match (kind.as_str(),storage.as_str(),base){
+  ("tom-furniture","furniture",Some(id))|("tom-clothing","female",Some(id))|("tom-clothing","male",Some(id))=>{
+   if id==0||number(get(&payload,"Item")?)?!=id||number(get(&payload,"Id")?)?>i32::MAX as u32{return Err(BAD);}
+   counts.insert(id,1);creator=display_text(payload.get("CreatorDisplayName"),512);
+   decals=payload.get("Decals").and_then(|r|serde_json::from_str::<Vec<&RawValue>>(r.get()).ok()).map(|a|a.len());
+   textures=payload.get("Textures").and_then(|r|serde_json::from_str::<Vec<&RawValue>>(r.get()).ok()).map(|a|a.len());
+  }
+  ("native-decoration","decoration",None)=>{
+   if number(get(&payload,"StateFlags")?)?&16!=0{return Err(BAD);}
+   name=display_text(payload.get("PresetName"),1024);
+   let c=obj(get(&payload,"GridCollection")?)?;let grids=obj(get(&c,"Grids")?)?;
+   if grids.is_empty()||grids.len()>MAX_ROWS||!grids.contains_key("0"){return Err(BAD);}
+   if let Some(diff)=c.get("DiffGrids"){if !obj(diff).is_ok_and(|m|m.is_empty())&&diff.get()!="null"{complete=false;}}
+   let mut total=0usize;
+   for (gid,g) in grids{
+    let g=obj(g)?;if number(get(&g,"ID")?)?!=keynum(&gid)?{return Err(BAD);}
+    let objects=obj(get(&g,"Objects")?)?;total=total.checked_add(objects.len()).ok_or(BAD)?;if total>20000{return Err(CodecError::Bounds);}
+    for (oid,o) in objects{let o=obj(o)?;if number(get(&o,"ID")?)?!=keynum(&oid)?{return Err(BAD);}
+     let item=number(get(&o,"ItemID")?)?;if item==0{return Err(BAD);}*counts.entry(item).or_default()+=1;
+    }
+   }
+  }
+  _=>return Err(BAD)
+ }
+ let counts=counts.into_iter().collect::<Vec<_>>();
+ serde_json::to_string(&json!({"contract":"wand.native-preset-detail@1","kind":kind,"storage":storage,"baseItemId":base,"creator":creator,"name":name,"decalCount":decals,"textureCount":textures,"items":counts,"complete":complete,"renderedAppearanceVerified":false})).map_err(|_|BAD)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -271,5 +316,13 @@ mod tests{
   assert!(candidate.contains("\"Extra\":7e-9"));assert!(candidate.contains("\"2\":{\"Id\":2,\"Item\":40000001,\"Source\":1,\"Decals\":[]}"));
   let bad=String::from_utf8(target.to_vec()).unwrap().replace("\"NextDesignId\":7","\"NextDesignId\":2");
   assert!(tom_restore_rehearsal(bad.as_bytes(),backup).is_err());
+ }
+
+ #[test]
+ fn inspect_native_detail_only_projects_known_fields(){
+  let raw=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"tom-furniture","storage":"furniture","baseItemId":40000001,"payload":{"Id":1,"Item":40000001,"CreatorDisplayName":"Creator","PlatformAccountId":"PRIVATE","Decals":[{"secret":"never"}],"Textures":[]}}"#;
+  let result=inspect_backup(raw).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["items"],json!([[40000001,1]]));assert_eq!(v["decalCount"],1);assert_eq!(v["creator"],"Creator");assert!(!result.contains("PRIVATE"));assert!(!result.contains("never"));
+  let raw=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"native-decoration","storage":"decoration","baseItemId":null,"payload":{"PresetName":"Test","StateFlags":0,"ShareInfo":{"Code":"PRIVATE"},"GridCollection":{"Grids":{"0":{"ID":0,"Objects":{"1":{"ID":1,"ItemID":40000001}}},"2":{"ID":2,"Objects":{"3":{"ID":3,"ItemID":40000001},"4":{"ID":4,"ItemID":40000002}}}}}}}"#;
+  let result=inspect_backup(raw).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["items"],json!([[40000001,2],[40000002,1]]));assert!(!result.contains("PRIVATE"));
  }
 }

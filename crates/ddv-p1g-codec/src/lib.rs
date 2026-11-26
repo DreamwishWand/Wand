@@ -449,6 +449,10 @@ mod browser_amount_preview {
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
+    pub fn inspect_native_preset_backup(backup:&str)->Result<String,JsValue>{
+        native_preset_backup::inspect_backup(backup).map_err(|_|fail("DB05_NATIVE_DETAIL_UNAVAILABLE"))
+    }
+    #[wasm_bindgen]
     pub fn convert_native_decoration_to_scene(backup:&str)->Result<String,JsValue>{
         native_preset_scene::convert(backup).map_err(|_|fail("DB05_NATIVE_SCENE_UNSUPPORTED"))
     }

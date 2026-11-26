@@ -1,4 +1,5 @@
 <script lang="ts">
+ import NativePresetDetail from '$lib/presets/NativePresetDetail.svelte';
  import NativeSceneConvert from '$lib/presets/NativeSceneConvert.svelte';
  import NativeRestoreReview from '$lib/presets/NativeRestoreReview.svelte';
  import PresetAuthorPanel from '$lib/presets/PresetAuthorPanel.svelte';
@@ -43,7 +44,7 @@
  async function add(e:Event){const el=e.currentTarget as HTMLInputElement,files=[...(el.files??[])];el.value='';if(reading)return;reading=true;error=false;try{for(const file of files){try{const row=await rememberPreset(file);if(alive){if(row.domain===domain)choose(row);else error=true;}}catch{if(alive)error=true;}}}finally{if(alive)reading=false;}}
  async function detail(entry:SessionPreset|undefined,language:WandLanguage){
   const token=++detailsEpoch;counts=null;images=new Map();names=new Map();packedSize=null;codeView='';if(!entry)return;
-  try{const raw=await readPresetText(entry.file);if(!alive||token!==detailsEpoch)return;counts=presetItems(raw);
+  try{const raw=await readPresetText(entry.file);if(!alive||token!==detailsEpoch)return;counts=entry.privateBackup?null:presetItems(raw);
    if(entry.kind==='decoration-code'||entry.kind==='shop-code')codeView=JSON.parse(raw).code;
    const packed=await compactPresetFile(raw,entry.name);if(!alive||token!==detailsEpoch)return;packedSize=packed.size;
    const ids=[...(counts?.keys()??[])].slice(0,120);if(!ids.length)return;
@@ -88,7 +89,7 @@
   <div class="library"><div class="entries">{#each entries as entry (entry.id)}<button type="button" class="entry" aria-pressed={selected===entry.id} on:click={()=>choose(entry)}><strong>{entry.name}</strong><small>{p[kindIndex[entry.kind]]}{entry.privateBackup?' · '+w[8]:''}</small></button>{:else}<p>{p[9]}</p>{/each}</div>
   {#if current}<aside><strong>{current.name}</strong><small>{p[kindIndex[current.kind]]} {current.version??''}</small>{#if packedSize!==null}<small>{w[20]}: {packedSize.toLocaleString(locale)} B</small>{/if}
   {#if current.publicSource}<small>{cw[14]} · {current.publicSource.creatorName}</small>{/if}
-  {#if current.privateBackup}<small>{w[8]} · {w[18]}</small><NativeRestoreReview entry={current} {source} {locale}/>{#if current.kind==='native-decoration'}<NativeSceneConvert entry={current} {locale}/>{/if}{:else}<small>{w[21]}</small>{/if}
+  {#if current.privateBackup}<small>{w[8]} · {w[18]}</small><NativePresetDetail entry={current} {locale}/><NativeRestoreReview entry={current} {source} {locale}/>{#if current.kind==='native-decoration'}<NativeSceneConvert entry={current} {locale}/>{/if}{:else}<small>{w[21]}</small>{/if}
   {#if counts}<small>{counts.size} / {[...counts.values()].reduce((n,v)=>n+v,0)}</small><div class="item-list">{#each [...counts].slice(0,120) as [id,n] (id)}<div>{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{names.get(id)??'—'}</span><strong>×{n}</strong></div>{/each}</div>{/if}
   {#if codeView}<code>{codeView}</code><small>{w[12]}</small>{/if}
   <div class="toolbar"><input bind:value={alias} maxlength="160" aria-label={p[4]}/><button type="button" on:click={()=>{if(current&&!renameSessionPreset(current.id,alias))error=true;}}>{p[4]}</button></div>
