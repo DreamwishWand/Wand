@@ -1,0 +1,85 @@
+import {mainlandExtent,mainlandMapAnchor,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandSavedInRect,type MainlandSavedObject} from './mainland-saved-objects.ts';
+import {validCaptureRegion,type CaptureRegion} from './scene-capture-region.ts';
+import {captureIslandDecoration,parseIslandDecoration,WORLD_DECORATION_FILE_LIMIT} from './island-decoration-preset.ts';
+import type {islandSaveSnapshot} from './island-save-preset.ts';
+import {networkKey,type NetworkPose} from './biome-network-preset.ts';
+import {networkSceneShape} from './area-scene.ts';
+import {stockSourceEligible} from './save-furniture-placement.ts';
+import {supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
+import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
+import type {SourceObjectShape} from './source-object-map.ts';
+type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
+type Incoming=ReturnType<typeof parseIslandDecoration>;
+const isNetwork=(p:MainlandSavedObject)=>p.object.layer==='ground'||p.object.layer==='fence';
+const inside=(r:CaptureRegion,p:{x:number;y:number;factor:number;shape:SourceObjectShape|null})=>!!p.shape&&p.shape.runs.every(q=>p.x+q.x/p.factor>=r.x&&p.x+(q.x+q.width)/p.factor<=r.x+r.w&&p.y-(q.y+1)/p.factor>=r.y&&p.y-q.y/p.factor<=r.y+r.h);
+const pose=(p:DesignPlacement)=>[p.itemId,p.x,p.y,p.orientation].join(':');
+const networkPose=(g:MainlandGrid,p:NetworkPose)=>({...mainlandMapAnchor(g,p.x,p.y),area:g.key,itemId:p.itemId,kind:p.network.kind});
+type BoundaryPose=ReturnType<typeof networkPose>;
+// Boundary connectivity is not inferred. Reject possible links to any
+// network outside the selection, including across native grid boundaries.
+function touches(a:BoundaryPose,b:BoundaryPose){return a.kind===b.kind&&(a.kind==='fence'||a.itemId===b.itemId)&&Math.abs(a.x-b.x)<=(a.kind==='road'?2:8)&&Math.abs(a.y-b.y)<=(a.kind==='road'?2:8);}
+function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>){
+ if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
+ const objects=new Map<string,readonly MainlandSavedObject[]>(),rows=new Map<string,NetworkPose[]>(),insideNet:BoundaryPose[]=[],outsideNet:BoundaryPose[]=[];
+ for(const g of grids){
+  const all=snapshot.objects.get(g.key),net=networks.get(g.key);if(!all||!net)return null;
+  const relevant=all.filter(p=>stockSourceEligible(p)||supportAreaEligible(p)||isNetwork(p));
+  if(relevant.some(p=>!p.shape))return null;
+  const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
+  if(hit.some(p=>!inside(region,p)))return null;
+  const picked=all.filter(p=>inside(region,p));objects.set(g.key,picked);
+  const selected:NetworkPose[]=[];
+  for(const p of net){
+   const matches=all.filter(o=>isNetwork(o)&&Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]);if(matches.length!==1)return null;
+   if(inside(region,matches[0])){selected.push(p);insideNet.push(networkPose(g,p));}else outsideNet.push(networkPose(g,p));
+  }
+  rows.set(g.key,selected);
+ }
+ if(insideNet.some(a=>outsideNet.some(b=>touches(a,b))))return null;
+ return {snapshot:{...snapshot,objects},networks:rows,outsideNet};
+}
+export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees):string|null{
+ const part=split(region,grids,snapshot,networks);if(!part)return null;
+ const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,true);if(!doc)return null;
+ const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,world:JSON.parse(doc.text)});return text.length<=WORLD_DECORATION_FILE_LIMIT?text:null;
+}
+export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[]):{region:CaptureRegion;incoming:Incoming}{
+ if(text.length>WORLD_DECORATION_FILE_LIMIT)throw Error('REGION_LIMIT');
+ const v=JSON.parse(text),r=v?.region;
+ if(!v||Object.keys(v).length!==3||v.schema!=='wand.preset.region-decoration@1'||!r||Object.keys(r).length!==4||!['x','y','w','h'].every(k=>typeof r[k]==='number')||!validCaptureRegion(r,mainlandExtent(grids)))throw Error('REGION_SCOPE');
+ const incoming=parseIslandDecoration(JSON.stringify(v.world),grids,true);if([...incoming.values()].some(a=>!a.supports))throw Error('REGION_SUPPORT');
+ return {region:{x:r.x,y:r.y,w:r.w,h:r.h},incoming};
+}
+/** Merge only selected cells into the exact current full-world document.
+ * All outside objects, support trees and networks are retained. Untrusted
+ * incoming rows must fit entirely inside the chosen rectangle. */
+export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>):Incoming|null{
+ const part=split(region,grids,snapshot,networks);if(!part)return null;
+ const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,true);if(!captured)return null;
+ let old:Incoming;try{old=parseIslandDecoration(captured.text,grids,true);}catch{return null;}
+ const result:Incoming=new Map();
+ for(const g of grids){
+  const before=current.get(g.key),replaced=old.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);if(!before?.supports||!replaced||!next?.supports||!geometry)return null;
+  for(const p of next.furniture){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}
+  for(const p of next.network){const shape=networkSceneShape({...p,dx:0,dy:0,support:null},geometry.get(p.itemId),g.factor);if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape})||part.outsideNet.some(o=>touches(networkPose(g,p),o)))return null;}
+  const oldFurniture=new Set(replaced.furniture.map(pose)),oldNetwork=new Set(replaced.network.map(networkKey));
+  const furniture:DesignPlacement[]=[],attachments:Map<number,NonNullable<typeof before.supports> extends ReadonlyMap<number,infer S>?S:never>=new Map();
+  for(const [rows,scenes] of [[before.furniture.filter(p=>!oldFurniture.has(pose(p))),before.supports],[next.furniture,next.supports]] as const){
+   for(const p of rows){const id=furniture.length+1;furniture.push({...p,id});const scene=scenes.get(p.id);if(scene)attachments.set(id,scene);}
+  }
+  result.set(g.key,{furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
+ }
+ return result;
+}
+export const regionBackupWords={
+ ja:['指定マス範囲のバックアップ','範囲を確定','範囲を保存','範囲をリストア','選択範囲の装飾だけを復元します。境界をまたぐ家具・ネットワークがある場合は範囲を広げてください。'],
+ en:['Selected-cell backup','Confirm region','Save region','Restore region','Restore only the selected region. Enlarge it if objects or networks cross the boundary.'],
+ fr:['Sauvegarde de zone','Confirmer la zone','Enregistrer la zone','Restaurer la zone','Restaure uniquement la zone sélectionnée.'],
+ it:['Backup area','Conferma area','Salva area','Ripristina area','Ripristina solo l’area selezionata.'],
+ de:['Bereichssicherung','Bereich bestätigen','Bereich speichern','Bereich wiederherstellen','Nur den ausgewählten Bereich wiederherstellen.'],
+ 'es-ES':['Copia de zona','Confirmar zona','Guardar zona','Restaurar zona','Restaura únicamente la zona seleccionada.'],
+ 'zh-CN':['指定格子范围备份','确认范围','保存范围','恢复范围','仅恢复选定范围。若物品或网络跨越边界，请扩大范围。'],
+ 'pt-BR':['Backup de região','Confirmar região','Salvar região','Restaurar região','Restaura somente a região selecionada.']
+} as const;
