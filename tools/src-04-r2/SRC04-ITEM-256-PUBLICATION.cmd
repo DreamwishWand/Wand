@@ -19,19 +19,24 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'private-media-overlay-v2-latest\manifest.json'))) { throw 'Existing verified Item overlay not found.' }
     $work=Join-Path $env:TEMP ('wand-item-256-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/141552b876386edf1bd5312de971d7ec300ad7e5/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/7d13056d431f558b4f732e0dee66ad43f83bdde3/'
     foreach ($name in @('migrate_item_thumbnails_256.py','stage_media_v2.py','bundle_thumbnails.py','publish_bundle_thumbnails.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+'tools/src-04-r2/'+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
     Write-Host 'Generate only required 256px Item thumbnails from verified originals. Reuse small originals. No overwrite, delete, copy or private bucket operations.'
+    $resume=@()
+    if ((Test-Path -LiteralPath (Join-Path $root 'item-thumbnails-256\item-256-index-candidate.json')) -and (Test-Path -LiteralPath (Join-Path $root 'item-thumbnails-256\item-256-thumbnail-cache.json')) -and (Test-Path -LiteralPath (Join-Path $root 'item-thumbnails-256\item-256-generation-report.json'))) {
+        $resume=@('--resume')
+        Write-Host 'Completed local generation found. Resume without image resizing.'
+    }
     $mode=Read-Host 'Type PLAN for local generation/index only, or R2 for generation, inventory and optional upload'
     if ($mode -eq 'PLAN') {
-        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root
+        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root @resume
     } elseif ($mode -eq 'R2') {
         $env:R2_ACCOUNT_ID=Read-Host 'R2 account ID'
         $env:AWS_ACCESS_KEY_ID=ReadSecret 'Public bucket access key ID'
         $env:AWS_SECRET_ACCESS_KEY=ReadSecret 'Public bucket secret access key'
-        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root --r2
+        & py -3 -u (Join-Path $work 'migrate_item_thumbnails_256.py') --root $root @resume --r2 --review-over-budget
     } else { throw 'No operation selected.' }
     $result=$LASTEXITCODE
     Write-Host "Output directory: $root"
