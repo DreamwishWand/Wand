@@ -24,6 +24,7 @@ from pathlib import Path
 MANIFEST_SCHEMA = "wand.src04.media-overlay-manifest@2"
 SHARD_SCHEMA = "wand.src04.media-overlay-shard@2"
 VARIANT_POLICY = "thumbnail_128_lossless_webp_plus_original_native_lossless_webp"
+VARIANT_POLICY_256 = "thumbnail_256_lossless_webp_plus_original_native_lossless_webp"
 EXPECTED_ITEMS = 13202
 EXPECTED_GUIDS = 9542
 SOURCE_ITEMS_SHA = "3ff0043692c88699d1cb44f4a953095c5f5fcd1afd700761396f13cca96851bf"
@@ -107,8 +108,10 @@ def webp_lossless_dimensions(path):
 
 
 def collect(root, *, expected_items=EXPECTED_ITEMS, expected_guids=EXPECTED_GUIDS,
-            source_sha=SOURCE_ITEMS_SHA):
+            source_sha=SOURCE_ITEMS_SHA, variant_policy=VARIANT_POLICY):
     """Read source + SHA-pinned v2 shards; return unique immutable image file refs."""
+    require(variant_policy in (VARIANT_POLICY,VARIANT_POLICY_256),"UNKNOWN_VARIANT_POLICY")
+    edge=256 if variant_policy==VARIANT_POLICY_256 else 128
     root = Path(root).resolve()
     input_items = root / "source-items" / "items.jsonl"
     require(input_items.is_file(), "SOURCE_ITEMS_MISSING")
@@ -138,7 +141,7 @@ def collect(root, *, expected_items=EXPECTED_ITEMS, expected_guids=EXPECTED_GUID
             "MANIFEST_NOT_PRIVATE_V2")
     provenance = manifest.get("source", {})
     require(provenance.get("sourceItemsSha256") == source_sha and
-            provenance.get("variantPolicy") == VARIANT_POLICY,
+            provenance.get("variantPolicy") == variant_policy,
             "MANIFEST_SOURCE_MISMATCH")
     coverage = manifest.get("coverage", {})
     require(coverage.get("verifiedItems") == expected_items and
@@ -213,9 +216,14 @@ def collect(root, *, expected_items=EXPECTED_ITEMS, expected_guids=EXPECTED_GUID
                     require((entry["width"], entry["height"]) ==
                             (native_width, native_height), "ORIGINAL_DIMENSIONS")
                 else:
-                    require(entry["width"] <= min(128, native_width) and
-                            entry["height"] <= min(128, native_height),
+                    require(entry["width"] <= min(edge, native_width) and
+                            entry["height"] <= min(edge, native_height),
                             "THUMBNAIL_DIMENSIONS")
+                    if variant_policy==VARIANT_POLICY_256:
+                        if max(native_width,native_height)<=edge:
+                            require(all(entry[k]==image["original"][k] for k in ("sha256","bytes","width","height")),"SMALL_ORIGINAL_NOT_REUSED")
+                        else:
+                            require(max(entry["width"],entry["height"])==edge,"THUMBNAIL_LONG_EDGE")
                 record = (entry["sha256"], entry["bytes"],
                           entry["width"], entry["height"], kind)
                 if rel in files:
