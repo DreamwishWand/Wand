@@ -128,7 +128,7 @@ def decode_exact(game_root, target_scan, link, cache=None):
     return image
 
 
-def write_private_overlay(root, target_items, images):
+def write_private_overlay(root, target_items, images, *, variant_policy=POLICY):
     """All Item IDs from the target export, verified and sorted into 256 shards."""
     by_guid=target_items["guids"]
     require(set(images)==set(by_guid),"UNRESOLVED_IMAGE_GUIDS")
@@ -156,7 +156,7 @@ def write_private_overlay(root, target_items, images):
                   "unresolvedGuids":0},
       "files":meta,
       "source":{"sourceItemsSha256":target_items["sha256"],
-                "variantPolicy":POLICY,
+                "variantPolicy":variant_policy,
                 "generatedBy":"build_next_media_v2.py"}
     }
     sha,_=write_json(root/"private-media-overlay-v2-latest"/"manifest.json",manifest)
@@ -227,7 +227,8 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
 
 def build(base_root, old_scan_path, next_scan_path, next_items_path,
           next_proofs_path, next_game, out, *, base_items_sha=None,
-          base_overlay_sha=None):
+          base_overlay_sha=None, image_builder=None, variant_policy=POLICY,
+          finalize=None):
     base_root=base_root.resolve()
     next_game=next_game.resolve()
     out=out.resolve()
@@ -267,7 +268,7 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
     delta["_base_by_guid"]=old_images
     temp=Path(tempfile.mkdtemp(prefix=".src04-version-",dir=out.parent))
     try:
-        images,counts=create_images(base_root,temp,delta,target_scan,next_game)
+        images,counts=(image_builder or create_images)(base_root,temp,delta,target_scan,next_game)
         # Independently verify every file output, including deduped references.
         audited=set()
         for image in images.values():
@@ -288,7 +289,7 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
         require(file_digest(temp/"source-items"/"items.jsonl")==new_items["sha256"]
                 and file_digest(temp/"source-manifest.json")==target_scan["sha256"],
                 "SOURCE_COPY_HASH")
-        manifest_sha=write_private_overlay(temp,new_items,images)
+        manifest_sha=write_private_overlay(temp,new_items,images,variant_policy=variant_policy)
         files={image[kind]["path"] for image in images.values()
                for kind in ("thumbnail","original")}
         report={
@@ -309,6 +310,8 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
           "samePixelReusedCount":counts["samePixelReused"],
           "newPixelEncodedCount":counts["newPixelEncoded"]
         }
+        if finalize is not None:
+            finalize(temp,new_items,images,target_scan["version"],counts)
         write_json(temp/"src04-next-release-report.json",report)
         temp.rename(out)
         return report
@@ -326,7 +329,9 @@ def main(argv=None):
     p.add_argument("--base-overlay-sha",help="Prior SRC-04 private v2 manifest SHA-256 pin")
     args=p.parse_args(argv)
     try:
-        report=build(args.base_root,args.base_scan,args.target_scan,
+        # The historical 128px API is retained for old private-staging tests only.
+        from build_next_item_256 import build_next
+        report=build_next(args.base_root,args.base_scan,args.target_scan,
                      args.target_items,args.target_proofs,args.target_game,args.out,
                      base_items_sha=args.base_items_sha,
                      base_overlay_sha=args.base_overlay_sha)
