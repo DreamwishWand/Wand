@@ -1181,7 +1181,8 @@ pub(super) fn inspect_scene_network(profile:&[u8],plan:&str)->Result<String,Code
  // existing conservative eight-cell isolation envelope, not a guess.
  for ((grid,base,diagonal,factor),parts) in fence_groups{
   let (nodes,edges)=ddv_save_patch::fence_topology::decompile_fence(base,factor,diagonal,&parts).map_err(|_|bad)?;
-  let actual=ddv_save_patch::fence_topology::compile_fence(base,factor,diagonal,&nodes,&edges).map_err(|_|bad)?;
+  let posts=parts.iter().filter(|p|p.item==base).map(|p|(p.x,p.y)).collect();
+  let actual=ddv_save_patch::fence_topology::compile_fence_with_posts(base,factor,diagonal,&nodes,&edges,&posts).map_err(|_|bad)?;
   if actual.into_iter().collect::<std::collections::BTreeSet<_>>()!=parts.iter().copied().collect(){return Err(bad);}
   for (id,v) in grids[&grid]["Objects"].as_object().ok_or(bad)?{
    if chosen.contains(&(grid.clone(),id.clone()))||v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=407){continue;}
@@ -1194,7 +1195,7 @@ pub(super) fn inspect_scene_network(profile:&[u8],plan:&str)->Result<String,Code
 /// Stage networks and furniture together, preserving stock semantics.
 /// No intermediate candidate is returned even if a later network fails.
 fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
- use ddv_save_patch::fence_topology::{FencePart,decompile_fence,compile_fence};
+ use ddv_save_patch::fence_topology::{FencePart,decompile_fence,compile_fence_with_posts};
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
  if rows.is_empty()||rows.len()>416{return Err(bad);}
@@ -1248,10 +1249,11 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  for ((grid,base,diag),parts) in fences{
   let d=destinations.get(&grid).ok_or(bad)?;
   let (nodes,edges)=decompile_fence(base,d.tessellation,diag,&parts).map_err(|_|bad)?;
-  let actual=compile_fence(base,d.tessellation,diag,&nodes,&edges).map_err(|_|bad)?;
+  let posts=parts.iter().filter(|p|p.item==base).map(|p|(p.x,p.y)).collect();
+  let actual=compile_fence_with_posts(base,d.tessellation,diag,&nodes,&edges,&posts).map_err(|_|bad)?;
   // Preserve exact original representation: no implicit extra posts.
   if actual.iter().copied().collect::<std::collections::BTreeSet<_>>()!=parts.iter().copied().collect(){return Err(bad);}
-  let draft=ddv_save_patch::preview_isolated_fence(&working,d,base,diag,&nodes,&edges).map_err(|_|bad)?;
+  let draft=ddv_save_patch::preview_isolated_fence_with_posts(&working,d,base,diag,&nodes,&edges,&posts).map_err(|_|bad)?;
   install(&mut working,d,draft,actual.len())?;
  }
  Ok(std::mem::take(&mut *working))
