@@ -1,7 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
  import DecorationDesign from './DecorationDesign.svelte';
- import {roomDesignWords,type RoomDesignTemplate} from './room-design.ts';
+ import {roomDesignWords,roomSurfaceWords,type RoomDesignTemplate} from './room-design.ts';
  import {defaultWorldLayers,type WorldLayerState} from './world-layer-state.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let worker:Worker|null=null,locale:WandLanguage='ja';
@@ -9,6 +9,7 @@
  export let layerState:WorldLayerState=defaultWorldLayers();
  let templates:RoomDesignTemplate[]=[],key='',pending=0,error=false,seen:Worker|null=null;
  $: w=roomDesignWords[locale];
+ $: sw=roomSurfaceWords[locale];
  $: selected=templates.find(t=>t.grid.key===key)??null;
  $: if(worker!==seen)load(worker);
  function receive(e:MessageEvent){const d=e.data;if(!pending||d?.requestId!==pending)return;pending=0;if(d.kind!=='room-design-templates'||!Array.isArray(d.templates)||!d.templates.length){error=true;return;}templates=d.templates;key=templates[0].grid.key;}
@@ -16,7 +17,7 @@
  onDestroy(()=>seen?.removeEventListener('message',receive));
 </script>
 <div class="room-design">
- <div class="room-tools"><select aria-label={w[1]} bind:value={key} disabled={!templates.length}>{#each templates as t}<option value={t.grid.key}>{t.label}</option>{/each}</select><button type="button" on:click={onClose}>{w[3]}</button></div>
+ <div class="room-tools"><select aria-label={w[1]} bind:value={key} disabled={!templates.length}><optgroup label={sw[0]}>{#each templates.filter(t=>t.kind==='floor') as t}<option value={t.grid.key}>{t.label}</option>{/each}</optgroup><optgroup label={sw[1]}>{#each templates.filter(t=>t.kind==='wall') as t}<option value={t.grid.key}>{t.label}</option>{/each}</optgroup></select><button type="button" on:click={onClose}>{w[3]}</button></div>
  {#if error}<p role="alert">{w[2]}</p>{:else if !selected}<p role="status">…</p>{/if}
  <DecorationDesign active={!!selected} grid={selected?.grid??null} raster={selected?.raster??null} {worker} {nextRequest} {locale} bind:layerState/>
 </div>
