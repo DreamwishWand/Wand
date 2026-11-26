@@ -131,6 +131,35 @@ pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[Bul
  Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+
+/** Aggregate a support hierarchy's stock mutations in one lexical pass.
+ * Every individual item participates in the exact same inventory contract
+ * as the ordinary single-item writer. No missing entries are synthesized. */
+pub(super) fn preview_bulk_stock(source:&str,items:&[u64],returning:bool)->Result<String,PatchError>{
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||items.is_empty()||items.len()>LIMIT{return Err(BAD);}
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let inventory=checked_inventory(&root)?;
+ let mut counts=HashMap::<u64,u32>::new();
+ for &item in items{if item/100_000!=400{return Err(BAD);}*counts.entry(item).or_default()+=1;}
+ let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ for &item in counts.keys(){locator.capture.insert(amount_path(item),None);}
+ locator.walk_complete()?;
+ let mut edits=Vec::new();
+ for (item,count) in counts{
+  let old=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|v|u32::try_from(v).ok()).filter(|n|*n<=i32::MAX as u32).ok_or(BAD)?;
+  let new=if returning{old.checked_add(count)}else{old.checked_sub(count)}.filter(|n|*n<=i32::MAX as u32).ok_or(PatchError::InvalidQuantity)?;
+  let range=locator.capture.get(&amount_path(item)).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+  if source[range.clone()].parse::<u32>().ok()!=Some(old){return Err(PatchError::AmountMismatch);}
+  edits.push((range,new.to_string()));
+ }
+ edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut candidate=String::with_capacity(source.len());let mut last=0;
+ for (r,v) in edits{if r.start<last{return Err(BAD);}candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}
+ candidate.push_str(&source[last..]);validate_json_without_edit(&candidate)?;
+ Ok(candidate)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
