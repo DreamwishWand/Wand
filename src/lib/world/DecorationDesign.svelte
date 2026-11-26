@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {isRoomDesign,roomDesignValid,roomDesignWords} from './room-design.ts';
  import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign,islandPresetWords} from './island-design-preset.ts';
  import {localSaveSession} from '../ui/local-save-session';
  import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea,splitWorldArea,replaceWorldArea,wholeAreaWords,type WholeAreaKind} from './whole-area-preset.ts';
@@ -80,7 +81,7 @@
  export let locale:WandLanguage='ja';
  let layouts:Record<string,DesignTimeline>={};
  type RecoveryState={phase:'loading'|'offer'|'restoring'|'discarding'|'ready';revision:string|null;record?:DesignDraft;warning?:'unavailable'|'invalid'|'conflict';writable:boolean};
- type RecoveryJob={location:DraftLocation;context:string;grid:PublicTerrainGridRef;frame:MainlandDesignFrame|null;draft:DesignDraft;ids:number[];offset:number;defs:Map<number,DesignItemGeometry>;own:Worker};
+ type RecoveryJob={location:DraftLocation;context:string;grid:PublicTerrainGridRef;raster:TerrainRaster|null;frame:MainlandDesignFrame|null;draft:DesignDraft;ids:number[];offset:number;defs:Map<number,DesignItemGeometry>;own:Worker};
  let recovery:Record<string,RecoveryState>={};
  const recoveryJobs=new Map<number,RecoveryJob>(),recoveryWrites=new Map<string,Promise<void>>();
  const recoveryWords={
@@ -124,7 +125,7 @@
  function resumeRecovery(){
   const location=recoveryLocation,state=recoveryState;
   if(!location||state?.phase!=='offer'||!state.record||!grid||!worker)return;
-  const draft=state.record,job:RecoveryJob={location,context:contextKey,grid,frame:worldFrame,draft,ids:draftItemIds(draft),offset:0,defs:new Map(),own:worker};
+  const draft=state.record,job:RecoveryJob={location,context:contextKey,grid,raster,frame:worldFrame,draft,ids:draftItemIds(draft),offset:0,defs:new Map(),own:worker};
   setRecovery(location,{...state,phase:'restoring'});requestRecoveryShapes(job);
  }
  function requestRecoveryShapes(job:RecoveryJob){
@@ -138,8 +139,8 @@
  }
  function finishRecovery(job:RecoveryJob){
   const state=recovery[job.location.identity];if(state?.phase!=='restoring')return;
-  if(!validateDesignDraft(job.draft,job.location,job.frame,job.defs)){failRecovery(job);return;}
-  const factor=String(job.grid.factor);
+  if(!validateDesignDraft(job.draft,job.location,job.frame,job.defs)||isRoomDesign(job.grid)&&(!job.raster||!roomDesignValid(job.draft.timeline,job.grid,job.raster,job.defs,true))){failRecovery(job);return;}
+  const factor=isRoomDesign(job.grid)?job.grid.key:String(job.grid.factor);
   cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...job.defs])};
   layouts={...layouts,[job.context]:job.draft.timeline};
   if(recoveryLocation?.identity===job.location.identity){cancel();camera=job.draft.camera;selected=job.draft.selection.length===1?job.draft.selection[0]:null;groupIds=job.draft.selection.length>1?job.draft.selection:[];}
@@ -159,7 +160,7 @@
   recoveryWrites.set(location.identity,write);void write.finally(()=>{if(recoveryWrites.get(location.identity)===write)recoveryWrites.delete(location.identity);});
  }
  let cache:Record<string,Map<number,DesignItemGeometry>>={};
- let catalog:DesignCatalogItem[]=[],catalogLocale='',catalogLoading=false,catalogError='',catalogId=0;
+ let catalog:DesignCatalogItem[]=[],catalogLocale='',catalogKey='',catalogLoading=false,catalogError='',catalogId=0;
  let images=new Map<number,string>(),imagePending=new Set<number>();
  let query='',layer:MapSelectionLayer='all',limit=80;
  let selected:number|null=null,placing:DesignItemGeometry|null=null,shapeId=0,loadingShape=false,error='';
@@ -286,7 +287,7 @@
  let areaReview:{key:string;areaKey:string;baseline:DesignTimeline;next:DesignTimeline;preview:readonly DesignPlacement[];incoming:Map<number,DesignItemGeometry>;summary:ReturnType<typeof reviewWholeArea>}|null=null;
  $: if(areaReview&&(!active||areaReview.key!==contextKey||areaReview.baseline!==timeline||areaReview.areaKey!==areaTarget?.key||!areaKind))areaReview=null;
  function cancelAreaReview(){areaReview=null;}
- function applyAreaReview(){const r=areaReview;if(!r||!grid||r.key!==contextKey||r.baseline!==timeline||!active||recoveryBlocked)return;areaReview=null;const factor=String(grid.factor);cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...r.incoming])};selected=null;groupIds=[];cancel();if(r.next!==timeline){layouts={...layouts,[contextKey]:r.next};persistRecovery(r.next);}error='';}
+ function applyAreaReview(){const r=areaReview;if(!r||!grid||r.key!==contextKey||r.baseline!==timeline||!active||recoveryBlocked)return;areaReview=null;const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...r.incoming])};selected=null;groupIds=[];cancel();if(r.next!==timeline){layouts={...layouts,[contextKey]:r.next};persistRecovery(r.next);}error='';}
  let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>;capture?:SaveDesignCapture;areaKind?:WholeAreaKind;areaKey?:string}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
@@ -448,9 +449,9 @@
  $: if(contextKey!==lastGrid){
    lastGrid=contextKey;focusedId=null;inspectorOpen=false;placedSearchOpen=false;placedQuery='';layer='all';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;activeScene=null;lastPoint=null;importEpoch++;reading=false;pendingImport=null;areaReview=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
- $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
+ $: if(active&&grid&&worker&&(locale!==catalogLocale||grid.key!==catalogKey))requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
-   catalogLocale=language;catalogLoading=true;catalogError='';catalogId=nextRequest();
+   catalogLocale=language;catalogKey=g.key;catalogLoading=true;catalog=[];catalogError='';catalogId=nextRequest();
    w.postMessage({command:'design-catalog',requestId:catalogId,key:g.key,locale:language});
  }
  function receive(e:MessageEvent){
@@ -463,11 +464,11 @@
      for(const g of d.result as DesignItemGeometry[])job.defs.set(g.itemId,g);
      job.offset+=batch.length;requestRecoveryShapes(job);return;
    }
-   if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=String(grid.factor),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
+   if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=(isRoomDesign(grid)?grid.key:String(grid.factor)),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
    if(pasteRequest&&d?.requestId===pasteRequest){
      pasteRequest=0;const clip=pastePending;pastePending=[];
      if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){if(activeScene){activeScene=null;error=sceneText[5];}return;}
-     const factor=String(grid.factor),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
+     const factor=(isRoomDesign(grid)?grid.key:String(grid.factor)),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){activeScene=null;error='配置形状を取得できませんでした。';return;}
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
      if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){activeScene=null;error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}const merged=new Map([...definitions,...incoming]);if(activeScene&&!sceneBounds(clip,merged)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint,clip,merged);return;
@@ -482,8 +483,8 @@
      if(pending.capture&&pending.capture!==capturedLayout)return;
      const merged=new Map([...definitions,...incoming]);
      const next=pending.capture?mergeSaveDesign(timeline,pending.placements,merged,width,height):restoreDesign(timeline,pending.placements,incoming,width,height);
-     if(!next){error=words[3];return;}
-     const factor=String(grid.factor);
+     if(!next||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,merged))){error=words[3];return;}
+     const factor=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
      selected=null;groupIds=[];cancel();if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}if(pending.capture)onDismissCapture();error='';return;
    }
@@ -496,7 +497,7 @@
      loadingShape=false;
      if(d.kind!=='design-shape'||!grid||d.key!==grid.key||!d.result){error='配置形状を取得できませんでした。';return;}
      const g=d.result as DesignItemGeometry;
-     const key=String(grid.factor);
+     const key=(isRoomDesign(grid)?grid.key:String(grid.factor));
      cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};
      if(!layerSelectable(layerState,g)||worldFrame&&!worldCatalogEligible(g))return;
      if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}
@@ -516,7 +517,7 @@
  $: timeline=contextKey?layouts[contextKey]??empty:empty;
  $: placements=currentDesign(timeline);
  $: placementById=new Map(placements.map(p=>[p.id,p]));
- $: definitions=cache[String(grid?.factor)]??new Map<number,DesignItemGeometry>();
+ $: definitions=cache[isRoomDesign(grid)?grid!.key:String(grid?.factor)]??new Map<number,DesignItemGeometry>();
  $: map=grid?designShapeMap(placements,definitions,grid):null;
  $: objects=map?mapPainterOrder(map.objects):[];
  $: width=worldFrame?worldFrame.raster.sizeX:grid?grid.sizeX*grid.factor:1;
@@ -539,7 +540,7 @@
  $: hoverMovePlan=moveMode&&chosen&&hover?movePlan(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds,worldFrame,width,height):null;
  $: hoverMoveTargets=moveMode&&chosen&&hover?moveTargets(timeline,[chosen.id],definitions,hover.x-chosen.x,hover.y-chosen.y,symmetry,editableIds):[];
  $: ghostValid=Boolean(hover&&ghostGeometry&&designCandidateValid(placements,
-   {id:moveMode&&chosen?chosen.id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation},ghostGeometry,width,height)&&mainlandItemsValid(worldFrame,[{itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}],definitions));
+   {id:moveMode&&chosen?chosen.id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation},ghostGeometry,width,height)&&mainlandItemsValid(worldFrame,[{itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}],definitions)&&(!isRoomDesign(grid)||!!grid&&!!raster&&roomDesignValid({snapshots:[[...placements.filter(p=>!moveMode||p.id!==chosen?.id),{id:timeline.nextId,itemId:ghostGeometry.itemId,x:hover.x,y:hover.y,orientation:ghostOrientation}]],cursor:0,nextId:timeline.nextId+1},grid,raster,definitions)));
  $: binding=grid&&raster?{raster,factor:grid.factor,verifiedGridOrdinals:[]} satisfies TerrainBinding:null;
  $: warnings=binding&&hover&&ghostShape?terrainWarnings(binding,ghostShape,hover.x,hover.y):[];
  $: terrainUrl=raster&&active?terrainImage(raster):'';
@@ -551,7 +552,7 @@
    ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
  }
  function save(next:DesignTimeline|null,defs=definitions):boolean{
-   if(recoveryBlocked||!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)){error=worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
+   if(recoveryBlocked||!grid||!next||!validatedMainlandPlan(worldFrame,timeline,next,defs)||isRoomDesign(grid)&&(!raster||!roomDesignValid(next,grid,raster,defs))){error=isRoomDesign(grid)?roomDesignWords[locale][4]:worldFrame?(locale==='ja'?'配置範囲が一つの地形に収まる位置を選択してください。':'Choose a position entirely within one source terrain.'):'配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return false;}
    if(next!==timeline){layouts={...layouts,[contextKey]:next};persistRecovery(next);}error='';return true;
  }
  function cancel(){activeScene=null;closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
