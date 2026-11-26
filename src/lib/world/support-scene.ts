@@ -1,5 +1,9 @@
+import {reflectedDesignItem} from './design-symmetry.ts';
+import {groupAbsoluteCandidate,groupPasteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow,type WorldGroupPose,type WorldSymmetryAxis} from './group-placement.ts';
+import type {MainlandGrid} from './mainland-world-coordinates.ts';
+import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import {parseScene} from './scene-preset.ts';
-import type {DesignClipItem} from './design-layout.ts';
+import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
 import {parseSupportTree,supportStockPlacement,type SupportTree,type SupportStockPlan} from './subgrid-local.ts';
 import {isCardinal} from './saved-map-transform.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
@@ -124,4 +128,44 @@ export function parseMixedScene(raw:string):MixedScenePreset{
 export function mixedSceneFromClip(clip:readonly DesignClipItem[],supports:readonly (SupportScene|null)[],anchor:'corner'|'center'='center'):MixedScenePreset{
  if(clip.length!==supports.length)throw Error('SCENE_LENGTH');
  return parseMixedScene(JSON.stringify({schema:'wand.preset.mixed-scene@1',gameVersion:'1.26.2',factor:2,anchor,items:clip.map((p,i)=>({...p,support:supports[i]}))}));
+}
+
+
+/** Root-local Scene arrangements survive a half-turn with their support.
+ * A line reflection of populated supports is not a native rotation. */
+export function reflectedMixedRoot(p:WorldGroupPose,support:SupportScene|null,geometry:DesignItemGeometry,factor:1|2,axis:WorldSymmetryAxis):WorldGroupPose|null{
+ if(support&&support.ownerItemId!==p.itemId||axis.mode!=='point'&&support?.tree.objects.length)return null;
+ const reflected=reflectedDesignItem({itemId:p.itemId,x:p.x*factor,y:-p.y*factor,orientation:p.orientation},geometry,{mode:axis.mode,x2:axis.x*2*factor,y2:-axis.y*2*factor});
+ return reflected?{...reflected,x:reflected.x/factor,y:-reflected.y/factor}:null;
+}
+export type MixedScenePlacement=GroupPasteCandidate&{supportRows:(GroupPasteRow&{scene?:SupportScene})[]};
+export function mixedPlacementCounts(q:MixedScenePlacement){
+ return mixedSceneCounts(q.supportRows.map(r=>({itemId:Number(r.itemId),dx:0,dy:0,orientation:0,support:r.scene??null})));
+}
+/** Validate both halves together, preserving each root's independent tree.
+ * Existing objects are never assumed to contain matching descendants. */
+export function mixedScenePlacement(clip:readonly DesignClipItem[],doc:MixedScenePreset,point:{x:number;y:number},axis:WorldSymmetryAxis|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number):MixedScenePlacement|null{
+ if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId))return null;
+ const base=groupPasteCandidate(clip,grids,rasters,defs,mixedSceneCounts(doc.items),objects,omitted,point.x,point.y);
+ if(!base)return null;
+ const sources=base.rows.map((r,i)=>({...r,...(doc.items[i].support?{scene:doc.items[i].support!}:{})}));
+ if(!axis)return {...base,supportRows:sources};
+ const roots=base.ghosts.map((g,i)=>({pose:{itemId:clip[i].itemId,x:g.x,y:g.y,orientation:clip[i].orientation},support:doc.items[i].support,factor:g.factor}));
+ const combined:typeof roots=[],anchors=new Map<string,typeof roots[number]>();
+ function append(root:typeof roots[number]){
+  const p=root.pose,key=p.x+':'+p.y,old=anchors.get(key);
+  if(old)return old.pose.itemId===p.itemId&&old.pose.orientation===p.orientation&&old.factor===root.factor&&JSON.stringify(old.support)===JSON.stringify(root.support);
+  anchors.set(key,root);combined.push(root);return true;
+ }
+ for(const root of roots)if(!append(root))return null;
+ for(const root of roots){
+  const def=defs.get(root.pose.itemId)?.get(root.factor);
+  const pose=def?reflectedMixedRoot(root.pose,root.support,def,root.factor,axis):null;
+  if(!pose||!append({...root,pose}))return null;
+ }
+ const items=combined.map(({pose,support})=>({itemId:pose.itemId,orientation:pose.orientation,dx:0,dy:0,support}));
+ if(!mixedSceneSizeValid(items))return null;
+ const q=groupAbsoluteCandidate(combined.map(r=>r.pose),grids,rasters,defs,mixedSceneCounts(items),objects,omitted);
+ if(!q||q.rows.some((r,i)=>r.destination.factor!==combined[i].factor))return null;
+ return {...q,supportRows:q.rows.map((r,i)=>({...r,...(combined[i].support?{scene:combined[i].support!}:{})}))};
 }

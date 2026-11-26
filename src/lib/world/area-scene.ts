@@ -1,5 +1,5 @@
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
-import {captureFurnitureGroup,groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow} from './group-placement.ts';
+import {captureFurnitureGroup,groupAbsoluteCandidate,type GroupGeometry,type GroupPasteCandidate,type GroupPasteRow,type WorldSymmetryAxis} from './group-placement.ts';
 import {parseSupportScene,supportSceneRootCounts,SCENE_FURNITURE_LIMIT,mixedSceneSizeValid,type SupportScene} from './support-scene.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
@@ -77,9 +77,24 @@ export function networkSceneShape(p:AreaSceneItem,g:DesignItemGeometry|undefined
  return s.width===w&&s.height===h&&(p.network.diagonal||s.cellCount===w*h&&s.runs.length===h&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===w))?s:null;
 }
 export type AreaSceneCandidate=GroupPasteCandidate&{areaRows:(GroupPasteRow&{scene?:SupportScene;network?:SceneNetwork})[]};
-export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number):AreaSceneCandidate|null{
+export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,axis:WorldSymmetryAxis|null=null):AreaSceneCandidate|null{
  const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],bx=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,by=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
+ const original=areaSceneAtOrigin(doc,grids,rasters,defs,objects,omitted,bx,by);
+ if(!original||!axis)return original;
+ // Keep source and reflected geometry on the same native lattice. The
+ // writer still rechecks the complete combined network and all descendants.
+ const factor=original.ghosts[0].factor;
+ if(original.ghosts.some(g=>g.factor!==factor))return null;
+ const nativeDefs:GroupGeometry=new Map([...defs].map(([id,byFactor])=>[id,new Map([...byFactor].filter(([f])=>f===factor))]));
+ const mirrored=transformAreaScene(doc,nativeDefs,axis.mode);
+ if(!mirrored)return null;
+ const combined=combineSymmetricArea(doc,mirrored,original.ghosts,axis,bx,by);
+ if(!combined)return null;
+ const q=areaSceneAtOrigin(combined.doc,grids,rasters,defs,objects,omitted,combined.x,combined.y);
+ return q&&q.ghosts.every(g=>g.factor===factor)?q:null;
+}
+function areaSceneAtOrigin(doc:AreaScene,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,bx:number,by:number):AreaSceneCandidate|null{
  const positions=doc.items.map(p=>({itemId:p.itemId,x:bx+p.dx/2,y:by-p.dy/2,orientation:p.orientation}));
  const furniture=positions.filter((_,i)=>!doc.items[i].network),base=furniture.length?groupAbsoluteCandidate(furniture,grids,rasters,defs,areaSceneCounts(doc.items),objects,omitted):{rows:[],ghosts:[]};
  if(!base)return null;
@@ -104,14 +119,14 @@ export function areaSceneCandidate(doc:AreaScene,grids:readonly MainlandGrid[],r
  return {rows,ghosts,areaRows:rows};
 }
 
-export type AreaSceneTransform='left'|'right'|'horizontal'|'vertical';
+export type AreaSceneTransform='left'|'right'|'horizontal'|'vertical'|'point';
 /** Transform physical cell coordinates, not the native Ext anchor as a post.
  * Fence extents are derived from the exact two endpoints; no state is lost.
  * A reflected furniture footprint must have an exact native orientation.
  * Populated supports retain their local arrangement on rotation; reflection
  * of a populated support is not represented by a root-orientation change. */
 export function transformAreaScene(doc:AreaScene,defs:GroupGeometry,mode:AreaSceneTransform):AreaScene|null{
- const quarter=mode==='left'||mode==='right',fx=mode==='vertical',fy=mode==='horizontal';
+ const quarter=mode==='left'||mode==='right',fx=mode==='vertical'||mode==='point',fy=mode==='horizontal'||mode==='point';
  const shape=(p:AreaSceneItem)=>{
   const map=defs.get(p.itemId),g=map?.get(2)??map?.get(1),factor=map?.has(2)?2:1;
   if(!g)return null;
@@ -152,8 +167,8 @@ export function transformAreaScene(doc:AreaScene,defs:GroupGeometry,mode:AreaSce
   }else if(p.network?.kind==='road'){
    [dx,dy]=point(p.dx,p.dy,a.w);orientation=2;
   }else{
-   if(!quarter&&p.support?.tree.objects.length)return null;
-   orientation=mode==='right'?(p.orientation+3)%4:mode==='left'?(p.orientation+1)%4:fx?(4-p.orientation)%4:(6-p.orientation)%4;
+   if(!quarter&&mode!=='point'&&p.support?.tree.objects.length)return null;
+   orientation=mode==='right'?(p.orientation+3)%4:mode==='left'?(p.orientation+1)%4:mode==='point'?(p.orientation+2)%4:fx?(4-p.orientation)%4:(6-p.orientation)%4;
    if(orientation!==p.orientation&&nativeActionBlocked(a.g.editRestrictions,'rotate'))return null;
    [dx,dy]=mode==='right'?[h-p.dy-a.h,p.dx]:mode==='left'?[p.dy,w-p.dx-a.w]:[fx?w-p.dx-a.w:p.dx,fy?h-p.dy-a.h:p.dy];
   }
@@ -170,4 +185,35 @@ export function transformAreaScene(doc:AreaScene,defs:GroupGeometry,mode:AreaSce
  }
  const x=Math.min(...out.map(p=>p.dx)),y=Math.min(...out.map(p=>p.dy));
  try{return parseAreaScene(JSON.stringify({...doc,items:out.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))}));}catch{return null;}
+}
+
+/** Combine the two complete representations at absolute half-cell anchors.
+ * A normalized reflected Scene is accepted only when each anchor equals
+ * the reflection of its original native footprint. Exact coincident
+ * representation parts may be shared; conflicting identities are rejected. */
+export function combineSymmetricArea(doc:AreaScene,mirrored:AreaScene,ghosts:readonly StockCandidate[],axis:WorldSymmetryAxis,bx:number,by:number):{doc:AreaScene;x:number;y:number}|null{
+ if(!doc.items.length||doc.items.length!==ghosts.length||mirrored.items.length!==ghosts.length||![axis.x*4,axis.y*4,bx*2,by*2].every(Number.isSafeInteger))return null;
+ const fx=axis.mode!=='horizontal',fy=axis.mode!=='vertical';
+ const x=bx*2,y=-by*2;
+ const poses=doc.items.map((p,i)=>{
+  const g=ghosts[i],w=g.shape.width*2/g.factor,h=g.shape.height*2/g.factor;
+  if(g.x*2!==x+p.dx||-g.y*2!==y+p.dy)return null;
+  return {dx:fx?axis.x*4-x-p.dx-w:x+p.dx,dy:fy?-axis.y*4-y-p.dy-h:y+p.dy};
+ });
+ if(poses.some(p=>!p))return null;
+ const valid=poses as {dx:number;dy:number}[],mx=Math.min(...valid.map(p=>p.dx)),my=Math.min(...valid.map(p=>p.dy));
+ if(mirrored.items.some((p,i)=>p.itemId!==doc.items[i].itemId||p.dx+mx!==valid[i].dx||p.dy+my!==valid[i].dy))return null;
+ const items:AreaSceneItem[]=[],anchors=new Map<string,AreaSceneItem>();
+ function add(p:AreaSceneItem,ox:number,oy:number){
+  const row={...p,dx:p.dx+ox,dy:p.dy+oy},key=(p.network?.kind??'furniture')+':'+row.dx+':'+row.dy,old=anchors.get(key);
+  if(old)return JSON.stringify(old)===JSON.stringify(row);
+  anchors.set(key,row);items.push(row);return true;
+ }
+ for(const p of doc.items)if(!add(p,x,y))return null;
+ for(const p of mirrored.items)if(!add(p,mx,my))return null;
+ const minX=Math.min(...items.map(p=>p.dx)),minY=Math.min(...items.map(p=>p.dy));
+ try{return {doc:parseAreaScene(JSON.stringify({...doc,items:items.map(p=>({...p,dx:p.dx-minX,dy:p.dy-minY}))})),x:minX/2,y:-minY/2};}catch{return null;}
+}
+export function areaPlacementCounts(q:AreaSceneCandidate){
+ return areaSceneCounts(q.areaRows.map(r=>({itemId:Number(r.itemId),dx:0,dy:0,orientation:0,support:r.scene??null,network:r.network??null})));
 }
