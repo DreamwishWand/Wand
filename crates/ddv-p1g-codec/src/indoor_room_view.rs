@@ -195,7 +195,7 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
  Ok(draft.patched_json)
 }
 pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
- use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit,FurnitureStockAction};
+ use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit};
  let bad=CodecError::Json;
  if plan.len()>32768{return Err(CodecError::Bounds);}
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
@@ -296,25 +296,45 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   }
   let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
  }
- if let Some(row)=p.get("place"){
+ if let Some(value)=p.get("place"){
+  use zeroize::{Zeroize,Zeroizing};
+  let rows=if let Some(a)=value.as_array(){a.as_slice()}else{std::slice::from_ref(value)};
+  if rows.is_empty()||rows.len()>32||objects.len()+rows.len()>512{return Err(bad);}
+  let mut working=Zeroizing::new(json.to_owned());let mut last=None;let mut anchors=std::collections::HashSet::new();
+  let next=grid.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+  let ids=(0..rows.len() as u64).map(|i|next.checked_add(i).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+  let refs=crate::grid_instance_preview::grid_identity_dependencies_for_ids(source,&gid,&ids)?;
+  if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  for row in rows{
   if row.as_object().is_none_or(|r|r.len()!=5||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"))){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  if !on_terrain(xy)||!empty_anchor(xy,None)||objects.len()>=512{return Err(bad);}
+  if !on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy){return Err(bad);}
   let t=terrain.ok_or(bad)?;
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)? as u32;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)? as u32;
-  let next=grid.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
-  let refs=crate::grid_instance_preview::grid_identity_dependencies_for_ids(source,&gid,&[next.to_string()])?;
-  if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:grid.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?.to_owned(),tessellation:factor,size:(sx,sy)};
-  return ddv_save_patch::preview_indoor_grid_stock_place(json,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch);
+  let mut draft=ddv_save_patch::preview_indoor_grid_stock_place(&working,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch)?;
+  if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+  working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
+  }
+  let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
  }
- if let Some(row)=p.get("pickup"){
-  if row.as_object().is_none_or(|r|r.len()!=6||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"))){return Err(bad);}
-  let (target,expected,_)=resolve(row)?;
-  let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
-  return ddv_save_patch::preview_furniture_stock_transaction(json,amount,FurnitureStockAction::Pickup{target:&target,expected}).map_err(|_|CodecError::Patch);
+ if let Some(value)=p.get("pickup"){
+  use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+  let rows=if let Some(a)=value.as_array(){a.as_slice()}else{std::slice::from_ref(value)};
+  if rows.is_empty()||rows.len()>32{return Err(bad);}
+  let mut targets=Vec::new();let mut seen=std::collections::HashSet::new();
+  for row in rows{
+   if row.as_object().is_none_or(|r|r.len()!=6||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"))){return Err(bad);}
+   let (target,expected,orientation)=resolve(row)?;
+   let amount=row.get("expectedStock").and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(bad)?;
+   let actual=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(target.item_id.to_string())).and_then(|v|v.get("Amount")).and_then(Value::as_u64);
+   if actual!=Some(amount)||!seen.insert(target.object_id.clone()){return Err(bad);}
+   targets.push((target,expected,orientation));
+  }
+  let pickups=targets.iter().map(|(target,expected,orientation)|BulkPickup{target,expected:*expected,orientation:orientation.as_str()}).collect::<Vec<_>>();
+  return preview_bulk_furniture(json,&pickups,&[]).map_err(|_|CodecError::Patch);
  }
  let rows=p.get("edits").and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=32).ok_or(bad)?;
  let mut edits=Vec::new();
@@ -460,6 +480,15 @@ mod tests{
   assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["X"],3);
   assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
   plan["place"]["x"]=Value::from(8);assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  let mut group=json!({"roomOrdinal":1,"surfaceOrdinal":1,"place":[{"itemId":40000001,"expectedStock":2,"x":3,"y":3,"orientation":"GridOrientation_Down"},{"itemId":40000001,"expectedStock":1,"x":4,"y":3,"orientation":"GridOrientation_Down"}]});
+  let d=furniture_candidate(raw,&group.to_string()).unwrap();let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["X"],4);
+  let back=json!({"roomOrdinal":1,"surfaceOrdinal":1,"pickup":[{"index":1,"itemId":40000001,"expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Down","expectedStock":0},{"index":2,"itemId":40000001,"expectedX":4,"expectedY":3,"expectedOrientation":"GridOrientation_Down","expectedStock":0}]});
+  let back=furniture_candidate(d.patched_json.as_bytes(),&back.to_string()).unwrap();let j:Value=serde_json::from_str(&back.patched_json).unwrap();
+  assert_eq!(j["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],2);
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().len(),1);
+  group["place"][1]["expectedStock"]=2.into();assert!(furniture_candidate(raw,&group.to_string()).is_err());
   let mut p=json!({"roomOrdinal":1,"surfaceOrdinal":1,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":4,"y":4,"orientation":"GridOrientation_Left"}]});
   assert!(furniture_candidate(raw,&p.to_string()).is_ok());p["edits"][0]["y"]=Value::from(-1);assert!(furniture_candidate(raw,&p.to_string()).is_err());
  }
