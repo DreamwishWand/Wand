@@ -243,6 +243,9 @@ test('mainland save move drafts remain native same-grid and reject overlaps or o
  assert.equal(transfer?.area,other.key);assert.equal(transfer?.plan.x,4);assert.equal(transfer?.plan.y,6);assert.equal(transfer?.plan.expectedX,4);
  assert.equal(mainlandTransferCandidate(a,grids,rasters,draft.next,far.x,far.y),null);
  assert.equal(mainlandTransferCandidate({...a,object:{...o,editRestrictions:{switchGrid:'denied'}}},grids,rasters,timeline,far.x,far.y),null);
+ const tree={...a,object:{...o,itemId:'40200001',layer:'landscape',editRestrictions:{move:'allowedFlag',switchGrid:'allowedFlag'}}};
+ assert.equal(mainlandTransferCandidate(tree,grids,rasters,timeline,far.x,far.y)?.plan.itemId,'40200001');
+ assert.equal(mainlandTransferCandidate({...tree,object:{...tree.object,editRestrictions:{move:'allowedFlag'}}},grids,rasters,timeline,far.x,far.y),null);
 });
 
 import {mainlandNetworkScope,mergeMainlandAreaDrafts} from '../src/lib/world/mainland-design-frame.ts';
@@ -324,6 +327,12 @@ test('copy real source-local furniture to independent world design with fresh lo
  const mixedCapability=captureSaveDesign(grids,rasters,maps,[{...a,object:{...o,surfaceCapable:true}}]);
  assert.equal(mixedCapability?.count,1);
  assert.equal(captureSaveDesign(grids,rasters,maps,[{...a,object:{...o,layer:'surface',surfaceCapable:true}}]),null);
+ const tree={...o,itemId:'40200001',shapeKey:'40200001:8',layer:'landscape'};
+ const treeMap={...m,objects:[tree],shapes:{[tree.shapeKey]:shape}};
+ const treeCapture=captureSaveDesign(grids,rasters,new Map([[g.key,treeMap]]),[{...a,object:tree}]);
+ assert.equal(treeCapture?.count,1);
+ assert.equal(parseMainlandDesign(treeCapture.text,composeMainlandDesignFrame(grids,rasters))[0].itemId,40200001);
+ assert.equal(captureSaveDesign(grids,rasters,new Map([[g.key,treeMap]]),[{...a,object:{...tree,subgrid:{status:'unresolved',objectCount:null}}}]),null);
  const frame=composeMainlandDesignFrame(grids,rasters),incoming=parseMainlandDesign(capture.text,frame);
  const def={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:m.shapes},defs=new Map([[def.itemId,def]]);
  const first=mergeSaveDesign(emptyDesign(),incoming,defs,frame.raster.sizeX,frame.raster.sizeY);
