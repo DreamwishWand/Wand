@@ -122,17 +122,35 @@ def prepare(root,out):
     print(json.dumps(summary,indent=2),flush=True)
     return objects,paths,summary
 
-def resume(root,out):
+def collect_release(root,version,source_sha=None,overlay_sha=None):
+    if version=="1.26.2":
+        check(source_sha is None and overlay_sha is None,"Baseline uses fixed source pins")
+        return collect(root)
+    from plan_media_update import read_items, read_scan
+    from stage_media_v2 import VARIANT_POLICY_256
+    check(re.fullmatch(r"\d+\.\d+\.\d+",version) and
+          re.fullmatch(r"[a-f0-9]{64}",source_sha or "") and
+          re.fullmatch(r"[a-f0-9]{64}",overlay_sha or ""),"Future release requires exact source and overlay SHA pins")
+    scan=read_scan(root/"source-manifest.json")
+    check(scan["version"]==version,"Future source version mismatch")
+    items=read_items(root/"source-items"/"items.jsonl",expected_sha=source_sha)
+    check(digest_file(root/"private-media-overlay-v2-latest"/"manifest.json")==overlay_sha,"Future overlay manifest changed")
+    result=collect(root,expected_items=len(items["items"]),expected_guids=len(items["guids"]),
+                   source_sha=source_sha,variant_policy=VARIANT_POLICY_256)
+    check(result[0]==overlay_sha,"Future overlay manifest changed")
+    return result
+
+def resume(root,out,*,version="1.26.2",source_sha=None,overlay_sha=None):
     """Reconstruct publication inputs from the completed index and pinned originals.
     No image decoding or encoding. Pending uploads are SHA-checked before PUT.
     """
-    manifest_sha,files,coverage=collect(root)
+    manifest_sha,files,coverage=collect_release(root,version,source_sha,overlay_sha)
     source=root/"private-media-overlay-v2-latest"
     manifest=json.loads((source/"manifest.json").read_bytes())
     ix=json.loads((out/"item-256-index-candidate.json").read_bytes())
     cache=json.loads((out/"item-256-thumbnail-cache.json").read_bytes())
     summary=json.loads((out/"item-256-generation-report.json").read_bytes())
-    check(ix.get("schema")=="wand.media.item-index@256-v1" and ix.get("gameVersion")=="1.26.2" and
+    check(ix.get("schema")=="wand.media.item-index@256-v1" and ix.get("gameVersion")==version and
           ix.get("thumbnailPolicy")==cache.get("policy")==POLICY and ix.get("maxThumbnailLongEdge")==EDGE,
           "Completed 256px index policy mismatch")
     originals={}
@@ -218,16 +236,22 @@ def pending_breakdown(pending,original_keys,public):
             "legacyNameSizeMatches":len(legacy),
             "legacyNameSizeMatchBytes":sum(v["bytes"] for v in legacy.values())}
 
-def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None,review_over_budget=False):
+def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None,review_over_budget=False,prior_receipt=None):
     from botocore.exceptions import ClientError
     s3,canonical,pages,public=connection if connection is not None else connect_and_census()
     # Existing trusted receipt is optional; reuse only when current LIST size agrees.
     trusted={}
-    for p in (root.parent/"src04-flat-inventory.json",root/"src04-flat-inventory.json",out/"item-256-publication-receipt.json"):
+    receipt_paths=[root.parent/"src04-flat-inventory.json",root/"src04-flat-inventory.json",out/"item-256-publication-receipt.json"]
+    if prior_receipt is not None:
+        check(prior_receipt.is_file(),"Missing prior publication receipt")
+        receipt_paths.append(prior_receipt)
+    for p in receipt_paths:
         if p.is_file():
             doc=json.loads(p.read_bytes())
-            if p.name=="item-256-publication-receipt.json":
-                if doc.get("canonicalMetadataVerified") is not True or doc.get("bucket")!=BUCKET:
+            if p==prior_receipt or p.name=="item-256-publication-receipt.json":
+                if (doc.get("schema")!="wand.media.item-256-publication-receipt@1" or
+                    doc.get("canonicalMetadataVerified") is not True or doc.get("bucket")!=BUCKET):
+                    check(p!=prior_receipt,"Invalid prior publication receipt")
                     continue
                 doc=doc["objects"]
             if isinstance(doc,dict):
@@ -305,15 +329,22 @@ def main():
     p.add_argument("--review-over-budget",action="store_true",help="Allow exact interactive approval above default limits for the reviewed corpus")
     p.add_argument("--max-new-uploads",type=int,default=10000)
     p.add_argument("--max-new-bytes",type=int,default=500000000)
+    p.add_argument("--version",default="1.26.2",help="Exact Steam version for a completed future build")
+    p.add_argument("--source-items-sha",help="Source SHA-256 from reviewed build report")
+    p.add_argument("--overlay-sha",help="Private overlay SHA-256 from reviewed build report")
+    p.add_argument("--prior-receipt",type=Path,help="Prior verified public Item image receipt")
     a=p.parse_args()
+    check(a.version=="1.26.2" or (a.resume and not a.review_over_budget),"Future release uses completed 256px build and explicit bounded upload")
+    check(a.version!="1.26.2" or not (a.source_items_sha or a.overlay_sha),"Baseline source pins are fixed")
+    check(a.max_new_uploads>=0 and a.max_new_bytes>=0,"Invalid publication budget")
     root=a.root.resolve()
     check(not any((x/".git").exists() for x in (root,*root.parents)),"Private working directory required")
     out=root/"item-thumbnails-256"
     out.mkdir(exist_ok=True)
     connection=connect_and_census() if a.r2 else None
-    objects,paths,summary=resume(root,out) if a.resume else prepare(root,out)
+    objects,paths,summary=resume(root,out,version=a.version,source_sha=a.source_items_sha,overlay_sha=a.overlay_sha) if a.resume else prepare(root,out)
     if a.r2:
-        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection,a.review_over_budget)
+        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection,a.review_over_budget,prior_receipt=a.prior_receipt)
 
 if __name__=="__main__":
     main()
