@@ -198,16 +198,29 @@ def connect_and_census():
                     config=Config(retries={"total_max_attempts":1},connect_timeout=10,read_timeout=30,max_pool_connections=8))
     check("IfNoneMatch" in s3.meta.service_model.operation_model("PutObject").input_shape.members,"Conditional PUT required")
     try:
-        _,canonical,pages,_=census(s3)
+        public,canonical,pages,_=census(s3)
     except ClientError as e:
         if e.response.get("Error",{}).get("Code") in ("AccessDenied","403"):
             raise SystemExit("R2 LIST denied. Check the R2 S3 access key pair and Object Read & Write scope for dreamwishwand-media. No image writes performed.")
         raise
-    return s3,canonical,pages
+    return s3,canonical,pages,public
 
-def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None):
+def pending_breakdown(pending,original_keys,public):
+    originals={k:v for k,v in pending.items() if k in original_keys}
+    thumbnails={k:v for k,v in pending.items() if k not in original_keys}
+    # A matching legacy name/size is evidence of an existing noncanonical
+    # object, not verified metadata or permission to use a noncanonical URL.
+    legacy={k:v for k,v in pending.items() if v["bytes"] in public.get(v["sha256"],set())}
+    return {"missingCanonicalOriginals":len(originals),
+            "missingCanonicalOriginalBytes":sum(v["bytes"] for v in originals.values()),
+            "missingCanonicalThumbnailOnly":len(thumbnails),
+            "missingCanonicalThumbnailOnlyBytes":sum(v["bytes"] for v in thumbnails.values()),
+            "legacyNameSizeMatches":len(legacy),
+            "legacyNameSizeMatchBytes":sum(v["bytes"] for v in legacy.values())}
+
+def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None,review_over_budget=False):
     from botocore.exceptions import ClientError
-    s3,canonical,pages=connection if connection is not None else connect_and_census()
+    s3,canonical,pages,public=connection if connection is not None else connect_and_census()
     # Existing trusted receipt is optional; reuse only when current LIST size agrees.
     trusted={}
     for p in (root.parent/"src04-flat-inventory.json",root/"src04-flat-inventory.json",out/"item-256-publication-receipt.json"):
@@ -231,13 +244,33 @@ def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connectio
         else:
             pending[k]=v
     new_bytes=sum(v["bytes"] for v in pending.values())
-    check(len(pending)<=max_uploads and new_bytes<=max_bytes,"Publication budget exceeded")
-    plan={**summary,"existing":len(trusted)+len(needs_head),"receiptReused":len(trusted),"newUploads":len(pending),
+    ix=json.loads((out/"item-256-index-candidate.json").read_bytes())
+    original_keys={key(pair[0]) for pair in ix["items"].values()}
+    check(original_keys<=set(objects) and len(original_keys)==summary["uniqueOriginals"],"Original coverage mismatch")
+    over=len(pending)>max_uploads or new_bytes>max_bytes
+    plan={**summary,**pending_breakdown(pending,original_keys,public),
+          "existing":len(trusted)+len(needs_head),"receiptReused":len(trusted),"newUploads":len(pending),
           "newBytes":new_bytes,"listRequests":pages,"classAUpperBound":pages+len(pending),
-          "classBUpperBound":len(needs_head)+len(pending),"deleteRequests":0}
+          "classBUpperBound":len(needs_head)+len(pending),"deleteRequests":0,
+          "defaultMaxNewUploads":max_uploads,"defaultMaxNewBytes":max_bytes,
+          "exceedsDefaultBudget":over}
     write_json(out/"item-256-publication-plan.json",plan)
     print(json.dumps(plan,indent=2),flush=True)
-    if input("Confirm account-wide R2 free allowance. Type UPLOAD to register missing images: ")!="UPLOAD":
+    if over:
+        print("Default publication budget exceeded. No writes have been made.",flush=True)
+        if not review_over_budget:
+            return
+        # A larger budget can only be approved interactively for the exact
+        # reviewed Steam 1.26.2 corpus, never an unbounded upload.
+        check(len(objects)==14742 and sum(v["bytes"] for v in objects.values())==934459926
+              and summary["itemCount"]==13202 and summary["guidCount"]==9542,
+              "Review permitted only for the measured Steam 1.26.2 corpus")
+        approval=f"UPLOAD {len(pending)} {new_bytes}"
+        print("Review missing originals, thumbnail-only objects and account-wide remaining free allowance.",flush=True)
+        print("A legacy name/size match does not establish canonical availability.",flush=True)
+        if input(f"Type {approval} to approve this exact plan, or press Enter to stop: ")!=approval:
+            return
+    elif input("Confirm account-wide R2 free allowance. Type UPLOAD to register missing images: ")!="UPLOAD":
         return
     def task(job):
         k,v,is_new=job
@@ -269,6 +302,7 @@ def main():
     p.add_argument("--root",type=Path,default=DEFAULT_OUT)
     p.add_argument("--r2",action="store_true")
     p.add_argument("--resume",action="store_true",help="Reuse completed local generation without resizing")
+    p.add_argument("--review-over-budget",action="store_true",help="Allow exact interactive approval above default limits for the reviewed corpus")
     p.add_argument("--max-new-uploads",type=int,default=10000)
     p.add_argument("--max-new-bytes",type=int,default=500000000)
     a=p.parse_args()
@@ -279,7 +313,7 @@ def main():
     connection=connect_and_census() if a.r2 else None
     objects,paths,summary=resume(root,out) if a.resume else prepare(root,out)
     if a.r2:
-        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection)
+        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection,a.review_over_budget)
 
 if __name__=="__main__":
     main()
