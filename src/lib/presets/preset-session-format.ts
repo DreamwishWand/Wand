@@ -45,7 +45,8 @@ export function presetHeader(raw:string):PresetHeader{
  const version=schema==='wand.preset.region-decoration@1'?v.world?.gameVersion:v.gameVersion;
  return {schema,kind,domain:presetDomain(kind),privateBackup:schema==='wand.preset.native-backup@1',version:typeof version==='string'&&/^\d+\.\d+(\.\d+)?$/.test(version)?version:null};
 }
-export interface SessionPreset extends PresetHeader{ id:number;name:string;file:File }
+export interface PublicPresetSource{workId:string;revisionId:string;creatorProfileId:string;creatorName:string;title:string}
+export interface SessionPreset extends PresetHeader{ id:number;name:string;file:File;publicSource?:PublicPresetSource }
 export function filterSessionPresets(entries:readonly SessionPreset[],schemas:readonly PresetSchema[],query='',kinds?:readonly PresetKind[]){
  const q=query.trim().toLocaleLowerCase();
  return entries.filter(e=>(!schemas.length||schemas.includes(e.schema))&&(!kinds||kinds.includes(e.kind))&&(!q||e.name.toLocaleLowerCase().includes(q))).slice().sort((a,b)=>b.id-a.id);

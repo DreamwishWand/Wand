@@ -1,13 +1,13 @@
 import {compactPresetFile,readPresetText} from './preset-file.ts';
 import {writable,get} from 'svelte/store';
-import {presetHeader,validPresetName,PRESET_FILE_LIMIT,PRESET_SESSION_COUNT,PRESET_SESSION_LIMIT,type SessionPreset} from './preset-session-format.ts';
+import {presetHeader,validPresetName,PRESET_FILE_LIMIT,PRESET_SESSION_COUNT,PRESET_SESSION_LIMIT,type SessionPreset,type PublicPresetSource} from './preset-session-format.ts';
 const session=writable<readonly SessionPreset[]>([]);
 export const sessionPresets={subscribe:session.subscribe};
 let serial=0;
 const remembered=new WeakMap<File,number>();
 /** Explicitly opened/generated files only, in memory. No persistence, upload,
  * account binding, Save file access or native slot mutation. */
-export async function rememberPreset(file:File,knownRaw?:string):Promise<SessionPreset>{
+export async function rememberPreset(file:File,knownRaw?:string,publicSource?:PublicPresetSource):Promise<SessionPreset>{
  if(!file.size||file.size>PRESET_FILE_LIMIT)throw Error('PRESET_SIZE');
  const existing=get(session).find(e=>e.file===file||e.id===remembered.get(file));if(existing)return existing;
  const raw=knownRaw??await readPresetText(file,PRESET_FILE_LIMIT),header=presetHeader(raw);
@@ -16,7 +16,7 @@ export async function rememberPreset(file:File,knownRaw?:string):Promise<Session
  const name=file.name.replace(/(?:\.wandpreset|\.json\.gz|\.json|\.gz)$/i,'').slice(0,160);
  const current=get(session),again=current.find(e=>e.file===file||e.id===remembered.get(file));if(again)return again;
  if(current.length>=PRESET_SESSION_COUNT||current.reduce((n,e)=>n+e.file.size,0)+decoded.size>PRESET_SESSION_LIMIT)throw Error('PRESET_SESSION_LIMIT');
- const entry={...header,id:++serial,name:validPresetName(name)?name:'Preset',file:decoded};remembered.set(file,entry.id);remembered.set(decoded,entry.id);session.set([...current,entry]);return entry;
+ const entry={...header,id:++serial,name:validPresetName(name)?name:'Preset',file:decoded,...(publicSource?{publicSource}:{})};remembered.set(file,entry.id);remembered.set(decoded,entry.id);session.set([...current,entry]);return entry;
 }
 export function renameSessionPreset(id:number,name:string){if(!validPresetName(name))return false;session.update(rows=>rows.map(e=>e.id===id?{...e,name:name.trim()}:e));return true;}
 export function removeSessionPreset(id:number){session.update(rows=>rows.filter(e=>e.id!==id));}
