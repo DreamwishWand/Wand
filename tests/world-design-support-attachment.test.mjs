@@ -38,7 +38,8 @@ test('direct support edit retains exact source factor and stages one parent oper
  assert.equal(updated.snapshots.length,room.snapshots.length+1);assert.deepEqual(currentDesign(travelDesign(updated,-1))[0].attachment,initial);
  assert.equal(supportEditTimeline(initial,{...template,grid:{...template.grid,factor:2}}),null);
  const nested={...initial,scene:{...initial.scene,tree:{...initial.scene.tree,objects:[{...initial.scene.tree.objects[0],child:{factor:1,sourcePath:path,objects:[]}}]}}};
- assert.equal(supportEditTimeline(nested,template),null);
+ const nestedStart=supportEditTimeline(nested,template);assert.deepEqual(nestedStart.snapshots[0][0].attachment.scene.tree,nested.scene.tree.objects[0].child);
+ assert.deepEqual(supportEditAttachment(nestedStart,template,nested),nested);
  const localTemplate={...template,grid:{...template.grid,factor:2}},empty=supportEditTimeline(undefined,localTemplate);
  assert.equal(supportEditAttachment(empty,localTemplate,undefined).designOnly,true);
  assert.equal(supportEditAttachment({snapshots:[Array.from({length:32},(_,i)=>({id:i+1,itemId:child,x:i,y:0,orientation:2}))],cursor:0,nextId:33},localTemplate,undefined),null);
@@ -65,4 +66,20 @@ test('point symmetry preserves the entire parent-local arrangement and rejects d
  assert.equal(symmetryPlan(incompatible,[p],defs,axis,false,16,16),null);
  const local=replaceDesignAttachment(t,1,{...support,designOnly:true},geometry);
  assert.equal(reflectedDesignItem(currentDesign(local)[0],geometry,axis).attachment.designOnly,true);
+});
+
+test('nested support edits remain parent-local and preserve the entire descendant hierarchy',()=>{
+ const nestedPath='GridData/Furniture/Nested-GridData.json',leaf=40000003;
+ const childTree={factor:1,sourcePath:nestedPath,objects:[{itemId:leaf,x:0,y:1,orientation:'GridOrientation_Down',child:null}]};
+ const initial={...support,scene:{...support.scene,tree:{...support.scene.tree,objects:[{...support.scene.tree.objects[0],child:childTree}]}}};
+ const template={kind:'support',ownerItemId:owner,label:'Table',grid:{...grid,gridDataPath:path},raster:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64).fill(1024)}};
+ const start=supportEditTimeline(initial,template),nested=start.snapshots[0][0].attachment;
+ const nestedTemplate={...template,ownerItemId:child,grid:{...grid,gridDataPath:nestedPath,factor:1}};
+ const ns=supportEditTimeline(nested,nestedTemplate),changed={...ns,snapshots:[[{...ns.snapshots[0][0],x:2}]]};
+ const updated=supportEditAttachment(changed,nestedTemplate,nested);
+ assert.equal(updated.scene.tree.factor,1);assert.equal(updated.scene.tree.objects[0].x,2);
+ const next={...start,snapshots:[[{...start.snapshots[0][0],attachment:updated}]]},parent=supportEditAttachment(next,template,initial);
+ assert.equal(parent.scene.tree.objects[0].child.objects[0].x,2);assert.equal(initial.scene.tree.objects[0].child.objects[0].x,0);
+ assert.deepEqual([...designItemCounts([{itemId:owner,attachment:parent}])],[[child,1],[leaf,1],[owner,1]]);
+ const fresh={...updated,designOnly:true};assert.equal(supportEditAttachment({...next,snapshots:[[{...next.snapshots[0][0],attachment:fresh}]]},template,initial),null);
 });
