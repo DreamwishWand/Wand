@@ -187,9 +187,9 @@
      {#if $worldFurnitureCut?.file===file&&$worldFurnitureCut?.scope==='indoor'&&!cutSource}<small role="status">{cutWords[1]} · {$worldFurnitureCut.rows.length}</small>{/if}
      {#if availableCut&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}<button type="button" disabled={!editAllowed} on:click={beginTransfer}>{indoorTransferWords[locale]}</button>{/if}
      {#if moving||placing}<small>{itw[3]}</small>{/if}{#if placing}<button type="button" on:click={()=>turnStock(-1)}>{ew[0]}</button><button type="button" on:click={()=>turnStock(1)}>{ew[1]}</button>{/if}
-     {#if placeDraft}<small>+{placeDraft.length}</small>{/if}
+     {#if placeDraft}<small>{placeDraft.length===1?placeDraft[0].expectedStock+' → '+(placeDraft[0].expectedStock-1):'+'+placeDraft.length}</small>{/if}
      {#if swap}<small>{ew[3]}</small>{/if}
-     {#if pickupDraft}<small>−{pickupDraft.length}</small>{/if}
+     {#if pickupDraft}<small>{pickupDraft.length===1?pickupDraft[0].expectedStock+' → '+(pickupDraft[0].expectedStock+1):'−'+pickupDraft.length}</small>{/if}
      {#if (editDraft||pickupDraft||placeDraft||transferDraft)&&!editCopy}<button type="button" disabled={!editAllowed} on:click={runFurniture}>{iw[4]}</button>{/if}
      {#if swap||editDraft||pickupDraft||editCopy||moving||placing||placeDraft||transferDraft||stockOpen}<button type="button" on:click={clearEdit}>{w[7]}</button>{/if}
      {#if editCopy}<small>{copyWords[1]}</small><button type="button" disabled={blocked} on:click={applyFurniture}>{cw[0]}</button><a class="test-copy-link" href={editCopy.url} download={editCopy.name}>{copyWords[2]}</a>{/if}
