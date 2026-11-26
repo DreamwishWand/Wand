@@ -480,8 +480,16 @@ test('mixed Scenes preserve the individual trees of repeated support roots and t
  assert.equal(scene.items[0].support.tree.factor,2);
  assert.equal(scene.items[2].support.tree.objects.length,0);
  assert.throws(()=>mixedSceneFromClip(clip,[a,b,null]));
- assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:31},(_,x)=>({...leaf,x}))})]));
+ assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:32},(_,x)=>({...leaf,x}))})]));
  assert.throws(()=>parseMixedScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:1}))})));
+ const large=Array.from({length:128},(_,i)=>({itemId:i===0?owner:item,dx:i*2,dy:0,orientation:2}));
+ const empty=captureSupportScene(owner,{factor:1,sourcePath,objects:[]});
+ const largeSupports=large.map((_,i)=>i===0?empty:null);
+ assert.equal(mixedSceneFromClip(large,largeSupports).items.length,128);
+ assert.throws(()=>mixedSceneFromClip([...large,{...large[1],dx:256}],[...largeSupports,null]));
+ assert.throws(()=>mixedSceneFromClip(large,large.map((_,i)=>i===0?a:null)));
+ const network={itemId:40100068,dx:0,dy:4,orientation:2};
+ assert.equal(areaSceneFromClip([...large,network],[...largeSupports,null],[...large.map(()=>null),{kind:'road',diagonal:false}]).items.length,129);
 });
 
 import {parseAreaScene,areaSceneFromClip,areaSceneCounts,parseSceneNetwork,networkSceneShape,transformAreaScene} from '../src/lib/world/area-scene.ts';
