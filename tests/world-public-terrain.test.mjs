@@ -576,3 +576,33 @@ test('point-symmetric mixed Scene duplicates each support tree and checks both h
  const root={itemId:owner,x:4,y:-6,orientation:2};
  assert.deepEqual(reflectedMixedRoot(root,empty,geo(owner),1,{mode:'vertical',x:10,y:0}),{itemId:owner,x:15,y:-6,orientation:2});
 });
+
+
+import {areaSceneCandidate,areaPlacementCounts} from '../src/lib/world/area-scene.ts';
+test('area Scene point symmetry preserves road mode, fence endpoints, support tree and exact stock',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
+ const g=bindMainlandGrid({...bundle.grids.find(g=>g.key==='Meadow'),factor:1});
+ const raster={sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(4)};
+ const rasters=new Map([[g.key,raster]]);
+ const base=40700246,ext=40700247,road=40100068,owner=40000001,leaf=40000002;
+ const family=fenceFamilyCandidates.find(f=>f.base===base);
+ const shape=(w,h)=>({width:w,height:h,cellCount:w*h,runs:Array.from({length:h},(_,y)=>({x:0,y,width:w})),acceptedFloorTypesFlag:4,path:''});
+ const def=(id,name,layer,shapes)=>({itemId:id,name,layer,surfaceCapable:id===owner,shapes:Object.fromEntries(shapes.map(([code,w,h])=>[id+':'+code,shape(w,h)]))});
+ const defs=new Map([[base,new Map([[1,def(base,family.name,'fence',[[8,1,1]])]])],[ext,new Map([[1,def(ext,family.name+'_Ext1','fence',[[8,1,1],[12,1,1]])]])],[road,new Map([[1,def(road,'Path_Test','ground',[[8,2,2]])]])],[owner,new Map([[1,def(owner,'Table','furniture',[[0,1,1],[4,1,1],[8,1,1],[12,1,1]])]])]]);
+ const support=captureSupportScene(owner,{factor:1,sourcePath:'GridData/Furniture/Example.json',objects:[{itemId:leaf,x:0,y:0,orientation:'GridOrientation_Down',child:null}]});
+ const clip=[{itemId:base,dx:0,dy:0,orientation:2},{itemId:ext,dx:2,dy:0,orientation:2},{itemId:base,dx:4,dy:0,orientation:2},{itemId:road,dx:0,dy:4,orientation:2},{itemId:owner,dx:0,dy:4,orientation:2}];
+ const modes=[{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'fence',base,diagonal:false},{kind:'road',diagonal:true},null];
+ const doc=areaSceneFromClip(clip,[null,null,null,null,support],modes);
+ const rotated=transformAreaScene(doc,defs,'point');assert.ok(rotated);
+ assert.deepEqual(transformAreaScene(rotated,defs,'point'),doc);
+ assert.equal(transformAreaScene(doc,defs,'vertical'),null);
+ const point=mainlandMapAnchor(g,4.5,4.5),axis={mode:'point',...mainlandMapAnchor(g,12,12)};
+ const q=areaSceneCandidate(doc,[g],rasters,defs,[],0,point.x,point.y,axis);
+ assert.ok(q);assert.equal(q.areaRows.length,10);
+ assert.deepEqual(q.areaRows.slice(5).map(r=>[r.x,r.y]),[[19,19],[18,19],[17,19],[18,16],[19,17]]);
+ assert.equal(q.areaRows[8].network.diagonal,true);
+ assert.deepEqual(q.areaRows[9].scene,support);
+ assert.deepEqual([...areaPlacementCounts(q)],[[leaf,2],[owner,2]]);
+ raster.nativeFloorValues[19*g.sizeX+19]=0;
+ assert.equal(areaSceneCandidate(doc,[g],rasters,defs,[],0,point.x,point.y,axis),null);
+});
