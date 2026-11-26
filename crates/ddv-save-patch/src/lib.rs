@@ -1076,9 +1076,14 @@ mod cardinal_road_tests{
 /// an existing native network. Current-source geometry must be validated by
 /// the caller, separately from this native structure and identity gate.
 pub fn preview_isolated_fence(source:&str,d:&PlainGridDestination,base:u32,diagonal:bool,nodes:&[fence_topology::Point],edges:&[(fence_topology::Point,fence_topology::Point)])->Result<GridCoordinateDraft,PatchError>{
+ preview_isolated_fence_with_posts(source,d,base,diagonal,nodes,edges,&std::collections::BTreeSet::new())
+}
+/// Keep explicit representation posts when a portable scene is transformed.
+/// The same native compiler and isolation checks remain authoritative.
+pub fn preview_isolated_fence_with_posts(source:&str,d:&PlainGridDestination,base:u32,diagonal:bool,nodes:&[fence_topology::Point],edges:&[(fence_topology::Point,fence_topology::Point)],posts:&std::collections::BTreeSet<fence_topology::Point>)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::Value;
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains(".."){return Err(PatchError::InvalidTarget);}
- let parts=fence_topology::compile_fence(base,d.tessellation,diagonal,nodes,edges)?;
+ let parts=fence_topology::compile_fence_with_posts(base,d.tessellation,diagonal,nodes,edges,posts)?;
  // Ensure the supplied explicit graph equals the saved native topology.
  // In particular an accidental adjacent pair of endpoint posts must not
  // silently create an edge the user did not request.
