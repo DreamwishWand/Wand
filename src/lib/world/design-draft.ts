@@ -98,3 +98,24 @@ export async function changeLocalWorldDraft(key:string,expected:string|null,draf
 }
 export const writeDesignDraft=(key:string,expected:string|null,draft:DesignDraft)=>changeLocalWorldDraft(key,expected,draft);
 export const discardDesignDraft=(key:string,expected:string|null)=>changeLocalWorldDraft(key,expected,null);
+
+/** Compare and swap every island draft in one IndexedDB transaction.
+ * Neither a conflicting revision nor a failed write may publish part of
+ * a multi-grid preset. Includes unchanged grids in the revision check. */
+export async function writeIslandDrafts(rows:readonly {key:string;expected:string|null;draft:DesignDraft|null}[]):Promise<Map<string,string|null>>{
+ if(!rows.length||rows.length>16||new Set(rows.map(r=>r.key)).size!==rows.length||rows.some(r=>!r.key.startsWith('area:SceneLayouts/FloatingIslands/')))throw Error('ISLAND_DRAFT_SCOPE');
+ const db=await openDraftDb();
+ try{return await new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'),store=tx.objectStore(STORE),revisions=new Map<string,string|null>();let conflict=false;
+  for(const row of rows){
+   const get=store.get(row.key);
+   get.onsuccess=()=>{
+    const previous=get.result as StoredDraft|undefined,rev=typeof previous?.revision==='string'?previous.revision:null;
+    if(rev!==row.expected){conflict=true;tx.abort();return;}
+    try{if(row.draft){const next=crypto.randomUUID();store.put({revision:next,draft:row.draft},row.key);revisions.set(row.key,next);}else revisions.set(row.key,rev);}
+    catch(e){reject(e);tx.abort();}
+   };
+  }
+  tx.oncomplete=()=>resolve(revisions);tx.onabort=()=>reject(conflict?Error('DRAFT_CONFLICT'):tx.error??Error('DRAFT_WRITE'));tx.onerror=()=>reject(tx.error??Error('DRAFT_WRITE'));
+ });}finally{db.close();}
+}
