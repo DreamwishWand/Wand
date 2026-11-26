@@ -391,7 +391,7 @@ export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Reco
  const staged={...tree,objects:[...tree.objects]},out:IndoorTransferRow[]=[];
  for(let i=0;i<rows.length;i++){
   const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];
-  if(String(p.itemId)!==r.itemId||r.supportFactor&&(!r.roomSource||r.supportFactor!==tree.factor)||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  if(String(p.itemId)!==r.itemId||r.supportFactor&&r.supportFactor!==tree.factor||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
   out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.supportFactor?{supportFactor:r.supportFactor}:{}),...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
   staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
  }
