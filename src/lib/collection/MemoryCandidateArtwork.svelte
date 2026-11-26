@@ -12,22 +12,24 @@
   let canvas:HTMLCanvasElement;
   let visible=false;
   let ready=false;
+  let mode:'contours'|'candidate'='contours';
   let controller:AbortController|null=null;
   let observer:IntersectionObserver|null=null;
   async function render(id:number,projection:SavedMemoryFlags|null|undefined,detail:boolean,active:boolean){
     controller?.abort();controller=null;ready=false;
     if(canvas){canvas.width=1;canvas.height=1;}
-    if(!active||!projection||!Object.hasOwn(projection.entries,String(id)))return;
+    mode='contours';
+    if(!active)return;
     const request=new AbortController();controller=request;
     try{
-      const [{getMemorySources},{enqueueMemoryCandidate}]=await Promise.all([
-        import('$lib/media/memory-media'),import('$lib/media/memory-candidate-render')
+      const [{getMemorySources},{enqueueMemoryCandidate},{maskPreviewEligible}]=await Promise.all([
+        import('$lib/media/memory-media'),import('$lib/media/memory-candidate-render'),import('$lib/media/memory-mask-preview-evidence')
       ]);
       if(request.signal.aborted)return;
       const source=getMemorySources(id);
       if(!source)return;
-      const value=memoryCandidateFlags(projection,id,source.numberOfShards);
-      if(value===null)return;
+      const value=maskPreviewEligible(source.mask.sha256,source.numberOfShards)?memoryCandidateFlags(projection,id,source.numberOfShards):null;
+      mode=value===null?'contours':'candidate';
       await enqueueMemoryCandidate(canvas,source,value,detail,request.signal);
       if(!request.signal.aborted)ready=true;
     }catch{/* Preserve ordinary artwork, never fabricate a partial state. */}
@@ -40,7 +42,7 @@
   });
   onDestroy(()=>{observer?.disconnect();controller?.abort();});
 </script>
-<span class="memory-candidate" bind:this={host} data-memory-candidate={ready?'rendered':'fallback'}>
+<span class="memory-candidate" bind:this={host} data-memory-candidate={ready?'rendered':'fallback'} data-memory-view={mode}>
   <canvas bind:this={canvas} hidden={!ready} role="img" aria-label={alt}></canvas>
   {#if !ready}<ItemArtwork {itemId} {alt} {sourcePath} {large}/>{/if}
 </span>
