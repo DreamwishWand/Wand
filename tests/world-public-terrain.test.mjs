@@ -483,3 +483,19 @@ test('mixed Scenes preserve the individual trees of repeated support roots and t
  assert.throws(()=>mixedSceneFromClip(clip,[a,null,captureSupportScene(owner,{factor:1,sourcePath,objects:Array.from({length:31},(_,x)=>({...leaf,x}))})]));
  assert.throws(()=>parseMixedScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:1}))})));
 });
+
+import {parseAreaScene,areaSceneFromClip,areaSceneCounts,parseSceneNetwork,networkSceneShape} from '../src/lib/world/area-scene.ts';
+test('area Scene round trip distinguishes network state from furniture stock',()=>{
+ const clip=[{itemId:40000001,dx:0,dy:0,orientation:2},{itemId:40100068,dx:0,dy:0,orientation:2},{itemId:40100068,dx:4,dy:0,orientation:2},{itemId:40700246,dx:8,dy:4,orientation:2},{itemId:40700247,dx:10,dy:4,orientation:2}];
+ const modes=[null,{kind:'road',diagonal:false},{kind:'road',diagonal:true},{kind:'fence',base:40700246,diagonal:false},{kind:'fence',base:40700246,diagonal:false}];
+ const scene=areaSceneFromClip(clip,clip.map(()=>null),modes);
+ assert.deepEqual(parseAreaScene(JSON.stringify(scene)),scene);
+ assert.deepEqual([...areaSceneCounts(scene.items)],[[40000001,1]]);
+ assert.throws(()=>parseSceneNetwork({kind:'road',diagonal:true},40100068,1));
+ assert.throws(()=>parseSceneNetwork({kind:'fence',base:40700246,diagonal:true},40700247,2));
+ assert.throws(()=>parseAreaScene(JSON.stringify({...scene,items:scene.items.map(p=>({...p,localOrdinal:7}))})));
+ const road=scene.items[1],shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],acceptedFloorTypesFlag:1,path:'M0 0h2v2H0Z'};
+ const geometry={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ assert.equal(networkSceneShape(road,geometry,1),shape);
+ assert.equal(networkSceneShape(road,geometry,2),null);
+});
