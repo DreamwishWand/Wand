@@ -606,3 +606,22 @@ test('area Scene point symmetry preserves road mode, fence endpoints, support tr
  raster.nativeFloorValues[19*g.sizeX+19]=0;
  assert.equal(areaSceneCandidate(doc,[g],rasters,defs,[],0,point.x,point.y,axis),null);
 });
+
+import {wholeAreaKind,serializeWholeArea,parseWholeArea,reviewWholeArea} from '../src/lib/world/whole-area-preset.ts';
+test('whole-area preset requires exact source identity and reviews multiset replacement',()=>{
+ const g={key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:100,sizeY:100};
+ const island={...g,key:'beach-island',layoutId:'SceneLayouts/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachLayout.json',gridDataPath:'GridData/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachGrid-GridData.json'};
+ assert.equal(wholeAreaKind(g,[g,island]),'biome');
+ assert.equal(wholeAreaKind(island,[g,island]),'floating-island');
+ assert.equal(wholeAreaKind(island,[island,{...island,key:'second',gridIdNative:1}]),null);
+ assert.equal(wholeAreaKind(island,[]),null);
+ const a={id:1,itemId:40005160,x:1,y:2,orientation:2},b={...a,id:2},c={...a,id:3,x:5};
+ const t={snapshots:[[a,b]],cursor:0,nextId:3},incoming={snapshots:[[b,c]],cursor:0,nextId:4};
+ const raw=serializeWholeArea(incoming,g,'biome');
+ assert.deepEqual(parseWholeArea(raw,g,'biome'),[b,c]);
+ assert.throws(()=>parseWholeArea(raw,{...g,gridDataPath:'GridData/Other.json'},'biome'));
+ assert.throws(()=>parseWholeArea(raw,g,'floating-island'));
+ const doc=JSON.parse(raw);doc.design.placements[0].playerId='private';assert.throws(()=>parseWholeArea(JSON.stringify(doc),g,'biome'));
+ const review=reviewWholeArea(t,[b,c]);assert.equal(review.retained,1);assert.equal(review.removed,1);assert.equal(review.added,1);assert.equal(review.total,2);
+ assert.deepEqual(parseWholeArea(serializeWholeArea({snapshots:[[]],cursor:0,nextId:1},g,'biome'),g,'biome'),[]);
+});
