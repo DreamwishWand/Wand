@@ -1,5 +1,7 @@
 <script lang="ts">
  import {onMount,onDestroy} from 'svelte';
+ import {readAreaSupportTrees,validateAreaSupportTrees,supportAreaWords} from './area-support-trees.ts';
+ import type {SupportAreaTrees} from './biome-furniture-preset.ts';
  import {captureIslandDecoration,parseIslandDecoration,reviewIslandDecoration,islandDecorationWords,ISLAND_DECORATION_FILE_LIMIT} from './island-decoration-preset.ts';
  import {networkRows,type NetworkPose} from './biome-network-preset.ts';
  import {biomeDecorationWords} from './biome-decoration-preset.ts';
@@ -20,10 +22,11 @@
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],activeKey:string,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let snapshot:ReturnType<typeof islandSaveSnapshot>=null,review:ReturnType<typeof islandSaveReplacement>=null;
+ let includeSupport=false,supportTrees:SupportAreaTrees|undefined,supportAbort:AbortController|null=null,supportSnapshot:ReturnType<typeof captureIslandDecoration>=null;
  let includeNetworks=false,networkSnapshot:ReturnType<typeof captureIslandDecoration>=null,decorationReview:ReturnType<typeof reviewIslandDecoration>=null,networks=new Map<string,NetworkPose[]>();
  let input:HTMLInputElement,reading=true,error=false,source:File|null=null,sourceSessions:readonly TerrainScopeReceipt[]|null=null,epoch=0,writeWorker:Worker|null=null,stockWorker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  const cancelRequests=new Set<()=>void>();
- $: w=islandSaveWords[locale];$: dw=islandDecorationWords[locale];$: bw2=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
+ $: w=islandSaveWords[locale];$: sw=supportAreaWords[locale];$: selectedSnapshot=includeSupport?supportSnapshot:networkSnapshot;$: dw=islandDecorationWords[locale];$: bw2=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: result=includeNetworks?decorationReview:review;
  $: ghosts=result?.reviews.get(activeKey)?.ghosts??[];$: removed=result?.reviews.get(activeKey)?.removed??[];
  $: busy=reading||!!writeWorker;
@@ -61,7 +64,7 @@
  }
  async function setMode(value:boolean){
   if(busy||copy||!file||!snapshot||blocked)return;
-  includeNetworks=value;review=null;decorationReview=null;error=false;
+  includeNetworks=value;if(!value)includeSupport=false;review=null;decorationReview=null;error=false;
   if(!value||networkSnapshot)return;
   const f=file,ss=sessions,token=++epoch;reading=true;
   try{
@@ -70,6 +73,18 @@
    if(epoch!==token||file!==f||sessions!==ss||!snapshot)return;
    networkSnapshot=captureIslandDecoration(grids,snapshot,next);if(!networkSnapshot)throw Error('network');networks=next;
   }catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
+ }
+ async function readSupports(f:File,own:Worker){
+  if(!snapshot)throw Error('snapshot');supportAbort?.abort();const ac=new AbortController();supportAbort=ac;
+  const trees=await readAreaSupportTrees(f,[...snapshot.objects.values()].flat(),own,nextRequest,ac.signal);
+  if(ac.signal.aborted)throw Error('cancel');return trees;
+ }
+ async function setSupports(value:boolean){
+  if(busy||copy||blocked||!snapshot||!file||!worker||!networkSnapshot)return;
+  includeSupport=value;review=null;decorationReview=null;error=false;if(!value||supportSnapshot)return;
+  const f=file,own=worker,ss=sessions,token=++epoch;reading=true;
+  try{const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss||!snapshot)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
+  catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
  }
  async function load(){
   const own=worker,f=file,ss=sessions,token=++epoch;source=f;sourceSessions=ss;reading=true;error=false;
@@ -88,7 +103,7 @@
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  function exportPreset(){
-  if(!snapshot||blocked||busy||includeNetworks&&!networkSnapshot)return;const text=includeNetworks?networkSnapshot!.text:snapshot.text;const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  if(!snapshot||blocked||busy||includeNetworks&&!selectedSnapshot)return;const text=includeNetworks?selectedSnapshot!.text:snapshot.text;const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function open(e:Event){
   const el=e.currentTarget as HTMLInputElement,preset=el.files?.[0];el.value='';
@@ -110,9 +125,17 @@
     }
     definitions.set(g.key,defs);
    }
+   let trees:SupportAreaTrees|undefined;
+   if(combined&&[...combined.values()].some(v=>v.supports!==undefined)){
+    if([...combined.values()].some(v=>v.supports===undefined))throw Error('support scope');
+    trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;
+    await validateAreaSupportTrees(own,[...combined.values()].flatMap(v=>[...v.supports!.values()]),nextRequest,ac.signal);
+    if(token!==epoch||ac.signal.aborted||file!==f||sessions!==ss||!snapshot)return;
+    supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees);if(!supportSnapshot)throw Error('support');includeSupport=true;
+   }else includeSupport=false;
    const stock=await readStock(f);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
-   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock);if(!review)throw Error('plan');}
+   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock);if(!review)throw Error('plan');}
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  function validate(){
@@ -123,13 +146,13 @@
  }
  function apply(){if(!allowed||blocked||!copy||!file||file!==source||sessions!==sourceSessions)return;if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}onClose();}
  onMount(()=>{void load();});
- onDestroy(()=>{epoch++;for(const cancel of [...cancelRequests])cancel();stockWorker?.terminate();writeWorker?.terminate();if(copy)URL.revokeObjectURL(copy.url);writeWorker=null;});
+ onDestroy(()=>{epoch++;supportAbort?.abort();for(const cancel of [...cancelRequests])cancel();stockWorker?.terminate();writeWorker?.terminate();if(copy)URL.revokeObjectURL(copy.url);writeWorker=null;});
 </script>
 <aside class="biome-furniture-panel island-furniture-panel" aria-label={includeNetworks?dw[0]:w[0]}>
- <strong>{includeNetworks?dw[0]:w[0]}</strong><label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label><small>{includeNetworks?dw[4]:w[3]}</small>
- {#if includeNetworks&&networkSnapshot}{#each networkSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {bw[7]} {row.protectedCount}</small>{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
+ <strong>{includeNetworks?dw[0]:w[0]}</strong><label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label>{#if includeNetworks}<label><input type="checkbox" checked={includeSupport} disabled={!networkSnapshot||busy||!!copy} on:change={e=>void setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}<small>{includeNetworks?(includeSupport?sw[1]:dw[4]):w[3]}</small>
+ {#if includeNetworks&&selectedSnapshot}{#each selectedSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {bw[7]} {row.protectedCount}</small>{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
  <input class="island-save-preset-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
- <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!networkSnapshot} on:click={exportPreset}>{includeNetworks?dw[2]:w[1]}</button>{#if allowed}<button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!networkSnapshot} on:click={()=>input.click()}>{includeNetworks?dw[3]:w[2]}</button>{/if}</div>
+ <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot} on:click={exportPreset}>{includeNetworks?dw[2]:w[1]}</button>{#if allowed}<button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot} on:click={()=>input.click()}>{includeNetworks?dw[3]:w[2]}</button>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}
   {#if decorationReview&&includeNetworks}{#each [...decorationReview.reviews] as [key,r] (key)}<small>{label(key)} · {bw2[4]} {bw[4]} {r.furniture.retained.length} · {bw[5]} {r.furniture.removed.length} · {bw[6]} {r.furniture.ghosts.length}</small><small>{bw2[5]} · {bw[4]} {r.network.retained} · {bw[5]} {r.network.removed.length} · {bw[6]} {r.network.ghosts.length}</small>{/each}{:else if review}{#each [...review.reviews] as [key,r] (key)}<small>{label(key)} · {bw[4]} {r.retained.length} · {bw[5]} {r.removed.length} · {bw[6]} {r.plan.add.length}</small>{/each}{/if}
