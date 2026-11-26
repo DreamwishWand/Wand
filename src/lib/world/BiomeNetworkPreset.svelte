@@ -1,5 +1,7 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
+ import {readAreaSupportTrees,validateAreaSupportTrees,supportAreaWords} from './area-support-trees.ts';
+ import type {SupportAreaTrees} from './biome-furniture-preset.ts';
  import {captureBiomeDecoration,parseBiomeDecoration,reviewBiomeDecoration,biomeDecorationWords,BIOME_DECORATION_FILE_LIMIT} from './biome-decoration-preset.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import type {DesignPlacement} from './design-layout.ts';
@@ -20,25 +22,27 @@
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let key='',input:HTMLInputElement,source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',error=false,reading=false,epoch=0,own:Worker|null=null,subscribed:Worker|null=null,requestId=0;
  export let includeFurniture=false;
+ let includeSupport=false,currentSupports:SupportAreaTrees|undefined,incomingSupports:SupportAreaTrees|undefined,supportAbort:AbortController|null=null;
  let incomingFurniture:DesignPlacement[]|null=null,stock:Map<number,number>|null=null,stockWorker:Worker|null=null;
  let before:NetworkPose[]|null=null,after:NetworkPose[]|null=null,defs=new Map<number,DesignItemGeometry>(),copy:ReturnType<typeof experimentalCopyDownload>|null=null;
- $: w=networkPresetWords[locale];$: dw=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
+ $: w=networkPresetWords[locale];$: sw=supportAreaWords[locale];$: dw=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: available=grids.filter(g=>wholeAreaKind(g,grids)==='biome'&&sessions.some(s=>s.receipt.viewKey===g.key&&!!s.completeGridOrdinal&&s.verifiedGridOrdinals.length===1&&s.verifiedGridOrdinals[0]===s.completeGridOrdinal&&!s.receipt.dataSampled&&!s.receipt.rowsWithoutCoordinates));
  $: if(!available.some(g=>g.key===key))key=available[0]?.key??'';
  $: grid=available.find(g=>g.key===key);
  $: busy=reading||!!own||!!requestId||!!stockWorker;
  $: ready=!!grid&&source===file&&sourceObjects===objects&&sourceKey===key&&before!==null&&after!==null;
  $: networkReview=ready&&grid&&before&&after&&!includeFurniture?reviewBiomeNetwork(grid,rasters,objects,omitted,before,after,defs):null;
- $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after},defs,stock):null;
+ $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after,supports:incomingSupports},defs,stock,false,currentSupports):null;
  $: result=decorationReview??networkReview;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
- function cancel(){epoch++;own?.terminate();own=null;stockWorker?.terminate();stockWorker=null;stock=null;incomingFurniture=null;requestId=0;reading=false;source=null;sourceObjects=null;sourceKey='';before=null;after=null;defs=new Map();error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
- function setMode(value:boolean){cancel();includeFurniture=value;}
+ function cancel(){epoch++;supportAbort?.abort();supportAbort=null;currentSupports=undefined;incomingSupports=undefined;own?.terminate();own=null;stockWorker?.terminate();stockWorker=null;stock=null;incomingFurniture=null;requestId=0;reading=false;source=null;sourceObjects=null;sourceKey='';before=null;after=null;defs=new Map();error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
+ function setMode(value:boolean){cancel();includeFurniture=value;if(!value)includeSupport=false;}
+ function setSupports(value:boolean){cancel();includeSupport=value;}
  function inspect(download:boolean,preset?:File){
   if(!file||!grid||blocked||busy||omitted||preset&&!allowed)return;
-  cancel();const f=file,g=grid,token=epoch,full=includeFurniture;source=f;sourceObjects=objects;sourceKey=key;
+  cancel();const f=file,g=grid,token=epoch,full=includeFurniture,withSupport=includeSupport;source=f;sourceObjects=objects;sourceKey=key;
   const dest={layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};
   const job=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});own=job;
   const done=async(d:any)=>{
@@ -46,10 +50,12 @@
    try{
     if(d?.kind!=='area-network')throw Error('read');
     const rows=networkRows(d.rows,g);
-    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-biome-'+(full?'decoration-':'network-')+g.key+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+    if(download&&full&&withSupport){if(!worker)throw Error('worker');const ac=new AbortController();supportAbort=ac;currentSupports=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted)return;}
+    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-biome-'+(full?'decoration-':'network-')+g.key+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
     if(!preset||!worker||preset.size>(full?BIOME_DECORATION_FILE_LIMIT:1_000_000))throw Error('file');
     const text=await preset.text(),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);
     if(epoch!==token||source!==file||sourceObjects!==objects||sourceKey!==key)return;
+    if(combined?.supports){const ac=new AbortController();supportAbort=ac;const trees=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);await validateAreaSupportTrees(worker,combined.supports.values(),nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted||source!==file||sourceObjects!==objects||sourceKey!==key)return;currentSupports=trees;incomingSupports=combined.supports;includeSupport=true;}else includeSupport=false;
     before=rows;after=incoming;incomingFurniture=combined?.furniture??null;
     if(combined){
      const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
@@ -75,7 +81,8 @@
 <aside class="biome-network-panel" class:combined={includeFurniture} aria-label={includeFurniture?dw[0]:w[0]}>
  <strong>{includeFurniture?dw[0]:w[0]}</strong><select aria-label={bw[1]} bind:value={key} disabled={busy||!!copy}>{#each available as g (g.key)}<option value={g.key}>{label(g.key)}</option>{/each}</select>
  <label><input type="checkbox" checked={includeFurniture} disabled={busy||!!copy} on:change={e=>setMode(e.currentTarget.checked)}/>{dw[6]}</label>
- <small>{includeFurniture?dw[3]:w[3]}</small>
+ {#if includeFurniture}<label><input type="checkbox" checked={includeSupport} disabled={busy||!!copy} on:change={e=>setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}
+ <small>{includeFurniture?(includeSupport?sw[1]:dw[3]):w[3]}</small>
  <input class="biome-network-input" type="file" accept=".json,application/json" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>inspect(true)}>{includeFurniture?dw[1]:w[1]}</button>{#if allowed}<button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>input.click()}>{includeFurniture?dw[2]:w[2]}</button>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}

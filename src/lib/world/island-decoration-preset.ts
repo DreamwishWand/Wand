@@ -1,5 +1,5 @@
 import {captureBiomeDecoration,parseBiomeDecoration,reviewBiomeDecoration} from './biome-decoration-preset.ts';
-import {BIOME_CHANGE_LIMIT} from './biome-furniture-preset.ts';
+import {BIOME_CHANGE_LIMIT,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {parseReplayStep} from './checkpoint-journal.ts';
 import type {islandSaveSnapshot} from './island-save-preset.ts';
 import type {NetworkPose} from './biome-network-preset.ts';
@@ -10,13 +10,13 @@ type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
 type Incoming=ReturnType<typeof parseBiomeDecoration>;
 type Review=NonNullable<ReturnType<typeof reviewBiomeDecoration>>;
 export const ISLAND_DECORATION_FILE_LIMIT=3_000_000;
-export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>){
+export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees){
  if(!grids.length||grids.some(g=>g.layoutId!==grids[0].layoutId)||networks.size!==grids.length)return null;
  const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;protectedCount:number}[]=[];
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),rows=networks.get(g.key);
   if(!objects||!rows)return null;
-  const capture=captureBiomeDecoration(g,objects,0,rows,true);if(!capture)return null;
+  const capture=captureBiomeDecoration(g,objects,0,rows,true,supports);if(!capture)return null;
   areas.push(JSON.parse(capture.text));summaries.push({key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,protectedCount:capture.protectedCount});
  }
  try{
@@ -37,19 +37,19 @@ export function parseIslandDecoration(text:string,grids:readonly MainlandGrid[])
  }
  return out;
 }
-export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>){
+export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees){
  if(!grids.length||incoming.size!==grids.length||before.size!==grids.length)return null;
  const plan:Review['plan'][]=[],reviews=new Map<string,Review>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0,changed=false;
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),old=before.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!old||!next||!geometry)return null;
-  const q=reviewBiomeDecoration(g,[g],rasters,objects,0,old,next,geometry,stock,true);if(!q)return null;
+  const q=reviewBiomeDecoration(g,[g],rasters,objects,0,old,next,geometry,stock,true,supports);if(!q)return null;
   plan.push(q.plan);reviews.set(g.key,q);changed||=q.changed;
-  changes+=q.furniture.plan.remove.length+q.furniture.plan.add.length;
+  changes+=q.furniture.changeCount;
   if(changes>BIOME_CHANGE_LIMIT)return null;
-  for(const row of q.furniture.plan.remove){const id=Number(row.itemId);if(!balance.has(id))return null;balance.set(id,balance.get(id)!+1);}
-  for(const row of q.furniture.plan.add){const id=Number(row.itemId);required.set(id,(required.get(id)??0)+1);}
+  for(const [id,n] of q.furniture.returned){if(!balance.has(id))return null;balance.set(id,balance.get(id)!+n);}
+  for(const [id,n] of q.furniture.required)required.set(id,(required.get(id)??0)+n);
  }
  const missing=[...required].filter(([id,n])=>(balance.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(balance.get(itemId)??0)}));
  try{parseReplayStep({command:'island-decoration-export',plan});}catch{return null;}

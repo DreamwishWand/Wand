@@ -782,3 +782,20 @@ test('whole island mixed decoration keeps native grids separate and pools furnit
  const doc=JSON.parse(capture.text);doc.areas.pop();assert.throws(()=>parseIslandDecoration(JSON.stringify(doc),grids));
  const duplicate=JSON.parse(capture.text);duplicate.areas[1]=duplicate.areas[0];assert.throws(()=>parseIslandDecoration(JSON.stringify(duplicate),grids));
 });
+
+test('support-aware area presets preserve unchanged roots and count all children for replacement',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bundle.grids.map(bindMainlandGrid);
+ const grid=grids.find(g=>g.key==='Meadow'),rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY).fill(g.key==='Meadow'?1:0)}]));
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z',acceptedFloorTypesFlag:1},id=40005160,child=40005161;
+ const p={area:grid.key,...mainlandMapAnchor(grid,5,5),factor:grid.factor,shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:String(id),x:5,y:5,layer:'furniture',orientation:'GridOrientation_Down',orientationCode:8,surfaceCapable:true,subgrid:{status:'resolved_full',objectCount:1}}};
+ const scene={schema:'wand.preset.support-scene@1',gameVersion:'1.26.2',ownerItemId:id,tree:{factor:2,sourcePath:'GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json',objects:[{itemId:child,x:0,y:0,orientation:'GridOrientation_Down',child:null}]}};
+ const supports=new Map([[1,scene]]),stock=new Map([[id,0],[child,0]]),defs=new Map([[id,{itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:true,shapes:{[id+':8']:shape}}]]);
+ const old=captureBiomeDecoration(grid,[p],0,[]);assert(old);assert.equal(parseBiomeDecoration(old.text,grid).supports,undefined);
+ const capture=captureBiomeDecoration(grid,[p],0,[],false,supports);assert(capture);assert.equal(capture.furnitureCount,1);assert.equal(capture.protectedCount,0);
+ const incoming=parseBiomeDecoration(capture.text,grid);assert.equal(incoming.supports.size,1);
+ const unchanged=reviewBiomeDecoration(grid,grids,rasters,[p],0,[],incoming,defs,stock,false,supports);assert(unchanged);assert.equal(unchanged.changed,false);assert.deepEqual(unchanged.furniture.retained,[p]);
+ incoming.furniture[0].x=10;
+ const moved=reviewBiomeDecoration(grid,grids,rasters,[p],0,[],incoming,defs,stock,false,supports);assert(moved);assert.equal(moved.furniture.changeCount,4);assert.equal(moved.plan.furniture.remove[0].includeSupport,true);assert.equal(moved.plan.furniture.add[0].scene.ownerItemId,id);assert.deepEqual(moved.missing,[]);
+ assert.equal(reviewBiomeDecoration(grid,grids,rasters,[p],0,[],incoming,defs,stock),null);
+ const invalid=JSON.parse(capture.text);invalid.supports[0].scene.ownerItemId=child;assert.throws(()=>parseBiomeDecoration(JSON.stringify(invalid),grid));
+});

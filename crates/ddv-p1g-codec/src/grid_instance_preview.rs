@@ -807,7 +807,7 @@ pub(super) fn support_scene_place_candidate(profile:&[u8],item:u64,xy:(i32,i32),
  if scan.sampled||scan.invalid>0{return Err(bad);}
  let dest=resolve_plain_grid_destination(profile,witness)?;
  let scope=dest.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
- if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){return Err(bad);}
+ if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
  let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
  let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
@@ -1536,6 +1536,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
  if full.iter().filter(|(_,g)|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout_id.as_deref()).any(|(key,_)|!grids.contains(key)){return Err(bad);}
  if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>128{return Err(CodecError::Bounds);}
+ if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let r=group_pickup_for_scope(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None)?;
@@ -1546,7 +1547,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let r=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)?;
+  let r=if decoration&&add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)}?;
   working.zeroize();*working=r;
  }
  Ok(std::mem::take(&mut *working))
@@ -2573,6 +2574,31 @@ pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,Co
 /// Ordinals are resolved against the immutable original before removing
 /// any other object. Network mutations occur before furniture placement,
 /// so a furniture pose may occupy a previously removed fence anchor.
+/// Count roots and descendants on both sides of a complete area change.
+fn check_area_support_change_count(profile:&[u8],remove:&[Value],add:&[Value])->Result<(),CodecError>{
+ let bad=CodecError::Json;
+ let mut total=remove.len()+add.len();
+ if total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
+ fn count(t:&Value,total:&mut usize,depth:usize)->Result<(),CodecError>{
+  if depth>8{return Err(CodecError::Bounds);}
+  for o in t.get("objects").and_then(Value::as_array).ok_or(CodecError::Json)?{
+   *total+=1;if *total>MAX_SCENE_FURNITURE{return Err(CodecError::Bounds);}
+   let c=o.get("child").ok_or(CodecError::Json)?;if !c.is_null(){count(c,total,depth+1)?;}
+  }Ok(())
+ }
+ if remove.iter().any(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)){
+  let (scan,_)=scan_grid_instances(profile)?;if scan.sampled||scan.invalid>0{return Err(bad);}
+  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
+  for r in remove.iter().filter(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)){
+   let n=r.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+   let (target,_)=scan.private_targets.get(n-1).ok_or(bad)?;
+   count(&subgrid_tree(c,&target.grid_id,&target.object_id)?,&mut total,0)?;
+  }
+ }
+ for row in add{if let Some(scene)=row.get("scene"){let item=row.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok()).ok_or(bad)?;count(checked_support_scene(item,scene)?,&mut total,0)?;}}
+ Ok(())
+}
 pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
@@ -2597,6 +2623,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  ddv_save_patch::validate_area_network(&dest,&before).map_err(|_|bad)?;
  ddv_save_patch::validate_area_network(&dest,&after).map_err(|_|bad)?;
  if old==desired&&remove.is_empty()&&add.is_empty(){return Err(bad);}
+ check_area_support_change_count(profile,remove,add)?;
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let next=group_pickup_for_scope(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&dest.grid_id))?;
@@ -2607,7 +2634,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let next=plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  let next=if add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)}?;
   working.zeroize();*working=next;
  }
  Ok(std::mem::take(&mut *working))
@@ -2638,5 +2665,30 @@ mod biome_decoration_tests{
   plan["furniture"]["add"][0]["itemId"]=Value::from("40000002");
   assert!(biome_decoration_candidate(&bytes,&plan.to_string()).is_err());
   assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(),raw);
+ }
+}
+
+#[cfg(test)]
+mod complete_area_support_tests{
+ use super::*;
+ #[test]
+ fn biome_support_replacement_restores_tree_and_stock_in_one_candidate(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":0}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":80}}}}},"80":{"ID":80,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","NextGridObjectID":2,"Objects":{}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":16,"sizeY":16});
+  let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
+  let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":tree});
+  let plan=serde_json::json!({"furniture":{"destination":dest,"remove":[{"localOrdinal":1,"itemId":"40005160","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","includeSupport":true}],"add":[{"destination":dest,"itemId":"40005160","x":4,"y":4,"orientation":"GridOrientation_Down","scene":scene}]},"network":{"destination":dest,"before":[],"after":[]}});
+  let source=serde_json::to_vec(&raw).unwrap();
+  let result=biome_decoration_candidate(&source,&plan.to_string()).unwrap();
+  let result:Value=serde_json::from_str(&result).unwrap();
+  let c=result["World"]["GridCollection"].as_object().unwrap();
+  assert_eq!(result["Player"],raw["Player"]);assert!(c["Grids"].get("80").is_none());assert_eq!(c["NextGridID"],101);
+  assert_eq!(c["Grids"]["43"],raw["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(subgrid_tree(c,"42","5").unwrap(),tree);
+  let mut bad=plan.clone();bad["furniture"]["add"][0]["scene"]["tree"]["objects"][0]["itemId"]=Value::from(40005162);
+  assert!(biome_decoration_candidate(&source,&bad.to_string()).is_err());
  }
 }

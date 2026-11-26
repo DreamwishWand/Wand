@@ -1,4 +1,5 @@
-import {biomeFurnitureSnapshot,biomeFurnitureReplacement} from './biome-furniture-preset.ts';
+import {biomeFurnitureSnapshot,biomeFurnitureReplacement,type SupportAreaTrees} from './biome-furniture-preset.ts';
+import {parseSupportScene,supportSceneRootCounts} from './support-scene.ts';
 import {parseWholeArea} from './whole-area-preset.ts';
 import {serializeBiomeNetwork,parseBiomeNetwork,networkKey,reviewBiomeNetwork,type NetworkPose} from './biome-network-preset.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
@@ -9,27 +10,35 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 export const BIOME_DECORATION_FILE_LIMIT=1_500_000;
-export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false){
- const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island);if(!furniture)return null;
+export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false,supports?:SupportAreaTrees){
+ const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island,supports);if(!furniture)return null;
  const existing=objects.filter(p=>p.area===grid.key&&['ground','fence'].includes(p.object.layer));
  if(existing.length!==networks.length||networks.some(p=>existing.filter(o=>Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]).length!==1))return null;
  try{
-  const text=JSON.stringify({schema:island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks))});
+  const text=JSON.stringify({schema:island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks)),...(supports?{supports:furniture.supports}:{})});
   parseBiomeDecoration(text,grid,island);return {text,furnitureCount:furniture.editable.length,networkCount:networks.length,protectedCount:furniture.protectedObjects.length-networks.length};
  }catch{return null;}
 }
 export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false){
  if(text.length>BIOME_DECORATION_FILE_LIMIT)throw Error('DECORATION_LIMIT');
  const doc=JSON.parse(text);
- if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).length!==4||doc.schema!==(island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
- return {furniture:parseWholeArea(JSON.stringify(doc.furniture),grid,island?'floating-island':'biome'),network:parseBiomeNetwork(JSON.stringify(doc.network),grid)};
+ if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).length!==(Object.prototype.hasOwnProperty.call(doc,'supports')?5:4)||doc.schema!==(island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
+ const furniture=parseWholeArea(JSON.stringify(doc.furniture),grid,island?'floating-island':'biome'),network=parseBiomeNetwork(JSON.stringify(doc.network),grid);
+ let supports:Map<number,ReturnType<typeof parseSupportScene>>|undefined;
+ if(Object.prototype.hasOwnProperty.call(doc,'supports')){
+  if(!Array.isArray(doc.supports)||doc.supports.length>furniture.length)throw Error('SUPPORT_CONTEXT');supports=new Map();
+  for(const row of doc.supports){if(!row||Object.keys(row).length!==2||!Number.isSafeInteger(row.placementId)||supports.has(row.placementId))throw Error('SUPPORT_CONTEXT');const p=furniture.find(p=>p.id===row.placementId),scene=parseSupportScene(JSON.stringify(row.scene));if(!p||p.itemId!==scene.ownerItemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)throw Error('SUPPORT_OWNER');supports.set(row.placementId,scene);}
+ }
+ return {furniture,network,supports};
 }
 function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
  if(g.plan.action!=='place')throw Error('GHOST_POSE');
  return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:CARDINAL_ORIENTATIONS.indexOf(g.plan.orientation as typeof CARDINAL_ORIENTATIONS[number])*4,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
 }
-export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[]},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false){
- if(!captureBiomeDecoration(grid,objects,omitted,before,island))return null;
+export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees){
+ if(incoming.supports&&!currentSupports)return null;
+ const supportContext=incoming.supports&&currentSupports?{before:currentSupports,after:incoming.supports}:undefined;
+ if(!captureBiomeDecoration(grid,objects,omitted,before,island,supportContext?.before))return null;
  const desired=new Set(incoming.network.map(networkKey)),deletedNetworkOrdinals=new Set<number>();
  for(const row of before){
   if(desired.has(networkKey(row)))continue;
@@ -37,7 +46,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
   if(!p)return null;deletedNetworkOrdinals.add(p.object.localOrdinal);
  }
  // Furniture may occupy a removed fence but never a retained fence.
- const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)),omitted,incoming.furniture,defs,stock,island);
+ const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)),omitted,incoming.furniture,defs,stock,island,supportContext);
  if(!furniture)return null;
  const removedFurniture=new Set(furniture.removed.map(o=>o.object.localOrdinal));
  const finalFurniture=objects.filter(o=>!removedFurniture.has(o.object.localOrdinal));
