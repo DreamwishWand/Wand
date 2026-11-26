@@ -1280,7 +1280,7 @@
       on:saveReadError={(event:CustomEvent<string>)=>infoMessage=event.detail}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
-    {#if memoryPreviewRequested}<div class="info-banner" role="status">{locale==='ja'?'Memories開発用比較：セーブ未読込時は分割形状のみ表示。記録値による解放位置は未検証です。':'Development Memory comparison: contours without a Save; saved-flag mapping is unverified.'} <a href={base+'/media/memory-preview/'}>{locale==='ja'?'詳細比較':'Detailed comparison'}</a></div>{/if}
+
     <div class="collection-workspace">
       <div class="workspace-top">
         <div class="collection-record-switcher" role="group" aria-label={copy.record}>
@@ -1735,7 +1735,10 @@
               <div class="memory-piece-toolbar">
                 <strong>{memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
                 <label><input type="checkbox" bind:checked={showMemoryPieces}/>{memoryCopy.split}</label>
-                {#if !memoryPreviewRequested}
+                {#if memoryPreviewRequested}
+                  <a class="memory-comparison-link" href={base+'/media/memory-preview/'}>{locale==='ja'?'詳細比較（開発用）':'Detailed comparison (development)'}</a>
+                  <small>{locale==='ja'?'セーブのビット対応は未検証です。':'Saved-flag mapping is unverified.'}</small>
+                {:else}
                   <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===completeMemoryBits(selectedMemory.numberOfShards)} on:click={()=>setMemoryPieces(completeMemoryBits(selectedMemory!.numberOfShards))}>{memoryCopy.all}</button>
                   <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===0} on:click={()=>setMemoryPieces(0)}>{memoryCopy.clear}</button>
                   {#if !selectedMemoryEligible}<small>{memoryCopy.unverified}</small>
@@ -1810,6 +1813,7 @@
   .memory-piece-buttons{display:flex;flex-wrap:wrap;gap:3px;width:100%}
   .memory-piece-buttons button[aria-pressed="true"]{background:#367aa5;color:white}
   .memory-piece-toolbar small{width:100%}
+  .memory-comparison-link{display:inline-block;padding:6px 8px;text-decoration:underline}
   .items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,114px),1fr));gap:6px;align-items:stretch}
   .item-card{position:relative;display:flex;min-width:0;min-height:0;padding:5px;gap:0;align-items:stretch;border-radius:7px;
     background:var(--wand-card);border-color:var(--wand-line);color:var(--wand-text)}
