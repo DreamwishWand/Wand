@@ -17,14 +17,22 @@ function worldTransformKindEligible(o:SavedShapeObject|null):boolean{
   if(!o||o.subgrid||!Number.isSafeInteger(Number(o.itemId))||Number(o.itemId)<=0)return false;
   const exclusive=exclusiveAnchorClass(o.itemId);
   if(exclusive)return o.layer===exclusive;
+  if(o.nativeType==='Building'){
+    // Only source-confirmed on-grid Building types with known cardinal geometry.
+    // Off-grid scenes and unresolved geometry are never transform candidates.
+    const id=Number(o.itemId),subtype=Math.floor((id%10_000_000)/100_000);
+    return Math.floor(id/10_000_000)===2&&[0,1,2,3,5].includes(subtype)&&o.shapeKey!==null&&isCardinal(o.orientation);
+  }
   return o.shapeKey!==null&&['furniture','surface','landscape'].includes(o.layer);
 }
 export function worldMoveEligible(o:SavedShapeObject|null):boolean{
-  return worldTransformKindEligible(o)&&!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move');
+  return worldTransformKindEligible(o)&&!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move')&&
+    (o?.nativeType!=='Building'||o.editRestrictions?.move==='allowedFlag');
 }
 export function worldRotateEligible(o:SavedShapeObject|null):boolean{
   return worldTransformKindEligible(o)&&!exclusiveAnchorClass(o!.itemId)&&isCardinal(o!.orientation)&&
-    !nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate');
+    !nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate')&&
+    (o?.nativeType!=='Building'||o.editRestrictions?.rotate==='allowedFlag');
 }
 export function worldTransformEligible(o:SavedShapeObject|null):boolean{
   return worldMoveEligible(o)||worldRotateEligible(o);
