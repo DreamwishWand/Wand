@@ -92,6 +92,21 @@ test('canonical DB01 restrictions are action-specific and never infer conditiona
  assert.deepEqual(projectNativeEditRestrictions({CanMove:{},CanRotate:{Value:true,Conditions:{}}}),{rotate:'conditional'});
 });
 
+test('on-grid building transforms require source action permission and known shape',()=>{
+ const grid=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))).grids[0];
+ const definitions=publicShapeDefinitions([[20000001,{SizeX:2,SizeY:1,Layers:[0,16],AcceptedFloorTypesFlag:4}]],[[20000001,'Building']],[[20000001,'House']],[[20000001,{CanMove:{Value:true},CanRotate:{Value:true}}]]);
+ const map=buildSavedShapeMap(publicShapeSource(grid,definitions),grid.layoutId,grid.gridIdNative,[{localOrdinal:1,localGridOrdinal:1,itemId:'20000001',x:1,y:2,orientation:'GridOrientation_Down'}]);
+ const o=map.objects[0];
+ assert.equal(o.nativeType,'Building');assert.ok(o.shapeKey);
+ assert.equal(worldMoveEligible(o),true);assert.equal(worldRotateEligible(o),true);
+ assert.ok(draftSavedMapTransform(o,3,4,'GridOrientation_Left'));
+ for(const unsafe of [{...o,editRestrictions:{}},{...o,editRestrictions:{move:'conditional',rotate:'denied'}},{...o,itemId:'20400001'},{...o,shapeKey:null},{...o,subgrid:{status:'unresolved',objectCount:null}}]){
+  assert.equal(worldMoveEligible(unsafe),false);assert.equal(worldRotateEligible(unsafe),false);
+ }
+ assert.equal(worldMoveEligible({...o,editRestrictions:{move:'allowedFlag'}}),true);
+ assert.equal(worldRotateEligible({...o,editRestrictions:{move:'allowedFlag'}}),false);
+});
+
 import {bindMainland,bindMainlandGrid,bindFloatingIslandGrid,mainlandExtent,mainlandMapAnchor,mainlandLocalAnchor,mainlandTerrainHits} from '../src/lib/world/mainland-world-coordinates.ts';
 test('all eight original mainland GridScript paths resolve exact source origins and reversible anchor transforms',()=>{
  const source=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(source.grids);
