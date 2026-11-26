@@ -2,15 +2,16 @@
   import {onMount,onDestroy} from 'svelte';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {memoryCandidateFlags} from '$lib/media/saved-memory-flags';
-  import {getMemorySources,type MemorySources} from '$lib/media/memory-media';
-  import {MASK_PREVIEW_EVIDENCE,maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
+  import {getMemorySources,memoryItemIds,type MemorySources} from '$lib/media/memory-media';
+  import {maskPreviewEligible,memoryMaskEvidence} from '$lib/media/memory-mask-preview-evidence';
   import {openMaskPreview,type MaskPreview} from '$lib/media/memory-mask-preview';
 
   import {PUZZLE_MATERIALS,type PuzzleMaterial} from '$lib/media/memory-puzzle-formula';
   let canvas:HTMLCanvasElement;
   let itemId=130000001;
   let source:MemorySources|null=null;
-  let selected=1;
+  const memoryIds=memoryItemIds();
+  let selected=0;
   let nativeFormula=true;
   let artworkSlot0=false;
   let invertFlags=true;
@@ -30,7 +31,7 @@
   async function load(id:number){
     controller?.abort();renderer?.dispose();renderer=null;
     const request=new AbortController();controller=request;
-    itemId=id;source=getMemorySources(id);selected=1;error='';loading=false;
+    itemId=id;source=getMemorySources(id);selected=source?2**source.numberOfShards-1:0;error='';loading=false;
     if(!source||!memoryMaskEvidence(source.mask.sha256,source.numberOfShards))return;
     loading=true;
     try{
@@ -62,11 +63,11 @@
 </svelte:head>
 <main class="preview">
   <h1>Memory mask preview</h1>
-  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Serialized Material tint, alpha and blend are source-derived. Texture slot assignment, sampler state, runtime opacity and saved-bit polarity remain candidate inputs. No Save is loaded or modified.</p>
-  <label>Representative Memory
+  <p>Development comparison only. Custom/Puzzle fragment arithmetic is source-derived. Serialized Material tint, alpha and blend are source-derived. Texture slot assignment, sampler state, runtime opacity and saved-bit polarity remain candidate inputs. A Save is optional. The default view shows the original contour over completed artwork; selecting pieces is a simulation, not a saved unlock state. No Save is modified.</p>
+  <label>Memory (all published artwork)
     <select value={itemId} on:change={(event)=>void load(Number(event.currentTarget.value))}>
-      {#each MASK_PREVIEW_EVIDENCE as row}
-        <option value={row[0]}>{row[0]} · {row[1]} pieces{row[1]===row[3]?'':' · exception'}</option>
+      {#each memoryIds as id}
+        <option value={id}>{id} · {getMemorySources(id)?.numberOfShards} pieces</option>
       {/each}
     </select>
   </label>
