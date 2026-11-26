@@ -6,6 +6,7 @@ import type {SourceObjectShape} from "./source-object-map.ts";
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import {ROOM_CUT_LIMIT,rotateFurnitureGroup,type CutWitness} from './group-paste.ts';
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
+import {reflectedDesignItem,type DesignSymmetry} from './design-symmetry.ts';
 import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
 import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,supportSceneRootCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
@@ -193,6 +194,50 @@ export function indoorGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record
  }
  return out;
 }
+export type IndoorAlignMode='left'|'right'|'top'|'bottom'|'centerX'|'centerY'|'spaceX'|'spaceY';
+export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],mode:IndoorAlignMode):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face),selected=new Set(indices);
+ if(!tree||!face?.terrain||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length)return null;
+ const horizontal=['left','right','centerX','spaceX'].includes(mode);
+ const chosen=indices.map(index=>{const o=tree.objects[index],code=o?CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4:-4,s=o?shapes[o.itemId+':'+code]:null;return o&&s&&s.runs.length&&allowed.has(o.itemId)&&indoorClear(tree,shapes,index)?{index,o,start:horizontal?o.x:o.y,size:horizontal?s.width:s.height}:null;});
+ if(chosen.some(p=>!p))return null;
+ const rows=chosen.filter(p=>p!==null),lo=Math.min(...rows.map(p=>p.start)),hi=Math.max(...rows.map(p=>p.start+p.size));
+ const starts=new Map<number,number>();
+ if(mode==='spaceX'||mode==='spaceY'){
+  if(rows.length<3)return null;const ordered=[...rows].sort((a,b)=>a.start-b.start||a.index-b.index),gap=(hi-lo-ordered.reduce((n,p)=>n+p.size,0))/(ordered.length-1);if(gap<0||!Number.isInteger(gap))return null;
+  let pos=lo;for(const p of ordered){starts.set(p.index,pos);pos+=p.size+gap;}
+ }else for(const p of rows){const pos=mode==='left'||mode==='top'?lo:mode==='right'||mode==='bottom'?hi-p.size:(lo+hi-p.size)/2;if(!Number.isSafeInteger(pos))return null;starts.set(p.index,pos);}
+ const staged={...tree,objects:tree.objects.filter((_,i)=>!selected.has(i))},out:SupportChildEdit[]=[];
+ for(const {o,index} of rows){const start=starts.get(index)!,x=horizontal?start:o.x,y=horizontal?o.y:start;
+  if(!supportPlacementFits(staged,shapes,face.terrain,o.itemId,x,y,o.orientation))return null;
+  if(x!==o.x||y!==o.y){const q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,o.orientation);if(!q)return null;out.push({...q[0],index});}
+  staged.objects.push({...o,x,y});
+ }
+ return out.length?out:null;
+}
+export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry):IndoorPlace[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const clip:DesignClipItem[]=[],seen=new Set<string>();
+ for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+  const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
+  const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},g,axis);if(!p||p.x<0||p.y<0)return null;
+  const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===CARDINAL_ORIENTATIONS[p.orientation]);
+  if(same.length){if(same.length!==1||face.positions[same[0].index]?.plain!==true)return null;continue;}
+  const k=p.itemId+':'+p.x+':'+p.y+':'+p.orientation;if(seen.has(k))continue;seen.add(k);
+  clip.push({itemId:p.itemId,dx:p.x*2/tree.factor,dy:p.y*2/tree.factor,orientation:p.orientation});
+ }
+ return clip.length?indoorGroupPlace(face,shapes,allowed,stock,clip,0,0):null;
+}
+export const indoorAlignWords={
+ ja:['左揃え','右揃え','上揃え','下揃え','左右中央','上下中央','横方向等間隔','縦方向等間隔','左右対称','上下対称','点対称','対称軸・中心を指定'],
+ en:['Align left','Align right','Align top','Align bottom','Center horizontally','Center vertically','Space horizontally','Space vertically','Vertical symmetry','Horizontal symmetry','Point symmetry','Choose symmetry axis or center'],
+ fr:['Aligner à gauche','Aligner à droite','Aligner en haut','Aligner en bas','Centrer horizontalement','Centrer verticalement','Espacer horizontalement','Espacer verticalement','Symétrie verticale','Symétrie horizontale','Symétrie centrale','Choisir axe ou centre'],
+ it:['Allinea a sinistra','Allinea a destra','Allinea in alto','Allinea in basso','Centra orizzontalmente','Centra verticalmente','Distribuisci in orizzontale','Distribuisci in verticale','Simmetria verticale','Simmetria orizzontale','Simmetria centrale','Scegli asse o centro'],
+ de:['Links ausrichten','Rechts ausrichten','Oben ausrichten','Unten ausrichten','Horizontal zentrieren','Vertikal zentrieren','Horizontal verteilen','Vertikal verteilen','Vertikale Symmetrie','Horizontale Symmetrie','Punktsymmetrie','Achse oder Mittelpunkt wählen'],
+ 'es-ES':['Alinear a la izquierda','Alinear a la derecha','Alinear arriba','Alinear abajo','Centrar horizontalmente','Centrar verticalmente','Distribuir horizontalmente','Distribuir verticalmente','Simetría vertical','Simetría horizontal','Simetría central','Elegir eje o centro'],
+ 'zh-CN':['左对齐','右对齐','上对齐','下对齐','水平居中','垂直居中','水平等距','垂直等距','左右对称','上下对称','中心对称','选择对称轴或中心'],
+ 'pt-BR':['Alinhar à esquerda','Alinhar à direita','Alinhar acima','Alinhar abaixo','Centralizar horizontalmente','Centralizar verticalmente','Distribuir horizontalmente','Distribuir verticalmente','Simetria vertical','Simetria horizontal','Simetria central','Escolher eixo ou centro']
+} as const;
 export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Move selected furniture',fr:'Déplacer les meubles sélectionnés',it:'Sposta mobili selezionati',de:'Ausgewählte Möbel verschieben','es-ES':'Mover muebles seleccionados','zh-CN':'移动所选家具','pt-BR':'Mover móveis selecionados'} as const;
 
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
