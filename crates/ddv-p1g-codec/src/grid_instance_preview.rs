@@ -1547,7 +1547,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let r=if decoration{group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)}?;
+  let r=if decoration&&add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?)}?;
   working.zeroize();*working=r;
  }
  Ok(std::mem::take(&mut *working))
@@ -2634,7 +2634,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
   working.zeroize();*working=next;
  }
  if !add.is_empty(){
-  let next=group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)?;
+  let next=if add.iter().any(|r|r.get("scene").is_some()){mixed_scene_candidate(working.as_bytes(),&Value::Array(add.clone()))}else{plain_group_paste_candidate(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?)}?;
   working.zeroize();*working=next;
  }
  Ok(std::mem::take(&mut *working))
