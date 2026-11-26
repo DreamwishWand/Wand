@@ -1189,6 +1189,15 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         stock.insert(t.item_id,amount);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+        let pickups=targets.iter().zip(&selections).zip(&support_flags).filter_map(|((target,selection),flag)|(!*flag).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
+        if !pickups.is_empty(){
+            let mut draft=preview_bulk_furniture(&working,&pickups,&[]).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+    }else{
     for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
         if *flag{continue;}
         let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
@@ -1198,6 +1207,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
             draft.patched_json.zeroize();return Err(CodecError::Patch);
         }
         working.zeroize();*working=draft.patched_json;*amount=next;
+    }
     }
     for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
         if !flag{continue;}
@@ -1377,7 +1387,9 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         if total>limit{return Err(CodecError::Bounds);}
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
-    for row in rows{
+    let mut cursor=0;
+    while cursor<rows.len(){
+        let row=&rows[cursor];
         if let Some(scene)=row.get("scene"){
             let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
             let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
@@ -1385,10 +1397,11 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let orientation=row["orientation"].as_str().ok_or(bad)?;
             let mut draft=support_scene_place_candidate(working.as_bytes(),item,(x,y),&row["destination"],orientation,scene)?;
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
-            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);cursor+=1;
         }else{
-            let plan=serde_json::to_string(&[row]).map_err(|_|bad)?;
-            let draft=plain_group_paste_candidate(working.as_bytes(),&plan)?;
+            let end=if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{cursor+rows[cursor..].iter().take_while(|r|r.get("scene").is_none()).count()}else{cursor+1};
+            let plan=serde_json::to_string(&rows[cursor..end]).map_err(|_|bad)?;
+            let draft=plain_group_paste_bounded(working.as_bytes(),&plan,limit)?;cursor=end;
             working.zeroize();*working=draft;
         }
     }
@@ -1434,6 +1447,13 @@ fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String
         let next=grids.get(&grid).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+    }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+        use ddv_save_patch::bulk_furniture::{BulkPlace,preview_bulk_furniture};
+        let places=poses.iter().map(|(key,item,xy,orientation)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation})).collect::<Result<Vec<_>,CodecError>>()?;
+        let mut draft=preview_bulk_furniture(std::str::from_utf8(profile).map_err(|_|bad)?,&[],&places).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
+        return Ok(draft.patched_json);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     for (key,item,xy,orientation) in poses{
