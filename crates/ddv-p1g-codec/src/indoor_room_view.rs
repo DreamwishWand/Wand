@@ -12,7 +12,7 @@ fn room_terrain(catalog:&Value,path:&str,kind:&str)->Option<Value>{
  let sx=row.get(1)?.as_u64()?;let sy=row.get(2)?.as_u64()?;
  let values=row.get(4)?.as_array()?;
  if sx==0||sy==0||sx>256||sy>256||values.len()!=(sx*sy) as usize{return None;}
- Some(json!({"sizeX":sx,"sizeY":sy,"values":values}))
+ Some(json!({"sizeX":sx,"sizeY":sy,"values":values,"sourcePath":path}))
 }
 fn terrain_catalog()->Result<Value,CodecError>{
  serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|CodecError::Json)
