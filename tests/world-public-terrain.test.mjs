@@ -676,3 +676,27 @@ test('Biome replacement on the continuous world map preserves all other areas an
  assert.deepEqual(currentDesign(travelDesign(r.next,-1)),currentDesign(two));
  assert.equal(replaceWorldArea(f,two,'Meadow',[{...split.local[0],x:100000}],defs),null);
 });
+
+import {islandPresetGrids,serializeIslandDesign,parseIslandDesign,reviewIslandDesign} from '../src/lib/world/island-design-preset.ts';
+test('complete original floating island preset contains every native grid, including empty grids',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync('static/ddv/world/steam-1.26.2/floatingislands.json','utf8')));
+ const g=bundle.grids.find(g=>g.layoutId.includes('FloatingIsland_AtlanteanLayout'));
+ const areas=islandPresetGrids(g,bundle.grids);assert.equal(areas.length,2);
+ const id=40005160,p={id:1,itemId:id,x:3,y:4,orientation:2};
+ const old={snapshots:[[p]],cursor:0,nextId:2},layouts={[areas[0].key]:old};
+ const text=serializeIslandDesign(areas,layouts),doc=JSON.parse(text),parsed=parseIslandDesign(text,areas);
+ assert.equal(doc.areas.length,2);assert.deepEqual(parsed.get(areas[0].key),[p]);assert.deepEqual(parsed.get(areas[1].key),[]);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z'},geometry=new Map([[id,{itemId:id,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[id+':8']:shape}}]]);
+ const defs=new Map(areas.map(g=>[g.key,geometry]));
+ const target=new Map([[areas[0].key,[]],[areas[1].key,[p]]]);
+ const review=reviewIslandDesign(areas,layouts,target,defs);assert(review);
+ assert.deepEqual(currentDesign(review.next[areas[0].key]),[]);assert.deepEqual(currentDesign(review.next[areas[1].key]),[p]);
+ assert.deepEqual(currentDesign(travelDesign(review.next[areas[0].key],-1)),[p]);
+ assert.deepEqual(review.summaries.map(r=>[r.removed,r.added]),[[1,0],[0,1]]);
+ assert.equal(reviewIslandDesign(areas,layouts,new Map([[areas[0].key,[]],[areas[1].key,[{...p,x:100000}]]]),defs),null);
+ assert.deepEqual(currentDesign(old),[p]);
+ doc.areas.pop();assert.throws(()=>parseIslandDesign(JSON.stringify(doc),areas));
+ const bad=JSON.parse(text);bad.areas[1]=bad.areas[0];assert.throws(()=>parseIslandDesign(JSON.stringify(bad),areas));
+ const extra=JSON.parse(text);extra.areas[0].grid.accountId='private';assert.throws(()=>parseIslandDesign(JSON.stringify(extra),areas));
+ assert.equal(islandPresetGrids({...g,key:'other'},bundle.grids).length,0);
+});
