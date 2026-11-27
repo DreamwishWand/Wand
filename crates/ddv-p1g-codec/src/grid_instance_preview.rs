@@ -3043,6 +3043,25 @@ mod terrain_session_tests{
         assert_eq!((r.active,r.historical,r.navigation,r.related,r.unknown),(1,1,1,1,1));assert_eq!(r.blocking(),4);
     }
     #[test]
+    fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entries=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="FloatingIslands").unwrap()["grids"].as_array().unwrap();
+        for g in entries{
+            let raw=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"","GridDataPath":g["gridDataPath"],"TessellationFactor":g["factor"],"NextGridObjectID":5,"Objects":{}}}}}});
+            let witness=serde_json::json!({"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]});
+            let d=resolve_plain_grid_destination(raw.to_string().as_bytes(),&witness).unwrap();
+            assert_eq!(d.grid_id,"42");
+            assert!(player_house_grid_scope(&raw,"42").is_err());
+            let copy=ddv_save_patch::preview_plain_grid_place(&raw.to_string(),&d,40005160,(1,1),"GridOrientation_Down").unwrap();
+            let v:Value=serde_json::from_str(&copy.patched_json).unwrap();
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["GridDefaultLayoutPath"],"");
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40005160);
+            let mut wrong=witness.clone();wrong["sizeX"]=(g["sizeX"].as_u64().unwrap()+1).into();
+            assert!(resolve_plain_grid_destination(raw.to_string().as_bytes(),&wrong).is_err());
+        }
+    }
+
+    #[test]
     fn native_blank_full_layout_and_large_grid_collection_are_supported(){
         let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
         let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
