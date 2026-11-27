@@ -37,7 +37,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  return value.rooms.map((room,i)=>{
   if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','removeRecoverCount','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   if(typeof room.roomSlot==='number'){const address=room.house+':'+room.floor+':'+room.roomSlot;if(roomSlots.has(address))throw Error('INDOOR_ROOM_ADDRESS');roomSlots.add(address);}
-  if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,19)||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
+  if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,127)||room.house!==1||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
   if(room.removeRecoverCount!==undefined&&(!integer(room.removeRecoverCount,1,2048)||!['room','floor'].includes(String(room.removeKind))))throw Error('INDOOR_REMOVE_COUNT_INVALID');
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
   const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
@@ -526,9 +526,11 @@ export const roomResizeWords={
  'pt-BR':['Redimensionar cômodo','Apenas tamanhos que preservam objetos. Portas e elevadores padrão recentralizados; tamanho registrado como comprado.']
 } as const;
 
-export function indoorAppendFloorPlan(room:IndoorRoom|null){
- if(room?.houseItemId!==20500000||room.roomSlot!==0||!integer(room.appendFloorCount,1,19))return null;
- return {house:room.house,houseItemId:room.houseItemId,expectedCount:room.appendFloorCount};
+export function indoorAppendFloorPlan(room:IndoorRoom|null,count=1,extended=false){
+ if(room?.houseItemId!==20500000||room.house!==1||room.roomSlot!==0||!integer(room.appendFloorCount,1,127)||!integer(count,1,127))return null;
+ const next=room.appendFloorCount+count;
+ if(next>128||extended!==(next>20))return null;
+ return {house:room.house,houseItemId:room.houseItemId,expectedCount:room.appendFloorCount,...(count!==1||extended?{count}:{}),...(extended?{extended:true as const}:{})};
 }
 export const floorAppendWords={
  ja:['階を追加','エレベーター付きの空の3×3の階を最上階に追加します。'],
@@ -608,3 +610,14 @@ export function indoorCeilingFinishPlan(room:IndoorRoom|null,itemId:number){
  if(!room||!integer(room.ceiling,0,2147483647)||!integer(itemId,160100000,160199999)||room.ceiling===itemId||room.surfaces.length!==5||room.surfaces.slice(1).some((s,i)=>s.wallPosition!==i))return null;
  return {roomOrdinal:room.ordinal,itemId,kind:'ceiling' as const,wall:null,expected:room.ceiling};
 }
+
+export const floorBatchWords={
+ ja:['追加する階数','変更後の階数','20階超は試験的なセーブ出力です。ゲーム内の動作は未確認です。','20階を超える増設を許可'],
+ en:['Floors to add','Total floors','More than 20 floors is experimental; game runtime is not verified.','Allow exceeding 20 floors'],
+ fr:['Étages à ajouter','Total des étages','Au-delà de 20 étages, export expérimental non vérifié en jeu.','Autoriser plus de 20 étages'],
+ it:['Piani da aggiungere','Piani totali','Oltre 20 piani: esportazione sperimentale non verificata nel gioco.','Consenti più di 20 piani'],
+ de:['Etagen hinzufügen','Etagen insgesamt','Über 20 Etagen: experimenteller, im Spiel ungeprüfter Export.','Mehr als 20 Etagen erlauben'],
+ 'es-ES':['Plantas que añadir','Total de plantas','Más de 20 plantas: exportación experimental sin verificar en el juego.','Permitir más de 20 plantas'],
+ 'zh-CN':['添加楼层数量','总楼层数','超过20层为实验性存档输出，未验证游戏内运行。','允许超过20层'],
+ 'pt-BR':['Andares a adicionar','Total de andares','Mais de 20 andares: exportação experimental não verificada no jogo.','Permitir mais de 20 andares']
+} as const;

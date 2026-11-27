@@ -272,7 +272,11 @@ test('append floor uses exact primary house and current floor count',()=>{
  const v=parseIndoorRooms(report([r]))[0];
  assert.deepEqual(indoorAppendFloorPlan(v),{house:1,houseItemId:20500000,expectedCount:3});
  assert.equal(indoorAppendFloorPlan(room),null);
- assert.throws(()=>parseIndoorRooms(report([{...r,appendFloorCount:20}])));
+ assert.throws(()=>parseIndoorRooms(report([{...r,appendFloorCount:128}])));
+ assert.equal(indoorAppendFloorPlan({...v,appendFloorCount:20}),null);
+ assert.deepEqual(indoorAppendFloorPlan({...v,appendFloorCount:20},2,true),{house:1,houseItemId:20500000,expectedCount:20,count:2,extended:true});
+ assert.deepEqual(indoorAppendFloorPlan(v,4),{house:1,houseItemId:20500000,expectedCount:3,count:4});
+ assert.equal(indoorAppendFloorPlan(v,1,true),null);
  assert.throws(()=>parseIndoorRooms(report([{...r,houseItemId:20500001}])));
  assert.throws(()=>parseIndoorRooms(report([{...r,roomSlot:1}])));
 });

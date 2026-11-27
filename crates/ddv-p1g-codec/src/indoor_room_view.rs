@@ -217,11 +217,13 @@ pub(super) fn add_room_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch:
 }
 pub(super) fn append_floor_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let p:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
- if p.as_object().is_none_or(|m|m.len()!=3){return Err(CodecError::Json);}
- let house=p["house"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ if p.as_object().is_none_or(|m|!(3..=5).contains(&m.len())||m.keys().any(|k|!matches!(k.as_str(),"house"|"houseItemId"|"expectedCount"|"count"|"extended"))){return Err(CodecError::Json);}
+ let house=p["house"].as_u64().filter(|n|*n==1).ok_or(CodecError::Json)?;
  let item=p["houseItemId"].as_u64().filter(|n|*n==20500000).ok_or(CodecError::Json)?;
- let count=p["expectedCount"].as_u64().filter(|n|(1..20).contains(n)).ok_or(CodecError::Json)?;
- ddv_save_patch::room_structure::preview_append_primary_floor(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,house as usize-1,item as u32,count as usize).map_err(|_|CodecError::Patch)
+ let expected=p["expectedCount"].as_u64().filter(|n|(1..128).contains(n)).ok_or(CodecError::Json)?;
+ let count=match p.get("count"){None=>1,Some(v)=>v.as_u64().filter(|n|(1..128).contains(n)).ok_or(CodecError::Json)?};
+ let extended=match p.get("extended"){None=>false,Some(v) if v.as_bool()==Some(true)&&p.get("count").is_some()=>true,_=>return Err(CodecError::Json)};
+ ddv_save_patch::room_structure::preview_append_primary_floors(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,house as usize-1,item as u32,expected as usize,count as usize,extended).map_err(|_|CodecError::Patch)
 }
 pub(super) fn resize_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  use ddv_save_patch::{RoomFinishTarget,room_structure::{preview_room_resize_mode,preview_room_resize_recover}};
