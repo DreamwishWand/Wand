@@ -380,3 +380,15 @@ test('free linked symmetry moves and turns diagonal partners over occupied cells
  assert.deepEqual(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,2]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true)?.map(p=>[p.x,p.y,p.expectedStock]),[[2,2,2],[3,2,1]]);
  assert.equal(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,1]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true),null);
 });
+
+test('free indoor cut captures overlapping diagonal records and pastes them without stock',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:1,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape,'40000001:10':shape},allowed=new Set([40000001]);
+ const cut=captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set(),true);
+ assert.deepEqual(cut?.clip.map(p=>p.orientation),[2.5,2]);
+ assert.deepEqual(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,1,1,true)?.map(p=>[p.x,p.y,p.orientation]),[[1,1,'GridOrientation_DownLeft'],[1,1,'GridOrientation_Down']]);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,1,1),null);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,8,1,true),null);
+ assert.equal(captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set([0]),true),null);
+});
