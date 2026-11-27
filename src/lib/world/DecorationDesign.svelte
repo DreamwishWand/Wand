@@ -22,6 +22,15 @@
  import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
  import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork,commitNetworkDesign} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
+ import {browser} from '$app/environment';
+ import {testSaveExportEnabled} from './test-save-export.ts';
+ import NativeMapCanvas from './NativeMapCanvas.svelte';
+ import NativeMapLoading from './NativeMapLoading.svelte';
+ import type {NativeMapProgress} from '../media/native-map-renderer.ts';
+ import {nativePreviewSession} from '../media/native-preview-session.ts';
+ import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
+ import {nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
+ import {nativeDesignViewport} from './native-design-viewport.ts';
  import WorldGridLines from './WorldGridLines.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
@@ -114,6 +123,30 @@
  export let grid:PublicTerrainGridRef|null=null;
  export let raster:TerrainRaster|null=null;
  export let worldFrame:MainlandDesignFrame|null=null;
+ const nativeDesignEnabled=browser&&testSaveExportEnabled(window.location)&&new URLSearchParams(window.location.search).get('native-map')==='1';
+ let designPack:LocalNativePreviewPack|null=nativeDesignEnabled?nativePreviewSession.get():null;
+ let designBackground=true,designNativeReady='',designNativeError=false,designNativeLoading=false,designNativeProgress:NativeMapProgress|null=null,designNativeTicket=0;
+ let nativeFileInput:HTMLInputElement;
+ $: designNativeMap=nativeDesignEnabled&&worldFrame&&!embedded?nativeMapForEditor(designPack,worldFrame.scope,false):null;
+ $: designNativeView=designNativeMap&&worldFrame?editorViewToNativeCanvas(designNativeMap,nativeDesignViewport(worldFrame,displayViewport)):null;
+ $: designNativeActive=!!designNativeMap&&designBackground&&designNativeReady===designNativeMap.id&&!designNativeError;
+ $: if(!active||!designNativeMap||!designBackground){designNativeReady='';designNativeLoading=false;}
+ $: if(designNativeReady&&designNativeReady!==designNativeMap?.id)designNativeReady='';
+ const designNativeLabels={ja:['原本背景（検証）','素材を選択','背景を表示','未校正・全区画解放表示','背景の読み込みに失敗しました'],en:['Original background (test)','Choose assets','Show background','Uncalibrated · all areas unlocked','Background loading failed'],fr:['Fond original (test)','Choisir les fichiers','Afficher le fond','Non calibré · zones débloquées','Échec du chargement'],it:['Sfondo originale (test)','Scegli file','Mostra sfondo','Non calibrato · aree sbloccate','Caricamento fallito'],de:['Originalkarte (Test)','Dateien auswählen','Hintergrund anzeigen','Nicht kalibriert · alle Gebiete frei','Laden fehlgeschlagen'],'es-ES':['Fondo original (prueba)','Elegir archivos','Mostrar fondo','Sin calibrar · zonas desbloqueadas','Error de carga'],'zh-CN':['原始背景（测试）','选择素材','显示背景','未校准 · 全区解锁','背景加载失败'],'pt-BR':['Fundo original (teste)','Escolher arquivos','Mostrar fundo','Não calibrado · áreas desbloqueadas','Falha no carregamento']} as const;
+ $: designNativeWords=designNativeLabels[locale]??designNativeLabels.en;
+ async function openDesignNative(e:Event){
+  const input=e.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';if(!files.length)return;
+  const ticket=++designNativeTicket;designNativeError=false;
+  try{const pack=await openNativePreviewPack(files);if(ticket!==designNativeTicket)return;designNativeReady='';designNativeProgress=null;nativePreviewSession.set(pack);designPack=pack;designBackground=true;}
+  catch{if(ticket===designNativeTicket)designNativeError=true;}
+ }
+ function setDesignNativeStatus(s:'drawing'|'ready'|'error',id:string){
+  designNativeLoading=s==='drawing';
+  if(s==='ready'){designNativeReady=id;designNativeError=false;}
+  if(s==='error'){designNativeReady='';designNativeError=true;}
+ }
+ function toggleDesignNative(){if(!designNativeMap){nativeFileInput?.click();return;}designBackground=!designBackground;if(!designBackground){designNativeReady='';designNativeLoading=false;}}
+
  export let sourceGrids:readonly PublicTerrainGridRef[]=[];
  let areaTargetKey='';
  $: availableAreaPresets=(worldFrame?worldFrame.grids:grid?[grid]:[]).filter(g=>wholeAreaKind(g,sourceGrids));
@@ -835,6 +868,7 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
+    {#if nativeDesignEnabled&&worldFrame&&!embedded}<button type="button" title={designNativeWords[0]} aria-label={designNativeWords[0]} aria-pressed={designBackground&&!!designNativeMap} on:click={toggleDesignNative}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 4 4 4-6 5 7"/></svg></button><input class="file-input" type="file" multiple accept=".json,.png,.webp" bind:this={nativeFileInput} aria-label={designNativeWords[1]} on:change={openDesignNative}/><button type="button" on:click={()=>nativeFileInput?.click()}>{designNativeWords[1]}</button>{/if}
     <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){inspectorOpen=false;placedSearchOpen=false;symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <button type="button" aria-label={inspectionWords[1]} title={inspectionWords[1]} aria-pressed={placedSearchOpen} disabled={busyImport} on:click={togglePlacedSearch}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg></button>
@@ -890,14 +924,19 @@
      <div class="finish-design-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollHeight-el.scrollTop-el.clientHeight<120)finishLimit+=80;}}>{#each filteredFinishes.slice(0,finishLimit) as item (item.itemId)}<button type="button" aria-pressed={finishId===item.itemId} disabled={busyImport||!finishReady} on:click={()=>setFinish(item.itemId)}>{#if images.get(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}<small>{item.name}</small></button>{/each}</div>
      <small>{fw[3]}</small>
    </div>{/if}
-   <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
+   <div class="design-map-frame">
+    {#if designNativeMap&&designNativeView&&designPack&&designBackground}
+     {#key designPack}{#key designNativeMap.id}<div class="design-native-bg"><NativeMapCanvas layers={designNativeMap.unlocked} view={designNativeView} source={designPack.source} activeKey={designNativeMap.id} {locale} showLoading={false} onProgress={p=>designNativeProgress=p} onStatus={s=>setDesignNativeStatus(s,designNativeMap?.id??'')}/></div>{/key}{/key}
+     {#if designNativeLoading}<NativeMapLoading {locale} progress={designNativeProgress} compact={designNativeActive}/>{/if}
+    {/if}
+    <button class="design-plot" class:native-design-backed={designNativeActive} type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
     on:pointerdown={startDirect}
     on:pointermove={follow} on:pointerup={e=>endDirect(e,true)} on:pointercancel={e=>endDirect(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;if(direct&&!direct.moved)direct=null;}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
      <g class="design-coordinate-space" transform={worldFrame?'translate(0 '+height+') scale(1 -1)':undefined}>
-     <rect width={width} height={height} fill="#27313a"/>
-     {#if terrainUrl}<image href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
+     <rect width={width} height={height} fill={designNativeActive?'transparent':'#27313a'}/>
+     {#if terrainUrl}<image opacity={designNativeActive?.3:1} href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
      {#if showGrid}<WorldGridLines bounds={{x:0,y:0,w:width,h:height}} view={viewport} pixels={cellPixels} majorStep={grid?.factor??1} minorStep={1}/>{/if}
      {#each visible as o (o.localOrdinal)}
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
@@ -956,6 +995,7 @@
     </svg>
    </button><MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
+    {#if designNativeActive}<small>{designNativeWords[3]}</small>{/if}{#if designNativeError&&nativeDesignEnabled&&worldFrame}<small role="alert">{designNativeWords[4]}</small>{/if}
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small><div class="attached-art">{#each [...attachmentCounts] as [id,n]}{@const count=n-(id===chosenAttachment.scene.ownerItemId?1:0)}{#if count>0}<span>{#if images.get(id)}<img src={images.get(id)} alt="" title={definitions.get(id)?.name??adw[1]}/>{/if}×{count}</span>{/if}{/each}</div>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}
@@ -1015,6 +1055,7 @@
  .design-symmetry-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-layer-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(220px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-alignment-panel{position:absolute;z-index:8;right:6px;top:104px;width:min(300px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;box-shadow:0 3px 14px #0004}
+ .design-native-bg{position:absolute;inset:0;pointer-events:none;z-index:0}.design-plot.native-design-backed{position:relative;background:transparent}
  .design-plot{border:0;border-radius:0}
  .design-controls,.design-status{position:absolute;z-index:6;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:4px;max-width:calc(100% - 12px)}
  .design-controls{top:52px;left:6px;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap}.design-controls button{flex:none;min-height:34px}
