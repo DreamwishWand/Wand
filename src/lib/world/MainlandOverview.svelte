@@ -53,6 +53,7 @@
  import MapCameraControls from './MapCameraControls.svelte';
  import NativeMapCanvas from './NativeMapCanvas.svelte';
  import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
+ import {nativePreviewSession} from '../media/native-preview-session.ts';
  import {nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
  import WorldGridLines from './WorldGridLines.svelte';
  import {sourceOrientationAngle} from './source-object-map.ts';
@@ -231,16 +232,16 @@ $: cutWords=groupCutWords[locale];
  $: copyWords=testSaveWords[locale]??testSaveWords.en;
  const testExport=browser&&testSaveExportEnabled(window.location);
  const nativePreviewEnabled=testExport&&new URLSearchParams(window.location.search).get('native-map')==='1';
- let nativePanel=false,nativePack:LocalNativePreviewPack|null=null,nativeVisible=true,nativeFrameId='',nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
+ let nativePanel=false,nativePack:LocalNativePreviewPack|null=nativePreviewEnabled?nativePreviewSession.get():null,nativeVisible=true,nativeFrameId='',nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
  const nativeLabels={
- ja:['原本背景（検証）','素材を選択','背景を表示','地形レイヤーの濃さ','座標未校正・検証用背景','このワールドの素材がありません','原本背景の読み込み・描画に失敗しました'],
- en:['Original background (test)','Choose files','Show background','Terrain opacity','Uncalibrated background preview','No assets for this world','Background load or render failed'],
- fr:['Fond original (test)','Choisir les fichiers','Afficher le fond','Opacité du terrain','Fond non calibré','Aucune ressource pour ce monde','Échec du chargement ou du rendu'],
- it:['Sfondo originale (test)','Scegli file','Mostra sfondo','Opacità del terreno','Sfondo non calibrato','Risorse non disponibili','Errore di caricamento o rendering'],
- de:['Originalkarte (Test)','Dateien auswählen','Hintergrund anzeigen','Geländedeckkraft','Nicht kalibrierte Vorschau','Keine Bilder für diese Welt','Laden oder Darstellung fehlgeschlagen'],
- 'es-ES':['Fondo original (prueba)','Elegir archivos','Mostrar fondo','Opacidad del terreno','Fondo sin calibrar','Sin recursos para este mundo','Error de carga o dibujo'],
- 'zh-CN':['原始背景（测试）','选择文件','显示背景','地形不透明度','未校准的背景预览','此世界无素材','背景加载或绘制失败'],
- 'pt-BR':['Fundo original (teste)','Escolher arquivos','Mostrar fundo','Opacidade do terreno','Fundo não calibrado','Sem recursos para este mundo','Falha ao carregar ou desenhar']
+ ja:['原本背景（検証）','素材を選択','背景を表示','地形レイヤーの濃さ','座標未校正・検証用背景','このワールドの素材がありません','原本背景の読み込み・描画に失敗しました','素材を解除'],
+ en:['Original background (test)','Choose files','Show background','Terrain opacity','Uncalibrated background preview','No assets for this world','Background load or render failed','Clear assets'],
+ fr:['Fond original (test)','Choisir les fichiers','Afficher le fond','Opacité du terrain','Fond non calibré','Aucune ressource pour ce monde','Échec du chargement ou du rendu','Effacer les ressources'],
+ it:['Sfondo originale (test)','Scegli file','Mostra sfondo','Opacità del terreno','Sfondo non calibrato','Risorse non disponibili','Errore di caricamento o rendering','Rimuovi risorse'],
+ de:['Originalkarte (Test)','Dateien auswählen','Hintergrund anzeigen','Geländedeckkraft','Nicht kalibrierte Vorschau','Keine Bilder für diese Welt','Laden oder Darstellung fehlgeschlagen','Materialien entfernen'],
+ 'es-ES':['Fondo original (prueba)','Elegir archivos','Mostrar fondo','Opacidad del terreno','Fondo sin calibrar','Sin recursos para este mundo','Error de carga o dibujo','Quitar recursos'],
+ 'zh-CN':['原始背景（测试）','选择文件','显示背景','地形不透明度','未校准的背景预览','此世界无素材','背景加载或绘制失败','清除素材'],
+ 'pt-BR':['Fundo original (teste)','Escolher arquivos','Mostrar fundo','Opacidade do terreno','Fundo não calibrado','Sem recursos para este mundo','Falha ao carregar ou desenhar','Remover recursos']
  } as const;
  $: nativeWords=nativeLabels[locale]??nativeLabels.en;
  $: nativeMap=nativePreviewEnabled?nativeMapForEditor(nativePack,worldKey,independent):null;
@@ -252,9 +253,10 @@ $: cutWords=groupCutWords[locale];
   try{
    const pack=await openNativePreviewPack(files);
    if(ticket!==nativeTicket)return;
-   nativeFrameId='';nativePack=pack;nativeVisible=true;
+   nativeFrameId='';nativePreviewSession.set(pack);nativePack=pack;nativeVisible=true;
   }catch{if(ticket===nativeTicket)nativeError=nativeWords[6];}
  }
+ function clearNativeBackground(){nativeTicket++;nativePreviewSession.clear();nativePack=null;nativeFrameId='';nativeError='';}
  function nativeStatus(status:'drawing'|'ready'|'error',id:string){
   if(status==='ready'){nativeFrameId=id;nativeError='';}
   if(status==='error'){nativeFrameId='';nativeError=nativeWords[6];}
@@ -664,6 +666,7 @@ $: cutWords=groupCutWords[locale];
  </button>
  {#if nativePreviewEnabled&&nativePanel&&!independent}<aside class="native-background-panel" aria-label={nativeWords[0]}>
   <label>{nativeWords[1]} <input type="file" multiple accept=".json,.png,.webp" on:change={openNativeBackground}/></label>
+  {#if nativePack}<button type="button" on:click={clearNativeBackground}>{nativeWords[7]}</button>{/if}
   {#if nativeMap}<label><input type="checkbox" checked={nativeVisible} on:change={e=>{nativeVisible=e.currentTarget.checked;if(!nativeVisible)nativeFrameId='';}}/>{nativeWords[2]}</label>
   <label>{nativeWords[3]} <input type="range" min="0" max="1" step=".05" bind:value={nativeTerrainOpacity}/></label>
   <small>{nativeWords[4]}</small>{:else if nativePack}<small>{nativeWords[5]}</small>{/if}
