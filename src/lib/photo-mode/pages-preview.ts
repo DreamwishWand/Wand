@@ -8,12 +8,14 @@ export const bodyTypes=['male','female'] as const;
 export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
 export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry}&(({accessoryIncluded:false;prop?:never}&({companionIncluded?:false;actor?:never;anchor?:never}|{companionIncluded:true;actor:ActorEntry;anchor:ActorAnchor;secondaryPassOmitted?:true;limboGeometryDiagnostic?:true;nativeLoops?:NativeLoopPeriods;actorRoot?:ActorRoot;limboMaterial?:LimboMaterial}))|{accessoryIncluded:true;prop:ActorEntry;anchor:ActorAnchor;companionIncluded?:never;actor?:never});
+type AvatarBaseMaterial={mesh:number;primitive:number;role:'body'|'mermaidBody'|'face'|'eyes';vertices:number;texture:BlobEntry;uv:BlobEntry};
+function validAvatarMaterials(rows:AvatarBaseMaterial[]){return Array.isArray(rows)&&rows.length>=3&&rows.length<=64&&rows.every(s=>s&&Number.isSafeInteger(s.mesh)&&s.mesh>=0&&Number.isSafeInteger(s.primitive)&&s.primitive>=0&&['body','mermaidBody','face','eyes'].includes(s.role)&&Number.isSafeInteger(s.vertices)&&s.vertices>0&&s.vertices<=100000&&validEntry(s.texture)&&validEntry(s.uv)&&s.uv.bytes===s.vertices*8)&&new Set(rows.map(s=>s.mesh+':'+s.primitive)).size===rows.length}
 type MermaidBaseMaterial={mesh:number;primitive:number;flipV:boolean;texture:BlobEntry};
 function validMermaidBaseMaterials(slots:MermaidBaseMaterial[]|undefined){return slots===undefined||Array.isArray(slots)&&slots.length===4&&slots.every(s=>s&&Number.isSafeInteger(s.mesh)&&s.mesh>=0&&Number.isSafeInteger(s.primitive)&&s.primitive>=0&&typeof s.flipV==='boolean'&&validEntry(s.texture))&&new Set(slots.map(s=>s.mesh+':'+s.primitive)).size===4}
 export type MermaidOption={kind:'mermaid';sourceSha256:string;clip:ClipEntry;model:BlobEntry;camera:{center:[number,number,number];radius:number};neutralMaterialProjection:true;unresolvedTransform:number;nonTransform:number;baseMaterials?:MermaidBaseMaterial[]}&({accessoryIncluded?:false;prop?:never;anchor?:never}|{accessoryIncluded:true;prop:ActorEntry;anchor:ActorAnchor});
 export type PreviewOption=PairOption|PlayerOption|MermaidOption;
 export type PoseRow=Partial<Record<BodyType,PreviewOption>>;
-export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>};
+export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>;avatarMaterials?:Record<string,AvatarBaseMaterial[]>};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
 function validNativeLoops(x:NativeLoopPeriods|undefined){return x===undefined||!!x&&Object.keys(x).length===2&&[x.player,x.companion].every(v=>Number.isFinite(v)&&v>0&&v<=600)&&Math.abs(x.player-x.companion)>1e-5}
 function validEntry(e:BlobEntry){return e&&/^[a-f0-9]{64}$/.test(e.sha256)&&Number.isSafeInteger(e.bytes)&&e.bytes>0&&e.bytes<=64*1024*1024}
@@ -38,19 +40,21 @@ export function loadPagesPoseIndex(base:string){
         const k=bodyTypes.map(b=>row[b]?.sourceSha256).join(':');check(!seen.has(k),'Duplicate alternate pose');seen.add(k);
       }
     }
+    if(m.avatarMaterials){const expected=new Set(bodyTypes.flatMap(b=>m.models?.[b]?[m.models[b].sha256]:[]));for(const row of [...Object.values(m.items),...Object.values(m.variants??{}).flat()])for(const b of bodyTypes){const o=row[b];if(o?.kind==='pair')expected.add(o.asset.sha256);else if(o?.kind==='mermaid')expected.add(o.model.sha256)}check(Object.keys(m.avatarMaterials).length===expected.size&&[...expected].every(k=>validAvatarMaterials(m.avatarMaterials![k])),'Invalid avatar material coverage')}
     return m;
   })();void request.catch(()=>{request=undefined})}
   return request;
 }
-export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
-async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png',signal:AbortSignal){
+export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
+async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv',signal:AbortSignal){
   const response=await fetch(assetUrl(base,entry,ext),{signal});check(response.ok,'Scene unavailable');
   return verifyBlob(await response.arrayBuffer(),entry);
 }
 const modelCache=new Map<string,ArrayBuffer>();
 export async function loadPreviewScene(base:string,itemId:number,body:BodyType,index:PreviewIndex,entry:PreviewOption,companionLabel:string,signal:AbortSignal,propLabel='Prop'):Promise<PoseScene>{
   signal.throwIfAborted();
-  let raw:ArrayBuffer;
+  let raw:ArrayBuffer;const modelKey=entry.kind==='pair'?entry.asset.sha256:entry.kind==='mermaid'?entry.model.sha256:index.models?.[body].sha256;
+  const avatarSlots=modelKey?index.avatarMaterials?.[modelKey]??[]:[];
   if(entry.kind==='pair')raw=await fetchAsset(base,entry.asset,'.glb',signal);
   else {
     const model=entry.kind==='mermaid'?entry.model:index.models?.[body];check(model,'Model unavailable');
@@ -69,14 +73,18 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
   check(g.sourceSha256===entry.sourceSha256&&(entry.kind==='pair'||entry.kind==='player'&&entry.companionIncluded===true?paired&&g.companionItemId===itemId:!paired&&g.companionItemId===undefined),'Scene identity mismatch');
   const images=new Map<string,ImageBitmap>();
   try{
-    const primitives=[];const used=new Set<MermaidBaseMaterial>();
+    const primitives=[];const used=new Set<MermaidBaseMaterial>();const usedAvatar=new Set<AvatarBaseMaterial>();const uvCache=new Map<string,Float32Array>();
+    async function getTexture(e:BlobEntry){const key='material:'+e.sha256;let texture=images.get(key);if(!texture){const bytes=await fetchAsset(base,e,'.png',signal);signal.throwIfAborted();texture=await createImageBitmap(new Blob([bytes],{type:'image/png'}));images.set(key,texture)}return texture}
     for(const p of g.primitives){signal.throwIfAborted();const {image,meshIndex,primitiveIndex,...primitive}=p;let texture:ImageBitmap|undefined;
       const slot=entry.kind==='mermaid'&&primitive.actorId==='player'?entry.baseMaterials?.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
-      if(slot){check(!used.has(slot),'Duplicate garment slot');used.add(slot);const key='material:'+slot.texture.sha256;texture=images.get(key);if(!texture){const bytes=await fetchAsset(base,slot.texture,'.png',signal);signal.throwIfAborted();texture=await createImageBitmap(new Blob([bytes],{type:'image/png'}));images.set(key,texture)}const uv=slot.flipV?primitive.uv.slice():primitive.uv;if(slot.flipV)for(let i=1;i<uv.length;i+=2)uv[i]=1-uv[i];primitives.push({...primitive,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
+      const avatarSlot=primitive.actorId==='player'?avatarSlots.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
+      if(avatarSlot){check(!slot&&!usedAvatar.has(avatarSlot)&&avatarSlot.vertices*3===primitive.positions.length,'Invalid avatar material slot');usedAvatar.add(avatarSlot);let uv=uvCache.get(avatarSlot.uv.sha256);if(!uv){const data=await fetchAsset(base,avatarSlot.uv,'.uv',signal);signal.throwIfAborted();uv=new Float32Array(data);check(uv.length===avatarSlot.vertices*2&&uv.every(Number.isFinite),'Invalid source UV');uvCache.set(avatarSlot.uv.sha256,uv)}texture=await getTexture(avatarSlot.texture);primitives.push({...primitive,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
+      if(slot){check(!used.has(slot),'Duplicate garment slot');used.add(slot);texture=await getTexture(slot.texture);const uv=slot.flipV?primitive.uv.slice():primitive.uv;if(slot.flipV)for(let i=1;i<uv.length;i+=2)uv[i]=1-uv[i];primitives.push({...primitive,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
       if(image){check(image.mime==='image/png','Unsupported image');const key=image.bytes.byteOffset+':'+image.bytes.byteLength;texture=images.get(key);if(!texture){texture=await createImageBitmap(new Blob([new Uint8Array(image.bytes)],{type:image.mime}));images.set(key,texture)}}
       primitives.push({...primitive,texture});
     }
     check(entry.kind!=='mermaid'||used.size===(entry.baseMaterials?.length??0),'Missing garment material slot');
+    check(usedAvatar.size===avatarSlots.length,'Missing avatar material slot');
     signal.throwIfAborted();
     return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[]),...(hasProp?[{id:'prop',label:propLabel,canHide:true}]:[])],center:entry.kind==='mermaid'?entry.camera.center:[0,1.05,0],radius:entry.kind==='mermaid'?entry.camera.radius:1.25,sample:t=>g.sampler.sample(t),dispose(){for(const im of images.values())im.close();images.clear()}};
   }catch(e){for(const im of images.values())im.close();throw e}
