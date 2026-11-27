@@ -72,7 +72,7 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
   const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
-  if(free&&geo.get(t.factor)?.surfaceCapable)return null;
+  if(free&&(Math.floor(p.itemId/100000)!==400||geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath))return null;
   const q=stockPlacement(grids,rasters,geo,p.itemId,CARDINAL_ORIENTATIONS[p.orientation],x+.001,y-.001,null,free);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
