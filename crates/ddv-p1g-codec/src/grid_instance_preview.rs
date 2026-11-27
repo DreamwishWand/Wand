@@ -1147,18 +1147,45 @@ fn saved_db04_source_projection(
         .and_then(Value::as_object);
     let mut out=Vec::with_capacity(scan.private_targets.len());
     let mut bindings=Vec::new();
-    // Resolve the empty-layout form once per full grid, rather than for
-    // every placed object. Do not alter the saved record or expose raw IDs.
-    let mut recovered=HashMap::<String,String>::new();
+    let mut by_pair=HashMap::<(&str,&str),Vec<usize>>::new();
+    let mut by_native=HashMap::<(&str,u32),Vec<usize>>::new();
+    for (i,r) in sources.iter().enumerate(){
+        by_pair.entry((&r.layout,&r.data)).or_default().push(i);
+        by_native.entry((&r.layout,r.native_id)).or_default().push(i);
+    }
+    // Index Grid identities once. Preserve the original blank path, and
+    // require the source witness to agree with the embedded native catalog.
+    let mut recovered=HashMap::<String,(String,u64,u64,u64)>::new();
+    let mut data_counts=HashMap::<&str,usize>::new();
+    let mut pair_counts=HashMap::<(&str,&str),usize>::new();
+    let mut blank_paths=HashSet::<&str>::new();
     if terrain_session{
         if let Some(grids)=collection.and_then(|c|c.get("Grids")).and_then(Value::as_object){
+            for g in grids.values(){
+                if let Some(data)=g["GridDataPath"].as_str(){
+                    *data_counts.entry(data).or_default()+=1;
+                    if let Some(layout)=g["GridDefaultLayoutPath"].as_str(){
+                        *pair_counts.entry((layout,data)).or_default()+=1;
+                        if layout.is_empty(){blank_paths.insert(data);}
+                    }
+                }
+            }
             for (id,g) in grids{
-                if g["GridDefaultLayoutPath"].as_str()==Some(""){
-                    if let Ok((_,layout,_,_,_))=outdoor_identity(&root,id){recovered.insert(id.clone(),layout);}
+                if g["GridDefaultLayoutPath"].as_str()!=Some("")||g["ID"].as_u64()!=key_id(id)||
+                   g["GridDataPath"].as_str().and_then(|p|data_counts.get(p).copied())!=Some(1)||
+                   collection.and_then(|c|c.get("DiffGrids")).is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(id))){continue;}
+                if let Ok((_,layout,factor,sx,sy))=outdoor_catalog_identity(g){
+                    recovered.insert(id.clone(),(layout,factor,sx,sy));
                 }
             }
         }
     }
+    let agrees=|id:&str,source:&SourceRef|{
+        recovered.get(id).is_none_or(|(_,f,x,y)|{
+            source.tessellation.map(u64::from)==Some(*f)&&
+            source.size.map(|(a,b)|(u64::from(a),u64::from(b)))==Some((*x,*y))
+        })
+    };
     for (i,(target,xy)) in scan.private_targets.iter().enumerate(){
         let scope=match target.kind{
             GridObjectKind::Full=>"Grids",
@@ -1169,7 +1196,7 @@ fn saved_db04_source_projection(
             .and_then(Value::as_object);
         let layout=grid.and_then(|g|g.get("GridDefaultLayoutPath"))
             .and_then(Value::as_str);
-        let layout=if target.kind==GridObjectKind::Full&&layout==Some(""){recovered.get(&target.grid_id).map(String::as_str)}else{layout};
+        let layout=if target.kind==GridObjectKind::Full&&layout==Some(""){recovered.get(&target.grid_id).map(|r|r.0.as_str())}else{layout};
         let data=grid.and_then(|g|g.get("GridDataPath"))
             .and_then(Value::as_str);
         let diff_id=grid.and_then(|g|g.get("DefaultLayoutGridID"))
@@ -1194,11 +1221,12 @@ fn saved_db04_source_projection(
                     "Meta.DefaultOffGridBuildingData, Meta"))&&
                 hash("DefaultGridHashCode")&&hash("DefaultGridDataHashCode")
         };
-        let matches=sources.iter().filter(|ref_row|metadata_valid&&
-            layout==Some(ref_row.layout.as_str())&&match target.kind{
-                GridObjectKind::Full=>data==Some(ref_row.data.as_str()),
-                GridObjectKind::DiffModified=>diff_id==Some(ref_row.native_id)
-            }).collect::<Vec<_>>();
+        let matches=if metadata_valid{
+            match target.kind{
+                GridObjectKind::Full=>layout.zip(data).and_then(|k|by_pair.get(&k)),
+                GridObjectKind::DiffModified=>layout.zip(diff_id).and_then(|k|by_native.get(&k))
+            }.map(Vec::as_slice).unwrap_or(&[])
+        }else{&[]};
         let status=if !metadata_valid{
             "saved_grid_source_unavailable"
         }else if matches.is_empty(){
@@ -1210,7 +1238,7 @@ fn saved_db04_source_projection(
         }else{
             "full_exact_source_path_candidate"
         };
-        let unique=if matches.len()==1{Some(matches[0])}else{None};
+        let unique=if matches.len()==1{Some(&sources[matches[0]])}else{None};
         let dimensions=unique.and_then(|r|r.size);
         if terrain_session{
             // Only FULL grids with a unique exact path pair and matching
@@ -1218,13 +1246,13 @@ fn saved_db04_source_projection(
             // Diff records do not imply reconstructed effective placement.
             if status=="full_exact_source_path_candidate"{
                 if let Some(source)=unique{
-                    let witness_index=sources.iter().position(|r|std::ptr::eq(r,source))
-                        .ok_or(CodecError::Json)?;
+                    let witness_index=matches[0];
                     let factor=match grid.and_then(|g|g.get("TessellationFactor")){
                         None=>Some(1u32), // native constructor default
                         Some(v)=>v.as_u64().and_then(|v|u32::try_from(v).ok())
                     };
-                    let aligned=matches!(factor,Some(1|2))&&factor==source.tessellation&&source.size.is_some();
+                    let unambiguous_blank=data.is_none_or(|p|!blank_paths.contains(p)||data_counts.get(p).copied()==Some(1));
+                    let aligned=matches!(factor,Some(1|2))&&factor==source.tessellation&&source.size.is_some()&&agrees(&target.grid_id,source)&&unambiguous_blank;
                     bindings.push(serde_json::json!({
                         "localOrdinal":i+1,
                         "sourceRefIndex":witness_index,
@@ -1273,22 +1301,28 @@ fn saved_db04_source_projection(
         // A complete native grid witness is independent of object rows.
         // Empty existing grids must be distinguished from absent/locked grids.
         let mut grid_bindings=Vec::new();
+        let mut row_counts=HashMap::<u64,usize>::new();
+        for row in &scan.rows{
+            if let Some(ordinal)=row.get("localGridOrdinal").and_then(Value::as_u64){
+                *row_counts.entry(ordinal).or_default()+=1;
+            }
+        }
         if let Some(grids)=collection.and_then(|c|c.get("Grids")).and_then(Value::as_object){
             for (i,(key,grid)) in grids.iter().enumerate(){
                 let Some(objects)=grid.get("Objects").and_then(Value::as_object) else{continue;};
                 let raw_layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str);
-                let layout=if raw_layout==Some(""){recovered.get(key).map(String::as_str)}else{raw_layout};
+                let layout=if raw_layout==Some(""){recovered.get(key).map(|r|r.0.as_str())}else{raw_layout};
                 let data=grid.get("GridDataPath").and_then(Value::as_str);
                 let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64);
                 if grid.get("ID").and_then(Value::as_u64)!=key_id(key)||
                    collection.and_then(|c|c.get("DiffGrids")).is_some_and(|d|d.as_object().is_none_or(|m|m.contains_key(key)))||
-                   grids.values().filter(|g|g.get("GridDataPath").and_then(Value::as_str)==data&&(raw_layout==Some("")||g.get("GridDefaultLayoutPath").and_then(Value::as_str)==raw_layout)).count()!=1{continue;}
-                let matches=sources.iter().enumerate().filter(|(_,r)|layout==Some(r.layout.as_str())&&data==Some(r.data.as_str())).collect::<Vec<_>>();
+                   data.is_none_or(|d|if blank_paths.contains(d){data_counts.get(d).copied()!=Some(1)}else{raw_layout.and_then(|l|pair_counts.get(&(l,d)).copied())!=Some(1)}){continue;}
+                let Some(matches)=layout.zip(data).and_then(|k|by_pair.get(&k)) else{continue;};
                 if matches.len()!=1{continue;}
-                let (source_index,source)=matches[0];
-                if !matches!(factor,Some(1|2))||factor!=source.tessellation.map(u64::from)||source.size.is_none(){continue;}
+                let source_index=matches[0];let source=&sources[source_index];
+                if !matches!(factor,Some(1|2))||factor!=source.tessellation.map(u64::from)||source.size.is_none()||!agrees(key,source){continue;}
                 let ordinal=i+1;
-                let projected=scan.rows.iter().filter(|r|r.get("localGridOrdinal").and_then(Value::as_u64)==Some(ordinal as u64)).count();
+                let projected=row_counts.get(&(ordinal as u64)).copied().unwrap_or(0);
                 if projected!=objects.len(){continue;}
                 grid_bindings.push(serde_json::json!({"sourceRefIndex":source_index,"localGridOrdinal":ordinal,"objectCount":objects.len()}));
             }
@@ -3126,6 +3160,18 @@ mod terrain_session_tests{
         let projected:Value=serde_json::from_str(&saved_db04_terrain_session_json(raw.as_bytes(),&source.to_string()).unwrap()).unwrap();
         assert_eq!(projected["bindings"].as_array().unwrap().len(),1);
         assert_eq!(projected["gridBindings"].as_array().unwrap().len(),1);
+        let mut wrong_source=source.clone();
+        wrong_source["gridRefs"][0]["nativeSizeX"]=195.into();
+        let p:Value=serde_json::from_str(&saved_db04_terrain_session_json(raw.as_bytes(),&wrong_source.to_string()).unwrap()).unwrap();
+        assert_eq!(p["bindings"][0]["sourceLocalCoordinateMappingVerified"],false);
+        assert!(p["gridBindings"].as_array().unwrap().is_empty());
+        let mut ambiguous=root.clone();
+        let mut duplicate=ambiguous["World"]["GridCollection"]["Grids"]["42"].clone();
+        duplicate["ID"]=43.into();duplicate["GridDefaultLayoutPath"]=layout.into();
+        ambiguous["World"]["GridCollection"]["Grids"]["43"]=duplicate;
+        let p:Value=serde_json::from_str(&saved_db04_terrain_session_json(ambiguous.to_string().as_bytes(),&source.to_string()).unwrap()).unwrap();
+        assert!(p["gridBindings"].as_array().unwrap().is_empty());
+        assert!(p["bindings"].as_array().unwrap().iter().all(|b|b["sourceLocalCoordinateMappingVerified"]==false));
         let t=resolve_grid_mixed_targets(raw.as_bytes(),&[(1,20300002,(2,3),"full".into(),Some("GridOrientation_Down".into()))]).unwrap().pop().unwrap();
         let copy=ddv_save_patch::preview_checked_building_duplicate(&raw,&t,(2,3),&d,(4,5),"GridOrientation_Down").unwrap();
         let out:Value=serde_json::from_str(&copy.patched_json).unwrap();
