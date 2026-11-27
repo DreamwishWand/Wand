@@ -32,8 +32,7 @@ class CurlReader:
             if self.proc.poll() is None:
                 self.proc.terminate()
                 self.proc.wait(timeout=10)
-            self.proc.stdout.close()
-        if self.err:self.err.close()
+            self.proc.stderr.close()
         if self.temp:self.temp.cleanup()
 
     def start(self):
@@ -50,24 +49,31 @@ class CurlReader:
                 f'user-agent = "{USER_AGENT}"',
                 f'url = "{ORIGIN}/images/{s}.webp"',
                 f'dump-header = "{s}.headers"',f'output = "{s}.webp"',
-                'write-out = "%{http_code} %{num_connects}\\n"']
+                'write-out = "%{stderr}WAND %{http_code} %{num_connects}\\n"']
         cfg=self.root/'requests.cfg'
         cfg.write_text('\n'.join(commands)+'\n',encoding='ascii')
-        self.err=(self.root/'curl-error.log').open('w+b')
         self.proc=subprocess.Popen([self.exe,'-q','--config',str(cfg)],cwd=self.root,
-                    stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=self.err)
+                    stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
 
     def __call__(self,sha,budget):
         check(self.index<len(self.pending) and self.pending[self.index]==sha,'Unexpected curl request order')
         n=self.sizes[sha]
         check(n<=budget[0],'Read budget exhausted')
         if self.proc is None:self.start()
-        line=self.proc.stdout.readline().decode('ascii',errors='replace').strip()
-        if not re.fullmatch(r'200 \d+',line):
-            code=self.proc.wait(timeout=125)
-            self.err.seek(0)
-            detail=self.err.read(4096).decode('utf-8',errors='replace').strip()
-            raise URLError(f'curl exit={code}; HTTP/connection result={line or "none"}; {detail[:240]}')
+        details=[]
+        while True:
+            entry=self.proc.stderr.readline()
+            if not entry:break
+            line=entry.decode('utf-8',errors='replace').strip()
+            if line.startswith('WAND '):
+                line=line[5:]
+                break
+            details.append(line[:240])
+        else:line=''
+        if not entry or not re.fullmatch(r'200 \d+',line):
+            if self.proc.poll() is None:self.proc.terminate()
+            code=self.proc.wait(timeout=10)
+            raise URLError(f'curl exit={code}; HTTP/connection result={line if entry else "none"}; {"; ".join(details)[-240:]}')
         # Headers may include a proxy CONNECT response. Require the final HTTP response.
         raw_headers=(self.root/(sha+'.headers')).read_bytes()
         blocks=re.split(rb'\r?\n\r?\n',raw_headers)
