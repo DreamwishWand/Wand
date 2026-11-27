@@ -61,10 +61,10 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   }return g??fail();
  }
  function areaGrid(v:any):MainlandGrid{const g=grid(v);return bindMainlandGrid(g)??bindFloatingIslandGrid(g)??fail();}
- function design(d:any,expected?:PublicTerrainGridRef){
+ function design(d:any,expected?:PublicTerrainGridRef,allowDiagonal=false){
   keys(d,['schema','grid','placements'],['roomFinish']);if(d.schema!=='wand.world-design@1')fail();
   const g=grid(d.grid);if(expected&&!sameTerrainGrid(g,expected))fail();
-  const rows=parseDesign(JSON.stringify(d),g),finish=readRoomFinish(d,roomFinishKind(g));
+  const rows=parseDesign(JSON.stringify(d),g,allowDiagonal),finish=readRoomFinish(d,roomFinishKind(g));
   const canonical=JSON.parse(serializeDesign({snapshots:[rows],cursor:0,nextId:1},g));if(finish!==undefined)canonical.roomFinish=finish;
   if(!same(canonical,d))fail();
   count(rows.length);for(const p of rows)if(p.attachment)support(p.attachment.scene);
@@ -74,7 +74,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   keys(d,['schema','gameVersion','kind','design']);const g=grid(d.design?.grid);
   if(expected&&!sameTerrainGrid(expected,g)||kind&&kind!==d.kind)fail();
   if(d.kind==='world-grid'?!bindMainlandGrid(g):d.kind==='floating-island'?!bindFloatingIslandGrid(g):wholeAreaKind(g,all)!=='biome')fail();
-  parseWholeArea(JSON.stringify(d),g,d.kind);design(d.design,g);return g;
+  parseWholeArea(JSON.stringify(d),g,d.kind);design(d.design,g,d.kind!=='floating-island'&&g.factor===1&&!!bindMainlandGrid(g));return g;
  }
  function network(d:any,g:MainlandGrid){
   keys(d,['schema','gameVersion','grid','rows']);if(!sameTerrainGrid(grid(d.grid),g))fail();
