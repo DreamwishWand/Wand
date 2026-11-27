@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parsePublicTerrainRelease} from '../src/lib/world/public-terrain-projection.ts';
 import {bindMainland,bindFloatingIslandGrid,mainlandExtent} from '../src/lib/world/mainland-world-coordinates.ts';
+import {biomeFurnitureSnapshot,biomeFurnitureReplacement} from '../src/lib/world/biome-furniture-preset.ts';
 import {captureIslandDecoration,parseIslandDecoration} from '../src/lib/world/island-decoration-preset.ts';
 import {captureRegionDecoration,parseRegionDecoration,mergeRegionDecoration,reviewRegionCapture,regionNetworkContactIndex} from '../src/lib/world/region-decoration-backup.ts';
 const catalog=parsePublicTerrainRelease(JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8'))),grids=bindMainland(catalog.entries.find(e=>e.scope==='Village04').grids);
@@ -53,4 +54,15 @@ test('floating island region identifies a single exact native coordinate surface
  const current=parseIslandDecoration(captureIslandDecoration(scope,sn,net,supports,false).text,scope,false);
  assert.ok(mergeRegionDecoration(r,scope,sn,net,supports,current,doc.incoming,geometry,false));
  assert.equal(captureRegionDecoration(r,[g,other],sn,net,supports,false),null);
+});
+
+test('area preset returns reconstructible empty storage, but never removes nonempty or unknown storage',()=>{
+ const g=grids[0],base={area:g.key,factor:g.factor,x:0,y:0,shape:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:''}};
+ const row=(ordinal,flags)=>({...base,object:{localOrdinal:ordinal,itemId:'40001680',x:ordinal,y:1,orientation:'GridOrientation_Down',layer:'furniture',surfaceCapable:false,...flags}});
+ const empty=row(1,{storage:true,storageKnown:true,storageEmpty:true,storageRestorable:true}),full=row(2,{storage:true,storageKnown:true}),unknown=row(3,{storageKnown:true}),noncanonical=row(4,{storage:true,storageKnown:true,storageEmpty:true});
+ const rows=[empty,full,unknown,noncanonical];
+ const capture=biomeFurnitureSnapshot(g,rows,0,false,undefined,true);
+ assert.ok(capture);assert.deepEqual(capture.editable,[empty]);assert.deepEqual(capture.protectedObjects,[full,unknown,noncanonical]);
+ const review=biomeFurnitureReplacement(g,[g],new Map(),rows,0,[],new Map(),new Map([[40001680,0]]),false,undefined,true);
+ assert.ok(review);assert.deepEqual(review.removed,[empty]);assert.equal(review.plan.remove[0].includeStorage,true);assert.equal(review.returned.get(40001680),1);assert.equal(review.protectedObjects.length,3);
 });

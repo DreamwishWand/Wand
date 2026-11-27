@@ -1253,14 +1253,19 @@ fn saved_db04_source_projection(
                     };
                     let unambiguous_blank=data.is_none_or(|p|!blank_paths.contains(p)||data_counts.get(p).copied()==Some(1));
                     let aligned=matches!(factor,Some(1|2))&&factor==source.tessellation&&source.size.is_some()&&agrees(&target.grid_id,source)&&unambiguous_blank;
+                    let object=grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id));
+                    let storage_known=crate::storage_source::is_storage(target.item_id)||object.is_some_and(|o|o.get("State").and_then(|s|s.get("Storage")).is_some());
+                    let storage_pose=aligned&&target.item_id/100_000==400&&object.is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o));
                     bindings.push(serde_json::json!({
                         "localOrdinal":i+1,
                         "sourceRefIndex":witness_index,
                         "savedFactor":factor,
                         "sourceLocalCoordinateMappingVerified":aligned,
                         "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id),
-                        "storage":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o)),
-                        "storageEmpty":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|ddv_save_patch::storage_pickup_eligible(&root,o))
+                        "storage":storage_pose,
+                        "storageKnown":storage_known,
+                        "storageEmpty":storage_pose&&object.is_some_and(|o|ddv_save_patch::storage_pickup_eligible(&root,o)),
+                        "storageRestorable":storage_pose&&object.is_some_and(|o|crate::storage_source::restorable_empty_storage(&root,o,target.item_id))
                     }));
                 }
             }

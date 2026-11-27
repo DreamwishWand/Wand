@@ -4,6 +4,10 @@ import {stockSourceEligible} from './save-furniture-placement.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;includeSupport?:true;includeStorage?:true}
+export function emptyStoragePickupEligible(p:MainlandSavedObject):boolean{
+ const o=p.object;
+ return !!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
+}
 /** A selection is either entirely eligible or entirely refused. Do not
  * silently skip a locked/unknown/stateful object or partially return stock. */
 export function groupPickupPlan(items:readonly MainlandSavedObject[]):GroupPickupRow[]|null{
@@ -12,8 +16,8 @@ export function groupPickupPlan(items:readonly MainlandSavedObject[]):GroupPicku
  for(const p of items){
   const o=p.object;
   const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
-  const storage=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
-  if((o.storage===true&&!storage)||(!support&&!storage&&!stockSourceEligible(p))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
+  const storage=emptyStoragePickupEligible(p);
+  if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!stockSourceEligible(p))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
   seen.add(o.localOrdinal);
   out.push({localOrdinal:o.localOrdinal,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(support?{includeSupport:true as const}:{}),...(storage?{includeStorage:true as const}:{})});
  }

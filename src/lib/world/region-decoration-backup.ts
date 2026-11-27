@@ -6,8 +6,7 @@ import type {islandSaveSnapshot} from './island-save-preset.ts';
 import {networkKey,type NetworkPose} from './biome-network-preset.ts';
 import {networkSceneShape} from './area-scene.ts';
 import {landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
-import {stockSourceEligible} from './save-furniture-placement.ts';
-import {supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
+import {areaFurnitureEligible,supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {captureBuildingPoses,type BuildingPose} from './building-pose-backup.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
@@ -82,7 +81,7 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
  for(const g of grids){
   const all=snapshot.objects.get(g.key),net=networks.get(g.key);if(!all||!net)return null;
   const known=new Set((landscapes?.get(g.key)??[]).map(landscapePoseKey));
-  const relevant=all.filter(p=>{const ordinary:boolean=stockSourceEligible(p);return ordinary||!!bindMainlandGrid(g)&&p.factor===1&&!p.object.surfaceCapable&&stockSourceEligible(p,true)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p)));});
+  const relevant=all.filter(p=>areaFurnitureEligible(p,!!bindMainlandGrid(g)&&p.factor===1)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p))));
   if(relevant.some(p=>!p.shape))return null;
   const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
   if(hit.some(p=>!inside(region,p)))return null;
