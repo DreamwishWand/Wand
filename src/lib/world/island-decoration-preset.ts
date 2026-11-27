@@ -1,3 +1,4 @@
+import type {LandscapePose} from './landscape-decoration-preset.ts';
 import {worldDecorationScope} from './island-save-preset.ts';
 import {mainlandTerrainHits} from './mainland-world-coordinates.ts';
 import {stockFootprintFeedback} from './save-furniture-placement.ts';
@@ -15,15 +16,15 @@ type Incoming=ReturnType<typeof parseBiomeDecoration>;
 type Review=NonNullable<ReturnType<typeof reviewBiomeDecoration>>;
 export const ISLAND_DECORATION_FILE_LIMIT=3_000_000;
 export const WORLD_DECORATION_FILE_LIMIT=12_000_000;
-export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false){
+export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
  const scope=world?worldDecorationScope(grids):grids[0]?.layoutId;
  if(!grids.length||!scope||!world&&grids.some(g=>g.layoutId!==scope)||networks.size!==grids.length||snapshot.objects.size!==grids.length)return null;
- const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;protectedCount:number}[]=[];
+ const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;landscapeCount:number;protectedCount:number}[]=[];
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),rows=networks.get(g.key);
   if(!objects||!rows)return null;
-  const capture=captureBiomeDecoration(g,objects,0,rows,!world,supports,world);if(!capture)return null;
-  areas.push(JSON.parse(capture.text));summaries.push({key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,protectedCount:capture.protectedCount});
+  const capture=captureBiomeDecoration(g,objects,0,rows,!world,supports,world,landscapes?.get(g.key));if(!capture)return null;
+  areas.push(JSON.parse(capture.text));summaries.push({key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,landscapeCount:capture.landscapeCount,protectedCount:capture.protectedCount});
  }
  try{
   const text=JSON.stringify({schema:world?'wand.preset.world-decoration@1':'wand.preset.floating-island-decoration@1',gameVersion:'1.26.2',...(world?{scope}:{layoutId:scope}),areas});
@@ -44,7 +45,7 @@ export function parseIslandDecoration(text:string,grids:readonly MainlandGrid[],
  }
  return out;
 }
-export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees,world=false){
+export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
  if(!grids.length||world&&!worldDecorationScope(grids)||incoming.size!==grids.length||before.size!==grids.length)return null;
  const plan:Review['plan'][]=[],reviews=new Map<string,Review>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0,changed=false;
@@ -52,7 +53,7 @@ export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:Rea
   const objects=snapshot.objects.get(g.key),old=before.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!old||!next||!geometry)return null;
   if(world&&(!supports||!next.supports))return null;
-  const q=reviewBiomeDecoration(g,world?grids:[g],rasters,objects,0,old,next,geometry,stock,!world,supports,world);if(!q)return null;
+  const q=reviewBiomeDecoration(g,world?grids:[g],rasters,objects,0,old,next,geometry,stock,!world,supports,world,landscapes?.get(g.key));if(!q)return null;
   plan.push(q.plan);reviews.set(g.key,q);changed||=q.changed;
   changes+=q.furniture.changeCount;
   if(changes>BIOME_CHANGE_LIMIT)return null;

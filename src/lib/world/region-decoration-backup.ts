@@ -5,6 +5,7 @@ import {captureIslandDecoration,parseIslandDecoration,WORLD_DECORATION_FILE_LIMI
 import type {islandSaveSnapshot} from './island-save-preset.ts';
 import {networkKey,type NetworkPose} from './biome-network-preset.ts';
 import {networkSceneShape} from './area-scene.ts';
+import {landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
 import {stockSourceEligible} from './save-furniture-placement.ts';
 import {supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
@@ -37,16 +38,17 @@ export function regionNetworkContactIndex(outside:readonly BoundaryPose[]){
   return false;
  };
 }
-function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>){
+function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
  if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
- const objects=new Map<string,readonly MainlandSavedObject[]>(),rows=new Map<string,NetworkPose[]>(),insideNet:BoundaryPose[]=[],outsideNet:BoundaryPose[]=[];
+ const landscape=new Map<string,LandscapePose[]>(),objects=new Map<string,readonly MainlandSavedObject[]>(),rows=new Map<string,NetworkPose[]>(),insideNet:BoundaryPose[]=[],outsideNet:BoundaryPose[]=[];
  for(const g of grids){
   const all=snapshot.objects.get(g.key),net=networks.get(g.key);if(!all||!net)return null;
-  const relevant=all.filter(p=>stockSourceEligible(p)||supportAreaEligible(p)||isNetwork(p));
+  const known=new Set((landscapes?.get(g.key)??[]).map(landscapePoseKey));
+  const relevant=all.filter(p=>stockSourceEligible(p)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p))));
   if(relevant.some(p=>!p.shape))return null;
   const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
   if(hit.some(p=>!inside(region,p)))return null;
-  const picked=all.filter(p=>inside(region,p));objects.set(g.key,picked);
+  const picked=all.filter(p=>inside(region,p));objects.set(g.key,picked);if(landscapes?.has(g.key))landscape.set(g.key,picked.filter(p=>known.has(landscapePoseKey(landscapeObjectPose(p)))).map(landscapeObjectPose));
   const selected:NetworkPose[]=[],native=new Map<string,MainlandSavedObject|null>();
   const objectKey=(id:number,x:number,y:number,orientation:unknown)=>[id,x,y,orientation].join(':');
   for(const o of all)if(isNetwork(o)){
@@ -61,20 +63,20 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
  }
  const outsideContact=regionNetworkContactIndex(outsideNet);
  if(insideNet.some(outsideContact))return null;
- return {snapshot:{...snapshot,objects},networks:rows,outsideContact};
+ return {snapshot:{...snapshot,objects},networks:rows,landscapes:landscape,outsideContact};
 }
 // Independent island surfaces have separate local coordinate bases.
  // Never interpret coincident coordinates on two surfaces as the same area.
  const validRegionScope=(grids:readonly MainlandGrid[],world:boolean)=>world?grids.length>0:grids.length===1&&!!bindFloatingIslandGrid(grids[0]);
-export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true){
+export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
  if(!validRegionScope(grids,world))return null;
- const part=split(region,grids,snapshot,networks);if(!part)return null;
- const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world);if(!doc)return null;
+ const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
+ const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!doc)return null;
  const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,...(world?{world:JSON.parse(doc.text)}:{island:JSON.parse(doc.text)})});
  return text.length<=WORLD_DECORATION_FILE_LIMIT?{text,summaries:doc.summaries}:null;
 }
-export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true):string|null{
- return reviewRegionCapture(region,grids,snapshot,networks,supports,world)?.text??null;
+export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>):string|null{
+ return reviewRegionCapture(region,grids,snapshot,networks,supports,world,landscapes)?.text??null;
 }
 export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],world=true):{region:CaptureRegion;incoming:Incoming}{
  if(text.length>WORLD_DECORATION_FILE_LIMIT||!validRegionScope(grids,world))throw Error('REGION_LIMIT');
@@ -87,10 +89,10 @@ export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],
 /** Merge only selected cells into the exact current full-world document.
  * All outside objects, support trees and networks are retained. Untrusted
  * incoming rows must fit entirely inside the chosen rectangle. */
-export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,world=true):Incoming|null{
+export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>):Incoming|null{
  if(!validRegionScope(grids,world))return null;
- const part=split(region,grids,snapshot,networks);if(!part)return null;
- const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world);if(!captured)return null;
+ const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
+ const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!captured)return null;
  let old:Incoming;try{old=parseIslandDecoration(captured.text,grids,world);}catch{return null;}
  const result:Incoming=new Map();
  for(const g of grids){
@@ -102,7 +104,9 @@ export function mergeRegionDecoration(region:CaptureRegion,grids:readonly Mainla
   for(const [rows,scenes] of [[before.furniture.filter(p=>!oldFurniture.has(pose(p))),before.supports],[next.furniture,next.supports]] as const){
    for(const p of rows){const id=furniture.length+1;furniture.push({...p,id});const scene=scenes.get(p.id);if(scene)attachments.set(id,scene);}
   }
-  result.set(g.key,{furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
+  let landscape:LandscapePose[]|undefined;
+  if(next.landscape!==undefined){if(!before.landscape||!replaced.landscape)return null;for(const p of next.landscape){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}const old=new Set(replaced.landscape.map(landscapePoseKey));landscape=[...before.landscape.filter(p=>!old.has(landscapePoseKey(p))),...next.landscape];}
+  result.set(g.key,{...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
  }
  return result;
 }

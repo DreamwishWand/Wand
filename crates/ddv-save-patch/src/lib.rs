@@ -971,6 +971,34 @@ pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expe
     insert_plain_grid_record(source,destination,target.item_id,replacement,orientation)
 }
 
+fn landscape_grid_path(layout:&str,data:&str)->bool{
+ let Some(scope)=full_grid_scope(layout)else{return false;};
+ if scope!="FloatingIslands"{return outdoor_world_path(scope,data);}
+ let Some(family)=layout.strip_prefix("SceneLayouts/FloatingIslands/").and_then(|s|s.split('/').next())else{return false;};
+ let Some(name)=family.strip_prefix("FloatingIsland_")else{return false;};
+ if !["Atlantean","Beach","Dark","Desert","FairyTales","Forest","Jungle","Library","Meadow","Mythology","Savannah","Snow","Urban","Wetlands"].contains(&name)||
+    layout!=format!("SceneLayouts/FloatingIslands/{family}/{family}Layout.json"){return false;}
+ let folder=if name=="Desert"{"FloatingIlsnad_Desert"}else{family};
+ data.strip_prefix(&format!("GridData/FloatingIslands/{folder}/{family}")).is_some_and(|s|s.ends_with("-GridData.json")&&!s.contains('/')&&!s.contains('\\')&&!s.contains(".."))
+}
+
+/// Restore a source-validated landscape pose without touching inventory.
+pub fn preview_landscape_place(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if item/100_000!=402||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+    xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+ if !landscape_grid_path(&d.layout_path,&d.data_path){return Err(PatchError::InvalidTarget);}
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+ let grid=collection.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
+ if grid.get("ID").and_then(|v|v.as_u64())!=d.grid_id.parse::<u64>().ok()||
+    grid.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(d.layout_path.as_str())||
+    grid.get("GridDataPath").and_then(|v|v.as_str())!=Some(d.data_path.as_str())||
+    grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
+    collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id)))||
+    grid.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_some_and(|id|id/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::InvalidTarget);}
+ insert_plain_grid_record(source,d,item,xy,orientation)
+}
+
 /// Experimental cardinal Main Street road cells. Inherited v1.25 direct
 /// writer semantics: ownership and Collection remain unchanged. This is
 /// deliberately not the ordinary furniture stock transaction.

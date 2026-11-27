@@ -19,6 +19,7 @@
  export let locale:WandLanguage='ja',blocked=false,canStart=true,nextRequest:()=>number,onBegin:()=>void=()=>{},onClose:()=>void=()=>{};
  export let placing=false,ghost:StockCandidate|null=null;
  export let objects:readonly MainlandSavedObject[]=[],omitted=0;
+ let landscapeMode=false,catalogMode=false;
  let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
  let ownStock:Worker|null=null,ownPreview:Worker|null=null,seenFile:File|null=null,subscribed:Worker|null=null,catalogRequest=0,catalogLocale:WandLanguage|null=null;
@@ -39,11 +40,11 @@
  $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
  $: if(file!==seenFile)resetFile(file);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);catalogRequest=0;catalogLocale=null;catalogState='idle';cancel();}
- $: if(open&&file&&stockState==='idle')loadStock(file);
- $: if(open&&worker&&grids.length&&catalogLocale!==locale)loadCatalog(worker,grids[0],locale);
+ $: if(open&&file&&!landscapeMode&&stockState==='idle')loadStock(file);
+ $: if(open&&worker&&grids.length&&(catalogLocale!==locale||catalogMode!==landscapeMode))loadCatalog(worker,grids[0],locale,landscapeMode);
  $: if(!open||blocked||!canStart)cancel();
  $: normalized=query.normalize('NFKC').toLocaleLowerCase().trim();
- $: items=catalog.filter(o=>o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
+ $: items=catalog.filter(o=>(landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
  $: visible=items.slice(0,limit);
  $: if(open)loadArtwork(visible);
  $: ghost=candidate??(placing&&point?stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source):null);
@@ -53,7 +54,8 @@
   const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);stockState='ready';}catch{counts=null;stockState='error';}};
   own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file:f});
  }
- function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage){catalogLocale=l;catalogState='loading';catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,locale:l,requestId:catalogRequest});}
+ function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean){catalogLocale=l;catalogMode=landscape;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,locale:l,requestId:catalogRequest,landscapeOnly:landscape});}
+ function setLandscapeMode(value:boolean){cancel();landscapeMode=value;query='';limit=80;}
  function receive(e:MessageEvent){const d=e.data;
   if(d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='design-catalog'&&Array.isArray(d.items)){catalog=d.items;catalogState='ready';limit=80;}else catalogState='error';return;}
   const request=shapeRequests.get(d?.requestId);if(!request)return;
@@ -63,7 +65,7 @@
  }
  export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
-  if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||!duplicate||!landscapeSourceEligible(duplicate)||duplicate.object.editRestrictions?.move!=='allowedFlag':!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
+  if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate)||duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
   cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
   const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId});}shapeRequests=new Map(shapeRequests);
  }
@@ -109,17 +111,19 @@
    {/if}
    {#if placing||candidate}
     <div class="palette-actions">{#if placing&&!source}<button type="button" aria-label={w[14]} disabled={!rotationAllowed} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} disabled={!rotationAllowed} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
-    {#if candidate&&candidate.plan.action!=='remove'}<button type="button" disabled={status==='working'} on:click={validate}>{landscapeCandidate?lw[1]:candidate.plan.action==='duplicate'?w[4]:w[3]}</button>{:else if placing}<small>{w[6]}</small>{/if}
+    {#if candidate&&candidate.plan.action!=='remove'}<button type="button" disabled={status==='working'} on:click={validate}>{landscapeCandidate&&candidate.plan.action==='duplicate'?lw[1]:candidate.plan.action==='duplicate'?w[4]:w[3]}</button>{:else if placing}<small>{w[6]}</small>{/if}
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
    {#if testExport&&status==='valid'&&candidate&&landscapeCandidate&&copyUrl}<small class="test-warning">{tw[1]} · {lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
    {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
+   {#if testExport}<div class="palette-actions"><button type="button" aria-pressed={!landscapeMode} on:click={()=>setLandscapeMode(false)}>{w[0]}</button><button type="button" aria-pressed={landscapeMode} on:click={()=>setLandscapeMode(true)}>{lw[0]}</button></div>{/if}
+   {#if landscapeMode}<small>{lw[3]}</small>{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
-   {#if stockState==='loading'||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if stockState==='error'||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
+   {#if (!landscapeMode&&stockState==='loading')||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if (!landscapeMode&&stockState==='error')||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}
     <div class="stock-items" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-100)limit=Math.min(items.length,limit+80);}}>
-     {#each visible as item (item.itemId)}<button type="button" class="stock-item" data-item-id={item.itemId} aria-pressed={placing&&itemId===item.itemId} on:click={()=>begin(item.itemId)} title={item.name}>{#if artwork.has(item.itemId)}<img src={artwork.get(item.itemId)} alt="" loading="lazy"/>{/if}<span>{item.name}</span><small>{w[2]} {counts?.get(item.itemId)}</small></button>{/each}
-     {#if !items.length}<small>{w[13]}</small>{/if}
+     {#each visible as item (item.itemId)}<button type="button" class="stock-item" data-item-id={item.itemId} aria-pressed={placing&&itemId===item.itemId} on:click={()=>begin(item.itemId)} title={item.name}>{#if artwork.has(item.itemId)}<img src={artwork.get(item.itemId)} alt="" loading="lazy"/>{/if}<span>{item.name}</span>{#if !landscapeMode}<small>{w[2]} {counts?.get(item.itemId)}</small>{/if}</button>{/each}
+     {#if !items.length&&!landscapeMode}<small>{w[13]}</small>{/if}
     </div>
    {/if}
   {/if}
