@@ -26,7 +26,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {sceneWords,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import {DESIGN_FILE_LIMIT} from './design-layout.ts';
- import {indoorRoomRenamePlan,roomRenameWords,indoorHouseGroups,parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorHitIndices,indoorFreeFloor,indoorFreeRotate,indoorFreeMoveGroup,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMixedScene,indoorMixedPlacement,captureIndoorMixedScene,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorAlign,indoorSymmetricDuplicate,indoorLinkedMove,indoorLinkedRotate,indoorLinkedPlacement,indoorLinkedWords,indoorAlignWords,type IndoorAlignMode,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
+ import {indoorRoomRenamePlan,roomRenameWords,indoorFloorGroups,indoorHouseGroups,parseIndoorRooms,parseOwnedFinishes,verifyFinishReceipt,indoorWords,finishWords,positionWords,indoorPositionPlot,indoorShapeWords,indoorEditableTree,indoorHitIndices,indoorFreeFloor,indoorFreeRotate,indoorFreeMoveGroup,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupStockWords,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMixedScene,indoorMixedPlacement,captureIndoorMixedScene,indoorSceneWords,indoorEditWords,indoorMove,indoorGroupMove,indoorGroupRotate,indoorGroupMoveWords,indoorAlign,indoorSymmetricDuplicate,indoorLinkedMove,indoorLinkedRotate,indoorLinkedPlacement,indoorLinkedWords,indoorAlignWords,type IndoorAlignMode,indoorPlace,indoorTerrainWords,indoorTransferWords,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut,type IndoorTransferRow,type IndoorPlace,type IndoorPickup,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldFurnitureCut,worldFurnitureClipboard,groupCutWords,ROOM_CUT_LIMIT,type CutClipboard} from './group-paste.ts';
  import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
@@ -312,16 +312,17 @@
  $: if(file!==seen)load(file);
  $: room=rooms[selected]??null;
  $: houses=indoorHouseGroups(rooms);
- $: houseRooms=rooms.map((r,i)=>({r,i})).filter(({r})=>r.house===room?.house);
+ $: houseFloors=indoorFloorGroups(rooms,room?.house??0);
+ $: floorRooms=houseFloors.find(g=>g.floor===room?.floor)?.rooms??[];
  $: if(houses.length)loadItems(houses.flatMap(h=>h.itemId===undefined?[]:[h.itemId]),[]);
  $: face=room?.surfaces[surface]??null;
  $: filtered=(face?.items??[]).filter(p=>name(p.itemId,records,locale,w[12]).normalize('NFKC').toLocaleLowerCase().includes(query.normalize('NFKC').toLocaleLowerCase().trim()));
  $: visible=filtered.slice(0,limit);
  $: if(room)loadItems([...room.surfaces.map(s=>s.finish),room.ceiling,...(face?.items.map(p=>p.itemId)??[]),...(finishOpen?owned:[])].filter((n):n is number=>typeof n==='number'&&n>0),[...visible.map(p=>p.itemId),...(finishOpen&&finishChoice?[finishChoice]:[])]);
  function name(id:number|null,dict:ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>,lang:WandLanguage,unknown:string){return id===null?unknown:dict.get(id)?.names[lang]??dict.get(id)?.names.en??unknown;}
- function load(next:File|null){projectApplyOpen=false;closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;if(!keep)linkedAxis=null;const oldRoom=selected,oldSurface=surface;seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
+ function load(next:File|null){projectApplyOpen=false;closeSupport();supportParents=[];resetObject();stock=new Map();const history=$localSaveSession.worldCheckpoint,keep=!!next&&!!seen&&!!history&&history.files[history.cursor]===next;if(!keep)linkedAxis=null;const oldRoom=selected,oldSurface=surface,oldAddress=rooms[selected];seen=next;own?.terminate();own=null;rooms=[];owned=[];finishOpen=false;cancelPreview();selected=0;surface=0;query='';highlight=null;status='loading';if(!next){status='ready';return;}
   const worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});own=worker;
-  const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);supportParents=parseIndoorSupportParents(v,rooms);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep&&rooms[oldRoom]){selected=oldRoom;surface=Math.min(oldSurface,rooms[oldRoom].surfaces.length-1);}status='ready';}catch{status='error';}};
+  const done=(v:unknown,rawStock?:unknown)=>{worker.terminate();if(own!==worker||file!==next)return;own=null;try{rooms=parseIndoorRooms(v);supportParents=parseIndoorSupportParents(v,rooms);owned=parseOwnedFinishes(v);try{stock=parseFurnitureStock(rawStock);}catch{stock=new Map();}if(keep){const match=oldAddress?.roomSlot===undefined?oldRoom:rooms.findIndex(r=>r.house===oldAddress.house&&r.floor===oldAddress.floor&&r.roomSlot===oldAddress.roomSlot);if(match>=0&&rooms[match]){selected=match;surface=Math.min(oldSurface,rooms[match].surfaces.length-1);}}status='ready';}catch{status='error';}};
   worker.onmessage=e=>done(e.data?.kind==='indoor-rooms'?e.data.result:null,e.data?.stock);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);worker.postMessage({command:'indoor-rooms',file:next});
  }
  function loadItems(ids:number[],art:number[]){const fresh=[...new Set(ids)].filter(id=>!asked.has(id));for(const id of fresh)asked.add(id);
@@ -340,7 +341,10 @@
     {#each houses as h (h.house)}<option value={h.house}>{name(h.itemId??null,records,locale,w[1]+' '+h.house)}</option>{/each}
    </select>
    {#if testExport&&room.nameEditable}<button type="button" disabled={blocked||finishOpen||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent||projectApplyOpen||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft} on:click={beginRename}>{renameText[0]}</button>{/if}
-   {#each houseRooms as {r,i} (r.ordinal)}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{w[2]} {r.floor} · {r.name||w[3]+' '+r.ordinal}</button>{/each}
+   <select aria-label={w[2]} value={room.floor} on:change={e=>{const f=houseFloors.find(f=>f.floor===Number(e.currentTarget.value));if(f)choose(f.firstIndex);}}>
+    {#each houseFloors as f (f.floor)}<option value={f.floor}>{w[2]} {f.floor}</option>{/each}
+   </select>
+   {#each floorRooms as {r,i},index (r.ordinal)}<button type="button" aria-pressed={i===selected} on:click={()=>choose(i)}>{r.name||w[3]+' '+(r.roomSlot===undefined?index+1:r.roomSlot+1)}</button>{/each}
   </nav>
   <div class="room-content">
    <div class="finish-heading"><strong>{w[15]}</strong>{#if file&&terrainWorker}<RoomProjectCapture freePlacement={testExport&&freePlacement} {file} {room} {rooms} {stock} {owned} witnesses={supportParents} worker={terrainWorker} {locale} {nextRequest} blocked={blocked||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent||projectApplyOpen||moving||placing||!!editDraft||!!pickupDraft||!!placeDraft||!!transferDraft}/>{/if}{#if testExport}<button type="button" disabled={blocked||!file||!terrainWorker||!!editWorker||!!editCopy||!!preview||!!finishCopy||!!supportParent} on:click={()=>{resetObject();cancelPreview();finishOpen=false;projectApplyOpen=true;}}>{rap[0]}</button>{/if}<button type="button" disabled={!wallReady} aria-pressed={finishOpen} on:click={()=>{resetObject();cancelPreview();finishOpen=!finishOpen;}}>{fw[0]}</button></div>

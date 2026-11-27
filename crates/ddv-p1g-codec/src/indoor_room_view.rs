@@ -104,6 +104,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
   let name=room.get("Name").and_then(Value::as_str).filter(|s|s.chars().count()<=128).unwrap_or("");
   let mut row=json!({"ordinal":out.len()+1,"house":h,"floor":f,"name":name,"ceiling":finish(room.get("Ceiling")),"surfaces":rows});
   if let Some(item)=houses[h-1].get("HouseItemID").and_then(id).filter(|n|*n/100_000==205){row["houseItemId"]=json!(item);}
+  if (0..=3).contains(&slot){row["roomSlot"]=json!(slot);}
   if root["GameInfo"]["Version"].as_u64()==Some(643)&&(0..=3).contains(&slot)&&houses[h-1].get("HouseItemID").and_then(id).is_some_and(|n|n>0)&&room.get("Name").and_then(Value::as_str).is_some_and(|s|s.chars().count()<=128){row["nameEditable"]=json!(true);}
   out.push(row);
  }
