@@ -22,6 +22,7 @@
  import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
  import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork,commitNetworkDesign} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
+ import WorldGridLines from './WorldGridLines.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
@@ -223,7 +224,7 @@
  let selected:number|null=null,placing:DesignItemGeometry|null=null,shapeId=0,loadingShape=false,error='';
  let orientation=2,hover:{x:number;y:number}|null=null,moveMode=false;
  let camera=defaultMapCamera(),svg:SVGSVGElement;
- let mapWidth=0,mapHeight=0;
+ let mapWidth=0,mapHeight=0,showGrid=true;
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
  let paletteOpen=true,root:HTMLDivElement;
@@ -620,6 +621,7 @@
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: if(active&&map)loadImages(visibleWorldArtworkIds(visible,map.shapes,cellPixels).map(itemId=>({itemId})));
  $: if(active&&placing)loadImages([{itemId:placing.itemId}]);
+ $: if(active&&pasting.length)loadImages(pasting);
  $: if(active&&pasting.length)loadImages(pasting.map(p=>({itemId:p.itemId})));
  $: chosen=placements.find(o=>o.id===selected)??null;
  $: chosenGeometry=chosen?definitions.get(chosen.itemId)??null:null;
@@ -889,11 +891,10 @@
     on:pointerdown={startDirect}
     on:pointermove={follow} on:pointerup={e=>endDirect(e,true)} on:pointercancel={e=>endDirect(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;if(direct&&!direct.moved)direct=null;}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
-     <defs><pattern id="design-grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" stroke="#9da9b4" stroke-opacity=".38" stroke-width=".05" fill="none"/></pattern></defs>
      <g class="design-coordinate-space" transform={worldFrame?'translate(0 '+height+') scale(1 -1)':undefined}>
      <rect width={width} height={height} fill="#27313a"/>
      {#if terrainUrl}<image href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
-     {#if width/camera.zoom<160&&height/camera.zoom<160}<rect width={width} height={height} fill="url(#design-grid)"/>{/if}
+     {#if showGrid}<WorldGridLines bounds={{x:0,y:0,w:width,h:height}} view={viewport} pixels={cellPixels} majorStep={grid?.factor??1} minorStep={1}/>{/if}
      {#each visible as o (o.localOrdinal)}
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}
@@ -905,6 +906,7 @@
        </g>
       {/if}
      {/each}
+     {#each visible.filter(o=>selectedIds.has(o.localOrdinal)||focusedId===o.localOrdinal) as o (o.localOrdinal)}{@const s=o.shapeKey?map?.shapes[o.shapeKey]:null}{#if s}<path d={s.path} transform={'translate('+o.x+' '+o.y+')'} fill="none" stroke={focusedId===o.localOrdinal?'#f5cf70':'#fff'} stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}
      {#if islandReview}{#each islandReview.incoming.get(grid?.key??'')??[] as p (p.id)}{@const shape=islandReview.definitions.get(grid?.key??'')?.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="island-preset-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#if areaReview}{#each areaReview.preview.filter(p=>p.x>=viewport.x-10&&p.x<=viewport.x+viewport.w+10&&p.y>=viewport.y-10&&p.y<=viewport.y+viewport.h+10) as p (p.id)}{@const shape=areaReview.incoming.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="area-preset-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#each fenceDrawEdges as edge (edge.key)}
@@ -938,7 +940,7 @@
        {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
       {/each}
      {/if}
-     {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
+     {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<g transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'}><path class="design-paste-ghost" d={shape.path} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{#if Math.min(shape.width,shape.height)*cellPixels>=14&&images.has(p.itemId)}<WorldObjectArtwork href={images.get(p.itemId)!} width={shape.width} height={shape.height} opacity={.55} flipY={Boolean(worldFrame)}/>{/if}</g>{/if}{/each}{/if}
      {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&!roadErase(roadTool)?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
      {#if moveMode&&symmetry}{#each hoverMoveTargets.filter(p=>p.id!==selected) as target (target.id)}{@const p=placementById.get(target.id)}{@const shape=p?definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]:null}{#if shape}<path class="symmetry-move-ghost" d={shape.path} transform={'translate('+target.x+' '+target.y+')'} fill={hoverMovePlan?'#4bddcd':'#ef5350'} fill-opacity=".6" stroke="#f5cf70" stroke-dasharray="4 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{/if}
      {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(moveMode?Boolean(hoverMovePlan):symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
@@ -948,7 +950,7 @@
      {#each warnings as run}<rect x={run.x} y={run.y} width={run.width} height="1" fill="#ef5350" fill-opacity=".6"/>{/each}
      </g>
     </svg>
-   </button><MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
+   </button><MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
