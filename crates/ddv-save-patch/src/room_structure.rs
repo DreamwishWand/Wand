@@ -598,7 +598,7 @@ mod tests{
   let grids:serde_json::Map<String,Value>=shape.paths.iter().enumerate().map(|(i,p)|((10+i).to_string(),json!({"ID":10+i,"GridDataPath":p,"GridDefaultLayoutPath":"","TessellationFactor":2,"NextGridObjectID":0,"Objects":{}}))).collect();
   let mut raw=json!({"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500000,"InitialRoomGridLayoutPath":"","Floors":[{"Rooms":{"0":{"Name":"Center","FloorGridID":10,"WallGridIDs":{"0":11,"1":12,"2":13,"3":14},"RoomPrefabAddress":shape.prefab}}}]}],"GridCollection":{"NextGridID":90,"Grids":grids}},"Player":{"Currency":17}});
   let grid=&mut raw["World"]["GridCollection"]["Grids"]["10"];
-  grid["Objects"]["1"]=json!({"ID":1,"ItemID":40001039,"X":8,"Y":7,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":81,"DesignID":null}},"Unknown":7});
+  grid["Objects"]["1"]=json!({"ID":1,"ItemID":40001039,"X":14,"Y":7,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":81,"DesignID":null}},"Unknown":7});
   grid["NextGridObjectID"]=json!(2);
   raw["World"]["GridCollection"]["Grids"]["81"]=json!({"ID":81,"UnknownSupport":true});
   let t=RoomFinishTarget{house_index:0,house_item_id:20500000,floor_index:0,room_slot:0};
