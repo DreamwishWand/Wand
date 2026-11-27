@@ -2,6 +2,7 @@
  import {type ImageSource} from '$lib/media/native-map-renderer.ts';
  import {openNativePreviewPack} from '$lib/media/native-cdn-preview.ts';
  import {browser} from '$app/environment';
+ import {base} from '$app/paths';
  import {nativePreviewSession} from '$lib/media/native-preview-session.ts';
  import {nativeEditorExtent,editorViewToNativeCanvas,nativeMapSourceScope,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
@@ -88,6 +89,7 @@
   <label>ローカル検証素材 <input type="file" multiple accept=".json,.png,.webp" on:change={open}/></label>
   {#if map&&source}
    <button type="button" on:click={clear}>素材を解除</button>
+   <a href={base+'/world/?native-map=1'}>World Editorで確認</a>
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
    <label><input type="checkbox" bind:checked={locked} on:change={resetAreas}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>

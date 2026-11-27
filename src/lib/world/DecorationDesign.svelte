@@ -127,6 +127,11 @@
  let designPack:LocalNativePreviewPack|null=nativeDesignEnabled?nativePreviewSession.get():null;
  let designBackground=true,designNativeReady='',designNativeError=false,designNativeLoading=false,designNativeProgress:NativeMapProgress|null=null,designNativeTicket=0;
  let nativeFileInput:HTMLInputElement;
+ const stopDesignNative=nativeDesignEnabled?nativePreviewSession.subscribe(pack=>{
+  if(designPack===pack)return;
+  designNativeTicket++;designPack=pack;designNativeReady='';designNativeProgress=null;designNativeLoading=false;designNativeError=false;
+ }):()=>{};
+ onDestroy(()=>{designNativeTicket++;stopDesignNative();});
  $: designNativeMap=nativeDesignEnabled&&worldFrame&&!embedded?nativeMapForEditor(designPack,worldFrame.scope,false):null;
  $: designNativeView=designNativeMap&&worldFrame?editorViewToNativeCanvas(designNativeMap,nativeDesignViewport(worldFrame,displayViewport)):null;
  $: designNativeActive=!!designNativeMap&&designBackground&&designNativeReady===designNativeMap.id&&!designNativeError;
@@ -137,7 +142,7 @@
  async function openDesignNative(e:Event){
   const input=e.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';if(!files.length)return;
   const ticket=++designNativeTicket;designNativeError=false;
-  try{const pack=await openNativePreviewPack(files);if(ticket!==designNativeTicket)return;designNativeReady='';designNativeProgress=null;nativePreviewSession.set(pack);designPack=pack;designBackground=true;}
+  try{const pack=await openNativePreviewPack(files);if(ticket!==designNativeTicket)return;designNativeReady='';designNativeProgress=null;nativePreviewSession.set(pack);designBackground=true;}
   catch{if(ticket===designNativeTicket)designNativeError=true;}
  }
  function setDesignNativeStatus(s:'drawing'|'ready'|'error',id:string){
