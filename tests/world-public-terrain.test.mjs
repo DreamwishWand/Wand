@@ -848,3 +848,15 @@ test('outdoor area backup retains diagonal pose and restores using returned stoc
  assert.ok(q);assert.equal(q.plan.remove[0].expectedOrientation,'GridOrientation_DownLeft');assert.equal(q.plan.add[0].orientation,'GridOrientation_DownLeft');assert.equal(q.missing.length,0);
  const world=biomeFurnitureSnapshot(grid,[p],0,false,undefined,true);assert.equal(JSON.parse(world.text).design.placements[0].orientation,2.5);
 });
+
+test('free area restoration accepts repeated anchors and overhang without changing ordinary mode',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bundle.grids.map(bindMainlandGrid),grid=grids.find(g=>g.key==='Meadow');
+ const rasters=new Map(grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]));
+ const itemId=40005160,shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],path:'M0 0h2v1H0Z',acceptedFloorTypesFlag:1};
+ const def={itemId,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{[itemId+':8']:shape}},defs=new Map([[itemId,def]]),stock=new Map([[itemId,2]]);
+ const rows=[1,2].map(id=>({id,itemId,x:grid.sizeX*grid.factor-1,y:0,orientation:2}));
+ assert.equal(biomeFurnitureReplacement(grid,grids,rasters,[],0,rows,defs,stock),null);
+ const q=biomeFurnitureReplacement(grid,grids,rasters,[],0,rows,defs,stock,false,undefined,false,true);
+ assert.ok(q);assert.equal(q.plan.add.length,2);assert.ok(q.plan.add.every(p=>p.freePlacement===true&&p.x===rows[0].x&&p.y===0));assert.equal(q.missing.length,0);
+ const low=biomeFurnitureReplacement(grid,grids,rasters,[],0,rows,defs,new Map([[itemId,1]]),false,undefined,false,true);assert.equal(low.missing[0].quantity,1);
+});
