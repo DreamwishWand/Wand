@@ -98,3 +98,18 @@ test('support hierarchy is eligible for cut only and remains in its source world
  assert.equal(groupCutPlan(rows,candidate)[0].supportFactor,1);
  assert.equal(groupCutPlan(rows,{...candidate,rows:[{...candidate.rows[0],destination:{...candidate.rows[0].destination,factor:2}},candidate.rows[1]]}),null);
 });
+
+test('free group copy allows overlapping leaf furniture while retaining stock, exact grid and bounds',()=>{
+ const a=saved(2,4,-3),b=saved(3,4,-3);a.object.editRestrictions={move:'denied',remove:'denied',select:'denied'};
+ assert.equal(captureFurnitureGroup([a,b]),null);
+ const clip=captureFurnitureGroup([a,b],false,true),stock=new Map([[item,2]]);
+ assert.equal(captureFurnitureGroup([{...a,object:{...a.object,subgrid:{}}}],false,true),null);
+ const empty=new Map([['A',{...rasters.get('A'),nativeFloorValues:new Uint32Array(400)}]]);
+ assert.equal(groupPasteCandidate(clip,[grid],rasters,defs,stock,[],0,4.1,-3.1),null);
+ const q=groupPasteCandidate(clip,[grid],empty,defs,stock,[a],0,4.1,-3.1,true);
+ assert.deepEqual(q.rows.map(p=>[p.x,p.y]),[[4,3],[4,3]]);
+ assert.equal(groupPasteCandidate(clip,[grid],empty,defs,new Map([[item,1]]),[],0,4.1,-3.1,true),null);
+ assert.equal(groupPasteCandidate(clip,[grid],empty,defs,stock,[],0,20.1,-3.1,true),null);
+ const other={...grid,key:'B'};empty.set('B',empty.get('A'));
+ assert.equal(groupPasteCandidate(clip,[grid,other],empty,defs,stock,[],0,4.1,-3.1,true),null);
+});
