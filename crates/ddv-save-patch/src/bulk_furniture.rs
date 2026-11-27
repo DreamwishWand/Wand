@@ -5,7 +5,7 @@ use serde_json::{Map,Value};
 const BAD:PatchError=PatchError::InvalidTarget;
 const LIMIT:usize=2048;
 pub struct BulkPickup<'a>{pub target:&'a GridCoordinateTarget,pub expected:(i32,i32),pub orientation:&'a str}
-pub struct BulkPlace<'a>{pub destination:&'a PlainGridDestination,pub item_id:u64,pub xy:(i32,i32),pub orientation:&'a str}
+pub struct BulkPlace<'a>{pub destination:&'a PlainGridDestination,pub item_id:u64,pub xy:(i32,i32),pub orientation:&'a str,pub free_placement:bool}
 pub struct BulkScenePlace<'a>{pub pose:BulkPlace<'a>,pub tree:Option<&'a Value>}
 struct GridChanges{remove:HashSet<String>,add:Vec<Value>,next:u32,objects_path:Vec<Segment>,counter_path:Vec<Segment>}
 fn inventory_route()->Vec<Segment>{vec![k("Player"),k("ListInventories"),k("0")]}
@@ -38,7 +38,7 @@ fn grid_changes(id:&str,grid:&Value,collection:&Value,allocating:bool)->Result<G
 /// before changing networks and placing new objects. This function batches
 /// each ordinary phase across all affected Grids and stock entries.
 pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkPlace<'_>])->Result<GridCoordinateDraft,PatchError>{
- let rows=places.iter().map(|p|BulkScenePlace{pose:BulkPlace{destination:p.destination,item_id:p.item_id,xy:p.xy,orientation:p.orientation},tree:None}).collect::<Vec<_>>();
+ let rows=places.iter().map(|p|BulkScenePlace{pose:BulkPlace{destination:p.destination,item_id:p.item_id,xy:p.xy,orientation:p.orientation,free_placement:p.free_placement},tree:None}).collect::<Vec<_>>();
  bulk_patch(source,pickups,&rows)
 }
 /// Mixed roots are allocated in input order, with a single global child
@@ -81,16 +81,17 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
  for row in places{
   let p=&row.pose;
   let d=p.destination;let (x,y)=p.xy;
+  if p.free_placement&&(row.tree.is_some()||!full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path))){return Err(BAD);}
   if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
-   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
+   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!anchors.insert((d.grid_id.clone(),x,y))&&!p.free_placement{return Err(BAD);}
   let grid=grids.get(&d.grid_id).ok_or(BAD)?;
   let matches=|v:&Value|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&v.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
   if !matches(grid)||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
   if !changes.contains_key(&d.grid_id){if grids.values().filter(|g|matches(g)).count()!=1{return Err(BAD);}changes.insert(d.grid_id.clone(),grid_changes(&d.grid_id,grid,c,true)?);}
   let change=changes.get_mut(&d.grid_id).ok_or(BAD)?;
   let objects=grid.get("Objects").and_then(Value::as_object).ok_or(BAD)?;
-  if objects.len()+change.add.len()>=100_000||objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(BAD);}
+  if objects.len()+change.add.len()>=100_000||!p.free_placement&&objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(BAD);}
   let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
   let mut object=serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation});
   if let Some(scene)=row.tree{
@@ -210,7 +211,7 @@ mod tests{
   let pickup=BulkPickup{target:&t,expected:(1,1),orientation:"GridOrientation_DownLeft"};
   let removed=preview_bulk_furniture(&source,&[pickup],&[]).unwrap();
   let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Villages/Village04-Test-GridData.json".into(),tessellation:1,size:(16,16)};
-  let place=BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_DownLeft"};
+  let place=BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_DownLeft",free_placement:false};
   let restored=preview_bulk_furniture(&removed.patched_json,&[],&[place]).unwrap();
   let root:Value=serde_json::from_str(&restored.patched_json).unwrap();
   assert_eq!(root["World"]["GridCollection"]["Grids"]["7"]["Objects"]["4"]["Orientation"],"GridOrientation_DownLeft");
@@ -227,7 +228,7 @@ mod tests{
   assert!(bulk.patched_json.contains("\"Other\":1e2"));assert!(bulk.patched_json.contains("\"Unknown\":1e2"));
   assert!(preview_bulk_furniture(SOURCE,&[BulkPickup{target:&c,expected:(3,3),orientation:"GridOrientation_Down"}],&[]).is_err());
   let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Test.json".into(),tessellation:1,size:(16,16)};
-  let places=[BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_Left"},BulkPlace{destination:&d,item_id:40000002,xy:(5,5),orientation:"GridOrientation_Down"}];
+  let places=[BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_Left",free_placement:false},BulkPlace{destination:&d,item_id:40000002,xy:(5,5),orientation:"GridOrientation_Down",free_placement:false}];
   let result=preview_bulk_furniture(&bulk.patched_json,&[],&places).unwrap();
   let one=preview_furniture_stock_transaction(&sequential.patched_json,3,FurnitureStockAction::Place{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_Left"}).unwrap();
   let two=preview_furniture_stock_transaction(&one.patched_json,1,FurnitureStockAction::Place{destination:&d,item_id:40000002,xy:(5,5),orientation:"GridOrientation_Down"}).unwrap();
@@ -246,7 +247,7 @@ mod mixed_placement_tests{
   let source=src.to_string().replace("\"Unknown\":100.0","\"Unknown\":1e2");
   let d=PlainGridDestination{grid_id:"7".into(),layout_path:layout.into(),data_path:data.into(),tessellation:1,size:(16,16)};
   let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
-  let pose=|item_id,xy|BulkPlace{destination:&d,item_id,xy,orientation:"GridOrientation_Down"};
+  let pose=|item_id,xy|BulkPlace{destination:&d,item_id,xy,orientation:"GridOrientation_Down",free_placement:false};
   let rows=[BulkScenePlace{pose:pose(40005160,(1,1)),tree:Some(&tree)},BulkScenePlace{pose:pose(40005161,(2,2)),tree:None},BulkScenePlace{pose:pose(40005160,(3,3)),tree:Some(&tree)}];
   let one=crate::support_clone::preview_support_scene_place(&source,40005160,&d,(1,1),"GridOrientation_Down",&tree).unwrap();
   let two=preview_furniture_stock_transaction(&one.patched_json,2,FurnitureStockAction::Place{destination:&d,item_id:40005161,xy:(2,2),orientation:"GridOrientation_Down"}).unwrap();
