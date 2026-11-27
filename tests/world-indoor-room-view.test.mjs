@@ -247,3 +247,11 @@ test('room slots distinguish sparse rooms and floor navigation preserves global 
  assert.throws(()=>parseIndoorRooms(report([rows[0],{...rows[1],roomSlot:0}])));
  assert.throws(()=>parseIndoorRooms(report([{...rows[0],roomSlot:4}])));
 });
+
+test('protected room positions remain visible but cannot be returned to stock',()=>{
+ const f={...face,positions:[{...face.positions[0],protected:true}],items:[{itemId:40000002,quantity:1}],missingPositions:0};
+ const parsed=parseIndoorRooms(report([{...room,surfaces:[f]}]))[0].surfaces[0];
+ assert.equal(parsed.positions[0].protected,true);
+ assert.equal(indoorPickup(parsed,0,new Set([40000002]),new Map([[40000002,0]])),null);
+ assert.throws(()=>parseIndoorRooms(report([{...room,surfaces:[{...f,positions:[{...f.positions[0],plain:true}]}]}])));
+});

@@ -54,17 +54,17 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
   for(const [i,face] of room.surfaces.entries()){
    const b=before[i],a=after[i],g=geometry.get(face.ordinal);
    if(!g||!face.factor||!roomApplyMatches(b,face)||!roomApplyMatches(a,face)||b.id!==face.ordinal||a.id!==face.ordinal||!roomBackupSurfaceValid(face,a,g,free))return null;
-   const old=currentDesign(b.timeline),next=currentDesign(a.timeline);if(old.length!==face.positions.length||next.some(p=>p.attachment?.designOnly||!!g.design.get(p.itemId)?.supportPath!==!!p.attachment))return null;
+   const old=currentDesign(b.timeline),next=currentDesign(a.timeline),indices=face.positions.flatMap((p,j)=>p.protected?[]:[j]);if(old.length!==indices.length||old.some((p,i)=>{const q=face.positions[indices[i]];return p.itemId!==q.itemId||p.x!==q.x*b.template.grid.factor/face.factor!||p.y!==q.y*b.template.grid.factor/face.factor!||p.orientation!==((q.orientationCode??-4)/4);})||next.some(p=>p.attachment?.designOnly||!!g.design.get(p.itemId)?.supportPath!==!!p.attachment))return null;
    const wanted=new Map<string,number>();for(const p of next){const key=poseKey(p);wanted.set(key,(wanted.get(key)??0)+1);}
-   const keep=new Set<number>(),drop:number[]=[];
-   for(const [j,p] of old.entries()){const key=poseKey(p),n=wanted.get(key)??0;if(n){keep.add(j);wanted.set(key,n-1);retained++;}else drop.push(j);}
+   const keep=new Set(face.positions.flatMap((p,j)=>p.protected?[j]:[])),drop:number[]=[],oldByIndex=new Map(indices.map((j,i)=>[j,old[i]]));
+   for(const [i,p] of old.entries()){const j=indices[i],key=poseKey(p),n=wanted.get(key)??0;if(n){keep.add(j);wanted.set(key,n-1);retained++;}else drop.push(j);}
    const desired=next.filter(p=>{const key=poseKey(p),n=wanted.get(key)??0;if(!n)return false;wanted.set(key,n-1);return true;});
    if(drop.length>32||desired.length>32)return null;
    const freeFloor=free&&indoorFreeFloor(face);
-   const loose=freeFloor?drop.filter(j=>!old[j].attachment):[],strict=drop.filter(j=>!loose.includes(j));
+   const loose=freeFloor?drop.filter(j=>!oldByIndex.get(j)?.attachment):[],strict=drop.filter(j=>!loose.includes(j));
    const pickup:IndoorPickup[]=[];
    const account=(indices:readonly number[])=>{
-    for(const j of indices)for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return false;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}
+    for(const j of indices)for(const [id,n] of need(oldByIndex.get(j)!)){const value=balances.get(id);if(value===undefined||value+n>2147483647)return false;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}
     return true;
    };
    // The codec removes plain leaves first, then remaps support indices
@@ -76,7 +76,7 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
    if(strict.length){
     const keepIndices=face.positions.map((_,j)=>j).filter(j=>!loose.includes(j));
     const reduced={...face,positions:keepIndices.map(j=>face.positions[j])};
-    const mapped=strict.map(j=>keepIndices.indexOf(j)),supportIndices=new Set(mapped.filter((_,i)=>!!old[strict[i]].attachment));
+    const mapped=strict.map(j=>keepIndices.indexOf(j)),supportIndices=new Set(mapped.filter((_,i)=>!!oldByIndex.get(strict[i])?.attachment));
     const batch=indoorGroupPickup(reduced,mapped,g.allowed,balances,supportIndices);
     if(!batch||!account(strict))return null;pickup.push(...batch.map((row,i)=>({...row,index:strict[i]})));
    }
