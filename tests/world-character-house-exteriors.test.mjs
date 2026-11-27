@@ -13,6 +13,13 @@ test('character house exterior projection matches the complete reviewed native C
  assert.equal(rows.length,projection.sourceCount);
  assert.equal(ids.length,projection.distinctBuildingCount);
  assert.deepEqual(ids.filter(id=>Math.floor(id/100000)===200).sort((a,b)=>a-b),projection.itemIds);
+ let character=0;
+ const reverse={};
+ for(const [delta,house] of rows){
+  character+=delta;
+  if(Math.floor(house/100000)===200)(reverse[house]??=[]).push(character);
+ }
+ assert.deepEqual(reverse,projection.characterIdsByHouse);
  assert.equal(characterHouseExterior(20000016),true);
  assert.equal(characterHouseExterior(20400023),false);
  assert.equal(characterHouseExterior(20500001),false);

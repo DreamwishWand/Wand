@@ -1792,6 +1792,50 @@ pub(super) fn character_house_copy_candidate(profile:&[u8],target:&GridCoordinat
     ddv_save_patch::preview_character_house_exterior_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,target,expected,dest,xy,orientation,replacement).map_err(|_|CodecError::Patch)
 }
 
+/// Resolve a Grid's actual owning village/island, not a filename or a
+/// character's default world. An absent/ambiguous routing record is not proof.
+fn character_house_world_owner<'a>(root:&'a Value,gid:&str)->Option<&'a Value>{
+    let id=key_id(gid)?;
+    let world=&root["World"];
+    let mut owners=Vec::new();
+    for village in world["Villages"].as_array()?{
+        let areas=village["Areas"].as_object()?;
+        let mut hits=0;
+        for area in areas.values(){
+            hits+=area["GridIDs"].as_array()?.iter().filter(|v|v.as_u64()==Some(id)).count();
+        }
+        if hits>1{return None;}
+        if hits==1{owners.push(village);}
+    }
+    for island in world["FloatingIslands"].as_object()?.values(){
+        let hits=island["GridIDs"].as_array()?.iter().filter(|v|v.as_u64()==Some(id)).count();
+        if hits>1{return None;}
+        if hits==1{owners.push(island);}
+    }
+    if owners.len()!=1{return None;}
+    let owner=owners[0];
+    owner["CharacterStates"].as_object()?;
+    Some(owner)
+}
+fn character_house_foreign_copy_removable(root:&Value,item:u64,from_gid:&str,to_gid:&str)->bool{
+    let Some(from)=character_house_world_owner(root,from_gid)else{return false;};
+    let Some(to)=character_house_world_owner(root,to_gid)else{return false;};
+    if std::ptr::eq(from,to){return false;}
+    let Ok(projection)=serde_json::from_str::<Value>(include_str!("../../../src/lib/world/character-house-exteriors.json"))else{return false;};
+    let Some(ids)=projection["characterIdsByHouse"][item.to_string()].as_array().filter(|a|!a.is_empty())else{return false;};
+    let Some(source)=from["CharacterStates"].as_object()else{return false;};
+    let Some(destination)=to["CharacterStates"].as_object()else{return false;};
+    let mut found=false;
+    for v in ids{
+        let Some(id)=v.as_u64().filter(|n|n/100_000==100)else{return false;};
+        let key=id.to_string();
+        // Presence enum semantics are not assumed. Any saved source entry
+        // blocks removal of the local last entrance.
+        if source.contains_key(&key){return false;}
+        found|=destination.contains_key(&key);
+    }
+    found
+}
 fn character_house_remove_candidate(profile:&[u8],root:&Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
     let bad=CodecError::Json;
     if !character_house_exterior(target.item_id){return Err(bad);}
@@ -1803,10 +1847,11 @@ fn character_house_remove_candidate(profile:&[u8],root:&Value,target:&GridCoordi
     if !building_clone_state(target.item_id,Some(state)){return Err(bad);}
     let refs=grid_identity_dependencies(profile,target)?;
     if refs.blocking()>0||refs.historical>0{return Err(bad);}
-    // A copy in another world is not proof of a valid local home. Keep an
-    // exact built exterior in this very world / island until lifecycle is known.
+    // Preserve a local entrance unless the exact save routing shows this
+    // world has no related character record and a surviving house elsewhere does.
     let survivor=grids.iter().any(|(gid,g)|{
-        let Some(to)=house_exterior_identity(root,gid).ok().filter(|t|t.0==from.0) else{return false;};
+        let Some(to)=house_exterior_identity(root,gid).ok() else{return false;};
+        if to.0!=from.0&&!character_house_foreign_copy_removable(root,target.item_id,&target.grid_id,gid){return false;}
         g["Objects"].as_object().is_some_and(|objects|objects.iter().any(|(oid,o)|{
             if (gid==&target.grid_id&&oid==&target.object_id)||o["ItemID"].as_u64()!=Some(target.item_id)||o.get("State")!=Some(state)||o["ID"].as_u64()!=key_id(oid){return false;}
             let coord=|k:&str,limit:u64|o[k].as_u64().is_some_and(|n|n<limit);
@@ -3949,6 +3994,20 @@ mod terrain_session_tests{
         let mut island_copy:Value=serde_json::from_str(&draft.patched_json).unwrap();
         let remove_island=serde_json::json!({"buildingRemove":{"localOrdinal":2,"itemId":"20000016","expectedX":8,"expectedY":9,"orientation":"GridOrientation_Right"}});
         assert!(group_paste_candidate(island_copy.to_string().as_bytes(),&remove_island.to_string()).is_err());
+        let mut routed=island_copy.clone();
+        routed["World"]["Villages"][0]["Areas"]=serde_json::json!({"1":{"GridIDs":[10]}});
+        routed["World"]["Villages"][0]["CharacterStates"]=serde_json::json!({"10000002":{}});
+        routed["World"]["FloatingIslands"]["1"]["GridIDs"]=serde_json::json!([11]);
+        let foreign_removed:Value=serde_json::from_str(&group_paste_candidate(routed.to_string().as_bytes(),&remove_island.to_string()).unwrap()).unwrap();
+        assert!(foreign_removed["World"]["GridCollection"]["Grids"]["11"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(foreign_removed["World"]["Villages"],routed["World"]["Villages"]);
+        assert_eq!(foreign_removed["World"]["FloatingIslands"],routed["World"]["FloatingIslands"]);
+        let mut local=routed.clone();local["World"]["FloatingIslands"]["1"]["CharacterStates"]["10000007"]=serde_json::json!({});
+        assert!(group_paste_candidate(local.to_string().as_bytes(),&remove_island.to_string()).is_err());
+        let mut ambiguous=routed.clone();ambiguous["World"]["Villages"][0]["Areas"]["1"]["GridIDs"]=serde_json::json!([10,11]);
+        assert!(group_paste_candidate(ambiguous.to_string().as_bytes(),&remove_island.to_string()).is_err());
+        let mut unrelated=routed.clone();unrelated["World"]["Villages"][0]["CharacterStates"]=serde_json::json!({"10000001":{}});
+        assert!(group_paste_candidate(unrelated.to_string().as_bytes(),&remove_island.to_string()).is_err());
         island_copy["World"]["GridCollection"]["Grids"]["11"]["Objects"]["8"]=serde_json::json!({"ID":8,"ItemID":20000016,"X":20,"Y":20,"Orientation":"GridOrientation_Down","State":state});
         island_copy["World"]["GridCollection"]["Grids"]["11"]["NextGridObjectID"]=9.into();
         let removed:Value=serde_json::from_str(&group_paste_candidate(island_copy.to_string().as_bytes(),&remove_island.to_string()).unwrap()).unwrap();
