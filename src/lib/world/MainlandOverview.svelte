@@ -52,6 +52,8 @@
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import NativeMapCanvas from './NativeMapCanvas.svelte';
+ import NativeMapSaveAreas from './NativeMapSaveAreas.svelte';
+ import {selectNativeAreaLayers} from '../media/native-map-area-rules.ts';
  import NativeMapLoading from './NativeMapLoading.svelte';
  import type {NativeMapProgress} from '../media/native-map-renderer.ts';
  import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
@@ -236,6 +238,19 @@ $: cutWords=groupCutWords[locale];
  const nativePreviewEnabled=testExport&&new URLSearchParams(window.location.search).get('native-map')==='1';
  let nativePanel=false,nativePack:LocalNativePreviewPack|null=nativePreviewEnabled?nativePreviewSession.get():null,nativeVisible=true,nativeFrameId='',nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
  let nativeLoading=false,nativeProgress:NativeMapProgress|null=null;
+ let nativeSavedTrial:{file:File;mapId:string;states:Map<number,boolean>}|null=null;
+ const nativeSavedLabels={ja:['保存フラグによる試験表示','全区画解放の背景に戻す','全区画解放表示'],en:['Saved flags (test only)','Return to unlocked background','All areas unlocked'],fr:['Indicateurs sauvegardés (test)','Revenir au fond débloqué','Toutes les zones débloquées'],it:['Stato salvato (test)','Torna allo sfondo sbloccato','Tutte le aree sbloccate'],de:['Gespeicherte Werte (Test)','Zur freien Karte zurück','Alle Gebiete frei'],'es-ES':['Estado guardado (prueba)','Volver al fondo desbloqueado','Todas las zonas desbloqueadas'],'zh-CN':['存档标志（测试）','恢复全区解锁背景','全区解锁显示'],'pt-BR':['Estado salvo (teste)','Voltar ao fundo desbloqueado','Todas as áreas desbloqueadas']} as const;
+ $: nativeSavedWords=nativeSavedLabels[locale]??nativeSavedLabels.en;
+ $: if(nativeSavedTrial&&(!saveMode||nativeSavedTrial.file!==$localSaveSession.file||nativeSavedTrial.mapId!==nativeMap?.id))clearNativeSavedTrial();
+ $: nativeTrialActive=!!nativeSavedTrial&&saveMode&&nativeSavedTrial.file===$localSaveSession.file&&nativeSavedTrial.mapId===nativeMap?.id&&!!nativeMap?.areaPlan;
+ $: nativeLayers=nativeMap?(nativeTrialActive&&nativeSavedTrial&&nativeMap.areaPlan?selectNativeAreaLayers(nativeMap.locked,nativeMap.areaPlan,nativeSavedTrial.states):nativeMap.unlocked):[];
+ $: nativeRenderKey=nativeMap?nativeMap.id+':'+(nativeTrialActive&&nativeSavedTrial?[...nativeSavedTrial.states].map(([id,state])=>id+'='+Number(state)).join(','):'unlocked'):'';
+ function clearNativeSavedTrial(){nativeSavedTrial=null;nativeFrameId='';}
+ function applyNativeSavedTrial(states:Map<number,boolean>,file:File){
+  if(!saveMode||file!==$localSaveSession.file||!nativeMap?.areaPlan)return;
+  if(states.size!==nativeMap.areaPlan.areaTypes.length||nativeMap.areaPlan.areaTypes.some(id=>typeof states.get(id)!=='boolean'))return;
+  nativeFrameId='';nativeSavedTrial={file,mapId:nativeMap.id,states:new Map(states)};
+ }
  const nativeLabels={
  ja:['原本背景（検証）','素材を選択','背景を表示','地形レイヤーの濃さ','座標未校正・検証用背景','このワールドの素材がありません','原本背景の読み込み・描画に失敗しました','素材を解除'],
  en:['Original background (test)','Choose files','Show background','Terrain opacity','Uncalibrated background preview','No assets for this world','Background load or render failed','Clear assets'],
@@ -248,7 +263,7 @@ $: cutWords=groupCutWords[locale];
  } as const;
  $: nativeWords=nativeLabels[locale]??nativeLabels.en;
  $: nativeMap=nativePreviewEnabled?nativeMapForEditor(nativePack,worldKey,independent):null;
- $: nativeActive=!!nativeMap&&nativeVisible&&nativeFrameId===nativeMap.id;
+ $: nativeActive=!!nativeMap&&nativeVisible&&nativeFrameId===nativeRenderKey;
  async function openNativeBackground(e:Event){
   const input=e.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';
   if(!files.length)return;
@@ -256,10 +271,10 @@ $: cutWords=groupCutWords[locale];
   try{
    const pack=await openNativePreviewPack(files);
    if(ticket!==nativeTicket)return;
-   nativeFrameId='';nativePreviewSession.set(pack);nativePack=pack;nativeVisible=true;
+   clearNativeSavedTrial();nativePreviewSession.set(pack);nativePack=pack;nativeVisible=true;
   }catch{if(ticket===nativeTicket)nativeError=nativeWords[6];}
  }
- function clearNativeBackground(){nativeTicket++;nativePreviewSession.clear();nativePack=null;nativeFrameId='';nativeError='';}
+ function clearNativeBackground(){clearNativeSavedTrial();nativeTicket++;nativePreviewSession.clear();nativePack=null;nativeFrameId='';nativeError='';}
  function nativeStatus(status:'drawing'|'ready'|'error',id:string){
   nativeLoading=status==='drawing';
   if(status==='ready'){nativeFrameId=id;nativeError='';}
@@ -615,7 +630,7 @@ $: cutWords=groupCutWords[locale];
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  {#if nativeMap&&nativePack&&nativeVisible}
   {#key nativePack}
-   <div class="native-editor-background"><NativeMapCanvas layers={nativeMap.unlocked} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeMap.id} {locale} showLoading={false} onProgress={p=>nativeProgress=p} onStatus={s=>nativeStatus(s,nativeMap?.id??'')}/></div>
+   <div class="native-editor-background"><NativeMapCanvas layers={nativeLayers} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeRenderKey} {locale} showLoading={false} onProgress={p=>nativeProgress=p} onStatus={s=>nativeStatus(s,nativeRenderKey)}/></div>
   {/key}
  {/if}
  {#if nativeMap&&nativePack&&nativeVisible&&nativeLoading}<NativeMapLoading {locale} progress={nativeProgress} compact={nativeActive}/>{/if}
@@ -674,7 +689,10 @@ $: cutWords=groupCutWords[locale];
   {#if nativePack}<button type="button" on:click={clearNativeBackground}>{nativeWords[7]}</button>{/if}
   {#if nativeMap}<label><input type="checkbox" checked={nativeVisible} on:change={e=>{nativeVisible=e.currentTarget.checked;if(!nativeVisible)nativeFrameId='';}}/>{nativeWords[2]}</label>
   <label>{nativeWords[3]} <input type="range" min="0" max="1" step=".05" bind:value={nativeTerrainOpacity}/></label>
-  <small>{nativeWords[4]}</small>{:else if nativePack}<small>{nativeWords[5]}</small>{/if}
+  <small>{nativeWords[4]} · {nativeTrialActive?nativeSavedWords[0]:nativeSavedWords[2]}</small>
+  {#if saveMode&&nativeMap.areaPlan?.areaTypes.length}<NativeMapSaveAreas mapId={nativeMap.id} areaTypes={nativeMap.areaPlan.areaTypes} onApply={applyNativeSavedTrial}/>{/if}
+  {#if nativeTrialActive}<button type="button" on:click={clearNativeSavedTrial}>{nativeSavedWords[1]}</button>{/if}
+  {:else if nativePack}<small>{nativeWords[5]}</small>{/if}
   {#if nativeError}<small role="alert">{nativeError}</small>{/if}
  </aside>{/if}
  <MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
@@ -708,7 +726,7 @@ $: cutWords=groupCutWords[locale];
  {#if overlaps.length}<div class="overlap-choices"><small>{words[4]}</small>{#each overlaps as g (g.key)}<button type="button" on:click={()=>onChoose(g.key)}>{label(g.key)}</button>{/each}</div>{/if}
 </section>
 <style>
- .native-editor-background{position:absolute;inset:0;z-index:0;pointer-events:none}.mainland-map.native-preview-backed{background:transparent}.native-background-panel{position:absolute;top:52px;left:6px;z-index:8;display:grid;gap:6px;width:min(300px,calc(100% - 12px));padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.native-background-panel label{display:grid;gap:4px;min-width:0}.native-background-panel input{max-width:100%;min-width:0}.native-background-panel small{color:var(--wand-muted)}
+ .native-editor-background{position:absolute;inset:0;z-index:0;pointer-events:none}.mainland-map.native-preview-backed{background:transparent}.native-background-panel{position:absolute;top:52px;left:6px;z-index:8;display:grid;gap:6px;width:min(300px,calc(100% - 12px));padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}.native-background-panel{max-height:calc(100% - 64px);overflow:auto}.native-background-panel label{display:grid;gap:4px;min-width:0}.native-background-panel input{max-width:100%;min-width:0}.native-background-panel small{color:var(--wand-muted)}
  .scene-capture-panel{position:absolute;right:6px;top:52px;z-index:9;display:grid;gap:6px;width:min(260px,calc(100% - 12px));padding:8px;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.scene-capture-panel label{display:flex;align-items:center;gap:5px}.capture-dimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.capture-dimensions input{min-width:0;width:100%;background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line)}.scene-capture-panel button{margin-right:5px}.scene-capture-panel small{font-size:12px}
  .mainland-overview{position:absolute;inset:0;z-index:14;background:var(--wand-bg);color:var(--wand-text);overflow:hidden;isolation:isolate}.mainland-map{position:absolute;inset:0;width:100%;height:100%;background:#27313a;border:0;padding:0;touch-action:none}.mainland-map svg{display:block;width:100%;height:100%}
  .linked-symmetry-panel{position:absolute;top:52px;left:6px;z-index:8;width:min(260px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;display:grid;gap:5px}
