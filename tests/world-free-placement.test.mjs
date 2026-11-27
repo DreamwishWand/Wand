@@ -1,3 +1,4 @@
+import {parseReplayStep} from '../src/lib/world/checkpoint-journal.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {worldMoveEligible,worldRotateEligible,draftSavedMapTransform} from '../src/lib/world/saved-map-transform.ts';
@@ -81,6 +82,13 @@ test('free player house move uses the destination Grid even without ordinary ter
   assert.equal(mainlandTransferCandidate({...building,object:{...building.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
  }
  assert.equal(mainlandTransferCandidate({...p,object:{...p.object,itemId:'20400001'}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
+ const landscape={...p,object:{...o,itemId:'40200001',layer:'landscape',shapeKey:'40200001:8',editRestrictions:{...o.editRestrictions,switchGrid:'denied'}}};
+ assert.equal(mainlandTransferCandidate(landscape,[g,h],rasters,emptyWorldTimeline(),x,y),null);
+ const moved=mainlandTransferCandidate(landscape,[g,h],rasters,emptyWorldTimeline(),x,y,true);
+ assert.ok(moved);assert.equal(moved.area,h.key);assert.equal(moved.plan.itemId,'40200001');
+ assert.deepEqual(parseReplayStep({command:'transfer-export',plan:moved.plan}),{command:'transfer-export',plan:moved.plan});
+ assert.equal(mainlandTransferCandidate({...landscape,object:{...landscape.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
+ assert.equal(mainlandTransferCandidate(landscape,[g,h],rasters,emptyWorldTimeline(),1e9,-1e9,true),null);
 });
 
 import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode} from '../src/lib/world/saved-map-transform.ts';
