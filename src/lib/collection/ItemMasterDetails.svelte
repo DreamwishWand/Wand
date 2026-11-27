@@ -49,6 +49,10 @@
   $: previewTags=shortTags.slice(0,6);
   $: otherNames=record?locales.filter(lang=>
     lang!==locale&&typeof record?.names[lang]==='string'&&record.names[lang]!==record.names[locale as ItemMasterLocale]):[];
+  async function getRelatedName(id:number,lang:string):Promise<string|null>{
+    const found=await (await getItemMaster(base)).getItem(id);
+    return found?.itemId===id?(found.names[lang as ItemMasterLocale]??found.names.en??null):null;
+  }
   async function load(id:number):Promise<void>{
     const current=++requestSequence;
     record=null;error=false;
@@ -68,7 +72,7 @@
 
 {#if record}
   {#if base==='/Wand'}
-    {#key itemId}<PagesPosePreview {itemId} {locale}/>{/key}
+    {#key itemId}<PagesPosePreview {itemId} {locale} {getRelatedName}/>{/key}
   {/if}
   {#if import.meta.env.DEV && (record.sourceClass?.endsWith('AvatarEmotePoseItemData') || record.sourceClass?.endsWith('PetItemData'))}
     {#key itemId}<LocalPoseDiagnostic {itemId} {locale}/>{/key}

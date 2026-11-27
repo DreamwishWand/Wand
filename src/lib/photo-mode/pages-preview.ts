@@ -6,7 +6,7 @@ export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
 export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry;accessoryIncluded:false};
 export type PreviewOption=PairOption|PlayerOption;
-type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,Partial<Record<BodyType,PreviewOption>>>};
+export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,Partial<Record<BodyType,PreviewOption>>>};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
 function validEntry(e:BlobEntry){return e&&/^[a-f0-9]{64}$/.test(e.sha256)&&Number.isSafeInteger(e.bytes)&&e.bytes>0&&e.bytes<=64*1024*1024}
 let request:Promise<PreviewIndex|null>|undefined;
@@ -55,4 +55,11 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
     signal.throwIfAborted();
     return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[])],center:[0,1.05,0],radius:1.25,sample:t=>g.sampler.sample(t),dispose(){for(const im of images.values())im.close();images.clear()}};
   }catch(e){for(const im of images.values())im.close();throw e}
+}
+
+/** Only exact original player-clip hashes for both body types establish a shared pose. */
+export function relatedPoseItems(index:Pick<PreviewIndex,'items'>,itemId:number):number[]{
+  const target=index.items[String(itemId)];
+  if(!target||!bodyTypes.every(b=>target[b]))return [];
+  return Object.entries(index.items).filter(([id,row])=>Number(id)!==itemId&&bodyTypes.every(b=>row[b]&&row[b]!.sourceSha256===target[b]!.sourceSha256)).map(([id])=>Number(id)).sort((a,b)=>a-b);
 }

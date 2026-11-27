@@ -121,6 +121,9 @@ jobs:
         run: python3 tools/ci/pages_receipt.py --build build --commit "$GITHUB_SHA"
       - run: npx playwright install --with-deps chromium
         id: chromium
+      - name: Verify actual Collection pose preview playback
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' && needs.scope.outputs.pages == 'true' }}
+        run: node browser/photo-mode-smoke.mjs
       - run: node --experimental-strip-types browser/memory-puzzle-smoke.mjs
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' && needs.scope.outputs.memory == 'true' }}
       - run: node browser/collection-smoke.mjs
