@@ -1873,6 +1873,44 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
  c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
  c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
 }
+/// Empty, unlocked storage with a known container record may be returned
+/// to furniture stock. Nonempty and unknown storage are never discarded.
+pub fn storage_pickup_eligible(root:&serde_json::Value,obj:&serde_json::Value)->bool{
+ if !storage_pose(root,obj){return false;}
+ let s=&obj["State"]["Storage"];
+ if s.get("UnlockKeyItemID").and_then(serde_json::Value::as_u64).unwrap_or(0)!=0||s.get("UnlockLocId").and_then(serde_json::Value::as_str).is_some_and(|v|!v.is_empty()){return false;}
+ let Some(id)=s["ContainerInventoryID"].as_u64()else{return false;};
+ let c=&root["Player"]["ContainerInventories"][id.to_string()];
+ c["Inventory"].as_array().is_some_and(|a|a.is_empty())&&c.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))
+}
+pub fn preview_empty_storage_pickup(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::Value;
+ let bad=PatchError::InvalidTarget;
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ if !storage_pickup_eligible(&root,obj){return Err(bad);}
+ let container=obj["State"]["Storage"]["ContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+ let mut draft=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,false,true)?;
+ let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
+ // Never delete a referenced container, even if its surviving reference
+ // belongs to an unknown native state. Only remove an unreferenced empty row.
+ if !player_house_create::container_ref(&after,container,false){
+  let mut locator=JsonLocator::new(&draft.patched_json,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+  locator.amount_path=vec![Segment::Index(usize::MAX)];
+  let parent=vec![k("Player"),k("ContainerInventories")];locator.capture.insert(parent.clone(),None);locator.walk_complete()?;
+  let mr=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(bad)?;
+  locator.pos=mr.start;locator.expect(b'{')?;let mut prev=None;let key=container.to_string();
+  let range=loop{
+   locator.space();let start=locator.pos;let current=locator.string()?;locator.expect(b':')?;
+   let mut path=parent.clone();path.push(k(&current));locator.value(&mut path)?;let end=locator.pos;locator.space();
+   if current==key{break if locator.bytes.get(locator.pos)==Some(&b','){start..locator.pos+1}else if let Some(comma)=prev{comma..end}else{start..end};}
+   if locator.bytes.get(locator.pos)!=Some(&b','){return Err(bad);}prev=Some(locator.pos);locator.pos+=1;
+  };
+  drop(locator);draft.patched_json.replace_range(range,"");validate_json_without_edit(&draft.patched_json)?;
+ }
+ let amount=preview_default_furniture_stock(&draft.patched_json,target.item_id,expected_stock,1)?;
+ draft.patched_json=amount.patched_json;Ok(draft)
+}
 /// Create an independent owned container using a proven placed storage
 /// record. Do not invent container defaults or copy stateful inventory items.
 pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{

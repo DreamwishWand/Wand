@@ -10,7 +10,7 @@ import {reflectedDesignItem,type DesignSymmetry} from './design-symmetry.ts';
 import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
 import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,supportSceneRootCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
-export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true;storage?:true}
+export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true;storage?:true;storageEmpty?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
 export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';removeRecoverCount?:number;resize?:{current:string;options:string[];anchorOptions?:string[];recoveryOptions?:[string,number][]};ceiling:number|null;surfaces:IndoorSurface[]}
@@ -51,7 +51,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    const seen=new Set<number>();
    const items:IndoorItem[]=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
-   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&(p.plain===true||p.protected===true||p.storage===true))||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain','protected','storage'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||[0,2,4,6,8,10,12,14].includes(p.orientationCode as number))||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{}),...(p.protected===true?{protected:true as const}:{}),...(p.storage===true?{storage:true as const}:{})};});
+   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&(p.plain===true||p.protected===true||p.storage===true)||Object.keys(p).length===6&&p.storage===true&&p.storageEmpty===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain','protected','storage','storageEmpty'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||[0,2,4,6,8,10,12,14].includes(p.orientationCode as number))||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{}),...(p.protected===true?{protected:true as const}:{}),...(p.storage===true?{storage:true as const}:{}),...(p.storage===true&&p.storageEmpty===true?{storageEmpty:true as const}:{})};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
    let terrain:TerrainRaster|undefined,sourcePath:string|undefined;
    if(s.terrain!==undefined){
@@ -121,7 +121,7 @@ export const positionWords={
 
 export const indoorShapeWords={ja:'原本の家具形状（実際の占有状態・部屋境界は未確認）',en:'Source item shapes; actual occupancy and room bounds unverified',fr:'Formes originales ; occupation et limites non vérifiées',it:'Forme originali; occupazione e limiti non verificati',de:'Originalformen; Belegung und Raumgrenzen ungeprüft','es-ES':'Formas originales; ocupación y límites sin verificar','zh-CN':'原始家具形状；实际占用及房间边界未验证','pt-BR':'Formas originais; ocupação e limites não verificados'} as const;
 
-export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number;includeSupport?:true}
+export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number;includeSupport?:true;storageEmpty?:true}
 export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
  if(!face||face.gridStatus!=='full'||!face.factor||face.missingPositions||face.positions.length>5000)return null;
  return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':EIGHT_WAY_ORIENTATIONS[p.orientationCode/2],child:null}))};
@@ -159,9 +159,9 @@ export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Recor
  return t.objects.flatMap((_,i)=>supportChildEdits(t,shapes,allowed,first,i,1)&&indoorClear(t,shapes,i)?[i]:[]);
 }
 export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false):IndoorPickup|null{
- const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||(face?.positions[index]?.protected||face?.positions[index]?.storage)||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!(free?indoorFreeFloor(face)&&face?.positions[index]?.plain===true&&isEightWay(o.orientation):isCardinal(o.orientation)&&t.objects.filter(p=>p.x===o.x&&p.y===o.y).length===1))return null;
+ const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||(face?.positions[index]?.protected||face?.positions[index]?.storage&&!face?.positions[index]?.storageEmpty)||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!(free?indoorFreeFloor(face)&&(face?.positions[index]?.plain===true&&isEightWay(o.orientation)||face?.positions[index]?.storageEmpty===true&&isCardinal(o.orientation)):isCardinal(o.orientation)&&t.objects.filter(p=>p.x===o.x&&p.y===o.y).length===1))return null;
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
- return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
+ return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n,...(face?.positions[index]?.storageEmpty?{storageEmpty:true as const}:{})};
 }
 export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,supports:ReadonlySet<number>=new Set(),free=false):IndoorPickup[]|null{
  if(!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;

@@ -75,7 +75,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
         let coord=|k:&str|obj.get(k).and_then(Value::as_i64).filter(|n|(-1_000_000..=1_000_000).contains(n));
         if let (Some(x),Some(y))=(coord("X"),coord("Y")){let orientation=match obj.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Up")=>Some(0),Some("GridOrientation_Right")=>Some(4),Some("GridOrientation_Down")=>Some(8),Some("GridOrientation_Left")=>Some(12),Some("GridOrientation_UpRight") if kind=="floor"&&factor==Some(1)=>Some(2),Some("GridOrientation_DownRight") if kind=="floor"&&factor==Some(1)=>Some(6),Some("GridOrientation_DownLeft") if kind=="floor"&&factor==Some(1)=>Some(10),Some("GridOrientation_UpLeft") if kind=="floor"&&factor==Some(1)=>Some(14),_=>None};let mut pose=json!({"itemId":item,"x":x,"y":y,"orientationCode":orientation});
          if factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
-         if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);}
+         if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);if ddv_save_patch::storage_pickup_eligible(&root,obj){pose["storageEmpty"]=json!(true);}}
          if terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
@@ -554,7 +554,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   // ordinary leaf path. Coordinate edits keep the same owned subtree.
   let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
-   if surface==1&&!support_pickup&&(p.contains_key("edits")||p.contains_key("align"))&&storage_pose(&root,obj){
+   if surface==1&&!support_pickup&&(p.contains_key("edits")||p.contains_key("align")||p.contains_key("pickup")&&row.get("storageEmpty").and_then(Value::as_bool)==Some(true)&&ddv_save_patch::storage_pickup_eligible(&root,obj))&&storage_pose(&root,obj){
     if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
    }else{
     if free||!(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
@@ -699,23 +699,25 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
   let rows=if let Some(a)=value.as_array(){a.as_slice()}else{std::slice::from_ref(value)};
   if rows.is_empty()||rows.len()>32{return Err(bad);}
-  let mut targets=Vec::new();let mut seen=std::collections::HashSet::new();let mut flags=Vec::new();
+  let mut targets=Vec::new();let mut seen=std::collections::HashSet::new();let mut flags=Vec::new();let mut storage_flags=Vec::new();
   for row in rows{
    let support=row.get("includeSupport").and_then(Value::as_bool)==Some(true);
-   if row.as_object().is_none_or(|r|r.len()!=if support{7}else{6}||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"|"includeSupport")))||row.get("includeSupport").is_some()&&!support{return Err(bad);}
+   let storage=row.get("storageEmpty").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+   if support&&storage||row.as_object().is_none_or(|r|r.len()!=6+usize::from(support)+usize::from(storage)||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"expectedStock"|"includeSupport"|"storageEmpty")))||row.get("includeSupport").is_some()&&!support{return Err(bad);}
    let (target,expected,orientation)=resolve(row)?;
    let amount=row.get("expectedStock").and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(bad)?;
    let actual=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(target.item_id.to_string())).and_then(|v|v.get("Amount")).and_then(Value::as_u64);
    if actual!=Some(amount)||!seen.insert(target.object_id.clone()){return Err(bad);}
-   targets.push((target,expected,orientation));flags.push(support);
+   if storage&&(!ddv_save_patch::storage_pickup_eligible(&root,&objects[&target.object_id])||crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.historical>0){return Err(bad);}
+   targets.push((target,expected,orientation));flags.push(support);storage_flags.push(storage);
   }
-  if free{
+  if free||storage_flags.iter().any(|f|*f){
    use zeroize::{Zeroize,Zeroizing};
    if flags.iter().any(|f|*f){return Err(bad);}
    let mut working=Zeroizing::new(json.to_owned());let mut last=None;let mut counts=std::collections::HashMap::<u64,u32>::new();
-   for ((target,expected,_),row) in targets.iter().zip(rows){
+   for (((target,expected,_),row),&storage) in targets.iter().zip(rows).zip(&storage_flags){
     let initial=row["expectedStock"].as_u64().ok_or(bad)? as u32;let amount=counts.entry(target.item_id).or_insert(initial);
-    let mut draft=ddv_save_patch::preview_furniture_stock_transaction(&working,*amount,ddv_save_patch::FurnitureStockAction::Pickup{target,expected:*expected}).map_err(|_|CodecError::Patch)?;
+    let mut draft=(if storage{ddv_save_patch::preview_empty_storage_pickup(&working,target,*expected,*amount)}else{ddv_save_patch::preview_furniture_stock_transaction(&working,*amount,ddv_save_patch::FurnitureStockAction::Pickup{target,expected:*expected})}).map_err(|_|CodecError::Patch)?;
     *amount=amount.checked_add(1).ok_or(bad)?;
     working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
    }
