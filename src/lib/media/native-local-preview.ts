@@ -59,3 +59,21 @@ export function localNativeImageSource(files:readonly File[],maps:readonly Local
   return bitmap;
  };
 }
+
+export interface LocalNativePreviewPack{readonly maps:readonly LocalNativeMap[];readonly source:ImageSource}
+export async function openLocalNativePreview(files:readonly File[]):Promise<LocalNativePreviewPack>{
+ const manifests=files.filter(f=>f.name==='manifest.json');
+ check(manifests.length===1&&manifests[0].size<=4*1024*1024,'Select manifest.json and all local images');
+ const maps=parseLocalNativePreview(JSON.parse(await manifests[0].text()));
+ return {maps,source:localNativeImageSource(files,maps)};
+}
+const EDITOR_MAP_IDS:Readonly<Record<string,string>>=Object.freeze({
+ Village04:'MapVillage04',VillageExpansion01:'MapVillageExpansion1',VillageExpansion02:'MapVillageExpansion2',
+ VillageExpansion03:'MapVillageExpansion3',VillageExpansion04:'MapVillageExpansion4',VillageWinnieDLC:'MapVillageWinnieDLCMini01'
+});
+/** Source-world mapping only. Independent islands/underwater/rooms are not registered. */
+export function nativeMapForEditor(pack:LocalNativePreviewPack|null,scope:string,independent:boolean):LocalNativeMap|null{
+ if(!pack||independent||!Object.hasOwn(EDITOR_MAP_IDS,scope))return null;
+ const m=pack.maps.find(m=>m.id===EDITOR_MAP_IDS[scope]);
+ return m&&m.ticksToCanvas[0]===m.ticksToCanvas[3]?m:null;
+}
