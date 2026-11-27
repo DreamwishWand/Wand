@@ -1269,7 +1269,7 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
     let free=match value.get("freePlacement"){None=>false,Some(Value::Bool(true))=>true,_=>return Err(bad)};
     if value.get("action").and_then(Value::as_str)==Some("place"){
-        let o=value.as_object().filter(|o|o.len()==5+usize::from(free)&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
+        let o=value.as_object().filter(|o|o.len()==5+(free as usize)&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==402)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
@@ -1279,7 +1279,7 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
         return Ok(draft.patched_json);
     }
-    let o=value.as_object().filter(|o|o.len()==7+usize::from(free)&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"))).ok_or(bad)?;
+    let o=value.as_object().filter(|o|o.len()==7+(free as usize)&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"))).ok_or(bad)?;
     let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==402)).ok_or(bad)?;
     let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
     let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
@@ -1296,7 +1296,7 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
         Some("remove") if !free&&o.get("x").is_some_and(Value::is_null)&&o.get("y").is_some_and(Value::is_null)&&destination=="null"=>preview_plain_grid_structure(json,&target,expected,PlainGridStructureAction::Remove),
         Some("duplicate")=>{
             let witness:Value=serde_json::from_str(destination).map_err(|_|bad)?;
-            let dest=landscape_destination(profile,&witness)?;
+            let dest=if free{landscape_destination(profile,&witness)?}else{resolve_plain_grid_destination(profile,&witness)?};
             if free{let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;if expected.0<0||expected.1<0||expected.0 as u64>=sx||expected.1 as u64>=sy{return Err(bad);}}
             let orientation=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(Value::as_str).ok_or(bad)?;
             preview_landscape_duplicate_with_mode(json,&target,expected,&dest,(int("x")?,int("y")?),orientation,free)
