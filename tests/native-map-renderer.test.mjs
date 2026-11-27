@@ -66,3 +66,21 @@ test('invalid mask and aborted second texture do not draw or leak',async()=>{
  await assert.rejects(r.render([masked],view,async l=>{if(l===next)c.abort();return {width:2,height:2,close(){closed++;}};},c.signal));
  assert.equal(closed,2);assert.equal(stats.created,stats.deleted);assert.equal(stats.draws,0);r.dispose();
 });
+
+test('renderer prefetches visible uncached images only and preserves layer and mask order',async()=>{
+ const {canvas}=fakeContext(),r=new NativeMapRenderer(canvas,128);
+ const outside={...texture,imageSha256:'d'.repeat(64),unitQuadToCanvas:[2,0,0,2,20,20]};
+ const masked={...texture,mask:{kind:'alpha',overlayToMaskUv:[1,0,0,1,0,0],image:next}};
+ const third={...texture,imageSha256:'c'.repeat(64)};
+ const loads=[],prefetches=[];let disposed=0;
+ const source=async row=>{loads.push(row.imageSha256);return {width:2,height:2,close(){}}};
+ source.beginFrame=()=>({source,prefetch:rows=>prefetches.push(rows.map(row=>row.imageSha256)),dispose:()=>disposed++});
+ try{
+  assert.deepEqual(await r.render([outside,masked,third],view,source),{drawn:2,skipped:1});
+  assert.deepEqual(loads,[texture.imageSha256,next.imageSha256,third.imageSha256]);
+  assert.deepEqual(prefetches[0],loads);assert.equal(disposed,1);
+  assert.ok(prefetches.every(rows=>rows.length<=3&&!rows.includes(outside.imageSha256)));
+  await r.render([masked,third],view,source);
+  assert.equal(loads.length,3);assert.deepEqual(prefetches.at(-1),[]);assert.equal(disposed,2);
+ }finally{r.dispose();}
+});
