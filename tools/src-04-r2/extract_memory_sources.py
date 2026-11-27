@@ -226,14 +226,20 @@ def exact_objects(aa, locations):
             except Exception as exc:
                 yield guid,None,type(exc).__name__+": "+str(exc)[:200]
 
-def materialize(obj, bundles, existing, output, mask=False):
+def materialize(obj, bundles, existing, output, mask=False, ledger=None, thumbnail_cache=None):
+    from source_image_ledger import original as published_original
     from PIL import Image
     identity,_=object_identity(obj,bundles)
     # Exact source-object identity includes the source AssetBundle SHA.
     # For masks also compare decoded native RGBA, including transparent RGB.
-    native=None
-    if mask:
-        native=obj.read().image.convert("RGBA")
+    native=obj.read().image.convert("RGBA")
+    witness=hashlib.sha256(native.tobytes()).hexdigest()
+    prior=published_original(ledger,witness,*native.size)
+    if prior:
+        if thumbnail_cache:
+            from source_image_ledger import stage_missing_thumbnail
+            stage_missing_thumbnail(output,native,prior,ledger,thumbnail_cache)
+        return {**prior,'sourcePixelSha256':witness,'unityAssetId':identity,'reused':True,'reusedPublished':True}
     for path,v in existing.get(identity,()):
         raw=path.read_bytes()
         info=image_info(raw,v["sha256"])
@@ -243,7 +249,7 @@ def materialize(obj, bundles, existing, output, mask=False):
             with Image.open(io.BytesIO(raw)) as im:
                 if im.size!=native.size or im.convert("RGBA").tobytes()!=native.tobytes():
                     continue
-        return {**info,"localSource":str(path),"unityAssetId":identity,"reused":True}
+        return {**info,"sourcePixelSha256":witness,"localSource":str(path),"unityAssetId":identity,"reused":True}
     if native is None:
         native=obj.read().image.convert("RGBA")
     buf=io.BytesIO()
@@ -261,7 +267,7 @@ def materialize(obj, bundles, existing, output, mask=False):
     else:
         with path.open("xb") as f:
             f.write(raw)
-    return {**image_info(raw,sha),"localSource":str(path),"unityAssetId":identity,"reused":False}
+    return {**image_info(raw,sha),"sourcePixelSha256":witness,"localSource":str(path),"unityAssetId":identity,"reused":False}
 
 def verify_game_version(aa, expected):
     marker=aa.parents[2]/"FullVersion.txt"
@@ -272,7 +278,7 @@ def verify_game_version(aa, expected):
         raise ValueError("Steam version does not match DB-01")
     return value
 
-def run(parts,aa,root,out,index_only=False):
+def run(parts,aa,root,out,index_only=False,ledger=None):
     source,rows=read_memory_rows(parts)
     # Source location is Steam ddv_Data/StreamingAssets/aa. The caller must
     # use the catalog for the DB-01 version; all references must resolve.
@@ -298,8 +304,17 @@ def run(parts,aa,root,out,index_only=False):
                 for k,v in refs.items():
                     cache_key=(object_identity(v,bundles)[0],k!="Image")
                     if cache_key not in materialized:
-                        materialized[cache_key]=materialize(v,bundles,existing,out,k!="Image")
+                        materialized[cache_key]=materialize(v,bundles,existing,out,k!="Image",ledger,"memory-thumbnail-cache.json" if k=="Image" else None)
                     assets[k]=materialized[cache_key]
+                    m=assets[k]
+                    if not m.get('reusedPublished'):
+                        dest=out/'images'/(m['sha256']+'.webp')
+                        raw=Path(m['localSource']).read_bytes()
+                        dest.parent.mkdir(parents=True,exist_ok=True)
+                        if dest.exists():
+                            if dest.read_bytes()!=raw:raise ValueError('Image collision')
+                        else:
+                            with dest.open('xb') as handle:handle.write(raw)
                 value={"unityAssetId":identity,"images":assets}
                 prior=report["assets"].get(guid)
                 if prior is not None and prior!=value:
@@ -325,13 +340,16 @@ def main():
     p.add_argument("--existing-root",type=Path,default=DEFAULT_ROOT)
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--index-only",action="store_true")
+    p.add_argument('--ledger',type=Path)
     a=p.parse_args()
+    from source_image_ledger import load
+    ledger=load(json.loads(a.ledger.read_bytes())) if a.ledger else None
     out=a.out.resolve()
     root=a.existing_root.resolve()
     aa=a.aa.resolve()
     if any((x/".git").exists() for x in [out,*out.parents]) or out.is_relative_to(aa) or out==root or out.is_relative_to(root/"images") or out.is_relative_to(root/"manifests"):
         raise ValueError("Use a separate private output outside Git and original sources")
-    summary=run(a.db01,aa,root,out,a.index_only)
+    summary=run(a.db01,aa,root,out,a.index_only,ledger)
     print(json.dumps(summary,indent=2))
     if (a.index_only and summary["catalogMatched"]!=summary["targetGuids"]) or (not a.index_only and summary["unresolvedGuids"]):
         raise SystemExit(2)

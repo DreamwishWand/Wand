@@ -17,12 +17,18 @@ def download_delta():
         return response.read(DELTA_BYTES+1)
 
 def apply_delta(raw, dest):
-    require(len(raw)==DELTA_BYTES and digest(raw)==DELTA_SHA, "companion delta integrity mismatch")
+    return apply_player_archive(raw, dest, sha=DELTA_SHA, size=DELTA_BYTES, base_count=17,
+                                item_count=90, clip_count=16, pose_count=8,
+                                schema="wand.photo-mode.companion-player-delta@1")
+
+def apply_player_archive(raw, dest, *, sha, size, base_count, item_count, clip_count, pose_count,
+                         schema, previous_sha=None):
+    require(len(raw)==size and digest(raw)==sha, "companion delta integrity mismatch")
     index_path=dest/"index.json"
     public=json.loads(index_path.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["publicationAuthorized"] is True
             and public["testOnly"] is True and public["fullPoseVerified"] is False
-            and len(public["items"])==17, "unexpected base manifest")
+            and len(public["items"])==base_count, "unexpected base manifest")
     models=public["models"]
     node_counts={}
     for body in BODY_TYPES:
@@ -37,9 +43,10 @@ def apply_delta(raw, dest):
         manifest=files.get("companion-player-delta.json")
         require(manifest is not None and manifest.file_size<=1024*1024, "missing delta manifest")
         m=json.loads(archive.read(manifest))
-        require(m["schema"]=="wand.photo-mode.companion-player-delta@1"
+        require(m["schema"]==schema
+                and (previous_sha is None or m["baseCompanionDeltaSha256"]==previous_sha)
                 and m["baseReleaseSha256"]==RELEASE_SHA and m["gameVersion"]==public["gameVersion"]
-                and m["models"]==models and len(m["items"])==90, "delta base or coverage mismatch")
+                and m["models"]==models and len(m["items"])==item_count, "delta base or coverage mismatch")
         assets={};rows={};pairs=set()
         for item,row in m["items"].items():
             require(re.fullmatch(r"12[0-9]{7}",item) is not None and item not in public["items"]
@@ -67,7 +74,7 @@ def apply_delta(raw, dest):
                                "accessoryIncluded":False,"companionIncluded":False}
             pairs.add(tuple(options[b]["sourceSha256"] for b in BODY_TYPES))
             rows[item]=options
-        require(len(assets)==16 and len(pairs)==8 and set(files)=={"companion-player-delta.json",*assets}, "delta asset coverage")
+        require(len(assets)==clip_count and len(pairs)==pose_count and set(files)=={"companion-player-delta.json",*assets}, "delta asset coverage")
         for name,data in assets.items():
             path=dest/name
             if path.exists():
