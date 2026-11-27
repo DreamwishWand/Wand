@@ -35,9 +35,9 @@ test('free alignment permits restricted furniture but not structural dependencie
  assert.equal(alignmentTargets(map,[a,{...b,itemId:'40100068',layer:'ground'}],'left',true),null);
 });
 
-import {playerHouseSourceEligible,playerHouseDuplicate} from '../src/lib/world/save-furniture-placement.ts';
+import {playerHouseSourceEligible,playerHouseDuplicate,playerHousePickup} from '../src/lib/world/save-furniture-placement.ts';
 import {bindMainlandGrid} from '../src/lib/world/mainland-world-coordinates.ts';
-test('player house exterior duplication targets only the exact original native grid',()=>{
+test('player house exterior duplication targets exact grids in the same world',()=>{
  const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
  assert.ok(g);
  const r={sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)};
@@ -50,4 +50,11 @@ test('player house exterior duplication targets only the exact original native g
  assert.equal(playerHouseDuplicate([g],rasters,{...p,area:'Other'},x,y),null);
  assert.equal(playerHouseDuplicate([g],rasters,{...p,object:{...p.object,subgrid:{}}},x,y),null);
  assert.equal(playerHouseSourceEligible({...p,object:{...p.object,itemId:'20000001'}}),false);
+ const h=bindMainlandGrid({key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:196,sizeY:100});
+ assert.ok(h);
+ const rr={sizeX:h.sizeX,sizeY:h.sizeY,nativeFloorValues:Uint32Array.from({length:h.sizeX*h.sizeY},()=>4)};
+ const cross=playerHouseDuplicate([g,h],new Map([[g.key,r],[h.key,rr]]),p,h.bounds.x+5.1,h.bounds.y+h.bounds.h-6.1);
+ assert.ok(cross);assert.equal(cross.area,h.key);
+ assert.equal(playerHousePickup(p,[p]),null);
+ assert.equal(playerHousePickup(p,[p,{...p,area:h.key,object:{...p.object,localOrdinal:2}}]).plan.action,'remove');
 });
