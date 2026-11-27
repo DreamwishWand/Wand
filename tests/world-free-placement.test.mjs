@@ -142,3 +142,25 @@ test('building layout restores only unambiguous existing same-grid objects',()=>
  assert.throws(()=>buildingPoseRows([{...wanted[0],itemId:20500001}],g));
  assert.deepEqual(captureBuildingPoses(g,[p,{...duplicate,shape:null}]),[]);
 });
+
+import {regionBuildingPoses,validateRegionBuildingPoses} from '../src/lib/world/region-decoration-backup.ts';
+import {mainlandMapAnchor} from '../src/lib/world/mainland-world-coordinates.ts';
+test('bounded building backups preserve outside and ambiguous instances',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});assert.ok(g);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]};
+ const make=(itemId,x,y,localOrdinal)=>({area:g.key,factor:1,...mainlandMapAnchor(g,x,y),shape,object:{...o,itemId:String(itemId),x,y,localOrdinal,nativeType:'Building'}});
+ const a=make(20100001,2,2,1),b=make(20200001,8,8,2),origin=mainlandMapAnchor(g,0,0),region={x:origin.x,y:origin.y-6,w:6,h:6};
+ const rows=regionBuildingPoses(region,g,[a,b]);assert.equal(rows.length,1);assert.equal(rows[0].itemId,20100001);
+ const defs=new Map([[20100001,{shapes:{'20100001:4':shape}}]]);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[{...rows[0],x:3,y:3}],defs),true);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[{...rows[0],x:7,y:3}],defs),false);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[{...rows[0],orientation:1}],defs),true);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[{...rows[0],orientation:1}],new Map()),false);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[{...rows[0],itemId:20200001}],defs),false);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,b],[rows[0],rows[0]],defs),false);
+ const duplicate=make(20100001,9,9,3);
+ assert.deepEqual(regionBuildingPoses(region,g,[a,duplicate,b]),[]);
+ assert.equal(validateRegionBuildingPoses(region,g,[a,duplicate,b],rows,defs),false);
+ const crossing=make(20100001,5,2,4);crossing.shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}]};
+ assert.deepEqual(regionBuildingPoses(region,g,[crossing]),[]);
+});
