@@ -48,6 +48,8 @@ def classify(previous,current):
 
 def extract(spec,aa,root,out,ledger=None,prior_index=None):
     roles=targets(spec)
+    if prior_index is not None:
+        check(prior_index.get("schema")==INDEX_SCHEMA and prior_index.get("privateOnly") is True,"Invalid prior reference index")
     version=verify_game_version(aa,spec["gameVersion"])
     locs,pins=resolve(aa,set(roles))
     report={"schema":REPORT_SCHEMA,"gameVersion":spec["gameVersion"],"sourceFullVersion":version,
@@ -198,9 +200,12 @@ def main():
     a=p.parse_args();root=a.root.resolve()
     check(not any((x/".git").exists() for x in (root,*root.parents)),"Private working directory required")
     check(0<a.max_objects<=2000 and 0<a.max_bytes<=500000000,"Explicit bounded operation required")
+    if a.ledger:
+        lp=a.ledger.resolve()
+        check(not any((x/".git").exists() for x in lp.parents) and lp not in {root/"shared-source-report.json",root/"shared-index-candidate.json",root/"shared-publication-receipt.json",root/"shared-cdn-readback.json",root/"shared-thumbnail-cache.json"},"Separate private ledger path required")
     ledger=read_prior(a.ledger) if a.ledger and a.ledger.exists() else None
     if a.mode=="extract":
-        check(a.targets is not None and a.aa is not None and not root.is_relative_to(a.aa.resolve()),"Exact target list and separate source required")
+        check(a.targets is not None and a.aa is not None and not root.is_relative_to(a.aa.resolve()) and not a.aa.resolve().is_relative_to(root),"Exact target list and separate source required")
         check(not root.exists(),"Use new output for every extraction")
         result=extract(json.loads(a.targets.read_bytes()),a.aa.resolve(),a.existing_root,root,ledger,
                        json.loads(a.prior_index.read_bytes()) if a.prior_index else None)
