@@ -50,6 +50,7 @@
  import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,designCandidateValid,designShapeMap,serializeDesign,parseDesign,restoreDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignPlacement,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import {mapPainterOrder,MAP_LAYER_COLORS,MAP_LAYER_LABELS,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
+ import {buildingDesignWords,designCatalogCategory} from './building-design-catalog.ts';
  import {savedShapesAt,savedShapesInRect,visibleSavedObjects} from './saved-shape-map.ts';
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
@@ -186,7 +187,7 @@
  function requestRecoveryShapes(job:RecoveryJob){
   if(job.offset>=job.ids.length){finishRecovery(job);return;}
   const requestId=nextRequest();recoveryJobs.set(requestId,job);
-  try{job.own.postMessage({command:'design-shapes',requestId,key:job.grid.key,itemIds:job.ids.slice(job.offset,job.offset+128),...(job.offset===0&&isRoomDesign(job.grid)?{supportAttachments:designAttachments(job.draft.timeline.snapshots.flat())}: {})});}
+  try{job.own.postMessage({command:'design-shapes',allowBuildings:!isRoomDesign(job.grid),requestId,key:job.grid.key,itemIds:job.ids.slice(job.offset,job.offset+128),...(job.offset===0&&isRoomDesign(job.grid)?{supportAttachments:designAttachments(job.draft.timeline.snapshots.flat())}: {})});}
   catch{recoveryJobs.delete(requestId);failRecovery(job);}
  }
  function failRecovery(job:RecoveryJob){
@@ -220,7 +221,7 @@
  let cache:Record<string,Map<number,DesignItemGeometry>>={};
  let catalog:DesignCatalogItem[]=[],catalogLocale='',catalogKey='',catalogLoading=false,catalogError='',catalogId=0;
  let images=new Map<number,string>(),imagePending=new Set<number>();
- let query='',layer:MapSelectionLayer='all',limit=80;
+ let query='',layer:MapSelectionLayer|'building'='all',limit=80;
  let selected:number|null=null,placing:DesignItemGeometry|null=null,shapeId=0,loadingShape=false,error='';
  let orientation=2,hover:{x:number;y:number}|null=null,moveMode=false;
  let camera=defaultMapCamera(),svg:SVGSVGElement;
@@ -394,7 +395,7 @@
     const receive=(e:MessageEvent)=>{const d=e.data;if(d?.requestId!==requestId)return;cleanup();
      if(d.kind!=='design-shapes'||d.key!==key||!Array.isArray(d.result)||d.result.length!==batch.length||d.result.some((g:DesignItemGeometry)=>!batch.includes(g.itemId)))reject(Error('ISLAND_GEOMETRY'));else resolve(d.result);
     };
-    own.addEventListener('message',receive);try{own.postMessage({command:'design-shapes',requestId,key,itemIds:batch});}catch(e){cleanup();reject(e);}
+    own.addEventListener('message',receive);try{own.postMessage({command:'design-shapes',allowBuildings:true,requestId,key,itemIds:batch});}catch(e){cleanup();reject(e);}
    });
    for(const g of rows)result.set(g.itemId,g);
   }
@@ -471,7 +472,7 @@
    const id=nextRequest();
    if(kind&&presetTarget&&!incoming.length){if(!prepareAreaReview(presetTarget.key,[],new Map()))throw Error('AREA_PRESET_EMPTY');return;}
    pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas,...(importedFinish!==undefined?{roomFinish:importedFinish}:{}),...(kind&&presetTarget?{areaKind:kind,areaKey:presetTarget.key}:{})};
-   own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))],...(isRoomDesign(target)?{supportAttachments:designAttachments(incoming)}:{})});
+   own.postMessage({command:'design-shapes',allowBuildings:!isRoomDesign(target),requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))],...(isRoomDesign(target)?{supportAttachments:designAttachments(incoming)}:{})});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
  }
@@ -490,12 +491,12 @@
    if(incoming.length!==capture.count)throw Error('capture count');
    cancel();const id=nextRequest();
    pendingImport={id,key:grid.key,placements:incoming,timeline,sourceAreas,capture};
-   worker.postMessage({command:'design-shapes',requestId:id,key:grid.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
+   worker.postMessage({command:'design-shapes',allowBuildings:!isRoomDesign(grid),requestId:id,key:grid.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
   }catch{pendingImport=null;error=words[3];}
  }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
- $: filtered=catalog.filter(o=>(!stockOnly||(stockCounts?.get(o.itemId)??0)>0)&&(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
+ $: filtered=catalog.filter(o=>(!stockOnly||(stockCounts?.get(o.itemId)??0)>0)&&(!worldFrame||worldCatalogEligible(o))&&layerSelectable(layerState,o)&&(layer==='all'||designCatalogCategory(o)===layer)&&terms.every(t=>normalize(o.name).includes(t)));
  $: visibleCatalog=filtered.slice(0,limit);
  $: if(active&&paletteOpen)loadImages(visibleCatalog);
  async function loadImages(items:readonly {itemId:number}[]){
@@ -517,7 +518,7 @@
  $: if(active&&grid&&worker&&(locale!==catalogLocale||grid.key!==catalogKey))requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
    catalogLocale=language;catalogKey=g.key;catalogLoading=true;catalog=[];catalogError='';catalogId=nextRequest();
-   w.postMessage({command:'design-catalog',requestId:catalogId,key:g.key,locale:language});
+   w.postMessage({command:'design-catalog',requestId:catalogId,key:g.key,locale:language,allowBuildings:!isRoomDesign(g)});
  }
  function receive(e:MessageEvent){
    const d=e.data;
@@ -601,7 +602,7 @@
    const g=definitions.get(id);
    if(g){if(!layerSelectable(layerState,g)||worldFrame&&!worldCatalogEligible(g))return;if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
-   worker.postMessage({command:'design-shape',requestId:shapeId,key:grid.key,itemId:id});
+   worker.postMessage({command:'design-shape',allowBuildings:!isRoomDesign(grid),requestId:shapeId,key:grid.key,itemId:id});
  }
  const empty=emptyDesign();
  $: timeline=contextKey?layouts[contextKey]??empty:empty;
@@ -672,7 +673,7 @@
    if(clip.every(p=>definitions.has(p.itemId)&&!p.attachment)){if(scene&&!sceneBounds(clip,definitions)){activeScene=null;error=sceneText[5];return;}pasting=clip;hover=scenePoint(lastPoint);return;}
    if(!worker)return;
    pastePending=clip;pasteRequest=nextRequest();
-   worker.postMessage({command:'design-shapes',requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))],...(isRoomDesign(grid)?{supportAttachments:designAttachments(clip)}:{})});
+   worker.postMessage({command:'design-shapes',allowBuildings:!isRoomDesign(grid),requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))],...(isRoomDesign(grid)?{supportAttachments:designAttachments(clip)}:{})});
  }
  function commitPaste(x:number,y:number){
    if(placeWithSymmetry(x,y,pasting.map(p=>({itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation,...(p.attachment?{attachment:p.attachment}:{})}))))return;
@@ -815,7 +816,7 @@
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
-    {#each (worldFrame?['all','furniture','landscape','ground','fence']:['all','furniture','surface','landscape','ground','fence']) as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
+    {#each (isRoomDesign(grid)?['all','furniture','surface','landscape','ground','fence']:['all','building','furniture','landscape','ground','fence',...(worldFrame?[]:['surface'])]) as l}<option value={l}>{l==='building'?buildingDesignWords[locale]:MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
    {#if stockFile}<div class="stock-filter" title={stockWords[4]}>{#if stockStatus==='ready'}<label><input type="checkbox" bind:checked={stockOnly} on:change={()=>limit=80}/> {stockWords[1]}</label>{:else if stockStatus==='loading'}<small role="status">{stockWords[2]}</small>{:else if stockStatus==='error'}<small>{stockWords[3]}</small>{/if}</div>{/if}
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
@@ -823,7 +824,7 @@
     {#each visibleCatalog as item (item.itemId)}
      <button type="button" class="design-item" data-item-id={item.itemId} aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
       <span class="design-item-artwork" aria-hidden="true">{#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}</span>
-      <span>{item.name}</span>{#if stockCounts?.has(item.itemId)}<small class="furniture-stock-count" title={stockWords[0]}>{stockWords[0]} {stockCounts.get(item.itemId)}</small>{/if}
+      <span>{item.name}</span>{#if item.nativeType!=='Building'&&stockCounts?.has(item.itemId)}<small class="furniture-stock-count" title={stockWords[0]}>{stockWords[0]} {stockCounts.get(item.itemId)}</small>{/if}
      </button>
     {/each}
     {#if !catalogLoading&&!filtered.length}<p>該当する家具なし</p>{/if}
