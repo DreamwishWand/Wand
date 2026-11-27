@@ -25,7 +25,7 @@ def apply_actors(raw, dest):
                                schema="wand.photo-mode.companion-actor-delta@1",
                                manifest="companion-actor-delta.json")
 
-def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0, partial_count=0, secondary_count=0):
+def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0, partial_count=0, secondary_count=0, geometry_count=0):
     require(len(raw)==size and digest(raw)==sha, "actor release integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["publicationAuthorized"] is True
@@ -53,10 +53,10 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
         require(isinstance(variants,dict) and set(variants)<=set(m["items"])
                 and all(isinstance(v,dict) for v in variants.values())
                 and sum(len(v) for v in variants.values())==variant_count,"actor variant coverage")
-        assets={};updates={};alternate_updates={};partial_rows=0;secondary_rows=0
+        assets={};updates={};alternate_updates={};partial_rows=0;secondary_rows=0;geometry_rows=0
         def validate_actor(row,player):
             e=entry(row["asset"]);source=row["sourceSha256"];name=e["sha256"]+".glb"
-            nonlocal partial_rows,secondary_rows
+            nonlocal partial_rows,secondary_rows,geometry_rows
             bodies=set(row["anchors"])
             require(valid_hash(source) and bodies and bodies<=set(BODY_TYPES),"actor identity")
             if bodies!=set(BODY_TYPES):
@@ -68,12 +68,19 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 data=archive.read(info);require(len(data)==e["bytes"] and digest(data)==e["sha256"],"actor integrity")
                 assets[name]=data
             d=metadata(assets[name]);x=d["asset"]["extras"]
+            geometry=x.get("limboGeometryDiagnostic") is True
+            if geometry:
+                require(geometry_count>0 and not d.get("images") and not d.get("textures")
+                        and all(len(q["pbrMetallicRoughness"]["baseColorFactor"])==4
+                                and all(type(v) in (float,int) and 0<=v<=1 for v in q["pbrMetallicRoughness"]["baseColorFactor"])
+                                and "baseColorTexture" not in q["pbrMetallicRoughness"] for q in d["materials"]),"invalid geometry projection")
+                geometry_rows+=1
             require(x["privateOnly"] is True and x["fullPoseVerified"] is False and x["companionActorDiagnostic"] is True
                     and x["shaderParityVerified"] is False and len(d["animations"])==1
                     and d["animations"][0]["extras"]["sourceSha256"]==source
                     and d["animations"][0]["extras"]["fullPoseVerified"] is False
                     and d["scenes"][d["scene"]]["nodes"]==[0] and d["nodes"] and d["skins"] and d["meshes"]
-                    and d["images"] and all(im["mimeType"]=="image/png" for im in d["images"])
+                    and (geometry or d.get("images") and all(im["mimeType"]=="image/png" for im in d["images"]))
                     and all(n.get("extras",{}).get("actorId")=="companion" for n in d["nodes"]), "invalid actor scene")
             secondary=x.get("secondaryPassParityVerified") is False
             if secondary:
@@ -92,6 +99,7 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 pd=metadata(wpa,True);require(abs(duration(pd,pd["animation"])-dur)<1e-5,"actor timing mismatch")
                 options[b]={**o,"companionIncluded":True,"actor":{**e,"sourceSha256":source},"anchor":a}
                 if secondary:options[b]["secondaryPassOmitted"]=True
+                if geometry:options[b]["limboGeometryDiagnostic"]=True
             return options
         for item,row in m["items"].items():
             require(re.fullmatch(r"12[0-9]{7}",item) is not None and item in public["items"],"unknown companion")
@@ -104,7 +112,7 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 i=int(key)-1;require(i<len(updated),"unknown alternate index")
                 updated[i]=validate_actor(row,updated[i])
             alternate_updates[item]=updated
-        require(partial_rows==partial_count and secondary_rows==secondary_count and len(assets)==item_count+variant_count and set(files)=={manifest,*assets},"unexpected actor assets")
+        require(partial_rows==partial_count and secondary_rows==secondary_count and geometry_rows==geometry_count and len(assets)==item_count+variant_count and set(files)=={manifest,*assets},"unexpected actor assets")
         for name,data in assets.items():
             path=dest/name
             if path.exists():require(path.read_bytes()==data,"actor asset conflict")

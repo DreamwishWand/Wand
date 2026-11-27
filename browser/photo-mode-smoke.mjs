@@ -39,11 +39,14 @@ assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
 const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027','70200028','70200029'];
 assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
-const ids=[...new Set([maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const limboActor='120000053',limboRaven='120000066';
+assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
+assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
+const ids=[...new Set([limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,26);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,9);
 assert.equal(Object.keys(index.items).length,263);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,206);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,223);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
