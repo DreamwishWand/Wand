@@ -51,7 +51,8 @@
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import NativeMapCanvas from './NativeMapCanvas.svelte';
- import {openLocalNativePreview,nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
+ import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
+ import {nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
  import WorldGridLines from './WorldGridLines.svelte';
  import {sourceOrientationAngle} from './source-object-map.ts';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
@@ -244,7 +245,7 @@ $: cutWords=groupCutWords[locale];
   if(!files.length)return;
   const ticket=++nativeTicket;nativeError='';
   try{
-   const pack=await openLocalNativePreview(files);
+   const pack=await openNativePreviewPack(files);
    if(ticket!==nativeTicket)return;
    nativeFrameId='';nativePack=pack;nativeVisible=true;
   }catch{if(ticket===nativeTicket)nativeError=nativeWords[6];}
