@@ -51,11 +51,12 @@ def material_projection(g, ref, sources, resource_files, cache, material_ids, te
     return idx,slot
 
 
-def export_actor(source, hierarchy, nodes, parts, pose, clip, sources, resources, texture_cache):
+def export_actor(source, hierarchy, nodes, parts, pose, clip, sources, resources, texture_cache, *, secondary_pass=False):
     require(all(e["bindMatrixMaxError"]<1e-4 and e["materialSlotCount"]==e["submeshCount"] for _,_,_,e in parts),"rest or material parity")
     full=[dict(n) for n in hierarchy];full[0].update(translation=pose["attachedOffset"],rotation=pose["attachedRotation"])
     g=Glb();d=g.doc;d["asset"]["generator"]="Wand companion diagnostic"
     d["asset"]["extras"].update(companionActorDiagnostic=True,shaderParityVerified=False)
+    if secondary_pass:d["asset"]["extras"]["secondaryPassParityVerified"]=False
     if any(e.get("normalsDerived") for _,_,_,e in parts):d["asset"]["extras"].update(derivedNormals=True,rigidTransformDiagnostic=True)
     d.update(nodes=[],skins=[],meshes=[],materials=[])
     indices={n["pathId"]:i for i,n in enumerate(full)}
@@ -115,6 +116,9 @@ def generate(a):
         src=Source(p);require(src.cab not in sources,"duplicate source CAB");sources[src.cab]=src
         _,files=unityfs(p.read_bytes(),include_resources=True);resources[src.cab]={k:v for k,v in files.items() if k.endswith(".resS")}
         hits=extract(p,identity,set(targets.values()));require(not prefabs.keys()&hits.keys(),"duplicate prefab");prefabs.update(hits)
+    for p in a.dependency:
+        src=Source(p);require(src.cab not in sources,'duplicate dependency CAB');sources[src.cab]=src
+        _,files=unityfs(p.read_bytes(),include_resources=True);resources[src.cab]={k:v for k,v in files.items() if k.endswith('.resS')}
     maps=attachment_maps(Source(a.avatar),Source(a.script))
     with zipfile.ZipFile(a.base) as b,zipfile.ZipFile(a.player_delta) as p:
         bf=archive_files(b);pf=archive_files(p)
@@ -147,7 +151,7 @@ def generate(a):
                 classes={src.objects[p][0] for n in descendants for f,p in src.names[int(n["gameObject"])][1] if f==0}
                 if 137 not in classes and {23,33}<=classes:
                     nodes,parts=rigid_meshes(src,root,resources[src.cab])
-                else:nodes,parts=meshes(src,root)
+                else:nodes,parts=meshes(src,root,base_pass_only=a.base_pass_only)
                 anchors={}
                 for body in BODY_TYPES:
                     e=row[body]["clip"];wpa=p.read(pf[e["sha256"]+".wpa"]);require(digest(wpa)==e["sha256"] and len(wpa)==e["bytes"],"player clip integrity")
@@ -156,7 +160,7 @@ def generate(a):
                     path=maps[body+"Preview"]["points"][pose["attachmentPoint"]] or "body"
                     ids=[i for i,n in enumerate(model_nodes[body]) if n["name"]==path];require(len(ids)==1,"anchor mismatch")
                     anchors[body]=dict(node=ids[0],path=path)
-                raw=export_actor(src,hierarchy,nodes,parts,pose,clip,sources,resources,texture_cache);h=digest(raw)
+                raw=export_actor(src,hierarchy,nodes,parts,pose,clip,sources,resources,texture_cache,secondary_pass=a.base_pass_only);h=digest(raw)
                 assets[h+".glb"]=raw;items[item]=dict(asset=dict(sha256=h,bytes=len(raw)),sourceSha256=clip["sha256"],anchors=anchors)
             except (ValueError,KeyError) as exc:
                 failures[item]=str(exc)
@@ -174,6 +178,8 @@ if __name__=="__main__":
     p=argparse.ArgumentParser(description=__doc__)
     for name in ("base","player-delta","itemlist","script","avatar","male-clips","female-clips","out"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--dependency",type=Path,action="append",default=[])
+    p.add_argument("--base-pass-only",action="store_true",help="Explicit diagnostic projection without observed secondary effects")
     p.add_argument("--pet",type=Path,action="append",required=True)
     a=p.parse_args();a.out=a.out.resolve()
     require(not any((x/".git").exists() for x in (a.out,*a.out.parents)),"private output outside Git required")

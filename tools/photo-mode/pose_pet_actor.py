@@ -8,7 +8,7 @@ from pose_mesh import decode_mesh,body_source
 from pose_deform import world,pose,skin
 from pose_curves import decode,require
 from pose_rig import bind
-from pose_material import externals
+from pose_material import externals,decode_material
 from pose_pet_controller import resolve_controller
 
 class Source:
@@ -42,12 +42,22 @@ def resolve_clip(source,ctrl,pose,sources):
   a,b=over.reference(r.unpack('iq')),over.reference(r.unpack('iq'));require(a not in pairs,'duplicate override');pairs[a]=b
  require(r.pos==len(r.data),'override tail');parent=sources[base[0]];raw=parent.raw(base[1],91);states,tail=resolve_controller(raw);hits=[(t,states[t]) for t in pose['attachedSetTriggers'] if t in states];require(len(hits)==1,'ambiguous photo state');trigger,state=hits[0];original=parent.reference(state['clip']);selected=pairs.get(original,original);clip_source=sources[selected[0]];clip_raw=clip_source.raw(selected[1],74);clip=decode(clip_raw);return clip,clip_raw,dict(trigger=trigger,state=state,overrideController=[cab,str(pid)],overrideControllerName=name,baseController=[base[0],str(base[1])],baseControllerSha256=digest(raw),unparsedControllerTailBytes=tail,originalClip=[original[0],str(original[1])],selectedClip=[selected[0],str(selected[1])],clipName=clip['name'],clipSha256=clip['sha256'],clipBundleSha256=clip_source.sha)
 
-def meshes(source,root):
+def meshes(source,root,*,base_pass_only=False):
  nodes,lookup=source.hierarchy(root);w=world(nodes);parts=[]
  for i,n in enumerate(nodes):
   for f,p in source.names[int(n['gameObject'])][1]:
    if f or source.objects[p][0]!=137:continue
-   r=Reader(source.raw(p,137));require(r.unpack('iq')==(0,int(n['gameObject'])),'renderer backlink');r.pos=72;materials=[source.reference(r.unpack('iq')) for _ in range(r.count(12))];r.take(56);mf,mp=r.unpack('iq');bones=[r.unpack('iq') for _ in range(r.count(12))];weights=r.unpack(f'{r.count(4)}f');rb=r.unpack('iq');r.take(28);require(r.pos==len(r.data) and mf==0 and all(f==0 and b in lookup for f,b in bones),'unsupported renderer reference');m=decode_mesh(source.raw(mp,43));j=[lookup[b] for f,b in bones];require(tuple(nodes[k]['pathHash'] for k in j)==m['boneHashes'],'bone hash mismatch');require(rb[0]==0 and rb[1] in lookup and nodes[lookup[rb[1]]]['pathHash']==m['rootHash'],'root bone mismatch');err=float(np.max(np.abs(w[j]@m['bind']-w[i])));parts.append((i,m,j,dict(rendererPathId=str(p),meshPathId=str(mp),meshSha256=m['sha256'],vertices=len(m['attrs'][0]),triangles=sum(map(len,m['indices'])),bindMatrixMaxError=err,materialSlotCount=len(materials),submeshCount=len(m['indices']),materials=[[c,str(p)] for c,p in materials],blendShapeWeights=weights)))
+   r=Reader(source.raw(p,137));require(r.unpack('iq')==(0,int(n['gameObject'])),'renderer backlink');r.pos=72;materials=[source.reference(r.unpack('iq')) for _ in range(r.count(12))];r.take(56);mf,mp=r.unpack('iq');bones=[r.unpack('iq') for _ in range(r.count(12))];weights=r.unpack(f'{r.count(4)}f');rb=r.unpack('iq');r.take(28);require(r.pos==len(r.data) and mf==0 and all(f==0 and b in lookup for f,b in bones),'unsupported renderer reference');m=decode_mesh(source.raw(mp,43));j=[lookup[b] for f,b in bones];require(tuple(nodes[k]['pathHash'] for k in j)==m['boneHashes'],'bone hash mismatch');require(rb[0]==0 and rb[1] in lookup and nodes[lookup[rb[1]]]['pathHash']==m['rootHash'],'root bone mismatch');err=float(np.max(np.abs(w[j]@m['bind']-w[i])));omitted=False
+   if base_pass_only and len(materials)!=len(m['indices']):
+    def shader(ref):
+     c,pid=ref;require(c==source.cab,'external secondary pass material');mat=decode_material(source.raw(pid,21));return source.reference(tuple(map(int,mat['shader'])))
+    if len(materials)==1 and shader(materials[0])==('CAB-d79bfb1b074ecaf0c1e3e4fd94de319e',6863707950531551734):
+     # Only omit an extra renderer sharing geometry with a retained base renderer.
+     require(any(e['meshPathId']==str(mp) and e['materialSlotCount']==e['submeshCount'] for _,_,_,e in parts),'unverified secondary renderer');continue
+    if len(materials)==len(m['indices'])+1 and shader(materials[-1])==('CAB-d79bfb1b074ecaf0c1e3e4fd94de319e',2274174900306393721):
+     materials=materials[:-1];omitted=True
+    else:raise ValueError('material slot mismatch')
+   parts.append((i,m,j,dict(rendererPathId=str(p),meshPathId=str(mp),meshSha256=m['sha256'],vertices=len(m['attrs'][0]),triangles=sum(map(len,m['indices'])),bindMatrixMaxError=err,materialSlotCount=len(materials),submeshCount=len(m['indices']),materials=[[c,str(p)] for c,p in materials],blendShapeWeights=weights,secondaryPassOmitted=omitted)))
  require(parts,'missing skinned mesh');return nodes,parts
 
 def attachment_maps(avatar,script):

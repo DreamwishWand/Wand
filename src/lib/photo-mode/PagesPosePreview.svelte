@@ -24,6 +24,7 @@
   let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined}));
   let companionOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===false}));
   let partialActor=$derived(companionOnly&&bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='pair'||o?.kind==='player'&&o.companionIncluded===true}));
+  let secondaryPassOmitted=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===true&&o.secondaryPassOmitted===true}));
   let related=$derived(index?relatedPoseItems(index,itemId,poseIndex):[]);
   let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async id=>({id,name:await getRelatedName!(id,locale).catch(()=>null)}))):Promise.resolve([]));
   onMount(()=>{
@@ -36,7 +37,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if}</p>
+      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if}</p>
       {#if poses.length>1}
         <div class="pose-variants" aria-label={copy.pose}>
           {#each poses as _,i}
