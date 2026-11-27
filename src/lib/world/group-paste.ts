@@ -25,7 +25,7 @@ export function captureCutWitness(items:readonly MainlandSavedObject[],free=fals
  return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{}),...(p.object.storage?{storage:true as const}:{})}));
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[],free=false):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],!!r.storage,true):cutEligible(p,!!r.supportFactor)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],!!r.storage,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust

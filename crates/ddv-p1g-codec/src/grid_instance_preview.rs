@@ -3901,6 +3901,25 @@ mod terrain_session_tests{
         plan["rows"][0]["destination"]["sizeX"]=Value::from(b["sizeX"].as_u64().unwrap()+1);assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
     }
     #[test]
+    fn storage_cut_roundtrip_native_world_and_room_preserves_inventory(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"Unknown":1e2}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
+        let source:Value=serde_json::from_slice(raw).unwrap();
+        let (scan,_)=scan_grid_instances(raw).unwrap();
+        let ord=scan.private_targets.iter().position(|(t,_)|t.grid_id=="10"&&t.object_id=="1").unwrap()+1;
+        let (_,layout,factor,sx,sy)=outdoor_identity(&source,"10").unwrap();
+        let dest=serde_json::json!({"layoutId":layout,"gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":factor,"sizeX":sx,"sizeY":sy});
+        let mut world_plan=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ord,"itemId":"40001680","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":dest.clone(),"x":4,"y":5,"orientation":"GridOrientation_Left","storage":true}]});
+        let moved=group_cut_candidate(raw,&world_plan.to_string()).unwrap();
+        let moved_value:Value=serde_json::from_str(&moved).unwrap();
+        assert_eq!(moved_value["Player"],source["Player"]);assert_eq!(moved_value["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"],source["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]);
+        world_plan["rows"][0]["orientation"]=Value::from("GridOrientation_DownLeft");assert!(group_cut_candidate(raw,&world_plan.to_string()).is_err());
+        let plan=serde_json::json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"transfer":[{"localOrdinal":ord,"itemId":40001680,"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":3,"y":3,"orientation":"GridOrientation_Left","storage":true}]});
+        let draft=crate::indoor_room_view::furniture_candidate(raw,&plan.to_string()).unwrap();let after:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        assert_eq!(after["Player"],source["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["State"],source["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]);assert!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("1").is_none());assert!(draft.patched_json.contains("1e2"));
+        let back=serde_json::json!({"freePlacement":true,"rows":[{"roomSource":{"roomOrdinal":1,"index":0},"itemId":"40001680","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Left","destination":dest,"x":2,"y":2,"orientation":"GridOrientation_Down","storage":true}]});
+        let result=group_cut_candidate(draft.patched_json.as_bytes(),&back.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["Player"],source["Player"]);assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"],source["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]);assert!(result.contains("1e2"));
+    }
+    #[test]
     fn free_room_cut_to_native_world_keeps_overlap_and_inventory(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000002,"X":4,"Y":5,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
         let original:Value=serde_json::from_slice(raw).unwrap();
