@@ -205,6 +205,19 @@ mod tests{
  use super::*;
  const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Other":1e2,"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"ItemMarker_Favorite"},"40000002":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":null},"3":{"ID":3,"ItemID":40000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"Objects":{}}}}}}"#;
  fn target(id:&str,item_id:u64)->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:id.into(),item_id}}
+ #[test]fn free_bulk_restore_preserves_repeated_anchors_and_stock(){
+  let source=SOURCE.replace("GridData/Test.json","GridData/Villages/Village04-Test-GridData.json");
+  let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Villages/Village04-Test-GridData.json".into(),tessellation:1,size:(16,16)};
+  let rows=[BulkPlace{destination:&d,item_id:40000001,xy:(1,1),orientation:"GridOrientation_DownLeft",free_placement:true},BulkPlace{destination:&d,item_id:40000001,xy:(1,1),orientation:"GridOrientation_Up",free_placement:true}];
+  let result=preview_bulk_furniture(&source,&[],&rows).unwrap();let root:Value=serde_json::from_str(&result.patched_json).unwrap();
+  let objects=&root["World"]["GridCollection"]["Grids"]["7"]["Objects"];
+  assert_eq!(objects["1"]["X"],1);assert_eq!(objects["4"]["X"],1);assert_eq!(objects["5"]["X"],1);
+  assert_eq!(root["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],6);
+  assert_eq!(root["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+  assert!(result.patched_json.contains("\"Unknown\":1e2"));
+  let strict=BulkPlace{destination:&d,item_id:40000001,xy:(1,1),orientation:"GridOrientation_Up",free_placement:false};
+  assert!(preview_bulk_furniture(&source,&[],&[strict]).is_err());
+ }
  #[test]fn bulk_diagonal_outdoor_furniture_roundtrip(){
   let source=SOURCE.replace("GridData/Test.json","GridData/Villages/Village04-Test-GridData.json").replacen("GridOrientation_Down","GridOrientation_DownLeft",1);
   let t=target("1",40000001);
