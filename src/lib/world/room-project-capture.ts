@@ -38,9 +38,9 @@ export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:Room
  * still require a validated attachment and a legal native placement. */
 export function roomBackupSurfaceValid(face:IndoorSurface,s:RoomProjectSurface,g:RoomApplySurfaceGeometry,free=false):boolean{
  if(!free||!indoorFreeFloor(face))return roomDesignValid(s.timeline,s.template.grid,s.template.raster,g.design);
- if(!face.factor)return false;
+ const factor=face.factor;if(!factor)return false;
  const rows=currentDesign(s.timeline),strict=rows.filter(p=>p.attachment),leaf=rows.filter(p=>!p.attachment);
- if(rows.some(p=>{const d=g.design.get(p.itemId);return !d||d.layer!=='furniture'||!!d.supportPath!==!!p.attachment||d.surfaceCapable&&!p.attachment||p.attachment?.designOnly||p.attachment&&(!Number.isInteger(p.orientation)||p.attachment.scene.tree.sourcePath!==d.supportPath)||!Number.isSafeInteger(p.x*face.factor/s.template.grid.factor)||!Number.isSafeInteger(p.y*face.factor/s.template.grid.factor);}))return false;
+ if(rows.some(p=>{const d=g.design.get(p.itemId);return !d||d.layer!=='furniture'||!!d.supportPath!==!!p.attachment||d.surfaceCapable&&!p.attachment||p.attachment?.designOnly||p.attachment&&(!Number.isInteger(p.orientation)||p.attachment.scene.tree.sourcePath!==d.supportPath)||!Number.isSafeInteger(p.x*factor/s.template.grid.factor)||!Number.isSafeInteger(p.y*factor/s.template.grid.factor);}))return false;
  const empty={...face,positions:[],items:[]},stock=new Map(rows.map(p=>[p.itemId,rows.length]));
  // Validate supports using the regular room design lattice. Leaves are
  // independently checked against the real native raster and shape.
