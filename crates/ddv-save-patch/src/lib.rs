@@ -922,10 +922,10 @@ fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,
     insert_grid_record(intermediate,destination,item_id,replacement,orientation,None)
 }
 /// Codec supplies a version-pinned native template, never user-provided State.
-pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,level:u64,skin:u64)->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,level:Option<u64>,skin:u64)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
-    if item_id/100_000!=203||level!=1||skin!=170200005||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+    if item_id/100_000!=203||!matches!((level,skin),(Some(1),170200005)|(Some(1),0)|(Some(0),0)|(None,0))||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
        xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
     validate_json_without_edit(source)?;
     let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
@@ -937,7 +937,8 @@ pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item
        grid["GridDefaultLayoutPath"].as_str()!=Some(d.layout_path.as_str())||grid["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
        grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
-    let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":level},"CurrentSkinItemID":skin}}).to_string();
+    let upgrade=level.map_or(Value::Null,|level|serde_json::json!({"Level":level}));
+    let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":upgrade,"CurrentSkinItemID":skin}}).to_string();
     insert_grid_record(source,d,item_id,xy,orientation,Some(&state))
 }
 
