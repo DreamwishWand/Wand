@@ -1042,6 +1042,22 @@ pub fn preview_checked_building_duplicate(source:&str,target:&GridCoordinateTarg
 }
 
 pub fn preview_checked_building_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    checked_building_duplicate_mode(source,target,expected,d,xy,orientation,replacement_orientation,false)
+}
+
+/// Explicit cross-world experimental edit of a native building. The caller
+/// validates the supported state, both catalog grids and identity dependencies.
+pub fn preview_checked_building_world_change(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,duplicate:bool)->Result<GridCoordinateDraft,PatchError>{
+    let mut draft=checked_building_duplicate_mode(source,target,expected,d,xy,orientation,orientation,true)?;
+    if !duplicate{
+        let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+        draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
+        validate_json_without_edit(&draft.patched_json)?;
+    }
+    Ok(draft)
+}
+
+fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str,world_change:bool)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||
@@ -1054,8 +1070,9 @@ pub fn preview_checked_building_duplicate_oriented(source:&str,target:&GridCoord
     let from=grids.get(&target.grid_id).ok_or(bad)?;
     let to=grids.get(&d.grid_id).ok_or(bad)?;
     let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    if from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope)||
-       !from.get("GridDataPath").and_then(Value::as_str).is_some_and(|p|outdoor_world_path(scope,p))||!outdoor_world_path(scope,&d.data_path)||
+    let from_scope=from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    if (from_scope!=scope)!=world_change||world_change&&target.grid_id==d.grid_id||
+       !from.get("GridDataPath").and_then(Value::as_str).is_some_and(|p|outdoor_world_path(from_scope,p))||!outdoor_world_path(scope,&d.data_path)||
        from.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
        to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
        to.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
