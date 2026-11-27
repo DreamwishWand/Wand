@@ -4,7 +4,7 @@
  import {savedNativeAreaFlags,explicitSavedPreviewStates} from '../media/native-map-save-area-flags.ts';
  export let mapId:string;
  export let areaTypes:readonly number[];
- export let onApply:(states:Map<number,boolean>)=>void;
+ export let onApply:(states:Map<number,boolean>,file:File)=>void;
  let worker:Worker|null=null,projection:unknown=null,loading=false,error=false,readFile:File|null=null;
  $: if($localSaveSession.file!==readFile)reset($localSaveSession.file);
  $: rows=savedNativeAreaFlags(mapId,areaTypes,projection);
@@ -26,7 +26,7 @@
   {#if error}<p role="alert">区画情報を取得できませんでした。</p>{/if}
   {#if projection}
    <div class="flags">{#each rows as row}<span>区画 {row.areaType}: {row.unlocked===null?'不明':row.unlocked?'解放':'未解放'}</span>{/each}</div>
-   <button type="button" disabled={!complete} on:click={()=>{if(complete)onApply(complete);}}>保存フラグで試験表示</button>
+   <button type="button" disabled={!complete||!readFile||readFile!==$localSaveSession.file} on:click={()=>{if(complete&&readFile&&readFile===$localSaveSession.file)onApply(complete,readFile);}}>保存フラグで試験表示</button>
    <p>ゲームの実行時判定は未確認です。不明な区画がある場合は試験表示しません。セーブは変更されません。</p>
   {/if}
  </details>
