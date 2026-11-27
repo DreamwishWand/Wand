@@ -1,6 +1,11 @@
 name: DB-05 Save schema contract
 on:
   workflow_call:
+    inputs:
+      common_unit_full:
+        type: boolean
+        default: false
+        description: Full product unit suite runs in the required product job
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,8 +26,10 @@ jobs:
             exit 1
           fi
       - name: JavaScript and Collection bridge
-        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-duty-progress-evidence.test.mjs tests/save-duty-milestones.test.mjs tests/save-clean-baseline.test.mjs tests/save-clean-regression.test.mjs tests/save-clean-regression-cli.test.mjs tests/save-native-catalog-crosscheck-cli.test.mjs tests/save-db04-grid-path-cli.test.mjs tests/save-db04-observed-grid-completion-cli.test.mjs tests/save-editor-readset.test.mjs tests/save-editor-handoff.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
+        if: ${{ !inputs.common_unit_full }}
+        run: node --experimental-strip-types --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-duty-progress-evidence.test.mjs tests/save-duty-milestones.test.mjs tests/save-clean-baseline.test.mjs tests/save-clean-regression.test.mjs tests/save-clean-regression-cli.test.mjs tests/save-native-catalog-crosscheck-cli.test.mjs tests/save-db04-grid-path-cli.test.mjs tests/save-db04-observed-grid-completion-cli.test.mjs tests/save-editor-readset.test.mjs tests/save-editor-handoff.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
       - name: DB-01 TypeScript private DutyAch reward source join (synthetic only)
+        if: ${{ !inputs.common_unit_full }}
         run: node --experimental-strip-types --test tests/save-duty-reward-db01.test.mjs
       - name: Private report importer (synthetic only)
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v

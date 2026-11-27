@@ -2,6 +2,11 @@ name: DB-04 World checks
 
 on:
   workflow_call:
+    inputs:
+      common_unit_full:
+        type: boolean
+        default: false
+        description: Full product unit suite runs in the required product job
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +26,7 @@ jobs:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
       - name: Test published mainland terrain projection
+        if: ${{ !inputs.common_unit_full }}
         run: node --experimental-strip-types --test tests/world-public-terrain.test.mjs
       - name: Test Rust World archive verifier
         run: cargo test --manifest-path crates/wand-world-core/Cargo.toml
@@ -77,6 +83,8 @@ jobs:
             throw "Missing GameAssembly.dll silently triggered metadata-only capture"
           }
       - name: Test browser-facing world catalog
+        if: ${{ !inputs.common_unit_full }}
         run: node --experimental-strip-types --test tests/world.test.mjs tests/world-local-snapshot.test.mjs tests/world-source-load-epoch.test.mjs tests/world-preview-views.test.mjs tests/world-native-region-grid-atlas.test.mjs tests/world-native-floor-match.test.mjs tests/world-media-map-calibration.test.mjs tests/world-source-placement-preview.test.mjs tests/world-source-object-map.test.mjs tests/world-native-floor-rectangle-window.test.mjs tests/world-saved-source-candidates.test.mjs tests/world-native-version-gate.test.mjs
       - name: Test native source-local anchor envelope under TypeScript
+        if: ${{ !inputs.common_unit_full }}
         run: node --experimental-strip-types --test tests/world-native-anchor-domain.test.mjs tests/world-native-source-anchor-index.test.mjs tests/world-native-item-anchor-finder.test.mjs tests/world-native-gridarea-evidence.test.mjs tests/world-native-gridarea-base.test.mjs tests/world-native-gridarea-oriented.test.mjs tests/world-native-catalog-core.test.mjs tests/world-native-gridarea-local-window.test.mjs tests/world-native-oblique.test.mjs tests/world-native-terrain-preview.test.mjs tests/world-native-gridobject-item-area-link.test.mjs tests/world-native-default-gridlayers-cell.test.mjs tests/world-native-default-gridlayers-window.test.mjs tests/world-native-default-candidate-probe.test.mjs tests/world-reference-graph.test.mjs tests/world-item-geography.test.mjs tests/world-native-item-scope.test.mjs tests/world-native-realm-universe.test.mjs tests/world-native-tag-taxonomy.test.mjs tests/world-worldless-source-placements.test.mjs tests/world-village-world-tag-overlap.test.mjs tests/world-native-area-tag-overlap.test.mjs tests/world-native-realm-subtree.test.mjs tests/world-native-graph-browser.test.mjs tests/world-native-grid-navigation.test.mjs

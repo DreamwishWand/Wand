@@ -1,6 +1,8 @@
 """CI scope selection: uncertain/shared changes always run the full suite."""
 from __future__ import annotations
 import argparse
+import json
+import re
 from fnmatch import fnmatchcase
 import os
 import subprocess
@@ -37,6 +39,8 @@ SOURCE_PATTERNS = {
     "r2": ["tools/src-04-r2/**",".github/workflows/src04-r2.yml","data/ddv/media/**"],
 }
 
+# Source-backed world topology is compiled into the Save writer.
+SOURCE_PATTERNS["db05"].extend(["static/ddv/world/**", "src/lib/world/fence-family-candidates.json"])
 def source_checks(paths: list[str], *, full: bool = False) -> dict[str, bool]:
     # Unknown diff or explicit regression runs exercise all source contracts.
     all_sources = full or not paths or any(
@@ -69,6 +73,25 @@ def classify(paths: list[str], *, allow_offline: bool = True) -> dict[str, bool]
             selected.update(DOMAINS)
     return {"product": product, **{domain: domain in selected for domain in DOMAINS}}
 
+UNIT_TEST_PATH = re.compile(r"tests/[A-Za-z0-9_.-]+\.test\.mjs\Z")
+
+def isolated_unit_files(paths: list[str], root: Path) -> list[str]:
+    """Select direct test-only edits, not fixtures, deletions, or shared code.
+
+    A test referenced by another tracked source may also serve as a fixture.
+    In that case retain the full suite. Unknown git results also retain it.
+    """
+    if not paths or not all(UNIT_TEST_PATH.fullmatch(path) and (root / path).is_file() for path in paths):
+        return []
+    for path in paths:
+        result = subprocess.run(
+            ["git", "grep", "-l", "-F", "-e", Path(path).name, "--", ".", ":(exclude)" + path],
+            cwd=root, capture_output=True, check=False,
+        )
+        if result.returncode != 1:
+            return []
+    return sorted(set(paths))
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="")
@@ -91,12 +114,15 @@ def main() -> None:
         for p in paths
     )
     result.update(source_checks(paths, full=args.full))
+    unit_files = isolated_unit_files(paths, Path.cwd()) if not args.full else []
+    result["unit_full"] = not unit_files
+    result["unit_files"] = json.dumps(unit_files, separators=(",", ":"))
     print("CI scope:", result)
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with Path(output).open("a", encoding="utf-8") as stream:
             for key, value in result.items():
-                stream.write(f"{key}={str(value).lower()}\n")
+                stream.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")
 
 if __name__ == "__main__":
     main()

@@ -28,6 +28,8 @@ jobs:
       db05: ${{ steps.scope.outputs.db05 }}
       acquisition: ${{ steps.scope.outputs.acquisition }}
       r2: ${{ steps.scope.outputs.r2 }}
+      unit_full: ${{ steps.scope.outputs.unit_full }}
+      unit_files: ${{ steps.scope.outputs.unit_files }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,7 +99,10 @@ jobs:
           crate: crates/wand-world-core
           output: src/lib/world/wasm/pkg
       - run: npm install --no-audit --no-fund
-      - run: npm test
+      - name: Run required product unit tests
+        env:
+          UNIT_FILES: ${{ needs.scope.outputs.unit_files }}
+        run: python3 tools/ci/run_unit_tests.py
       - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
         if: needs.scope.outputs.collection == 'true'
       - run: npm run check
@@ -158,14 +163,20 @@ jobs:
     needs: scope
     if: needs.scope.outputs.db04 == 'true'
     uses: ./.github/workflows/db04-world.yml
+    with:
+      common_unit_full: ${{ needs.scope.outputs.product == 'true' && needs.scope.outputs.unit_full == 'true' }}
   db05:
     needs: scope
     if: needs.scope.outputs.db05 == 'true'
     uses: ./.github/workflows/db05-save.yml
+    with:
+      common_unit_full: ${{ needs.scope.outputs.product == 'true' && needs.scope.outputs.unit_full == 'true' }}
   acquisition:
     needs: scope
     if: needs.scope.outputs.acquisition == 'true'
     uses: ./.github/workflows/acquisition.yml
+    with:
+      common_unit_full: ${{ needs.scope.outputs.product == 'true' && needs.scope.outputs.unit_full == 'true' }}
   r2:
     needs: scope
     if: needs.scope.outputs.r2 == 'true'
@@ -187,7 +198,7 @@ jobs:
           if jobs["scope"]["result"] != "success":
               raise SystemExit("CI scope detection failed")
           outputs = jobs["scope"]["outputs"]
-          for flag in ("product", "collection", "memory", "explore", "guide", "save", "world", "pages", "db01", "db03", "db04", "db05", "acquisition", "r2"):
+          for flag in ("product", "collection", "memory", "explore", "guide", "save", "world", "pages", "db01", "db03", "db04", "db05", "acquisition", "r2", "unit_full"):
               if outputs.get(flag) not in ("true", "false"):
                   raise SystemExit("Missing or invalid CI scope flag: " + flag)
           selected = {key: outputs[key] == "true" for key in ("product", "db01", "db03", "db04", "db05", "acquisition", "r2")}
