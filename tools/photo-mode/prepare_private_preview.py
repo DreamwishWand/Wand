@@ -7,7 +7,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--out',type=Path,required=True);a=p.parse_args()
     here=Path(__file__).resolve().parent;out=a.out.resolve();require(not any((x/'.git').exists() for x in (out,*out.parents)),'private output only')
     out.mkdir(parents=True,exist_ok=False)
-    for name in ('cpu-diagnostic.ts','split-loader.ts','preview.ts','index.html'):
+    for name in ('cpu-diagnostic.ts','split-loader.ts','preview.ts','orbit.ts','index.html'):
         shutil.copyfile(here/name,out/name)
     shutil.copyfile(here.parent.parent/'src/lib/photo-mode/playback.ts',out/'playback.ts')
     (out/'package.json').write_text('{"type":"module"}\n')
