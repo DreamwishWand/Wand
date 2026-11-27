@@ -1,6 +1,6 @@
 import type {SymmetryMode} from './design-symmetry.ts';
 import {stockSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
-import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,isCardinal,type Cardinal} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import {rotateDesignClipboard,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -74,7 +74,7 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
   if(free&&(Math.floor(p.itemId/100000)!==400||geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath))return null;
   const q=stockPlacement(grids,rasters,geo,p.itemId,CARDINAL_ORIENTATIONS[p.orientation],x+.001,y-.001,null,free);
-  if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
+  if(!q||q.plan.action!=='place'||!isCardinal(q.plan.orientation)||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
   anchors.add(key);
   // Exact occupied-cell conflicts are refused for ordinary group placement;
