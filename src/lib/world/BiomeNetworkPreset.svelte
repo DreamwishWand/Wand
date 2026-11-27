@@ -26,6 +26,7 @@
  import type {TerrainRaster,TerrainScopeReceipt} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],sessions:readonly TerrainScopeReceipt[],omitted=0,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
+ export let freePlacement=false;
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let key='',input:HTMLInputElement,source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',error=false,reading=false,epoch=0,own:Worker|null=null,subscribed:Worker|null=null,requestId=0;
  export let includeFurniture=false;
@@ -40,9 +41,11 @@
  $: busy=reading||!!own||!!requestId||!!stockWorker;
  $: ready=!!grid&&source===file&&sourceObjects===objects&&sourceKey===key&&before!==null&&after!==null;
  $: networkReview=ready&&grid&&before&&after&&!includeFurniture?reviewBiomeNetwork(grid,rasters,objects,omitted,before,after,defs):null;
- $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after,supports:incomingSupports,landscape:incomingLandscape},defs,stock,false,currentSupports,false,currentLandscape):null;
+ $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after,supports:incomingSupports,landscape:incomingLandscape},defs,stock,false,currentSupports,false,currentLandscape,freePlacement):null;
  $: result=decorationReview??networkReview;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
+ let lastFree=false;
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  function cancel(){epoch++;supportAbort?.abort();supportAbort=null;currentSupports=undefined;incomingSupports=undefined;currentLandscape=undefined;incomingLandscape=undefined;own?.terminate();own=null;stockWorker?.terminate();stockWorker=null;stock=null;incomingFurniture=null;requestId=0;reading=false;source=null;sourceObjects=null;sourceKey='';before=null;after=null;defs=new Map();error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
