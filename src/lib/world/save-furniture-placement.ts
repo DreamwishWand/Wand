@@ -13,6 +13,8 @@ export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor
 export function stockSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
  return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
 }
+export const playerHouseId=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===205;
+export function playerHouseSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{return !!p?.shape&&playerHouseId(Number(p.object.itemId))&&!p.object.subgrid&&isCardinal(p.object.orientation);}
 export const landscapeId=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===402;
 export function landscapePlacementEligible(g:DesignItemGeometry,free=false){return landscapeId(g.itemId)&&g.layer==='landscape'&&!g.surfaceCapable&&!g.supportPath&&(free||g.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(g.editRestrictions,'select'));}
 export function landscapeSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
@@ -24,11 +26,12 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:Cardinal,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false):StockCandidate|null{
- const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
+ const landscape=landscapeId(id),house=playerHouseId(id);if(house?(!free||!playerHouseSourceEligible(source)):landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ if(!r||!def||def.itemId!==id||(house?def.nativeType!=='Building':def.layer!==(landscape?'landscape':'furniture'))||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ if(house){const from=grids.find(q=>q.key===source?.area);if(!from||!bindMainlandGrid(g)||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from))return null;}
  if(landscape){if(!landscapePlacementEligible(def,free)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&!free&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
  const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
  if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!free&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length))return null;
@@ -43,7 +46,7 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  if(count!==shape.cellCount)return null;
  let plan:StockPlan={action:'place',itemId:String(id),x,y,orientation};
  if(source){
-  if(!(landscape?landscapeSourceEligible(source,free):stockSourceEligible(source,free))||source.object.itemId!==String(id)||source.object.orientation!==orientation||!free&&nativeActionBlocked(source.object.editRestrictions,'move')||(!free&&source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
+  if(!(house?playerHouseSourceEligible(source):landscape?landscapeSourceEligible(source,free):stockSourceEligible(source,free))||source.object.itemId!==String(id)||source.object.orientation!==orientation||!free&&nativeActionBlocked(source.object.editRestrictions,'move')||(!free&&source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
   plan={action:'duplicate',localOrdinal:source.object.localOrdinal,itemId:String(id),expectedX:source.object.x,expectedY:source.object.y,x,y};
  }
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan,destination:witness(g)};

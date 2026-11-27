@@ -8,7 +8,7 @@
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
- import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,type StockCandidate} from './save-furniture-placement.ts';
+ import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,playerHouseId,playerHouseSourceEligible,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
@@ -37,7 +37,10 @@
  $: w=stockToolWords[locale]??stockToolWords.en;
  const landscapeWords={ja:['景観・樹木','景観を複製','景観を撤去','在庫は変更しません'],en:['Landscaping','Duplicate landscape','Remove landscape','Inventory unchanged'],fr:['Paysage','Dupliquer le paysage','Retirer le paysage','Inventaire inchangé'],it:['Paesaggio','Duplica paesaggio','Rimuovi paesaggio','Inventario invariato'],de:['Landschaft','Landschaft duplizieren','Landschaft entfernen','Inventar unverändert'],'es-ES':['Paisaje','Duplicar paisaje','Retirar paisaje','Inventario sin cambios'],'zh-CN':['景观与树木','复制景观','移除景观','库存不变'],'pt-BR':['Paisagem','Duplicar paisagem','Remover paisagem','Inventário inalterado']} as const;
  $: lw=landscapeWords[locale];
+ $: houseCandidate=!!candidate&&playerHouseId(Number(candidate.plan.itemId));
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
+ const houseWords={ja:['家を複製','同じ内装を共有・在庫変更なし'],en:['Duplicate house','Shared interior; inventory unchanged'],fr:['Dupliquer la maison','Intérieur partagé ; inventaire inchangé'],it:['Duplica casa','Interno condiviso; inventario invariato'],de:['Haus duplizieren','Gemeinsamer Innenraum; Inventar unverändert'],'es-ES':['Duplicar casa','Interior compartido; inventario sin cambios'],'zh-CN':['复制房屋','共享室内；库存不变'],'pt-BR':['Duplicar casa','Interior compartilhado; inventário inalterado']} as const;
+ $: hw=houseWords[locale]??houseWords.en;
  $: ow=stockFootprintWords[locale]??stockFootprintWords.en;
  $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
  $: if(file!==seenFile)resetFile(file);
@@ -56,7 +59,7 @@
   const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);stockState='ready';}catch{counts=null;stockState='error';}};
   own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file:f});
  }
- function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean){catalogLocale=l;catalogMode=landscape;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,locale:l,requestId:catalogRequest,landscapeOnly:landscape,freePlacement});}
+ function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean){catalogLocale=l;catalogMode=landscape;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,savedFactor:g.factor,locale:l,requestId:catalogRequest,landscapeOnly:landscape,freePlacement});}
  function setLandscapeMode(value:boolean){cancel();landscapeMode=value;query='';limit=80;}
  function receive(e:MessageEvent){const d=e.data;
   if(d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='design-catalog'&&Array.isArray(d.items)){catalog=d.items;catalogState='ready';limit=80;}else catalogState='error';return;}
@@ -67,9 +70,9 @@
  }
  export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
-  if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate,freePlacement)||!freePlacement&&duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
+  if(blocked||!canStart||!open||!file||!worker||(playerHouseId(id)?!testExport||!freePlacement||!playerHouseSourceEligible(duplicate):landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate,freePlacement)||!freePlacement&&duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
   cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
-  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement});}shapeRequests=new Map(shapeRequests);
+  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,savedFactor:g.factor,itemId:id,requestId,freePlacement,allowBuildings:playerHouseId(id)});}shapeRequests=new Map(shapeRequests);
  }
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
@@ -79,10 +82,10 @@
  }
  $: rotationAllowed=definitions.size>0&&(freePlacement||[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional'));
  export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
- export function validate(){if(candidate&&landscapeId(Number(candidate.plan.itemId))){if(!testExport)return;run(true,true);}else run(false);}
+ export function validate(){if(candidate&&(landscapeId(Number(candidate.plan.itemId))||playerHouseId(Number(candidate.plan.itemId)))){if(!testExport)return;run(true,true);}else run(false);}
  function run(exporting:boolean,landscape=false){
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&(status!=='valid'||!stockChange)))return;
-  const q=candidate,f=file;ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
+  const q=candidate,f=file,command=playerHouseId(Number(candidate.plan.itemId))?'house-duplicate-export':landscape?'landscape-export':'furniture-stock-export';ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
   const finish=(data:unknown)=>{
    own.terminate();const d=data as {kind?:string;validated?:boolean;stockBefore?:number;stockAfter?:number;bytes?:Uint8Array;receipt?:Record<string,unknown>}|null;
@@ -90,14 +93,14 @@
    if(exporting){
     const r=d?.receipt,b=d?.bytes;
     if(d?.kind==='furniture-stock-copy'&&b instanceof Uint8Array&&b.byteLength>0&&b.byteLength<=32*1024*1024&&r?.contract==='wand.db05.experimental-copy@1'&&r.copyBytes===b.byteLength&&r.originalUnchanged===true&&r.independentReopenVerified===true&&r.experimentalCopyOnly===true&&r.productionWriterAuthorized===false){
-     try{const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';copyFile=new File([b.slice().buffer as ArrayBuffer],f.name,{type:f.type||'application/octet-stream'});rememberReplayStep(copyFile,landscape?'landscape-export':'furniture-stock-export',q.plan,q.destination);copyUrl=URL.createObjectURL(copyFile);status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
+     try{const dot=f.name.lastIndexOf('.');copyName=dot>0?f.name.slice(0,dot)+'-world-test'+f.name.slice(dot):f.name+'-world-test';copyFile=new File([b.slice().buffer as ArrayBuffer],f.name,{type:f.type||'application/octet-stream'});rememberReplayStep(copyFile,command,q.plan,q.destination);copyUrl=URL.createObjectURL(copyFile);status='valid';}catch{clearCopy();status='error';}finally{b.fill(0);}return;
     }
     b?.fill(0);status='error';return;
    }
    if(d?.kind==='furniture-stock-preview'&&d.validated===true&&typeof d.stockBefore==='number'&&typeof d.stockAfter==='number'&&Number.isSafeInteger(d.stockBefore)&&Number.isSafeInteger(d.stockAfter)&&d.stockAfter-d.stockBefore===(q.plan.action==='remove'?1:-1)){stockChange={before:d.stockBefore,after:d.stockAfter};status='valid';}else status='error';
   };
   own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);
-  own.postMessage({command:landscape?'landscape-export':exporting?'furniture-stock-export':'furniture-stock-preview',file:f,destination:q.destination,plan:q.plan,...(exporting?{allowExperimentalCopy:true}:{})});
+  own.postMessage({command:exporting?command:'furniture-stock-preview',file:f,destination:q.destination,plan:q.plan,...(exporting?{allowExperimentalCopy:true}:{})});
  }
  $: duplicateEligible=stockSourceEligible(chosen,freePlacement)&&(freePlacement||!nativeMoveBlocked(chosen))&&(counts?.get(Number(chosen.object.itemId))??0)>0;
  function nativeMoveBlocked(p:MainlandSavedObject){return p.object.editRestrictions?.move==='denied'||p.object.editRestrictions?.move==='conditional';}
@@ -107,6 +110,7 @@
  <aside class="save-furniture-palette" aria-label={w[0]}>
   <div class="palette-head"><strong>{w[0]}</strong><button type="button" aria-label={w[8]} on:click={onClose}>×</button></div>
   {#if blocked||!canStart}<small role="status">{w[12]}</small>{:else}
+   {#if testExport&&freePlacement&&chosen&&playerHouseSourceEligible(chosen)&&!placing&&!candidate}<div class="palette-actions"><button type="button" on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{hw[0]}</button></div><small>{hw[1]}</small>{/if}
    {#if testExport&&chosen&&landscapeSourceEligible(chosen,freePlacement)&&!placing&&!candidate}<div class="palette-actions"><button type="button" disabled={!freePlacement&&chosen.object.editRestrictions?.move!=='allowedFlag'} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{lw[1]}</button><button type="button" on:click={pickup}>{lw[2]}</button></div><small>{lw[3]}</small>{/if}
    {#if chosen&&stockSourceEligible(chosen,freePlacement)&&!placing&&!candidate}
     <div class="palette-actions"><button type="button" disabled={!duplicateEligible} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{w[4]}</button><button type="button" disabled={!counts?.has(Number(chosen.object.itemId))} on:click={pickup}>{w[5]}</button></div>
@@ -117,7 +121,7 @@
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
-   {#if testExport&&status==='valid'&&candidate&&landscapeCandidate&&copyUrl}<small class="test-warning">{tw[1]} · {lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
+   {#if testExport&&status==='valid'&&candidate&&(landscapeCandidate||houseCandidate)&&copyUrl}<small class="test-warning">{tw[1]} · {houseCandidate?hw[1]:lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
    {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
    {#if testExport}<div class="palette-actions"><button type="button" aria-pressed={!landscapeMode} on:click={()=>setLandscapeMode(false)}>{w[0]}</button><button type="button" aria-pressed={landscapeMode} on:click={()=>setLandscapeMode(true)}>{lw[0]}</button></div>{/if}
    {#if landscapeMode}<small>{lw[3]}</small>{/if}

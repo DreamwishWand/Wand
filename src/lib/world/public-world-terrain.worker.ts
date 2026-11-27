@@ -289,7 +289,7 @@ scope.onmessage=async({data})=>{
       scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
-    const grid=region?.grids.find(g=>g.key===data.key);
+    const sourceGrid=region?.grids.find(g=>g.key===data.key);const grid=sourceGrid&&(data.savedFactor===1||data.savedFactor===2)?{...sourceGrid,factor:data.savedFactor as 1|2}:sourceGrid;
     if(!grid||!region)throw Error('grid');
     if(data.command==='terrain'){
       wasmReady??=init(wasmUrl).catch(e=>{wasmReady=null;throw e;});
@@ -414,7 +414,7 @@ scope.onmessage=async({data})=>{
       const landscapeSupports=landscapeCheck?await supportPaths:null;
       let runs=0;
       for(const itemId of ids as number[]){
-        const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition);
+        const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition,data.freePlacement===true);
         if(!building&&definition?.nativeType!=='Furniture')throw Error('item type');
         const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
         if(!item.shapeKey||!building&&item.layer==='other'||data.freePlacement!==true&&nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');

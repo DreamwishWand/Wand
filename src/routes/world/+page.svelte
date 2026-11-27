@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {effectiveSaveGrid} from '$lib/world/terrain-binding';
   import {defaultWorldLayers} from '$lib/world/world-layer-state.ts';
   import WorldShortcutHelp from '$lib/world/WorldShortcutHelp.svelte';
   import {onMount,onDestroy} from 'svelte';
@@ -77,7 +78,7 @@
   let mainlandSaveScope='';
   function loadMainlandSave(all:TerrainScopeReceipt[],w:Worker,regions:Grid[]){
     mainlandSaveRequested=all;mainlandSaveScope=overviewScope(regions);mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;
-    for(const g of regions){const s=all.find(v=>v.receipt.viewKey===g.key);if(!s?.receipt.points.length)continue;const id=++request;mainlandShapeRequests.set(id,g.key);w.postMessage({command:'shapes',requestId:id,key:g.key,points:s.receipt.points});}
+    for(const g of regions){const s=all.find(v=>v.receipt.viewKey===g.key);if(!s?.receipt.points.length)continue;const id=++request;mainlandShapeRequests.set(id,g.key);w.postMessage({command:'shapes',requestId:id,key:g.key,points:s.receipt.points,savedFactor:s.savedFactor});}
     mainlandShapeRequests=new Map(mainlandShapeRequests);
   }
   $: if(overviewOpen&&!designMode&&overviewReady&&worker&&(sessions!==mainlandSaveRequested||mainlandSaveScope!==overviewScope(overviewGrids)))loadMainlandSave(sessions,worker,overviewGrids);
@@ -85,7 +86,7 @@
   let sourceFile:File|null=null;
   let terrainBinding:TerrainBinding|null=null;
   let terrainDisplayed=false;
-  $: terrainBinding=selected&&raster&&boundOrdinals.length?{raster,factor:selected.factor,verifiedGridOrdinals:boundOrdinals}:null;
+  $: terrainBinding=selected&&raster&&boundOrdinals.length?{raster,factor:effectiveSaveGrid(selected,sessions).factor,verifiedGridOrdinals:boundOrdinals}:null;
   let loading=true,comparing=false,error='',compareError='',locale:WandLanguage='ja';
   let cell:{x:number;y:number;value:number}|null=null;
   let seenRevision=-1;
@@ -253,7 +254,7 @@
     if(!scoped){comparing=false;return;}
     receipt=scoped.receipt;boundOrdinals=scoped.verifiedGridOrdinals;
     if(receipt.points.length&&worker){comparing=true;shapeRequest=++request;
-      worker.postMessage({command:'shapes',requestId:shapeRequest,key:grid.key,points:receipt.points});}
+      worker.postMessage({command:'shapes',requestId:shapeRequest,key:grid.key,points:receipt.points,savedFactor:sessions.find(s=>s.receipt.viewKey===grid.key)?.savedFactor});}
     else comparing=false;
   }
   function openSaveSession(file:File|null,all:Grid[]){

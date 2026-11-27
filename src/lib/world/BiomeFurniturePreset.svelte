@@ -44,7 +44,7 @@
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,DESIGN_FILE_LIMIT),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
    incoming=rows;
-   if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();
+   if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,savedFactor:g.factor,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();
    const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
    const done=(d:any)=>{read.terminate();if(stockWorker!==read||source!==activeFile)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
    read.onmessage=e=>done(e.data);read.onerror=()=>done(null);read.onmessageerror=()=>done(null);read.postMessage({command:'read-furniture-stock',file:activeFile});
