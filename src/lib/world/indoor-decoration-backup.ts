@@ -1,7 +1,7 @@
 import {currentDesign,type DesignPlacement} from './design-layout.ts';
 import {parseRoomProject,serializeRoomProject,type RoomProjectSurface} from './room-project-design.ts';
 import type {RoomDesignTemplate} from './room-design.ts';
-import {roomBackupSurfaceValid} from './room-project-capture.ts';
+import {roomBackupSurfaceValid,roomBackupProtected} from './room-project-capture.ts';
 import {roomFinishIdValid} from './room-finish-design.ts';
 import {roomApplyMatches,type RoomApplyRow,type RoomApplySurfaceGeometry} from './room-project-apply.ts';
 import {indoorGroupPickup,indoorGroupPlace,indoorFreeFloor,type IndoorRoom,type IndoorSurface,type IndoorPickup} from './indoor-room-view.ts';
@@ -61,14 +61,20 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
   for(const [i,face] of room.surfaces.entries()){
    const b=before[i],a=after[i],g=geometry.get(face.ordinal);
    if(!g||!face.factor||!roomApplyMatches(b,face)||!roomApplyMatches(a,face)||b.id!==face.ordinal||a.id!==face.ordinal||!roomBackupSurfaceValid(face,a,g,free))return null;
-   const old=currentDesign(b.timeline),next=currentDesign(a.timeline),indices=face.positions.flatMap((p,j)=>p.protected?[]:[j]);if(old.length!==indices.length||old.some((p,i)=>{const q=face.positions[indices[i]];return p.itemId!==q.itemId||p.x!==q.x*b.template.grid.factor/face.factor!||p.y!==q.y*b.template.grid.factor/face.factor!||p.orientation!==((q.orientationCode??-4)/4);})||next.some(p=>p.attachment?.designOnly||!!g.design.get(p.itemId)?.supportPath!==!!p.attachment))return null;
+   const old=currentDesign(b.timeline),next=currentDesign(a.timeline),indices=face.positions.flatMap((p,j)=>roomBackupProtected(p)?[]:[j]);if(old.length!==indices.length||old.some((p,i)=>{const q=face.positions[indices[i]];return p.itemId!==q.itemId||p.x!==q.x*b.template.grid.factor/face.factor!||p.y!==q.y*b.template.grid.factor/face.factor!||p.orientation!==((q.orientationCode??-4)/4);})||next.some(p=>p.attachment?.designOnly||!!g.design.get(p.itemId)?.supportPath!==!!p.attachment))return null;
    const wanted=new Map<string,number>();for(const p of next){const key=poseKey(p);wanted.set(key,(wanted.get(key)??0)+1);}
-   const keep=new Set(face.positions.flatMap((p,j)=>p.protected?[j]:[])),drop:number[]=[],oldByIndex=new Map(indices.map((j,i)=>[j,old[i]]));
+   const keep=new Set(face.positions.flatMap((p,j)=>roomBackupProtected(p)?[j]:[])),drop:number[]=[],oldByIndex=new Map(indices.map((j,i)=>[j,old[i]]));
    for(const [i,p] of old.entries()){const j=indices[i],key=poseKey(p),n=wanted.get(key)??0;if(n){keep.add(j);wanted.set(key,n-1);retained++;}else drop.push(j);}
+   // Preserve existing nonportable storage at an identical desired pose.
+   for(const j of keep){
+    const p=face.positions[j];if(!roomBackupProtected(p)||!(p.storage||p.storageKnown)||p.orientationCode===null)continue;
+    const key=poseKey({id:0,itemId:p.itemId,x:p.x*b.template.grid.factor/face.factor,y:p.y*b.template.grid.factor/face.factor,orientation:p.orientationCode/4});
+    const n=wanted.get(key)??0;if(n){wanted.set(key,n-1);retained++;}
+   }
    const desired=next.filter(p=>{const key=poseKey(p),n=wanted.get(key)??0;if(!n)return false;wanted.set(key,n-1);return true;});
    if(drop.length>32||desired.length>32)return null;
    const freeFloor=free&&indoorFreeFloor(face);
-   const loose=freeFloor?drop.filter(j=>!oldByIndex.get(j)?.attachment):[],strict=drop.filter(j=>!loose.includes(j));
+   const loose=freeFloor||drop.some(j=>face.positions[j].storageRestorable===true)?drop.filter(j=>!oldByIndex.get(j)?.attachment):[],strict=drop.filter(j=>!loose.includes(j));
    const pickup:IndoorPickup[]=[];
    const account=(indices:readonly number[])=>{
     for(const j of indices)for(const [id,n] of need(oldByIndex.get(j)!)){const value=balances.get(id);if(value===undefined||value+n>2147483647)return false;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}
@@ -77,7 +83,7 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
    // The codec removes plain leaves first, then remaps support indices
    // against the remaining records. All stock expectations are batch-local.
    if(loose.length){
-    const batch=indoorGroupPickup(face,loose,g.freeAllowed??new Set(),balances,new Set(),true);
+    const batch=indoorGroupPickup(face,loose,freeFloor?(g.freeAllowed??new Set()):g.allowed,balances,new Set(),freeFloor);
     if(!batch||!account(loose))return null;pickup.push(...batch);
    }
    if(strict.length){

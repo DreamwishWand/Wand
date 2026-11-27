@@ -23,3 +23,9 @@ test('capture uses absolute half-cell coordinates and never drops nonportable ob
  assert.equal(captureRoomRows(room,{...f,positions:[{...f.positions[0],plain:undefined}]},floor,[],new Map()),null);
  assert.equal(captureRoomRows(room,{...f,missingPositions:1,items:[{itemId:id,quantity:2}]},floor,[],new Map()),null);
 });
+
+test('room capture includes reconstructible empty storage and preserves other storage',()=>{
+ const make=(x,flags)=>({itemId:40001680,x,y:1,orientationCode:8,...flags});
+ const f={...a,items:[{itemId:40001680,quantity:4}],positions:[make(1,{storage:true,storageKnown:true,storageEmpty:true,storageRestorable:true}),make(2,{storage:true,storageKnown:true}),make(3,{storageKnown:true}),make(4,{storage:true,storageKnown:true,storageEmpty:true})]};
+ assert.deepEqual(captureRoomRows(room,f,floor,[],new Map()),[{id:1,itemId:40001680,x:2,y:2,orientation:2}]);
+});

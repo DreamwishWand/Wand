@@ -99,3 +99,13 @@ test('ceiling backup is portable, optional and requires owned flooring to restor
  assert.equal(plan?.finishes,1);assert.deepEqual(plan?.plan.rooms[0].ceiling,{itemId:160100031,expected:160100136});assert.equal(plan?.finishItems.get(160100031),1);
  assert.equal(buildIndoorRestore('room',[input],new Map(),new Set()),null);
 });
+
+test('room backup restore returns only canonical empty storage and leaves other storage untouched',()=>{
+ const storage=40001680,shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,4,8,12].map(n=>[storage+':'+n,shape]));
+ const defs=new Map([[storage,{itemId:storage,name:'Storage',layer:'furniture',surfaceCapable:false,shapes}]]),g={design:defs,shapes,allowed:new Set([storage]),freeAllowed:new Set([storage])},geometry=new Map([[1,g]]);
+ const occupiedFace={...face,items:[{itemId:storage,quantity:2}],positions:[{itemId:storage,x:1,y:1,orientationCode:8,storage:true,storageKnown:true,storageEmpty:true,storageRestorable:true},{itemId:storage,x:2,y:2,orientationCode:8,storage:true,storageKnown:true}]};
+ const occupied={...rooms[0],surfaces:[occupiedFace]},rows=captureRoomRows(occupied,occupiedFace,floor,[],new Map());
+ const surface=captureRoomSurface(occupiedFace,floor,rows,defs,new Set());assert.ok(surface);
+ const blank=newRoomSurface(1,floor),q=buildIndoorRestore('room',[{room:occupied,before:[surface],after:[blank],geometry}],new Map([[storage,0]]),new Set());
+ assert.ok(q);assert.equal(q.removed,1);assert.equal(q.plan.rooms[0].surfaces[0].pickup[0].storageEmpty,true);assert.equal(q.plan.rooms[0].surfaces[0].pickup[0].index,0);assert.equal(q.returned.get(storage),1);
+});

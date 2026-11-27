@@ -2,7 +2,7 @@ import {currentDesign,emptyDesign,restoreDesign,type DesignItemGeometry,type Des
 import {roomDesignValid,type RoomDesignTemplate} from './room-design.ts';
 import {roomFinishIdValid} from './room-finish-design.ts';
 import {newRoomSurface,ROOM_PROJECT_WALL_LIMIT,serializeRoomProject,parseRoomProject,type RoomProjectSurface} from './room-project-design.ts';
-import {indoorFreeFloor,indoorGroupPlace,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
+import {indoorFreeFloor,indoorGroupPlace,type IndoorRoom,type IndoorSurface,type IndoorPosition} from './indoor-room-view.ts';
 import type {IndoorSupportWitness} from './indoor-support.ts';
 import type {RoomApplySurfaceGeometry} from './room-project-apply.ts';
 import {parseSupportScene,supportSceneRootCounts,type SupportScene} from './support-scene.ts';
@@ -15,13 +15,16 @@ export function captureRoomTemplate(face:IndoorSurface,templates:readonly RoomDe
  const matches=templates.filter(s=>s.kind===face.kind&&s.grid.gridDataPath===face.sourcePath&&s.raster.sizeX===t.sizeX&&s.raster.sizeY===t.sizeY&&s.raster.nativeFloorValues.length===t.nativeFloorValues.length&&s.raster.nativeFloorValues.every((v,i)=>v===t.nativeFloorValues[i]));
  return matches.length===1?matches[0]:null;
 }
+export function roomBackupProtected(p:IndoorPosition):boolean{
+ return p.protected===true||!!(p.storage||p.storageKnown)&&p.storageRestorable!==true;
+}
 export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:RoomDesignTemplate,witnesses:readonly IndoorSupportWitness[],scenes:ReadonlyMap<number,SupportScene>):DesignPlacement[]|null{
  if(!face.factor||face.positions.length>5000||face.items.reduce((n,p)=>n+p.quantity,0)!==face.positions.length)return null;
  const parents=witnesses.filter(p=>p.roomOrdinal===room.ordinal&&p.surfaceOrdinal===face.ordinal),byIndex=new Map(parents.map(p=>[p.index,p]));
  if(byIndex.size!==parents.length||parents.some(p=>!face.positions[p.index]||!scenes.has(p.localOrdinal)))return null;
  const rows:DesignPlacement[]=[];
  for(const [i,p] of face.positions.entries()){
-  if(p.protected===true){if(byIndex.has(i))return null;continue;}
+  if(roomBackupProtected(p)){if(byIndex.has(i))return null;continue;}
   if(p.orientationCode===null||Math.floor(p.itemId/100000)!==400)return null;
   const x=p.x*template.grid.factor/face.factor,y=p.y*template.grid.factor/face.factor,w=byIndex.get(i);
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>=template.grid.sizeX*template.grid.factor||y>=template.grid.sizeY*template.grid.factor)return null;
@@ -30,7 +33,7 @@ export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:Room
    try{const scene=parseSupportScene(JSON.stringify(scenes.get(w.localOrdinal)));if(scene.ownerItemId!==p.itemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)return null;
     rows.push({id:rows.length+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4,attachment:{scene,designOnly:false}});
    }catch{return null;}
-  }else{if(p.plain!==true)return null;rows.push({id:rows.length+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4});}
+  }else{if(p.plain!==true&&p.storageRestorable!==true)return null;rows.push({id:rows.length+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4});}
  }
  return rows;
 }
@@ -51,7 +54,7 @@ export function roomBackupSurfaceValid(face:IndoorSurface,s:RoomProjectSurface,g
 }
 export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplate,rows:readonly DesignPlacement[],definitions:ReadonlyMap<number,DesignItemGeometry>,finishIds:ReadonlySet<number>,native?:RoomApplySurfaceGeometry):RoomProjectSurface|null{
  const finish=face.finish;if(finish===null||finish!==0&&(!roomFinishIdValid(finish,face.kind)||!finishIds.has(finish)))return null;
- if(rows.length!==face.positions.filter(p=>!p.protected).length||rows.some(p=>{const g=definitions.get(p.itemId);return !g||!!g.supportPath!==!!p.attachment||g.surfaceCapable&&!p.attachment;}))return null;
+ if(rows.length!==face.positions.filter(p=>!roomBackupProtected(p)).length||rows.some(p=>{const g=definitions.get(p.itemId);return !g||!!g.supportPath!==!!p.attachment||g.surfaceCapable&&!p.attachment;}))return null;
  const free=!!native&&indoorFreeFloor(face);
  const timeline=free?{snapshots:[[...rows]],cursor:0,nextId:rows.length+1}:restoreDesign(emptyDesign(),rows,definitions,template.grid.sizeX*template.grid.factor,template.grid.sizeY*template.grid.factor);
  if(!timeline)return null;
@@ -60,7 +63,7 @@ export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplat
  return surface;
 }
 export function capturedRoomDocument(room:IndoorRoom,surfaces:readonly RoomProjectSurface[],templates:readonly RoomDesignTemplate[],backup=false):string|null{
- if(!surfaces.length||surfaces.length!==room.surfaces.length||surfaces.length>ROOM_PROJECT_WALL_LIMIT+1||surfaces.some((s,i)=>s.id!==room.surfaces[i].ordinal||s.template.kind!==room.surfaces[i].kind||currentDesign(s.timeline).length!==room.surfaces[i].positions.filter(p=>!p.protected).length))return null;
+ if(!surfaces.length||surfaces.length!==room.surfaces.length||surfaces.length>ROOM_PROJECT_WALL_LIMIT+1||surfaces.some((s,i)=>s.id!==room.surfaces[i].ordinal||s.template.kind!==room.surfaces[i].kind||currentDesign(s.timeline).length!==room.surfaces[i].positions.filter(p=>!roomBackupProtected(p)).length))return null;
  try{const raw=serializeRoomProject(surfaces,surfaces[0].id);parseRoomProject(raw,templates,backup);return raw;}catch{return null;}
 }
 export const roomCaptureWords={

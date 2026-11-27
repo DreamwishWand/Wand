@@ -74,9 +74,11 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
         let item=item.unwrap();*counts.entry(item).or_default()+=1;
         let coord=|k:&str|obj.get(k).and_then(Value::as_i64).filter(|n|(-1_000_000..=1_000_000).contains(n));
         if let (Some(x),Some(y))=(coord("X"),coord("Y")){let orientation=match obj.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Up")=>Some(0),Some("GridOrientation_Right")=>Some(4),Some("GridOrientation_Down")=>Some(8),Some("GridOrientation_Left")=>Some(12),Some("GridOrientation_UpRight") if kind=="floor"&&factor==Some(1)=>Some(2),Some("GridOrientation_DownRight") if kind=="floor"&&factor==Some(1)=>Some(6),Some("GridOrientation_DownLeft") if kind=="floor"&&factor==Some(1)=>Some(10),Some("GridOrientation_UpLeft") if kind=="floor"&&factor==Some(1)=>Some(14),_=>None};let mut pose=json!({"itemId":item,"x":x,"y":y,"orientationCode":orientation});
-         if factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
-         if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);if ddv_save_patch::storage_pickup_eligible(&root,obj){pose["storageEmpty"]=json!(true);}}
-         if terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
+         let storage_known=crate::storage_source::is_storage(item)||obj.get("State").and_then(|s|s.get("Storage")).is_some();
+         if storage_known{pose["storageKnown"]=json!(true);}
+         if !storage_known&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
+         if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);if ddv_save_patch::storage_pickup_eligible(&root,obj){pose["storageEmpty"]=json!(true);if crate::storage_source::restorable_empty_storage(&root,obj,item){pose["storageRestorable"]=json!(true);}}}
+         if !storage_known&&terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
       }
@@ -367,10 +369,15 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
    if !pickup.is_empty(){
     let free=s.get("freePlacement").and_then(Value::as_bool)==Some(true);
     let mut batches=Vec::<(bool,Vec<Value>)>::new();
-    if free{
+    let mut indices=std::collections::HashSet::new();
+    for p in pickup{
+     let i=p["index"].as_u64().and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+     if !indices.insert(i){return Err(bad);}
+     let original=face["positions"].as_array().and_then(|a|a.get(i)).ok_or(bad)?;
+     if original["storageKnown"]==true&&(p["storageEmpty"]!=true||original["storageRestorable"]!=true){return Err(bad);}
+    }
+    if free||pickup.iter().any(|p|p.get("storageEmpty").is_some()){
      if face["kind"]!="floor"{return Err(bad);}
-     let mut indices=std::collections::HashSet::new();
-     for p in pickup{let i=p["index"].as_u64().ok_or(bad)?;if !indices.insert(i){return Err(bad);}}
      let loose=pickup.iter().filter(|p|p.get("includeSupport").is_none()).cloned().collect::<Vec<_>>();
      let removed=loose.iter().map(|p|p["index"].as_u64().ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
      let mut strict=Vec::new();
@@ -378,7 +385,7 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
       let i=p["index"].as_u64().ok_or(bad)?;let mut p=p.clone();
       p["index"]=json!(i-removed.iter().filter(|n|**n<i).count() as u64);strict.push(p);
      }
-     batches.push((true,loose));batches.push((false,strict));
+     batches.push((free,loose));batches.push((false,strict));
     }else{batches.push((false,pickup.clone()));}
     for (free,batch) in batches{
      if batch.is_empty(){continue;}
