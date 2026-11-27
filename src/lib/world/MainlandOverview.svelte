@@ -7,10 +7,12 @@
  import {islandSaveGrids,islandSaveWords,worldDecorationScope} from './island-save-preset.ts';
  import BiomeNetworkPreset from './BiomeNetworkPreset.svelte';
  import {networkPresetWords} from './biome-network-preset.ts';
- import {buildNetworkMap,networkMapColor,visibleNetworkEdges,type NetworkMapReceipt} from './network-map-display.ts';
+ import {connectedNetworkWords,buildNetworkMap,networkMapColor,visibleNetworkEdges,type NetworkMapReceipt} from './network-map-display.ts';
  import BiomeFurniturePreset from './BiomeFurniturePreset.svelte';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import SubgridInspector from './SubgridInspector.svelte';
+ import SaveSupportMap from './SaveSupportMap.svelte';
+ import {supportMarkerHit,supportMapSearch,supportMapWitnessKey,supportSearchWords,visibleSupportParents,type SupportMapContents,type SupportMapParent} from './support-map-preview.ts';
  import {supportWords,supportParentEligible,supportParentCandidate,type SupportParentCandidate} from './subgrid-local.ts';
  import SaveFurniturePalette from './SaveFurniturePalette.svelte';
  import GroupPickupControls from './GroupPickupControls.svelte';
@@ -137,13 +139,23 @@
  $: if($localSaveSession.revision!==saveRevision){saveRevision=$localSaveSession.revision;resetSaveSelection();}
  function resetSaveSelection(){closeBiome();closeCaptureRegion();resetEditSymmetry();pasteTools?.cancel();closeSupport();closeRoad();selected=null;clearGroup();stopMove();preciseOpen=false;multiMode=false;overlaps=[];furnitureTools?.cancel();}
  let supportOpen=false,supportPlacing=false,supportGhost:SupportParentCandidate|null=null,supportPreview:SupportParentCandidate|null=null,supportInspector:SubgridInspector;
- let initialSupportPoint:{x:number;y:number}|null=null;
+ let initialSupportPoint:{x:number;y:number}|null=null,initialSupportPath:readonly number[]|null=null;
+ let supportContents=new Map<string,SupportMapContents>();
  $: supportDisplay= supportGhost??supportPreview??directParentPreview;
  $: supportText=supportWords[locale];
- $: supportCanMove=!!chosen&&testExport&&furnitureReady&&!furnitureBlocked&&layerSelectable(layerState,chosen.object);
+ $: supportCanMove=!!chosen&&testExport&&furnitureReady&&!furnitureBlocked&&layerSelectable(layerState,chosen.object)&&layerSelectable(layerState,{layer:'surface'});
+ $: supportMapInteractive=saveMode&&furnitureReady&&!furnitureBlocked&&!supportOpen&&!moving&&!furniturePlacing&&!furnitureGhost&&!pasteActive&&!groupPickupActive&&!networkOpen&&!roadSeed&&!biomeOpen&&!captureRegion&&!editSymmetryPicking&&!multiMode;
+ $: supportAllParents=allObjects.filter(p=>p.object.subgrid&&p.shape).map((p):SupportMapParent=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,mapX:p.x,mapY:p.y-p.shape!.height/p.factor,mapW:p.shape!.width/p.factor,mapH:p.shape!.height/p.factor,count:p.object.subgrid?.objectCount,selectable:supportMapInteractive&&layerSelectable(layerState,p.object)&&layerSelectable(layerState,{layer:'surface'})}));
+ $: supportMapParents=visibleSupportParents(supportAllParents,viewport);
+ $: supportSearchParents=supportAllParents.filter(p=>p.selectable&&p.count!==0);
+ $: supportSearchActive=searchOpen&&!!normalized&&layerVisible(layerState,{layer:'surface'})&&supportMapInteractive;
+ $: supportMatches=supportSearchActive?supportMapSearch(supportSearchParents,supportContents,names,normalized):[];
+ $: supportPending=supportSearchActive?supportSearchParents.filter(p=>!supportContents.has(supportMapWitnessKey(p))).length:0;
+ $: supportUnavailable=supportSearchActive?supportSearchParents.filter(p=>supportContents.get(supportMapWitnessKey(p))===null).length:0;
+ $: ssw=supportSearchWords[locale];
  $: if(supportOpen&&(!saveMode||!chosen?.object.subgrid))closeSupport();
- function closeSupport(){supportInspector?.cancel();supportOpen=false;supportPlacing=false;supportGhost=null;supportPreview=null;initialSupportPoint=null;}
- function openSupport(p:MainlandSavedObject|null=chosen){if(!p?.object.subgrid)return;initialSupportPoint=null;resetEditSymmetry();pasteTools?.cancel();closeRoad();closeFurniture();stopMove();searchOpen=false;layersOpen=false;preciseOpen=false;supportOpen=true;}
+ function closeSupport(){supportInspector?.cancel();supportOpen=false;supportPlacing=false;supportGhost=null;supportPreview=null;initialSupportPoint=null;initialSupportPath=null;}
+ function openSupport(p:MainlandSavedObject|null=chosen,child:readonly number[]|null=null){if(!p?.object.subgrid)return;initialSupportPoint=null;initialSupportPath=child;resetEditSymmetry();pasteTools?.cancel();closeRoad();closeFurniture();stopMove();searchOpen=false;layersOpen=false;preciseOpen=false;supportOpen=true;}
  let furnitureOpen=false,furniturePlacing=false,furnitureGhost:StockCandidate|null=null,furnitureTools:SaveFurniturePalette;
  let pasteTools:GroupPasteControls,pasteActive=false,pasteGhost:GroupPasteCandidate|null=null,pasteAxis:WorldSymmetryAxis|null=null;
  $: pasteWords=groupPasteWords[locale];$: sy=groupSymmetryWords[locale];$: sceneText=sceneWords[locale];
@@ -360,6 +372,7 @@ $: cutWords=groupCutWords[locale];
  }
  function startPointer(e:PointerEvent){
   suppressClick=false;clearTransfer();
+  if(e.button===0&&!spacePan&&supportMapInteractive&&supportMarkerHit(e.target))return;
   if(biomeOpen){gesture.begin(e,camera.zoom>1);return;}
   if(captureRegion){if(!startCaptureDrag(e))gesture.begin(e,camera.zoom>1);return;}
   if(editSymmetryPicking){gesture.begin(e,camera.zoom>1&&(e.button===1||spacePan||e.shiftKey||e.pointerType==='touch'));return;}
@@ -445,8 +458,9 @@ $: cutWords=groupCutWords[locale];
  function follow(e:PointerEvent){if(updateCaptureDrag(e))return;if(roadPointer===e.pointerId){const p=pointerPoint(e);if(p)sampleRoadStroke(p);e.preventDefault();return;}if(range?.pointer===e.pointerId){const p=pointerPoint(e);if(p&&(range.moved||Math.hypot(e.clientX-range.clientX,e.clientY-range.clientY)>=5)){if(!range.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{}}range={...range,end:p,moved:true};e.preventDefault();}return;}if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(supportPlacing){supportInspector?.hoverParent(pointerPoint(e));return;}if(pasteActive){pasteTools?.hover(pointerPoint(e));return;}if(furniturePlacing){furnitureTools?.hover(pointerPoint(e));return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: chosen=allObjects.find(p=>p.object.localOrdinal===selected)??null;
- $: adjacentIds=chosen&&(chosen.object.layer==='ground'||chosen.object.layer==='fence')?savedAdjacentNetwork(chosen,projection.objects):[];
- $: adjacentWords=adjacentNetworkWords[locale];
+ $: verifiedAdjacent=chosen?nativeNetwork.components.get(chosen.object.localOrdinal):undefined;
+ $: adjacentIds=verifiedAdjacent?[...verifiedAdjacent]:chosen&&(chosen.object.layer==='ground'||chosen.object.layer==='fence')&&!nativeNetwork.parts.has(chosen.object.localOrdinal)?savedAdjacentNetwork(chosen,projection.objects):[];
+ $: adjacentWords=verifiedAdjacent&&chosen?.object.layer==='fence'?connectedNetworkWords[locale]:adjacentNetworkWords[locale];
  $: adjacentSelectable=adjacentIds.length>1&&adjacentIds.every(id=>allObjects.some(p=>p.object.localOrdinal===id&&layerSelectable(layerState,p.object)));
  $: networkGroup=group.some(p=>p.object.layer==='ground'||p.object.layer==='fence');
 
@@ -463,7 +477,7 @@ $: cutWords=groupCutWords[locale];
  function name(p:MainlandSavedObject,lookup:ReadonlyMap<number,string>){return lookup.get(Number(p.object.itemId))??p.object.name??'—';}
  $: normalized=query.normalize('NFKC').toLocaleLowerCase().trim();
  $: matches=allObjects.filter(p=>layerSelectable(layerState,p.object)&&name(p,names).normalize('NFKC').toLocaleLowerCase().includes(normalized));
- $: if(searchOpen)loadArtwork(matches.slice(0,limit));
+ $: if(searchOpen){loadArtwork(matches.slice(0,limit));loadArtworkIds(supportMatches.slice(0,Math.max(0,limit-matches.length)).map(m=>m.child.itemId));}
  function focus(p:MainlandSavedObject){clearGroup();stopMove();selected=p.object.localOrdinal;const zoom=Math.max(1,Math.min(maxZoom,extent.w/Math.max(12,(p.shape?.width??1)/p.factor*4),extent.h/Math.max(12,(p.shape?.height??1)/p.factor*4)));const clamp=(v:number)=>Math.max(.5/zoom,Math.min(1-.5/zoom,v));camera={zoom,x:clamp((p.x+(p.shape?.width??1)/p.factor/2-extent.x)/extent.w),y:clamp((p.y-(p.shape?.height??1)/p.factor/2-extent.y)/extent.h)};searchOpen=false;}
 
  export let onClose:()=>void;
@@ -528,6 +542,7 @@ $: cutWords=groupCutWords[locale];
   if(saveMode&&furniturePlacing){furnitureTools?.pick({x:p.x,y:p.y});return;}
   if(furnitureGhost){furnitureTools?.cancel();return;}
   if(saveMode&&moving&&chosen&&canMove){if(editAxis){applyCell(Math.floor(p.x*chosen.factor),Math.floor(-p.y*chosen.factor));return;}const q=mainlandSavedDraft(chosen,bound,rasters,saveMaps,timeline,p.x,p.y,chosen.object.orientation);if(q?.next){timeline=q.next;stopMove();}else if(!offerTransfer(chosen,p.x,p.y))hover={x:p.x,y:p.y};return;}
+  if(supportMapInteractive&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey){const hit=supportMarkerHit(e.target),owner=hit&&allObjects.find(o=>o.object.localOrdinal===hit.ordinal&&o.object.subgrid&&layerSelectable(layerState,o.object));if(hit&&owner){clearGroup();selected=owner.object.localOrdinal;openSupport(owner,hit.child===null?null:[hit.child]);return;}}
   if(saveMode){const hit=mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object));if(hit){clearTransfer();if(multiMode||e.ctrlKey||e.metaKey||e.shiftKey)toggleGroup(hit.object.localOrdinal);else{clearGroup();selected=hit.object.localOrdinal;}overlaps=[];return;}clearGroup();selected=null;overlaps=[];return;}
   const hits=mainlandTerrainHits(bound,rasters,p.x,p.y);
   overlaps=hits.length>1?hits:[];if(hits.length===1)onChoose(hits[0].key);
@@ -558,9 +573,10 @@ $: cutWords=groupCutWords[locale];
       {#if showWorldArtwork(p.object,p.shape,cellPixels/p.factor)&&artwork.has(Number(p.object.itemId))}<WorldObjectArtwork href={artwork.get(Number(p.object.itemId))!} width={p.shape.width} height={p.shape.height} flipY/>{/if}
      {:else}<rect width="1" height="1" fill="none" stroke="#e4d2a5" vector-effect="non-scaling-stroke"/>{/if}
      {#if p.shape&&p.object.orientationCode!==null&&cellPixels/p.factor>=8&&p.object.layer!=='ground'&&p.object.layer!=='fence'&&(selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal))}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(p.object.orientationCode)+')'} fill="#fff" stroke="#27313a" stroke-width=".04" pointer-events="none"/>{/if}
-     {#if p.object.subgrid}<circle cx={(p.shape?.width??1)/2} cy={(p.shape?.height??1)/2} r={Math.min(1.5,4*p.factor/Math.max(1,cellPixels))} fill="#d6a6ef" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
+
     </g>
    {/each}
+   <SaveSupportMap file={$localSaveSession.file} parents={supportMapParents} searchParents={supportSearchParents} scanAll={supportSearchActive} bind:cache={supportContents} pixels={cellPixels} {base} {locale} enabled={saveMode&&layerVisible(layerState,{layer:'surface'})&&!furnitureBlocked}/>
    {#each networkEdges as edge (edge.key)}<path d={'M'+edge.x1+' '+edge.y1+'L'+edge.x2+' '+edge.y2} stroke="#39382f" stroke-width=".42" stroke-linecap="round" fill="none" pointer-events="none"/><path d={'M'+edge.x1+' '+edge.y1+'L'+edge.x2+' '+edge.y2} stroke={networkMapColor(edge.base,'fence')} stroke-width=".25" stroke-linecap="round" fill="none" pointer-events="none"/>{/each}
    {#each visibleObjects.filter(p=>selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)) as p (p.object.localOrdinal)}{#if p.shape}<path class="mainland-selection-outline" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="none" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{:else}<rect x={p.x} y={p.y-1/p.factor} width={1/p.factor} height={1/p.factor} fill="none" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}
    {#if biomeOpen}{#each biomeRemoved as p (p.object.localOrdinal)}{#if p.shape}<path class="biome-preset-remove" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="#ef5350" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{#each biomeGhosts.filter(g=>g.x+g.shape.width/g.factor>=viewport.x&&g.x<=viewport.x+viewport.w&&g.y>=viewport.y&&g.y-g.shape.height/g.factor<=viewport.y+viewport.h) as g}<path class="biome-preset-add" d={g.shape.path} transform={'translate('+g.x+' '+g.y+') scale('+1/g.factor+' '+(-1/g.factor)+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{#if Math.min(g.shape.width,g.shape.height)*cellPixels/g.factor>=14&&artwork.has(Number(g.plan.itemId))}<g transform={'translate('+g.x+' '+g.y+') scale('+1/g.factor+' '+(-1/g.factor)+')'}><WorldObjectArtwork href={artwork.get(Number(g.plan.itemId))!} width={g.shape.width} height={g.shape.height} opacity={.65} flipY/></g>{/if}{/each}{/if}
@@ -589,7 +605,7 @@ $: cutWords=groupCutWords[locale];
  </button>
  <MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
- {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} objects={projection.objects} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
+ {#if saveMode}<SubgridInspector bind:this={supportInspector} supports={allObjects.filter(p=>layerSelectable(layerState,p.object))} objects={projection.objects} {saveMaps} open={supportOpen} parent={chosen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {names} {base} {locale} canMove={supportCanMove} {nextRequest} onClose={closeSupport} initialChildPath={initialSupportPath} initialParentPoint={initialSupportPoint} onInitialConsumed={()=>initialSupportPoint=null} bind:placing={supportPlacing} bind:ghost={supportGhost} bind:preview={supportPreview}/>{/if}
  {#if saveMode}<GroupPasteControls bind:this={pasteTools} bind:active={pasteActive} bind:ghost={pasteGhost} bind:axis={pasteAxis} items={pasteSelection} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} omitted={projection.omitted} {locale} blocked={!furnitureReady||furnitureBlocked||!!roadSeed||networkOpen||supportOpen||furniturePlacing||groupPickupActive} {nextRequest} onBegin={beginPaste}/>{/if}
  {#if saveMode}<SaveFurniturePalette bind:this={furnitureTools} open={furnitureOpen} file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} {chosen} objects={projection.objects} omitted={projection.omitted} {locale} blocked={furnitureBlocked} canStart={furnitureReady} {nextRequest} onBegin={beginFurniture} onClose={closeFurniture} bind:placing={furniturePlacing} bind:ghost={furnitureGhost}/>{/if}
  {#if biomeOpen&&worldPresetOpen}<IslandFurniturePreset world={true} bind:region={backupRegion} file={$localSaveSession.file} {worker} grids={bound??[]} {sessions} activeKey={grids[0]?.key??''} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{:else if biomeOpen&&independent&&backupRegion}{#key grids[0]?.key}<IslandFurniturePreset bind:region={backupRegion} file={$localSaveSession.file} {worker} grids={bound??[]} {sessions} activeKey={grids[0]?.key??''} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{/key}{:else if biomeOpen&&independent}<IslandFurniturePreset file={$localSaveSession.file} {worker} grids={islandGrids} {sessions} activeKey={grids[0]?.key??''} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{:else if biomeOpen&&biomeNetwork}<BiomeNetworkPreset file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} {sessions} omitted={projection.omitted} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{:else if biomeOpen}<BiomeFurniturePreset file={$localSaveSession.file} {worker} grids={bound??[]} {rasters} objects={projection.objects} {sessions} omitted={projection.omitted} blocked={!furnitureReady||furnitureBlocked} allowed={testExport} {locale} {nextRequest} {label} onClose={closeBiome} bind:ghosts={biomeGhosts} bind:removed={biomeRemoved}/>{/if}
@@ -602,7 +618,7 @@ $: cutWords=groupCutWords[locale];
    {#if capturePlan&&!capturePlan.valid}<small role="alert">{capturePlan.partial.length||capturePlan.outside.length?crw[6]:crw[7]}</small>{/if}{/if}
    <div><button type="button" disabled={!regionBackupMode&&!capturePlan?.valid} on:click={confirmCaptureRegion}>{regionBackupMode?rgw[1]:crw[8]}</button><button type="button" on:click={closeCaptureRegion}>{crw[9]}</button></div>
   </aside>{/if}
-  {#if saveMode&&searchOpen&&!furnitureOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" data-support={p.object.subgrid?.status} on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#if !matches.length}<small>{sw[6]}</small>{/if}</div></aside>{/if}
+  {#if saveMode&&searchOpen&&!furnitureOpen}<aside class="overview-search"><input type="search" aria-label={sw[0]} placeholder={sw[0]} bind:value={query} on:input={()=>limit=60}/><div class="overview-results" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-120)limit=Math.min(matches.length+supportMatches.length,limit+60);}}>{#each matches.slice(0,limit) as p (p.object.localOrdinal)}<button type="button" data-support={p.object.subgrid?.status} on:click={()=>{if(multiMode)toggleGroup(p.object.localOrdinal);else focus(p);}}>{#if artwork.has(Number(p.object.itemId))}<img src={artwork.get(Number(p.object.itemId))} alt="" loading="lazy"/>{/if}<span>{name(p,names)}</span></button>{/each}{#each supportMatches.slice(0,Math.max(0,limit-matches.length)) as m (m.parent.localOrdinal+':'+m.child.path.join('.'))}<button type="button" on:click={()=>{const p=allObjects.find(p=>p.object.localOrdinal===m.parent.localOrdinal);if(p&&layerSelectable(layerState,p.object)){focus(p);openSupport(p,m.child.path);}}}>{#if artwork.has(m.child.itemId)}<img src={artwork.get(m.child.itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(m.child.itemId)??'—'}<small style="display:block">{ssw[2]} · {names.get(m.parent.itemId)??'—'}</small></span></button>{/each}{#if supportPending}<small role="status">{ssw[0]} · {supportSearchParents.length-supportPending}/{supportSearchParents.length}</small>{/if}{#if supportUnavailable}<small>{ssw[1]} · {supportUnavailable}</small>{/if}{#if !matches.length&&!supportMatches.length&&!supportPending}<small>{sw[6]}</small>{/if}</div></aside>{/if}
  {#if saveMode&&editSymmetryOpen}<aside class="linked-symmetry-panel"><WorldSymmetryControls {locale} value={editSymmetry} width={extent.w} height={extent.h} picking={editSymmetryPicking} showMirror={false} busy={!furnitureReady} onChange={changeEditSymmetry} onPick={()=>{stopMove();editSymmetryPicking=!editSymmetryPicking;}} onMirror={()=>{}}/><button type="button" on:click={()=>{editSymmetryOpen=false;editSymmetryPicking=false;}}>{words[1]}</button></aside>{/if}
  {#if saveMode&&layersOpen}<div class="overview-layers"><WorldLayerControls {locale} state={layerState} disabled={false} onChange={s=>{closeFurniture();layerState=s;selected=null;clearGroup();stopMove();}}/></div>{/if}
  {#if captureError}<p class="save-status" role="alert">{cw[5]} <button type="button" on:click={()=>captureError=false}>{cw[4]}</button></p>{/if}
