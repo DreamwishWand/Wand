@@ -14,6 +14,7 @@ import {fenceFamily,fenceFamilyCandidates} from './fence-family-catalog.ts';
 import {fenceBaseDefinition,fencePitch} from './fence-design.ts';
 import {roadPitch} from './road-design.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
+import {buildingDesignEligible} from './building-design-catalog.ts';
 import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
 import {DESIGN_LIMIT,type DesignCatalogItem,type DesignItemGeometry} from './design-layout.ts';
 import type {PublicCompleteItemMaster} from '../items/public-item-master.ts';
@@ -385,13 +386,15 @@ scope.onmessage=async({data})=>{
     if(data.command==='design-catalog'){
       const locale=data.locale as WandLanguage;
       const [definitions,names]=await Promise.all([loadGeometry(),(await getMaster()).getBrowseNames(locale)]);
-      const localized=new Map(names),items:DesignCatalogItem[]=[];
+      const localized=new Map(names),items:DesignCatalogItem[]=[],buildingCache=data.allowBuildings===true?createSourceGeometryCache(publicShapeSource(grid,definitions),grid.factor):null;
       for(const [key,d] of definitions){
         const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
-        if(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select'))continue;
-        const layer=sourceMapLayer('Furniture',itemId,footprint.acceptedFloorTypesFlag??null);
-        if(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d))continue;
-        items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer});
+        const building=data.allowBuildings===true&&buildingDesignEligible(itemId,d);
+        if(!building&&(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select')))continue;
+        const layer=sourceMapLayer(building?'Building':'Furniture',itemId,footprint?.acceptedFloorTypesFlag??null);
+        if(!building&&(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d)))continue;
+        if(building&&!buildingCache?.resolve(itemId,8).shapeKey)continue;
+        items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer,...(building?{nativeType:'Building' as const}:{})});
       }
       items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;
@@ -404,13 +407,14 @@ scope.onmessage=async({data})=>{
       const results:DesignItemGeometry[]=[];
       let runs=0;
       for(const itemId of ids as number[]){
-        if(definitions.get(String(itemId))?.nativeType!=='Furniture')throw Error('item type');
+        const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition);
+        if(!building&&definition?.nativeType!=='Furniture')throw Error('item type');
         const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
-        if(!item.shapeKey||item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
+        if(!item.shapeKey||!building&&item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
         for(const code of [0,4,12])cache.resolve(itemId,code);
         runs+=Object.values(cache.shapes).reduce((n,shape)=>n+shape.runs.length,0);
         if(runs>1_000_000)throw Error('geometry limit');
-        results.push({itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes});
+        results.push({itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes,...(building?{nativeType:'Building' as const}:{})});
       }
       scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }

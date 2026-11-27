@@ -9,10 +9,10 @@ import {CARDINAL_ORIENTATIONS,exclusiveAnchorClass} from './saved-map-transform.
 import {nativeActionBlocked,type NativeEditRestrictions} from './native-edit-restrictions.ts';
 import type {MapObjectLayer} from './source-map-layers.ts';
 export interface DesignCatalogItem{
- readonly itemId:number;readonly name:string;readonly layer:MapObjectLayer;
+ readonly itemId:number;readonly name:string;readonly layer:MapObjectLayer;readonly nativeType?:'Building';
 }
 export interface DesignItemGeometry{
- readonly itemId:number;readonly name:string|null;readonly layer:MapObjectLayer;
+ readonly itemId:number;readonly name:string|null;readonly layer:MapObjectLayer;readonly nativeType?:'Building';
  readonly surfaceCapable:boolean;readonly supportPath?:string;readonly editRestrictions?:NativeEditRestrictions;
  readonly shapes:Readonly<Record<string,SourceObjectShape>>;
 }
@@ -68,7 +68,7 @@ export function designShapeMap(placements:readonly DesignPlacement[],definitions
   const code=p.orientation*4,key=p.itemId+':'+code;
   objects.push({localOrdinal:p.id,localGridOrdinal:1,itemId:String(p.itemId),x:p.x,y:p.y,
    orientation:CARDINAL_ORIENTATIONS[p.orientation],orientationCode:code,shapeKey:shapes[key]?key:null,
-   name:g.name,layer:g.layer,surfaceCapable:g.surfaceCapable,editRestrictions:g.editRestrictions});
+   name:g.name,layer:g.layer,surfaceCapable:g.surfaceCapable,editRestrictions:g.editRestrictions,...(g.nativeType?{nativeType:g.nativeType}:{})});
  }
  return {layoutId:grid.layoutId,gridIdNative:grid.gridIdNative,gridDataPath:grid.gridDataPath,sourceGridFactor:grid.factor,
   objects,shapes,actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};

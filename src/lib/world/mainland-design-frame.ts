@@ -4,7 +4,7 @@
  * No virtual GridData path is ever passed to a source or save reader. */
 import {bindMainland,mainlandExtent,sourceWorldScope,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
-import type {TerrainRaster} from './terrain-binding.ts';
+import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {DesignItemGeometry,DesignPlacement,DesignTimeline} from './design-layout.ts';
 import {currentDesign,DESIGN_LIMIT,DESIGN_FILE_LIMIT,parseDesign,serializeDesign,emptyDesign,restoreDesign} from './design-layout.ts';
 import {roadPitch,localNetworkScope,type NetworkScope} from './road-design.ts';
@@ -64,6 +64,7 @@ export function mainlandItemsValid(f:MainlandDesignFrame|null,items:readonly Pic
   const g=defs.get(p.itemId),s=g?.shapes[p.itemId+':'+p.orientation*4];
   if(!g||!s||g.layer==='surface')return false;
   const target=resolveMainlandDesign(f,p.x,p.y,s);if(!target)return false;
+  if(g.nativeType==='Building'&&terrainWarnings({raster:f.raster,factor:1,verifiedGridOrdinals:[]},s,p.x,p.y).length)return false;
   const kind=exclusiveAnchorClass(String(p.itemId));
   if(kind){const pitch=kind==='ground'?roadPitch(g,target.grid.factor):fencePitch(g,target.grid.factor);return !!pitch&&p.orientation===2&&target.x%pitch===0&&target.y%pitch===0;}
   return true;
