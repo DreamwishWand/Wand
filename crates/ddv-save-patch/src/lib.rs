@@ -1442,11 +1442,15 @@ fn validate_support_grid_destination(source:&str,d:&PlainGridDestination,item_id
  validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Furniture/")
 }
 fn validate_local_grid_destination(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,prefix:&str)->Result<(),PatchError>{
+ validate_local_grid_destination_mode(source,d,item_id,xy,orientation,prefix,false)
+}
+fn validate_local_grid_destination_mode(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,prefix:&str,free:bool)->Result<(),PatchError>{
+ if free&&(!prefix.eq("GridData/Rooms/")||!d.data_path.starts_with("GridData/Rooms/Room")){return Err(PatchError::InvalidTarget);}
  if item_id/100_000!=400||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||
     !d.data_path.starts_with(prefix)||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
     xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
-    !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(PatchError::InvalidTarget);}
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let g=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
@@ -1455,7 +1459,7 @@ fn validate_local_grid_destination(source:&str,d:&PlainGridDestination,item_id:u
     g.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
     c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|v|v.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
  let objects=g.get("Objects").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
- if objects.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1))){return Err(PatchError::AmbiguousTarget);}
+ if !free&&objects.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1))){return Err(PatchError::AmbiguousTarget);}
  Ok(())
 }
 pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
@@ -1466,6 +1470,12 @@ pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item
 /// Exact room ownership and source raster are resolved by the codec first.
 pub fn preview_indoor_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
  validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Rooms/")?;
+ let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
+ insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
+}
+/// Explicit experimental placement on an exclusively owned native room floor.
+pub fn preview_free_indoor_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ validate_local_grid_destination_mode(source,d,item_id,xy,orientation,"GridData/Rooms/",true)?;
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }

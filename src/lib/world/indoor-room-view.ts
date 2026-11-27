@@ -3,14 +3,14 @@
 export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
 import type {SourceObjectShape} from "./source-object-map.ts";
-import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode} from './saved-map-transform.ts';
 import {ROOM_CUT_LIMIT,rotateFurnitureGroup,type CutWitness} from './group-paste.ts';
 import type {DesignClipItem,DesignItemGeometry} from './design-layout.ts';
 import {reflectedDesignItem,type DesignSymmetry} from './design-symmetry.ts';
 import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
 import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,supportSceneRootCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
-export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null;plain?:true}
+export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
@@ -27,7 +27,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    const seen=new Set<number>();
    const items:IndoorItem[]=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
-   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&p.plain===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||p.orientationCode===0||p.orientationCode===4||p.orientationCode===8||p.orientationCode===12)||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{})};});
+   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&p.plain===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||[0,2,4,6,8,10,12,14].includes(p.orientationCode as number))||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{})};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
    let terrain:TerrainRaster|undefined,sourcePath:string|undefined;
    if(s.terrain!==undefined){
@@ -100,10 +100,14 @@ export const indoorShapeWords={ja:'原本の家具形状（実際の占有状態
 export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number;includeSupport?:true}
 export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
  if(!face||face.gridStatus!=='full'||!face.factor||face.missingPositions||face.positions.length>5000)return null;
- return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':CARDINAL_ORIENTATIONS[p.orientationCode/4],child:null}))};
+ return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':EIGHT_WAY_ORIENTATIONS[p.orientationCode/2],child:null}))};
 }
 function indoorShape(o:SupportTree['objects'][number],shapes:Readonly<Record<string,SourceObjectShape>>){
- return shapes[o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4];
+ return shapes[o.itemId+':'+(worldOrientationCode(o.orientation)??-4)];
+}
+export function indoorHitIndices(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,x:number,y:number):number[]{
+ if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))return [];
+ return tree.objects.flatMap((o,i)=>indoorShape(o,shapes)?.runs.some(run=>y===o.y+run.y&&x>=o.x+run.x&&x<o.x+run.x+run.width)?[i]:[]);
 }
 function indoorClear(t:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,index:number):boolean{
  const a=t.objects[index],s=a&&indoorShape(a,shapes);if(!a||!s||s.cellCount>65536)return false;
@@ -130,15 +134,15 @@ export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Recor
  const t=indoorEditableTree(face);if(!t||!t.objects[first]||!indoorClear(t,shapes,first))return [];
  return t.objects.flatMap((_,i)=>supportChildEdits(t,shapes,allowed,first,i,1)&&indoorClear(t,shapes,i)?[i]:[]);
 }
-export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup|null{
- const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!CARDINAL_ORIENTATIONS.includes(o.orientation as typeof CARDINAL_ORIENTATIONS[number])||t.objects.filter(p=>p.x===o.x&&p.y===o.y).length!==1)return null;
+export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false):IndoorPickup|null{
+ const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!(free?indoorFreeFloor(face)&&face?.positions[index]?.plain===true&&isEightWay(o.orientation):isCardinal(o.orientation)&&t.objects.filter(p=>p.x===o.x&&p.y===o.y).length===1))return null;
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
  return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
 }
-export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,supports:ReadonlySet<number>=new Set()):IndoorPickup[]|null{
+export function indoorGroupPickup(face:IndoorSurface|null,indices:readonly number[],removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,supports:ReadonlySet<number>=new Set(),free=false):IndoorPickup[]|null{
  if(!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const counts=new Map<number,number>(),rows:IndoorPickup[]=[];
- for(const index of indices){const row=indoorPickup(face,index,removable,stock);if(!row)return null;
+ for(const index of indices){const row=indoorPickup(face,index,removable,stock,free&&!supports.has(index));if(!row)return null;
   const count=(counts.get(row.itemId)??0)+1;if(row.expectedStock+count>2147483647)return null;
   counts.set(row.itemId,count);rows.push(supports.has(index)?{...row,includeSupport:true}:row);
  }
@@ -156,12 +160,35 @@ export const indoorEditWords={
 } as const;
 
 export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string;supportSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string};scene?:SupportScene}
-export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string){
+/** Free room editing is limited to known, stateless furniture on an owned floor. */
+export function indoorFreeFloor(face:IndoorSurface|null):boolean{return !!face&&face.kind==='floor'&&face.gridStatus==='full'&&!!face.factor&&!!face.terrain&&face.sourcePath?.startsWith('GridData/Rooms/Room')===true;}
+function freeRoomPose(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,itemId:number,x:number,y:number,orientation:string):boolean{
+ if(!indoorFreeFloor(face)||!face?.terrain||!face.factor||Math.floor(itemId/100000)!==400||!isEightWay(orientation)||!isCardinal(orientation)&&face.factor!==1||![x,y].every(Number.isSafeInteger)||x<0||y<0||x>=face.terrain.sizeX*face.factor||y>=face.terrain.sizeY*face.factor)return false;
+ const shape=shapes[itemId+':'+worldOrientationCode(orientation)];return !!shape&&shape.cellCount>0&&shape.cellCount<=65536;
+}
+export function indoorFreeTransform(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string):SupportChildEdit[]|null{
+ const t=indoorEditableTree(face),o=t?.objects[index],next=orientation??o?.orientation;
+ if(!o||!next||face?.positions[index]?.plain!==true||!allowed.has(o.itemId)||!isEightWay(o.orientation)||!freeRoomPose(face,shapes,o.itemId,x,y,next)||x===o.x&&y===o.y&&next===o.orientation)return null;
+ return [{index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,x,y,orientation:next}];
+}
+export function indoorFreeRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,turn:-1|1){
+ const p=face?.positions[index];if(!p||p.orientationCode===null)return null;
+ const step=face?.factor===1?1:2,orientation=EIGHT_WAY_ORIENTATIONS[(p.orientationCode/2+turn*step+8)%8];
+ return indoorFreeTransform(face,shapes,allowed,index,p.x,p.y,orientation);
+}
+export function indoorFreeMoveGroup(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number):SupportChildEdit[]|null{
+ const t=indoorEditableTree(face),o=t?.objects[anchor];if(!o||!indices.includes(anchor)||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const rows=indices.map(i=>{const p=t!.objects[i];return p?indoorFreeTransform(face,shapes,allowed,i,p.x+x-o.x,p.y+y-o.y):null;});
+ return rows.some(r=>!r)?null:rows.flatMap(r=>r!);
+}
+export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string,free=false){
+ if(free)return indoorFreeTransform(face,shapes,allowed,index,x,y,orientation);
  const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
 }
 /** Translate selected native records together; their old cells may be reused.
  * The final footprints must fit the original room and all stationary objects. */
-export function indoorGroupMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number):SupportChildEdit[]|null{
+export function indoorGroupMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number,free=false):SupportChildEdit[]|null{
+ if(free)return indoorFreeMoveGroup(face,shapes,allowed,indices,anchor,x,y);
  const tree=indoorEditableTree(face),selected=new Set(indices),origin=tree?.objects[anchor];
  if(!tree||!face?.terrain||!origin||!selected.has(anchor)||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length||![x,y].every(Number.isSafeInteger))return null;
  const dx=x-origin.x,dy=y-origin.y;
@@ -297,42 +324,42 @@ export const indoorAlignWords={
 } as const;
 export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Move selected furniture',fr:'Déplacer les meubles sélectionnés',it:'Sposta mobili selezionati',de:'Ausgewählte Möbel verschieben','es-ES':'Mover muebles seleccionados','zh-CN':'移动所选家具','pt-BR':'Mover móveis selecionados'} as const;
 
-export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string):IndoorPlace|null{
- const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation)?{itemId,expectedStock:n,x,y,orientation}:null;
+export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string,free=false):IndoorPlace|null{
+ const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&(free?freeRoomPose(face,shapes,itemId,x,y,orientation):supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation))?{itemId,expectedStock:n,x,y,orientation}:null;
 }
 /** Copy only layout poses; the original objects remain in place and all
  * new records must fit the actual room and available furniture stock. */
-export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>):DesignClipItem[]|null{
+export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false):DesignClipItem[]|null{
  const tree=indoorEditableTree(face);
  if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const counts=new Map<number,number>(),clip:DesignClipItem[]=[];
  for(const i of indices){
-  const o=tree.objects[i];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i))return null;
+  const o=tree.objects[i];if(!o||!(free?face.positions[i]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
   const count=(counts.get(o.itemId)??0)+1;if(count>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,count);
-  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:(worldOrientationCode(o.orientation)??-4)/4});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));return clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
-export function indoorGroupPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],x:number,y:number):IndoorPlace[]|null{
+export function indoorGroupPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],x:number,y:number,free=false):IndoorPlace[]|null{
  const tree=indoorEditableTree(face);
  if(!tree||!face?.terrain||!clip.length||clip.length>ROOM_CUT_LIMIT||tree.objects.length+clip.length>512||![x,y].every(Number.isSafeInteger))return null;
  const staged={...tree,objects:[...tree.objects]},counts=new Map(stock),rows:IndoorPlace[]=[];
  for(const p of clip){
-  const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation],n=counts.get(p.itemId);
-  if(!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!orientation||!allowed.has(p.itemId)||n===undefined||n<1||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2],n=counts.get(p.itemId);
+  if(!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!orientation||!allowed.has(p.itemId)||n===undefined||n<1||!(free?freeRoomPose(face,shapes,p.itemId,px,py,orientation):supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation)))return null;
   rows.push({itemId:p.itemId,x:px,y:py,orientation,expectedStock:n});counts.set(p.itemId,n-1);staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
  }
  return rows;
 }
 /** Existing portable Wand Scene format, not a whole-room backup.
  * Require a positive leaf-record witness; never silently drop saved state. */
-export function captureIndoorScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>):ScenePreset|null{
+export function captureIndoorScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,free=false):ScenePreset|null{
  const tree=indoorEditableTree(face);
  if(!tree||!face?.terrain||!face.factor||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const clip:DesignClipItem[]=[];
  for(const i of indices){
-  const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i))return null;
-  clip.push({itemId:o.itemId,dx:o.x,dy:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+  const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
+  clip.push({itemId:o.itemId,dx:o.x,dy:o.y,orientation:(worldOrientationCode(o.orientation)??-4)/4});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  try{return sceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),face.factor,'corner');}catch{return null;}
@@ -356,19 +383,19 @@ export function captureIndoorMixedScene(face:IndoorSurface|null,indices:readonly
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  try{return mixedSceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),scenes,'corner');}catch{return null;}
 }
-export function indoorSceneClip(text:string,factor:1|2):{clip:DesignClipItem[];anchor:ScenePreset['anchor']}{
+export function indoorSceneClip(text:string,factor:1|2,free=false):{clip:DesignClipItem[];anchor:ScenePreset['anchor']}{
  const scene=convertSceneFactor(parseSceneAnyFactor(text),factor);
- if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation)))throw Error('INDOOR_SCENE_UNSUPPORTED');
+ if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation)&&(!free||factor!==1)))throw Error('INDOOR_SCENE_UNSUPPORTED');
  return {clip:scene.items.map(p=>({...p,dx:p.dx*2/factor,dy:p.dy*2/factor})),anchor:scene.anchor};
 }
-export function indoorScenePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number){
+export function indoorScenePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number,free=false){
  if(!face?.factor)return null;
  if(anchor==='center'){
   let width=0,height=0;
   for(const p of clip){const s=shapes[p.itemId+':'+p.orientation*4];if(!s)return null;width=Math.max(width,p.dx*face.factor/2+s.width);height=Math.max(height,p.dy*face.factor/2+s.height);}
   x-=Math.floor((width-1)/2);y-=Math.floor((height-1)/2);
  }
- return indoorGroupPlace(face,shapes,allowed,stock,clip,x,y);
+ return indoorGroupPlace(face,shapes,allowed,stock,clip,x,y,free);
 }
 export const indoorSceneWords={
  ja:['面全体のSceneを保存','家具と対応する支持面の配置。床材・壁紙は含みません。','Sceneを配置できません。形状・在庫・対応数を確認してください。'],
@@ -435,7 +462,7 @@ export function rotateIndoorCut(clip:readonly DesignClipItem[],factor:1|2|null,s
  if(!factor)return null;
  const defs=new Map<number,Map<number,DesignItemGeometry>>();
  for(const p of clip){
-  const g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].flatMap(code=>{const key=p.itemId+':'+code;return shapes[key]?[[key,shapes[key]]]:[];}))};
+  const g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries((factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).flatMap(code=>{const key=p.itemId+':'+code;return shapes[key]?[[key,shapes[key]]]:[];}))};
   defs.set(p.itemId,new Map([[factor,g]]));
  }
  return rotateFurnitureGroup(clip,defs,delta);

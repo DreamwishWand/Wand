@@ -182,17 +182,18 @@ scope.onmessage=async({data})=>{
     if(data.command==='indoor-shapes'||data.command==='support-shapes'){
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
       const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:await loadGeometry()},data.factor);
-      const keys=new Set<string>(),editable=new Set<number>(),removable=new Set<number>();
+      const keys=new Set<string>(),editable=new Set<number>(),removable=new Set<number>(),freeEligible=new Set<number>();
       for(const row of data.items){
-        if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||![0,4,8,12].includes(row.orientationCode))throw Error('indoor item');
+        if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||!(data.command==='indoor-shapes'&&data.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).includes(row.orientationCode))throw Error('indoor item');
         const key=row.itemId+':'+row.orientationCode;if(keys.has(key))continue;keys.add(key);
         const obj=cache.resolve(row.itemId,row.orientationCode);
+        if(data.command==='indoor-shapes'&&obj.shapeKey&&obj.layer==='furniture'&&!obj.surfaceCapable&&Math.floor(row.itemId/100000)===400)freeEligible.add(row.itemId);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'move')&&!nativeActionBlocked(obj.editRestrictions,'rotate'))editable.add(row.itemId);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'remove'))removable.add(row.itemId);
       }
       let terrain:TerrainRaster|null=null;
       if(data.command==='support-shapes'){try{terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);}catch{/* Unsupported source path is read-only. */}}
-      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],...(data.command==='support-shapes'?{terrain}:{})});return;
+      scope.postMessage({kind:data.command,requestId:id,shapes:cache.shapes,editable:[...editable],removable:[...removable],freeEligible:[...freeEligible],...(data.command==='support-shapes'?{terrain}:{})});return;
     }
     if(data.command==='room-project-names'){
       if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&n>0))throw Error('room names');

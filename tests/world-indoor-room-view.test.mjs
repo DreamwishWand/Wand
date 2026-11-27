@@ -200,3 +200,22 @@ test('linked room rotation and placement use exact native pairs and joint stock'
  assert.deepEqual(rows.map(p=>[p.x,p.y,p.expectedStock]),[[1,3,2],[6,3,1]]);
  assert.equal(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,1]]),clip,'corner',1,3,axis),null);
 });
+
+import {indoorFreeRotate,indoorFreeMoveGroup,indoorHitIndices,indoorEditableTree} from '../src/lib/world/indoor-room-view.ts';
+test('free floor editor restores repeated anchors and native diagonal Scene poses',()=>{
+ const itemId=40000001,p={itemId,x:1,y:1,orientationCode:8,plain:true},b={...p,x:2,orientationCode:10};
+ const floor={...face,positions:[p,b],items:[{itemId,quantity:2}],missingPositions:0,sourcePath:'GridData/Rooms/Room8x8-GridData.json',terrain:{sizeX:4,sizeY:4,nativeFloorValues:new Uint32Array(16)}};
+ const shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],acceptedFloorTypesFlag:1024,path:'M0 0h2v1H0Z'},shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(code=>[itemId+':'+code,shape]));
+ const allowed=new Set([itemId]),stock=new Map([[itemId,2]]);
+ assert.equal(indoorMove(floor,shapes,allowed,0,2,1),null);
+ assert.equal(indoorMove(floor,shapes,allowed,0,2,1,undefined,true)[0].x,2);
+ assert.equal(indoorFreeRotate(floor,shapes,allowed,0,1)[0].orientation,'GridOrientation_DownLeft');
+ assert.deepEqual(indoorHitIndices(indoorEditableTree(floor),shapes,2,1),[0,1]);
+ assert.equal(indoorFreeMoveGroup(floor,shapes,allowed,[0,1],0,1,0).length,2);
+ assert.equal(indoorMove(floor,shapes,allowed,0,4,0,undefined,true),null);
+ assert.equal(indoorMove({...floor,kind:'wall'},shapes,allowed,0,2,1,undefined,true),null);
+ assert.equal(indoorMove({...floor,positions:[{...p,plain:undefined},b]},shapes,allowed,0,2,1,undefined,true),null);
+ const scene=captureIndoorScene(floor,[0,1],shapes,allowed,true);assert.deepEqual(scene.items.map(p=>p.orientation),[2,2.5]);
+ const clip=indoorSceneClip(JSON.stringify(scene),1,true).clip,rows=indoorGroupPlace(floor,shapes,allowed,stock,clip,2,1,true);assert.equal(rows.length,2);assert.equal(rows[1].orientation,'GridOrientation_DownLeft');assert.equal(rows[1].expectedStock,1);
+ assert.throws(()=>indoorSceneClip(JSON.stringify(scene),1));
+});
