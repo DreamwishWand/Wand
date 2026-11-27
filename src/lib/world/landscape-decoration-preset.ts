@@ -1,8 +1,7 @@
-import {landscapeSourceEligible,stockFootprintFeedback,type StockCandidate} from './save-furniture-placement.ts';
+import {landscapeSourceEligible,landscapePlacementEligible,stockFootprintFeedback,type StockCandidate} from './save-furniture-placement.ts';
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
-import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignItemGeometry} from './design-layout.ts';
 export interface LandscapePose{itemId:number;x:number;y:number;orientation:number}
@@ -26,7 +25,7 @@ export function reviewLandscape(g:MainlandGrid,grids:readonly MainlandGrid[],ras
  const destination={layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};
  for(const p of after){if(old.has(landscapePoseKey(p)))continue;
   const def=defs.get(p.itemId),shape=def?.shapes[p.itemId+':'+p.orientation*4];
-  if(!def||def.surfaceCapable||def.supportPath||def.layer!=='landscape'||def.editRestrictions?.remove!=='allowedFlag'||nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
+  if(!def||!landscapePlacementEligible(def)||!shape||!shape.cellCount||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,p.x,p.y).length)return null;
   for(const run of shape.runs)for(let x=0;x<run.width;x++){const a=mainlandMapAnchor(g,p.x+run.x+x+.5,p.y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,a.x,a.y);if(hits.length!==1||hits[0].key!==g.key)return null;}
   const ghost:StockCandidate={area:g.key,...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape,destination,plan:{action:'place',itemId:String(p.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS[p.orientation]}};
   const overlap=stockFootprintFeedback(ghost,remaining);if(overlap.unknown||overlap.overlaps)return null;

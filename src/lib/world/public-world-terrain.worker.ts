@@ -386,6 +386,9 @@ scope.onmessage=async({data})=>{
     if(data.command==='design-catalog'){
       const locale=data.locale as WandLanguage;
       const [definitions,names]=await Promise.all([loadGeometry(),(await getMaster()).getBrowseNames(locale)]);
+      const landscapeOnly=data.landscapeOnly===true;
+      if(landscapeOnly){supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});}
+      const landscapeSupports=landscapeOnly?await supportPaths:null;
       const localized=new Map(names),items:DesignCatalogItem[]=[],buildingCache=data.allowBuildings===true?createSourceGeometryCache(publicShapeSource(grid,definitions),grid.factor):null;
       for(const [key,d] of definitions){
         const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
@@ -393,6 +396,7 @@ scope.onmessage=async({data})=>{
         if(!building&&(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select')))continue;
         const layer=sourceMapLayer(building?'Building':'Furniture',itemId,footprint?.acceptedFloorTypesFlag??null);
         if(!building&&(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d)))continue;
+        if(landscapeOnly&&(layer!=='landscape'||Math.floor(itemId/100000)!==402||sourceEditRestrictions(d).remove!=='allowedFlag'||((footprint?.acceptedFloorTypesFlag??0)&4096)!==0||!!(landscapeSupports?.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath))continue;
         if(building&&!buildingCache?.resolve(itemId,8).shapeKey)continue;
         items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer,...(building?{nativeType:'Building' as const}:{})});
       }
@@ -405,6 +409,9 @@ scope.onmessage=async({data})=>{
       if(!Array.isArray(ids)||ids.length>DESIGN_LIMIT||new Set(ids).size!==ids.length||!ids.every(id=>Number.isSafeInteger(id)&&id>=1&&id<=0xffffffff))throw Error('items');
       const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions);
       const results:DesignItemGeometry[]=[];
+      const landscapeCheck=(ids as number[]).some(id=>Math.floor(id/100000)===402);
+      if(landscapeCheck){supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});}
+      const landscapeSupports=landscapeCheck?await supportPaths:null;
       let runs=0;
       for(const itemId of ids as number[]){
         const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition);
@@ -414,7 +421,8 @@ scope.onmessage=async({data})=>{
         for(const code of [0,4,12])cache.resolve(itemId,code);
         runs+=Object.values(cache.shapes).reduce((n,shape)=>n+shape.runs.length,0);
         if(runs>1_000_000)throw Error('geometry limit');
-        results.push({itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes,...(building?{nativeType:'Building' as const}:{})});
+        const supportPath=(landscapeSupports?.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath;
+        results.push({itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes,...(supportPath?{supportPath}:{}),...(building?{nativeType:'Building' as const}:{})});
       }
       scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }
