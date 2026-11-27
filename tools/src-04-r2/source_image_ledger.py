@@ -2,6 +2,7 @@
 """Shared verified original-pixel and thumbnail ledger for Memory and Story assets."""
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 from bundle_thumbnails import POLICY, MAX_EDGE, write_json, image_info
@@ -37,6 +38,35 @@ def thumbnail(ledger,o):
     if not ledger:return None
     sha=ledger["thumbnails"].get(o["sha256"])
     return ledger["images"][sha] if sha else None
+
+def stage_missing_thumbnail(root, native, o, ledger, cache_name):
+    """A new display role needs only a new thumbnail, never a new original."""
+    if max(o["width"],o["height"])<=MAX_EDGE or thumbnail(ledger,o):
+        return
+    from PIL import Image
+    cache_path=root/cache_name
+    cache=json.loads(cache_path.read_bytes()) if cache_path.is_file() else {}
+    if cache.get("policy")!=POLICY:cache={"policy":POLICY,"images":{}}
+    old=cache["images"].get(o["sha256"])
+    if old:
+        p=root/key(old["sha256"])
+        if p.is_file() and image_info(p.read_bytes(),old["sha256"])==old:
+            return
+    resized=native.copy()
+    resized.thumbnail((MAX_EDGE,MAX_EDGE),Image.Resampling.LANCZOS)
+    buf=io.BytesIO()
+    resized.save(buf,format="WEBP",lossless=True,quality=100,method=6,exact=True)
+    raw=buf.getvalue()
+    with Image.open(io.BytesIO(raw)) as im:
+        check(im.convert("RGBA").tobytes()==resized.tobytes(),"Thumbnail roundtrip mismatch")
+    m=image_info(raw,hashlib.sha256(raw).hexdigest())
+    p=root/key(m["sha256"])
+    p.parent.mkdir(parents=True,exist_ok=True)
+    if p.is_file():check(p.read_bytes()==raw,"Thumbnail collision")
+    else:
+        with p.open("xb") as stream:stream.write(raw)
+    cache["images"][o["sha256"]]=m
+    write_json(cache_path,cache)
 
 def verify_local_or_published(root,m,ledger=None):
     p=(root/key(m["sha256"])).resolve()
