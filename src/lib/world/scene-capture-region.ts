@@ -24,7 +24,7 @@ export function resizeCaptureRegion(r:CaptureRegion,extent:CaptureRegion,edge:'m
  if(edge.startsWith('n'))b=clamp(b+dy,extent.y,h-.5);else h=clamp(h+dy,b+.5,extent.y+extent.h);
  return {x:l,y:b,w:t-l,h:h-b};
 }
-export function captureRegionPlan(region:CaptureRegion,selected:readonly MainlandSavedObject[],all:readonly MainlandSavedObject[],options:CaptureOptions,omitted=0){
+export function captureRegionPlan(region:CaptureRegion,selected:readonly MainlandSavedObject[],all:readonly MainlandSavedObject[],options:CaptureOptions,omitted=0,free=false){
  const selectedIds=new Set(selected.map(p=>p.object.localOrdinal));
  const relevant=all.filter(p=>{const kind=network(p);return kind==='road'?options.roads:kind==='fence'?options.fences:selectedIds.has(p.object.localOrdinal);});
  const intersects=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
@@ -35,7 +35,7 @@ export function captureRegionPlan(region:CaptureRegion,selected:readonly Mainlan
  // Mode is read by the existing WASM capture. Until then conservatively
  // include diagonal neighbors too, rather than silently sever a network.
  const outside=all.filter(p=>!ids.has(p.object.localOrdinal)&&((options.roads&&network(p)==='road'&&roads.some(q=>q.area===p.area&&q.object.localGridOrdinal===p.object.localGridOrdinal&&q.object.itemId===p.object.itemId&&Math.abs(q.x-p.x)<=2&&Math.abs(q.y-p.y)<=2))||(options.fences&&network(p)==='fence'&&fences.some(q=>q.area===p.area&&q.object.localGridOrdinal===p.object.localGridOrdinal&&Math.abs(q.x-p.x)<=8&&Math.abs(q.y-p.y)<=8))));
- const supported=!!captureAreaPoses(items)||!!captureFurnitureGroup(items,true)&&(!items.some(p=>p.object.subgrid)||items.length<=SCENE_FURNITURE_LIMIT);
+ const supported=!!captureFurnitureGroup(items,false,free)||!!captureAreaPoses(items)||!!captureFurnitureGroup(items,true)&&(!items.some(p=>p.object.subgrid)||items.length<=SCENE_FURNITURE_LIMIT);
  return {items,partial,outside,roads:roads.length,fences:fences.length,furniture:items.length-roads.length-fences.length,valid:supported&&!partial.length&&!outside.length&&(!(roads.length||fences.length)||omitted===0)};
 }
 export const captureRegionWords={
