@@ -942,6 +942,35 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+/// State-free landscape only, using an observed source record and a resolved outdoor
+/// destination. No inventory, ownership or collection mutation.
+pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    if target.item_id/100_000!=402||!matches!(destination.tessellation,1|2)||destination.size.0==0||destination.size.1==0||
+       destination.size.0>65536||destination.size.1>65536||replacement.0<0||replacement.1<0||
+       replacement.0 as u32>=destination.size.0*destination.tessellation||replacement.1 as u32>=destination.size.1*destination.tessellation||
+       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+    // Exercise the same exact plain-record guard without retaining the removal.
+    let _=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+    let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+    let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+    let from=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
+    let to=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
+    let scope=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).and_then(full_grid_scope).ok_or(PatchError::InvalidTarget)?;
+    if full_grid_scope(&destination.layout_path)!=Some(scope)||
+       !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|p|outdoor_world_path(scope,p))||
+       !outdoor_world_path(scope,&destination.data_path)||
+       from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
+       to.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
+       to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
+       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
+       from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)||
+       collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&destination.grid_id)))||
+       to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::InvalidTarget);}
+    insert_plain_grid_record(source,destination,target.item_id,replacement,orientation)
+}
+
 /// Experimental cardinal Main Street road cells. Inherited v1.25 direct
 /// writer semantics: ownership and Collection remain unchanged. This is
 /// deliberately not the ordinary furniture stock transaction.

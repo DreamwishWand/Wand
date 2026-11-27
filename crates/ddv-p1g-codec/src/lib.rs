@@ -2231,6 +2231,13 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(draft,true)
         }
 
+        pub fn prepare_landscape_experimental_copy(&mut self,plan:&str,destination:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_LANDSCAPE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let draft=grid_instance_preview::landscape_candidate(original,plan,destination).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(draft,true)
+        }
         pub fn prepare_furniture_stock_experimental_copy(&mut self,plan:&str,destination:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             if !allow_experimental_copy{return Err(fail("DB05_EXPERIMENTAL_COPY_NOT_ALLOWED"));}
             let (draft,_,_)=self.furniture_stock_candidate(plan,destination)?;
