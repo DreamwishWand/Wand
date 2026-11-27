@@ -13,3 +13,16 @@ test('mixed states preserve order and require explicit state',()=>{
  assert.throws(()=>parseNativeAreaRules({...raw,areaRules:[{areas:[1],alpha:[.5,.3]},raw.areaRules[1]]},locked,unlocked));
  assert.throws(()=>parseNativeAreaRules({...raw,areaRules:[{areas:[99],alpha:[1,.3]},raw.areaRules[1]]},locked,unlocked));
 });
+
+test('four source grid lock keys have independent overlay states',()=>{
+ const locked=[base,...[1,2,3,4].map(()=>overlay)],unlocked=[base];
+ const raw={id:'MapVillageExpansion4Underwater02',areaTypes:[1,2,3,4],gridStateLabels:['Pirate1','Pirate2','Pirate3','Pirate4'],areaRules:[{areas:[],alpha:[base.rgba[3]]},...[1,2,3,4].map(id=>({areas:[id],alpha:[null,overlay.rgba[3]]}))]};
+ const plan=parseNativeAreaRules(raw,locked,unlocked);
+ assert.deepEqual(plan.gridStateLabels,raw.gridStateLabels);
+ for(let bits=0;bits<16;bits++){
+  const states=new Map(raw.areaTypes.map((id,i)=>[id,Boolean(bits&(1<<i))]));
+  assert.equal(selectNativeAreaLayers(locked,plan,states).length,1+[...states.values()].filter(Boolean).length);
+ }
+ assert.throws(()=>parseNativeAreaRules({...raw,id:'MapVillage04'},locked,unlocked));
+ assert.throws(()=>parseNativeAreaRules({...raw,gridStateLabels:['Pirate1','Pirate1','Pirate3','Pirate4']},locked,unlocked));
+});
