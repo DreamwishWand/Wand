@@ -2003,7 +2003,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
   if let Some(h)=building{if !world||h.get("destination")!=Some(witness){return Err(bad);}building_layout_poses(&h["before"],&d)?;building_layout_poses(&h["after"],&d)?;buildings.push(h.clone());}
   if let Some(h)=house{if !world||h.get("destination")!=Some(witness){return Err(bad);}house_layout_poses(&h["before"],&d)?;house_layout_poses(&h["after"],&d)?;houses.push(h.clone());}
-  if let Some(l)=landscape{if l.get("destination")!=Some(witness){return Err(bad);}landscape_destination(profile,witness)?;landscape_poses(&l["before"],&d)?;landscape_poses(&l["after"],&d)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
+  if let Some(l)=landscape{if l.get("destination")!=Some(witness){return Err(bad);}landscape_destination(profile,witness)?;let free=landscape_free_mode(l)?;landscape_poses(&l["before"],&d,free)?;landscape_poses(&l["after"],&d,free)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
   if let Some(network)=network{
    let n=network.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
    if n.get("destination")!=Some(witness){return Err(bad);}
@@ -3261,7 +3261,8 @@ pub(super) fn inspect_area_network(profile:&[u8],witness:&str)->Result<String,Co
  serde_json::to_string(&rows).map_err(|_|bad)
 }
 type LandscapePose=(u64,i32,i32,usize);
-fn landscape_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination)->Result<Vec<LandscapePose>,CodecError>{
+fn landscape_free_mode(v:&Value)->Result<bool,CodecError>{match v.get("freePlacement"){None=>Ok(false),Some(Value::Bool(true))=>Ok(true),_=>Err(CodecError::Json)}}
+fn landscape_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination,free:bool)->Result<Vec<LandscapePose>,CodecError>{
  let bad=CodecError::Json;let mut seen=HashSet::new();
  v.as_array().filter(|a|a.len()<=2048).ok_or(bad)?.iter().map(|r|{
   let o=r.as_object().filter(|o|o.len()==4&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
@@ -3269,7 +3270,7 @@ fn landscape_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination)->Result<Vec
   let x=o.get("x").and_then(Value::as_u64).filter(|x|*x<u64::from(d.size.0)*u64::from(d.tessellation)).ok_or(bad)? as i32;
   let y=o.get("y").and_then(Value::as_u64).filter(|y|*y<u64::from(d.size.1)*u64::from(d.tessellation)).ok_or(bad)? as i32;
   let o=o.get("orientation").and_then(Value::as_u64).filter(|o|*o<4).ok_or(bad)? as usize;
-  if !seen.insert((x,y)){return Err(bad);}Ok((id,x,y,o))
+  if !free&&!seen.insert((x,y)){return Err(bad);}Ok((id,x,y,o))
  }).collect()
 }
 fn landscape_orientation(o:usize)->&'static str{["GridOrientation_Up","GridOrientation_Right","GridOrientation_Down","GridOrientation_Left"][o]}
@@ -3305,27 +3306,34 @@ fn landscape_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::P
 pub(super) fn inspect_area_landscape(profile:&[u8],witness:&str)->Result<String,CodecError>{
  let bad=CodecError::Json;let v:Value=serde_json::from_str(witness).map_err(|_|bad)?;
  let d=landscape_destination(profile,&v)?;
- let observed=landscape_observed(profile,&d)?;let mut anchors=HashMap::<(i32,i32),usize>::new();
- for (p,ids) in &observed{*anchors.entry((p.1,p.2)).or_default()+=ids.len();}
- let mut rows:Vec<_>=observed.into_iter().filter_map(|(p,ids)|(ids.len()==1&&anchors.get(&(p.1,p.2))==Some(&1)).then_some(p)).collect();
+ let observed=landscape_observed(profile,&d)?;
+ let mut rows:Vec<_>=observed.into_iter().flat_map(|(p,ids)|std::iter::repeat(p).take(ids.len())).collect();
  rows.sort_unstable();if rows.len()>2048{return Err(CodecError::Bounds);}
  serde_json::to_string(&rows.into_iter().map(|(item,x,y,o)|serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":o})).collect::<Vec<_>>()).map_err(|_|bad)
 }
 fn landscape_area_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
- use ddv_save_patch::{preview_plain_grid_structure,PlainGridStructureAction,preview_landscape_place};
+ use ddv_save_patch::{preview_plain_grid_structure,PlainGridStructureAction,preview_landscape_place_with_mode};
  let bad=CodecError::Json;
- let p=plan.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+ let free=landscape_free_mode(plan)?;
+ let p=plan.as_object().filter(|p|p.len()==3+(free as usize)&&p.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"|"freePlacement"))).ok_or(bad)?;
  let witness=p.get("destination").ok_or(bad)?;
  let d=landscape_destination(profile,witness)?;
- let before=landscape_poses(p.get("before").ok_or(bad)?,&d)?;let after=landscape_poses(p.get("after").ok_or(bad)?,&d)?;
+ let before=landscape_poses(p.get("before").ok_or(bad)?,&d,free)?;let after=landscape_poses(p.get("after").ok_or(bad)?,&d,free)?;
  let actual=landscape_observed(profile,&d)?;
- if before.iter().any(|r|actual.get(r).is_none_or(|v|v.len()!=1)){return Err(bad);}
- let old:HashSet<_>=before.iter().copied().collect();let next:HashSet<_>=after.iter().copied().collect();
- let removed:Vec<_>=before.iter().filter(|p|!next.contains(p)).collect();
- let added:Vec<_>=after.iter().filter(|p|!old.contains(p)).collect();
+ let count=|rows:&[LandscapePose]|{let mut m=HashMap::<LandscapePose,usize>::new();for p in rows{*m.entry(*p).or_default()+=1;}m};
+ let old=count(&before);let next=count(&after);
+ let mut removed=Vec::new();let mut ids=Vec::new();let mut added=Vec::new();
+ for (p,n) in &old{
+  let keys=actual.get(p).filter(|v|v.len()==*n).ok_or(bad)?;
+  let mut keys=keys.clone();keys.sort_unstable_by_key(|s|key_id(s).unwrap_or(0));
+  let keep=(*n).min(*next.get(p).unwrap_or(&0));
+  for key in keys.into_iter().skip(keep){removed.push(*p);ids.push(key);}
+ }
+ for (p,n) in &next{for _ in 0..n.saturating_sub(*old.get(p).unwrap_or(&0)){added.push(*p);}}
+ // Sort additions to make allocator results deterministic across runs.
+ added.sort_unstable();
  if removed.len()+added.len()>2048{return Err(CodecError::Bounds);}
- let ids:Vec<_>=removed.iter().map(|p|actual[*p][0].clone()).collect();
  if !ids.chunks(512).all(|chunk|grid_identity_dependencies_for_ids(profile,&d.grid_id,chunk).is_ok_and(|r|r.blocking()==0&&r.historical==0)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  for (p,key) in removed.into_iter().zip(ids){
@@ -3335,7 +3343,7 @@ fn landscape_area_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError
  }
  for p in added{
   let dest=resolve_plain_grid_destination(working.as_bytes(),witness)?;
-  let draft=preview_landscape_place(&working,&dest,p.0,(p.1,p.2),landscape_orientation(p.3)).map_err(|_|bad)?;
+  let draft=preview_landscape_place_with_mode(&working,&dest,p.0,(p.1,p.2),landscape_orientation(p.3),free).map_err(|_|bad)?;
   working.zeroize();*working=draft.patched_json;
  }
  Ok(std::mem::take(&mut *working))
@@ -3435,6 +3443,29 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod biome_decoration_tests{
  use super::*;
+ #[test]
+ fn free_landscape_area_restore_preserves_multiplicity_and_retained_identity(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":7},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40200001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40200001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"3":{"ID":3,"ItemID":40200002,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+  let bytes=serde_json::to_vec(&raw).unwrap();
+  let before:Value=serde_json::from_str(&inspect_area_landscape(&bytes,&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(before.as_array().unwrap().len(),3);
+  let a=serde_json::json!({"itemId":40200001,"x":1,"y":1,"orientation":2});
+  let b=serde_json::json!({"itemId":40200002,"x":1,"y":1,"orientation":2});
+  let mut plan=serde_json::json!({"destination":dest,"before":before,"after":[a.clone(),b.clone(),b.clone()]});
+  assert!(landscape_area_candidate(&bytes,&plan).is_err());
+  plan["freePlacement"]=true.into();
+  let result:Value=serde_json::from_str(&landscape_area_candidate(&bytes,&plan).unwrap()).unwrap();
+  let map=&result["World"]["GridCollection"]["Grids"]["42"]["Objects"];
+  assert_eq!(map["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert!(map.get("2").is_none());assert_eq!(map["3"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]);
+  assert_eq!(map["5"]["ItemID"],40200002);assert_eq!(result["Player"],raw["Player"]);
+  let observed:Value=serde_json::from_str(&inspect_area_landscape(&serde_json::to_vec(&result).unwrap(),&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(observed,plan["after"]);
+  plan["before"]=serde_json::json!([a,b]);assert!(landscape_area_candidate(&bytes,&plan).is_err());
+ }
  #[test]
  fn free_landscape_placement_and_duplication_allow_shared_anchor_without_stock_changes(){
   let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
