@@ -345,7 +345,10 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
  let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
  let mut changed=false;let mut roots=0usize;
  for (row,room) in rows.iter().zip(expected){
-  if row.as_object().is_none_or(|m|m.len()!=2)||row["roomOrdinal"]!=room["ordinal"]{return Err(bad);}
+  if row.as_object().is_none_or(|m|!(m.len()==2||m.len()==3&&m.contains_key("ceiling"))||m.keys().any(|k|!matches!(k.as_str(),"roomOrdinal"|"surfaces"|"ceiling")))||row["roomOrdinal"]!=room["ordinal"]{return Err(bad);}
+  if let Some(f)=row.get("ceiling"){
+   if f.as_object().is_none_or(|m|m.len()!=2||!m.contains_key("itemId")||!m.contains_key("expected"))||f["itemId"].as_u64().is_none_or(|n|n/100000!=1601)||f["expected"].as_u64().is_none_or(|n|n>u32::MAX as u64)||f["expected"]!=room["ceiling"]||f["itemId"]==f["expected"]{return Err(bad);}
+  }
   let faces=room["surfaces"].as_array().ok_or(bad)?;
   let surfaces=row["surfaces"].as_array().filter(|s|s.len()==faces.len()&&s.len()<=9).ok_or(bad)?;
   for (s,face) in surfaces.iter().zip(faces){
@@ -388,6 +391,11 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
   if !surfaces.is_empty(){
    let next=room_project_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaces":surfaces}).to_string())?;
    working.zeroize();*working=next;changed=true;
+  }
+  if let Some(f)=row.get("ceiling"){
+   let mut d=finish_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"itemId":f["itemId"],"kind":"ceiling","wall":null,"expected":f["expected"]}).to_string())?;
+   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+   working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
   }
  }
  if !changed{return Err(bad);}
