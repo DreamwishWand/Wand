@@ -297,7 +297,9 @@ fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected
  if refs.blocking()>0||refs.historical>0{return Err(bad);}
  Ok(target)
 }
-pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,CodecError>{
+#[cfg(test)]
+pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,CodecError>{room_to_outdoor_candidate_mode(source,row,false)}
+pub(super) fn room_to_outdoor_candidate_mode(source:&[u8],row:&Value,free:bool)->Result<String,CodecError>{
  let bad=CodecError::Json;
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
@@ -306,12 +308,13 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
  let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let expected=(int("expectedX")?,int("expectedY")?);
- let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support,false)?;
+ let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support,free)?;
  let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,o.get("destination").ok_or(bad)?)?;
  let xy=(int("x")?,int("y")?);
  let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+ if free{let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;if support.is_some()||layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}}
  let dest=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
- if dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
+ if !free&&dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
  let json=std::str::from_utf8(source).map_err(|_|bad)?;
  let draft=if let Some(f)=support{
   if f!=d.tessellation{return Err(bad);}
@@ -322,7 +325,7 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
   let after:Value=serde_json::from_str(&result.patched_json).map_err(|_|bad)?;
   if crate::grid_instance_preview::subgrid_tree(after["World"]["GridCollection"].as_object().ok_or(bad)?,&d.grid_id,&fresh)?!=tree||after["Player"]!=root["Player"]{return Err(bad);}
   result
- }else{ddv_save_patch::preview_indoor_to_outdoor_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?};
+ }else if free{ddv_save_patch::preview_free_indoor_to_outdoor_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?}else{ddv_save_patch::preview_indoor_to_outdoor_transfer(json,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?};
  if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(CodecError::Patch);}
  Ok(draft.patched_json)
 }
