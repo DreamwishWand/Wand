@@ -2374,6 +2374,38 @@ mod tests{
     }
 
     #[test]
+    fn world_building_layout_preserves_native_state_and_identity(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entry=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="Village04").unwrap();
+        let mut grids=serde_json::Map::new();let mut plan=Vec::new();let mut beach=String::new();
+        let stall=serde_json::json!({"ID":1,"ItemID":20100001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"StallData":{"UpgradeState":{"Level":2},"ShopData":{"Marker":7},"CurrentSkinItemID":20100002}}});
+        let garden=serde_json::json!({"ID":2,"ItemID":20200001,"X":5,"Y":6,"Orientation":"GridOrientation_Up","State":{"GardenData":{"Slots":[{"Marker":8}]}}});
+        for (i,g) in entry["grids"].as_array().unwrap().iter().enumerate(){
+            let id=(i+1) as u64;let mut objects=serde_json::Map::new();let mut before=Vec::new();let mut after=Vec::new();
+            if g["key"]=="Beach"{
+                beach=id.to_string();objects.insert("1".into(),stall.clone());objects.insert("2".into(),garden.clone());
+                before.extend([serde_json::json!({"itemId":20100001,"x":1,"y":2,"orientation":2}),serde_json::json!({"itemId":20200001,"x":5,"y":6,"orientation":0})]);
+                after.extend([serde_json::json!({"itemId":20100001,"x":9,"y":10,"orientation":1}),serde_json::json!({"itemId":20200001,"x":9,"y":10,"orientation":3})]);
+            }
+            grids.insert(id.to_string(),serde_json::json!({"ID":id,"GridDefaultLayoutPath":g["layoutId"],"GridDataPath":g["gridDataPath"],"TessellationFactor":g["factor"],"NextGridObjectID":3,"Objects":objects}));
+            plan.push(serde_json::json!({"destination":{"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]},"before":before,"after":after}));
+        }
+        assert!(!beach.is_empty());
+        let original=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":100},"World":{"Shops":{"Unchanged":true},"GridCollection":{"Grids":grids}}});
+        let raw=original.to_string().replace("\"Marker\":100","\"Marker\":1e2");
+        let result=building_layout_candidate(raw.as_bytes(),&plan).unwrap();
+        let v:Value=serde_json::from_str(&result).unwrap();let g=&v["World"]["GridCollection"]["Grids"][&beach];
+        assert_eq!(g["Objects"]["1"]["State"],stall["State"]);assert_eq!(g["Objects"]["2"]["State"],garden["State"]);
+        assert_eq!(g["Objects"]["1"]["X"],9);assert_eq!(g["Objects"]["2"]["X"],9);assert_eq!(g["Objects"]["2"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(g["NextGridObjectID"],3);assert_eq!(v["World"]["Shops"],original["World"]["Shops"]);assert!(result.contains("1e2"));
+        let i=plan.iter().position(|r|r["before"].as_array().unwrap().len()==2).unwrap();
+        plan[i]["after"][0]["itemId"]=serde_json::json!(20300001);
+        assert!(building_layout_candidate(raw.as_bytes(),&plan).is_err());
+        plan[i]["after"][0]["itemId"]=serde_json::json!(20100001);
+        let mut unsupported=original.clone();unsupported["World"]["GridCollection"]["Grids"][&beach]["Objects"]["1"]["State"]=serde_json::json!({"UnknownState":{}});
+        assert!(building_layout_candidate(unsupported.to_string().as_bytes(),&plan).is_err());
+    }
+    #[test]
     fn world_house_layout_restores_multiple_exteriors_and_preserves_interior(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let entry=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="Village04").unwrap();
