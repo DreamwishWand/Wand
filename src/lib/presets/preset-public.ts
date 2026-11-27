@@ -127,7 +127,8 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   case 'wand.room-design@1':room(doc);break;
   case 'wand.preset.indoor-decoration@1':{
    keys(doc,['schema','gameVersion','scope','rooms']);if(doc.gameVersion!=='1.26.2'||!doc.rooms.length||doc.rooms.length>2048||doc.scope==='room'&&doc.rooms.length!==1)fail();
-   let floor=0,next=1;for(const e of doc.rooms){keys(e,['floor','room','wallPositions','design']);if(!positive(e.floor,2048)||doc.scope!=='building'&&e.floor!==1||e.floor<floor)fail();if(e.floor!==floor){floor=e.floor;next=1;}if(e.room!==next++)fail();room(e.design,true);if(!Array.isArray(e.wallPositions)||e.wallPositions.length!==e.design.surfaces.length||e.wallPositions.some((p:unknown,i:number)=>i===0?p!==null:!Number.isSafeInteger(p)||Number(p)<0||Number(p)>32)||new Set(e.wallPositions).size!==e.wallPositions.length)fail();}
+   const tagged=doc.rooms.some((e:any)=>e&&Object.hasOwn(e,'slot'));if(tagged&&doc.scope==='room')fail();
+   let floor=0,next=1,lastSlot=-1;for(const e of doc.rooms){keys(e,tagged?['floor','room','slot','wallPositions','design']:['floor','room','wallPositions','design']);if(!positive(e.floor,2048)||doc.scope!=='building'&&e.floor!==1||e.floor<floor)fail();if(e.floor!==floor){floor=e.floor;next=1;lastSlot=-1;}if(e.room!==next++)fail();if(tagged){if(!Number.isSafeInteger(e.slot)||e.slot<0||e.slot>3||e.slot<=lastSlot)fail();lastSlot=e.slot;}room(e.design,true);if(!Array.isArray(e.wallPositions)||e.wallPositions.length!==e.design.surfaces.length||e.wallPositions.some((p:unknown,i:number)=>i===0?p!==null:!Number.isSafeInteger(p)||Number(p)<0||Number(p)>32)||new Set(e.wallPositions).size!==e.wallPositions.length)fail();}
    break;
   }
   default:fail();

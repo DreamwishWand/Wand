@@ -50,3 +50,17 @@ test('free indoor building backup roundtrips diagonal and repeated anchors on na
  assert.deepEqual(q.plan.rooms[0].surfaces[0].place.map(p=>[p.x,p.y,p.orientation,p.expectedStock]),[[x,0,'GridOrientation_DownLeft',2],[x,0,'GridOrientation_Down',1]]);
  assert.equal(buildIndoorRestore('floor',[{...inputs[0],room:{...rooms[0],surfaces:[{...face,factor:2}]}},inputs[1]],new Map([[id,0]]),new Set(),true),null);
 });
+
+test('multi-room backups bind native room slots and reject shifted or sparse legacy addresses',()=>{
+ const targets=[{...rooms[0],roomSlot:0},{...rooms[1],roomSlot:2}];
+ const raw=serializeIndoorBackup('floor',targets.map(room=>({room,surfaces:[newRoomSurface(1,floor)]})),templates);
+ assert.deepEqual(JSON.parse(raw).rooms.map(r=>r.slot),[0,2]);
+ assert.equal(parseIndoorBackup(raw,'floor',targets,templates).length,2);
+ assert.throws(()=>parseIndoorBackup(raw,'floor',[targets[0],{...targets[1],roomSlot:1}],templates));
+ const legacy=JSON.parse(raw);for(const r of legacy.rooms)delete r.slot;
+ assert.throws(()=>parseIndoorBackup(JSON.stringify(legacy),'floor',targets,templates));
+ assert.equal(parseIndoorBackup(JSON.stringify(legacy),'floor',[targets[0],{...targets[1],roomSlot:1}],templates).length,2);
+ const single=serializeIndoorBackup('room',[{room:targets[1],surfaces:[newRoomSurface(1,floor)]}],templates);
+ assert.equal('slot' in JSON.parse(single).rooms[0],false);
+ assert.equal(parseIndoorBackup(single,'room',[targets[0]],templates).length,1);
+});
