@@ -504,7 +504,7 @@ mod tests{
  #[test]
  fn tom_test_copy_requires_known_shape_positive_base_and_components(){
   let target=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"Furniture","Inventory":{"40000001":{"Amount":1}}},"6":{"ID":6,"CompatibleItemType":"TouchOfMagic","Inventory":{"100000775":{"Amount":1}}}},"FemaleClothingDesigns":{},"MaleClothingDesigns":{}},"World":{"FurnitureDesigns":{"Items":{},"NextDesignId":4},"DecorationPresets":[]}}"#;
-  let backup=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"tom-furniture","storage":"furniture","baseItemId":40000001,"payload":{"Id":1,"Item":40000001,"BaseColor":"#ff9933","Decals":[{"DecalItem":100000775,"Color":"#ffffff"}],"Textures":null,"Source":1}}"#;
+  let backup=r##"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"tom-furniture","storage":"furniture","baseItemId":40000001,"payload":{"Id":1,"Item":40000001,"BaseColor":"#ff9933","Decals":[{"DecalItem":100000775,"Color":"#ffffff"}],"Textures":null,"Source":1}}"##;
   let out=tom_test_candidate(target,backup).unwrap();assert!(out.contains("\"NextDesignId\":5"));assert!(out.contains("\"Id\":4"));
   let bad=backup.replace("100000775","100000776");assert!(tom_test_candidate(target,&bad).is_err());
   let bad=backup.replace("\"Textures\":null","\"Textures\":[]");assert!(tom_test_candidate(target,&bad).is_err());
