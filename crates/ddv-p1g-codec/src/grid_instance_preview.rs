@@ -1782,6 +1782,66 @@ fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<S
     Ok(draft.patched_json)
 }
 
+/// Existing detached, non-primary interiors only. No new interior or Grid is allocated.
+fn detached_player_house_indices(profile:&[u8])->Result<HashMap<u64,usize>,CodecError>{
+    let bad=CodecError::Json;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+    let world=&root["World"];
+    let houses=world["PlayerHouses"].as_array().filter(|h|h.len()<=128).ok_or(bad)?;
+    let collection=&world["GridCollection"];let grids=collection["Grids"].as_object().ok_or(bad)?;
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(bad);}
+    let placed:HashSet<u64>=scan.private_targets.iter().map(|(t,_)|t.item_id).collect();
+    let mut used_indices=HashSet::new();
+    for (key,field) in [("Grids","Objects"),("DiffGrids","ModifiedObjects")]{
+        if let Some(m)=collection.get(key).and_then(Value::as_object){
+            for grid in m.values(){if let Some(objects)=grid.get(field).and_then(Value::as_object){
+                for obj in objects.values(){
+                    if obj["ItemID"].as_u64().is_some_and(|n|n/100_000==205){
+                        if let Some(i)=obj["State"]["HouseData"]["PlayerHouseIndex"].as_u64(){used_indices.insert(i);}
+                    }
+                }
+            }}
+        }
+    }
+    let mut refs=HashMap::<u64,usize>::new();let mut per_house=Vec::new();
+    for house in houses{
+        let mut ids=Vec::new();let mut valid=true;
+        if let Some(floors)=house["Floors"].as_array().filter(|a|!a.is_empty()&&a.len()<=128){
+            for floor in floors{
+                if let Some(rooms)=floor["Rooms"].as_object().filter(|m|!m.is_empty()&&m.len()<=4){
+                    for room in rooms.values(){
+                        if let Some(n)=room["FloorGridID"].as_u64().filter(|n|*n>0){ids.push(n);}else{valid=false;}
+                        if let Some(walls)=room["WallGridIDs"].as_object(){for v in walls.values(){
+                            if let Some(n)=v.as_u64().filter(|n|*n>0){ids.push(n);}else{valid=false;}
+                        }}else if room.get("WallGridIDs").is_some(){valid=false;}
+                    }
+                }else{valid=false;}
+            }
+        }else{valid=false;}
+        for id in &ids{*refs.entry(*id).or_default()+=1;}
+        per_house.push((valid,ids));
+    }
+    let mut out=HashMap::new();
+    for (index,house) in houses.iter().enumerate().skip(1){
+        let Some(item)=house["HouseItemID"].as_u64().filter(|n|n/100_000==205) else{continue;};
+        if placed.contains(&item)||used_indices.contains(&(index as u64))||houses.iter().filter(|h|h["HouseItemID"].as_u64()==Some(item)).count()!=1{continue;}
+        let (valid,ids)=&per_house[index];
+        if !valid||ids.is_empty()||ids.iter().any(|n|{
+            let key=n.to_string();let g=grids.get(&key);
+            refs.get(n)!=Some(&1)||collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&key)))||
+            g.is_none_or(|g|g["ID"].as_u64()!=Some(*n)||g["Objects"].as_object().is_none()||g["GridDataPath"].as_str().is_none_or(|p|!p.starts_with("GridData/Rooms/")))
+        }){continue;}
+        out.insert(item,index);
+    }
+    Ok(out)
+}
+pub(super) fn detached_player_houses_json(profile:&[u8])->Result<String,CodecError>{
+    let mut ids:Vec<_>=detached_player_house_indices(profile)?.into_keys().collect();ids.sort_unstable();
+    Ok(serde_json::json!({"contract":"wand.db05.detached-player-houses@1","itemIds":ids,"writerAuthorized":false}).to_string())
+}
+
 /// Source-pinned experimental initial placement. No arbitrary State is accepted
 /// from a preset, and existing native instances must use the clone path instead.
 fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
@@ -1794,7 +1854,8 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     let witness=&o["destination"];let (scope,_)=world_grid_scope(witness)?;
     let well=templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item)));
     let other=templates["otherBuildings"][&scope].get(item.to_string());
-    if !well&&other.is_none(){return Err(bad);}
+    let detached=if item/100_000==205{detached_player_house_indices(profile)?.get(&item).copied()}else{None};
+    if !well&&other.is_none()&&detached.is_none(){return Err(bad);}
     let d=resolve_plain_grid_destination(profile,witness)?;
     if player_house_grid_scope(&root,&d.grid_id)?!=scope||building_transform_grid_size(&root,&d.grid_id)?!=(u64::from(d.size.0)*u64::from(d.tessellation),u64::from(d.size.1)*u64::from(d.tessellation)){return Err(bad);}
     let collection=&root["World"]["GridCollection"];
@@ -1806,7 +1867,7 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
     use ddv_save_patch::InitialBuildingState;
-    let initial=if well{
+    let initial=if let Some(index)=detached{InitialBuildingState::ExistingPlayerHouse{index}}else if well{
         let template=templates["scopeTemplates"].get(&scope).unwrap_or(&templates["template"]);
         let level=if template.get("withoutUpgrade").and_then(Value::as_array).is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){None}else{Some(template["upgradeLevel"].as_u64().ok_or(bad)?)};
         InitialBuildingState::Well{level,skin:template["skinItemId"].as_u64().ok_or(bad)?}
@@ -2804,6 +2865,28 @@ mod tests{
         assert_eq!(patched["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);assert_eq!(gs["90"],original["World"]["GridCollection"]["Grids"]["90"]);assert!(result.contains("1e2"));
         for row in &mut plan{row["after"]=serde_json::json!([]);}
         assert!(player_house_layout_candidate(raw.as_bytes(),&plan).is_err());
+    }
+
+    #[test]
+    fn detached_house_reattachment_preserves_interior_and_rejects_ambiguity(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":7},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[]},{"HouseItemID":20500002,"Floors":[{"Rooms":{"0":{"FloorGridID":90,"Flooring":160100104}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"","GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{}},"90":{"ID":90,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","NextGridObjectID":1,"Objects":{}}}}}});
+        let plan=serde_json::json!({"buildingInitial":{"itemId":"20500002","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100},"x":3,"y":4,"orientation":"GridOrientation_Right"}});
+        let input=raw.to_string();
+        let list:Value=serde_json::from_str(&detached_player_houses_json(input.as_bytes()).unwrap()).unwrap();
+        assert_eq!(list["itemIds"],serde_json::json!([20500002]));
+        let result=group_paste_candidate(input.as_bytes(),&plan.to_string()).unwrap();
+        let out:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(out["World"]["PlayerHouses"],raw["World"]["PlayerHouses"]);
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["90"],raw["World"]["GridCollection"]["Grids"]["90"]);
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"]["HouseData"]["PlayerHouseIndex"],1);
+        assert_eq!(out["Player"],raw["Player"]);
+        assert!(group_paste_candidate(result.as_bytes(),&plan.to_string()).is_err());
+        let mut invalid=raw.clone();invalid["World"]["PlayerHouses"][0]["HouseItemID"]=20500002.into();
+        assert!(group_paste_candidate(invalid.to_string().as_bytes(),&plan.to_string()).is_err());
+        let mut invalid=raw.clone();invalid["World"]["PlayerHouses"][1]["Floors"][0]["Rooms"]["0"]["FloorGridID"]=91.into();
+        assert!(group_paste_candidate(invalid.to_string().as_bytes(),&plan.to_string()).is_err());
     }
 
     #[test]

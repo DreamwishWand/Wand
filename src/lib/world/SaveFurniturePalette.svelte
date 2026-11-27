@@ -24,6 +24,7 @@
  let landscapeMode=false,buildingMode=false,catalogMode=false,catalogBuildings=false;
  let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
+ let detached=new Set<number>(),houseState:'idle'|'loading'|'ready'|'error'='idle',ownHouses:Worker|null=null;
  let ownStock:Worker|null=null,ownPreview:Worker|null=null,seenFile:File|null=null,subscribed:Worker|null=null,catalogRequest=0,catalogLocale:WandLanguage|null=null;
  let shapeRequests=new Map<number,{factor:1|2;key:string}>(),definitions=new Map<number,DesignItemGeometry>(),itemId=0,source:MainlandSavedObject|null=null,orientation:EightWay='GridOrientation_Down';
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
@@ -49,15 +50,25 @@
  $: if(file!==seenFile)resetFile(file);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);catalogRequest=0;catalogLocale=null;catalogState='idle';cancel();}
  $: if(open&&file&&!landscapeMode&&!buildingMode&&stockState==='idle')loadStock(file);
+ $: if(open&&file&&buildingMode&&houseState==='idle')loadDetached(file);
  $: if(open&&worker&&grids.length&&(catalogLocale!==locale||catalogMode!==landscapeMode||catalogBuildings!==buildingMode))loadCatalog(worker,grids[0],locale,landscapeMode,buildingMode);
  $: if(!open||blocked||!canStart)cancel();
  $: normalized=query.normalize('NFKC').toLocaleLowerCase().trim();
  $: buildingSources=buildingPlacementSources(grids,objects);
- $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
+ $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g,detached))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
  $: visible=items.slice(0,limit);
  $: if(open)loadArtwork(visible);
- $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
- function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;counts=null;stockState='idle';seenFile=next;}
+ $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,detached):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
+ function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;ownHouses?.terminate();ownHouses=null;detached=new Set();houseState='idle';counts=null;stockState='idle';seenFile=next;}
+ function loadDetached(f:File){
+  houseState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownHouses=own;
+  const finish=(d:any)=>{own.terminate();if(ownHouses!==own||file!==f)return;ownHouses=null;const r=d?.result;
+   if(d?.kind==='detached-houses'&&r?.contract==='wand.db05.detached-player-houses@1'&&r.writerAuthorized===false&&Array.isArray(r.itemIds)&&r.itemIds.length<=128&&r.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===205)){
+    detached=new Set<number>(r.itemIds);houseState='ready';
+   }else{detached=new Set();houseState='error';}
+  };
+  own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-detached-houses',file:f});
+ }
  function loadArtwork(rows:readonly DesignCatalogItem[]){for(const row of rows){if(asked.has(row.itemId))continue;asked.add(row.itemId);void worldArtwork(base,row.itemId).then(url=>{if(url)artwork=new Map(artwork).set(row.itemId,url);}).catch(()=>{});}}
  function loadStock(f:File){stockState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownStock=own;
   const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);stockState='ready';}catch{counts=null;stockState='error';}};
@@ -80,9 +91,9 @@
  }
  function beginBuilding(id:number){
   const existing=buildingSources.get(id);if(existing){beginHouse(existing);return;}
-  if(!testExport||!freePlacement||!buildingMode||blocked||!canStart||!open||!file||!worker||!grids.some(g=>initialBuildingEligible(id,g)))return;
+  if(!testExport||!freePlacement||!buildingMode||blocked||!canStart||!open||!file||!worker||!grids.some(g=>initialBuildingEligible(id,g,detached)))return;
   cancel();onBegin();itemId=id;orientation='GridOrientation_Down';placing=true;
-  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor)||!initialBuildingEligible(id,g))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement:true,allowBuildings:true});}shapeRequests=new Map(shapeRequests);
+  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor)||!initialBuildingEligible(id,g,detached))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement:true,allowBuildings:true});}shapeRequests=new Map(shapeRequests);
  }
  function beginHouse(p:MainlandSavedObject|null=chosen){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file||!buildingSourceEligible(p))return;
@@ -97,7 +108,7 @@
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
  export function pick(p:{x:number;y:number}){if(!placing||blocked||!canStart||shapeRequests.size||status==='working')return;
-  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
+  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,detached):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
   clearCopy();candidate=q;point=p;status='idle';stockChange=null;
  }
  $: rotationAllowed=definitions.size>0&&(freePlacement||[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional'));
@@ -130,7 +141,7 @@
  }
  $: duplicateEligible=stockSourceEligible(chosen,freePlacement)&&(freePlacement||!nativeMoveBlocked(chosen))&&(counts?.get(Number(chosen.object.itemId))??0)>0;
  function nativeMoveBlocked(p:MainlandSavedObject){return p.object.editRestrictions?.move==='denied'||p.object.editRestrictions?.move==='conditional';}
- onDestroy(()=>{cancel();ownStock?.terminate();subscribed?.removeEventListener('message',receive);});
+ onDestroy(()=>{cancel();ownStock?.terminate();ownHouses?.terminate();subscribed?.removeEventListener('message',receive);});
 </script>
 {#if open}
  <aside class="save-furniture-palette" aria-label={w[0]}>

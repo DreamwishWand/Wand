@@ -943,6 +943,7 @@ pub enum InitialBuildingState{
     Well{level:Option<u64>,skin:u64},
     House{level:Option<u64>},
     UnbuiltStall,
+    ExistingPlayerHouse{index:usize},
 }
 pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,initial:InitialBuildingState)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
@@ -952,6 +953,12 @@ pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item
         InitialBuildingState::Well{level,skin} if item_id/100_000==203&&matches!((level,skin),(Some(1),170200005)|(Some(1),0)|(Some(0),0)|(None,0))=>serde_json::json!({"BuildingWithSkinData":{"UpgradeState":upgrade(level),"CurrentSkinItemID":skin}}),
         InitialBuildingState::House{level} if item_id/100_000==200&&matches!(level,None|Some(0))=>serde_json::json!({"HouseData":{"Built":true,"UpgradeState":upgrade(level),"PlayerHouseIndex":0}}),
         InitialBuildingState::UnbuiltStall if item_id/100_000==201=>serde_json::json!({"StallData":{"UpgradeState":{"Level":0},"ShopData":null,"CurrentSkinItemID":0}}),
+        InitialBuildingState::ExistingPlayerHouse{index} if item_id/100_000==205&&index>0&&index<128=>{
+            let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+            let houses=root["World"]["PlayerHouses"].as_array().ok_or(bad)?;
+            if houses.get(index).and_then(|h|h["HouseItemID"].as_u64())!=Some(item_id)||houses.iter().filter(|h|h["HouseItemID"].as_u64()==Some(item_id)).count()!=1{return Err(bad);}
+            serde_json::json!({"HouseData":{"Built":true,"UpgradeState":{"Level":1},"PlayerHouseIndex":index}})
+        },
         _=>return Err(bad)
     }.to_string();
     if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
