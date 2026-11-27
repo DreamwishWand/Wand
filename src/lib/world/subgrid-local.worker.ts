@@ -4,6 +4,7 @@ import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
 import {testSaveExportEnabled} from './test-save-export.ts';
 import {readExperimentalCopy} from './experimental-copy.ts';
 import {parseSupportTree} from './subgrid-local.ts';
+import {supportMapDescendants} from './support-map-preview.ts';
 import {SCENE_FURNITURE_LIMIT} from './support-scene.ts';
 const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMessage:(value:unknown,transfer?:Transferable[])=>void};
 scope.onmessage=async({data})=>{
@@ -25,7 +26,7 @@ scope.onmessage=async({data})=>{
    const results=[];
    for(const p of rows){
     if(!p||!Number.isSafeInteger(p.localOrdinal)||p.localOrdinal<1||p.localOrdinal>20000||!Number.isSafeInteger(p.itemId)||p.itemId<1||p.itemId>0xffffffff||![p.x,p.y].every(n=>Number.isInteger(n)&&n>=-2147483648&&n<=2147483647))throw Error('parent');
-    try{const tree=parseSupportTree(JSON.parse(wasm.inspect_subgrid(p.localOrdinal,p.itemId,p.x,p.y)));results.push({localOrdinal:p.localOrdinal,children:tree.objects.map((o,index)=>({itemId:o.itemId,index,nested:!!o.child}))});}
+    try{const tree=parseSupportTree(JSON.parse(wasm.inspect_subgrid(p.localOrdinal,p.itemId,p.x,p.y)));results.push({localOrdinal:p.localOrdinal,children:supportMapDescendants(tree)});}
     catch{results.push({localOrdinal:p.localOrdinal,children:null});}
    }
    scope.postMessage({kind:'support-map',results});

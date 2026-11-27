@@ -1,5 +1,6 @@
 <script lang="ts">
  import {onDestroy} from 'svelte';
+ import {resolveSupportMapPath} from './support-map-preview.ts';
  import SupportSceneControls from './SupportSceneControls.svelte';
  import GroupPickupControls from './GroupPickupControls.svelte';
  import type {GroupPickupRow} from './group-pickup.ts';
@@ -30,7 +31,7 @@
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
  export let canMove=false,nextRequest:()=>number,onClose:()=>void;
  export let placing=false,ghost:SupportParentCandidate|null=null,preview:SupportParentCandidate|null=null;
- export let initialChildIndex:number|null=null;
+ export let initialChildIndex:number|null=null,initialChildPath:readonly number[]|null=null;
  export let initialParentPoint:{x:number;y:number}|null=null,onInitialConsumed:()=>void=()=>{};
  let parentPoint:{x:number;y:number}|null=null;
  $: preview=placing&&parentPoint&&parent&&canMove?supportParentCandidate(parent,grids,rasters,parentPoint.x,parentPoint.y,parentOrientation??parent.object.orientation,parentShapes,objects,duplicating):null;
@@ -88,7 +89,7 @@
   if(!show||!source||!witness||p&&!p.object.subgrid)return;
   loading=true;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
-  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==witness.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}stack=[root];owners=[witness.itemId];showTree(root);if(initialChildIndex!==null&&Number.isSafeInteger(initialChildIndex)&&root.objects[initialChildIndex])selected=initialChildIndex;if(initialParentPoint&&p){const point=initialParentPoint;onInitialConsumed();if(canMove){ghost=supportParentCandidate(p,grids,rasters,point.x,point.y,p.object.orientation,saveMaps.get(p.area)?.shapes??{},objects,false);error=!ghost;}}}catch{onInitialConsumed();error=true;}};
+  const finish=(d:unknown)=>{session.terminate();if(own!==session||activeFile!==source||activeOrdinal!==witness.localOrdinal)return;own=null;loading=false;try{const row=d as {kind?:string;result?:unknown;stock?:unknown};if(row?.kind!=='subgrid-local')throw Error('receipt');const root=parseSupportTree(row.result);try{counts=parseFurnitureStock(row.stock);}catch{counts=new Map();}const selectedPath=initialChildPath??(initialChildIndex===null?null:[initialChildIndex]),resolved=selectedPath?resolveSupportMapPath(root,selectedPath):null;stack=resolved?.stack??[root];owners=[witness.itemId,...(resolved?.owners??[])];path=resolved?.indices??[];showTree(stack[stack.length-1]);if(resolved)selected=resolved.selected;if(initialParentPoint&&p){const point=initialParentPoint;onInitialConsumed();if(canMove){ghost=supportParentCandidate(p,grids,rasters,point.x,point.y,p.object.orientation,saveMaps.get(p.area)?.shapes??{},objects,false);error=!ghost;}}}catch{onInitialConsumed();error=true;}};
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);
   session.postMessage({command:'inspect-subgrid',file:source,parent:witness});
  }
