@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared verified original-pixel and thumbnail ledger for Memory and Story assets."""
+"""Shared verified original-pixel and thumbnail ledger for game image assets."""
 import argparse
 import hashlib
 import io
@@ -87,7 +87,7 @@ def build(report,index,cache,receipt_raw,cdn,prior=None):
     receipt=json.loads(receipt_raw)
     check(report.get("complete") is True and not report.get("errors") and
           report["gameVersion"]==index["gameVersion"] and cache["policy"]==POLICY and
-          receipt.get("schema") in ("wand.media.memory-publication-receipt@1","wand.media.story-puzzle-publication-receipt@1") and
+          receipt.get("schema") in ("wand.media.memory-publication-receipt@1","wand.media.story-puzzle-publication-receipt@1","wand.media.shared-image-publication-receipt@1") and
           receipt.get("bucket")==BUCKET and receipt.get("canonicalMetadataVerified") is True and
           cdn.get("schema")=="wand.media.cdn-readback@1" and cdn.get("sourceReceiptSha256")==hashlib.sha256(receipt_raw).hexdigest() and
           cdn.get("cdnVerified") is True and not cdn["errors"],"Complete source and CDN verification required")
@@ -112,7 +112,7 @@ def build(report,index,cache,receipt_raw,cdn,prior=None):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--root",type=Path,required=True)
-    p.add_argument("--kind",choices=["memory","story-puzzle"],required=True)
+    p.add_argument("--kind",choices=["memory","story-puzzle","shared"],required=True)
     p.add_argument("--cdn-report",type=Path,required=True)
     p.add_argument("--ledger",type=Path,required=True)
     a=p.parse_args()
