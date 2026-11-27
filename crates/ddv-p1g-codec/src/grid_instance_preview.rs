@@ -1434,14 +1434,15 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let rows=rows.as_array().filter(|a|a.len()>=minimum&&a.len()<=limit).ok_or(CodecError::Bounds)?;
     let mut selections=Vec::with_capacity(rows.len());
     for v in rows{
-        let o=v.as_object().filter(|o|(o.len()==5||o.len()==6&&o.get("includeSupport").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"))).ok_or(CodecError::Json)?;
+        let o=v.as_object().filter(|o|(o.len()==5||o.len()==6&&(o.get("includeSupport").and_then(Value::as_bool)==Some(true)||o.get("includeStorage").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"|"includeStorage"))).ok_or(CodecError::Json)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
-        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.get("includeSupport").is_none()&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
+        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.get("includeSupport").is_none()&&o.get("includeStorage").is_none()&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
     let support_flags:Vec<_>=rows.iter().map(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)).collect();
+    let storage_flags:Vec<_>=rows.iter().map(|r|r.get("includeStorage").and_then(Value::as_bool)==Some(true)).collect();
     // The ordinary resolver deliberately rejects support parents. Resolve
     // only explicitly marked support roots here, without weakening it.
     let (scan,_)=scan_grid_instances(profile)?;
@@ -1455,6 +1456,16 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     }
     let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    for ((target,selection),storage) in targets.iter().zip(&selections).zip(&storage_flags){
+        if !storage{continue;}
+        let from=house_exterior_identity(&root,&target.grid_id)?;
+        let (x,y)=selection.2;
+        if x<0||y<0||x as u64>=from.3*from.2||y as u64>=from.4*from.2{return Err(CodecError::Json);}
+        let object=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).ok_or(CodecError::Json)?;
+        if !ddv_save_patch::storage_pickup_eligible(&root,object){return Err(CodecError::Json);}
+        let refs=grid_identity_dependencies(profile,target)?;
+        if refs.blocking()>0||refs.historical>0{return Err(CodecError::Json);}
+    }
     let mut tree_count=0usize;let mut child_ids=HashSet::new();
     for (target,flag) in targets.iter().zip(&support_flags){
       tree_count+=1;
@@ -1491,15 +1502,15 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|CodecError::Json)?.to_owned());
     if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         use ddv_save_patch::bulk_furniture::{BulkPickup,preview_bulk_furniture};
-        let pickups=targets.iter().zip(&selections).zip(&support_flags).filter_map(|((target,selection),flag)|(!*flag).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
+        let pickups=targets.iter().zip(&selections).zip(&support_flags).zip(&storage_flags).filter_map(|(((target,selection),flag),storage)|(!*flag&&!*storage).then(||BulkPickup{target,expected:selection.2,orientation:selection.4.as_deref().unwrap_or("")})).collect::<Vec<_>>();
         if !pickups.is_empty(){
             let mut draft=preview_bulk_furniture(&working,&pickups,&[]).map_err(|_|CodecError::Patch)?;
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
             working.zeroize();*working=std::mem::take(&mut draft.patched_json);
         }
     }else{
-    for ((target,selection),flag) in targets.iter().zip(&selections).zip(&support_flags){
-        if *flag{continue;}
+    for (((target,selection),flag),storage) in targets.iter().zip(&selections).zip(&support_flags).zip(&storage_flags){
+        if *flag||*storage{continue;}
         let amount=stock.get_mut(&target.item_id).ok_or(CodecError::Json)?;
         let next=amount.checked_add(1).filter(|n|*n<=i32::MAX as u32).ok_or(CodecError::Bounds)?;
         let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Pickup{target,expected:selection.2}).map_err(|_|CodecError::Patch)?;
@@ -1524,6 +1535,16 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         working.zeroize();*working=std::mem::take(&mut draft.patched_json);
     }
+    }
+    for ((target,selection),storage) in targets.iter().zip(&selections).zip(&storage_flags){
+        if !storage{continue;}
+        let current:Value=serde_json::from_str(&working).map_err(|_|CodecError::Json)?;
+        let amount=current["Player"]["ListInventories"]["0"]["Inventory"][target.item_id.to_string()]["Amount"].as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
+        let mut draft=ddv_save_patch::preview_empty_storage_pickup(&working,target,selection.2,amount).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{
+            draft.patched_json.zeroize();return Err(CodecError::Patch);
+        }
+        working.zeroize();*working=std::mem::take(&mut draft.patched_json);
     }
     Ok(std::mem::take(&mut *working))
 }
@@ -3990,6 +4011,30 @@ mod terrain_session_tests{
         let result=group_paste_candidate(&serde_json::to_vec(&empty).unwrap(),&pickup.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
         assert!(v["Player"]["ContainerInventories"].as_object().unwrap().is_empty());assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],3);
 
+    }
+    #[test]
+    fn group_pickup_mixes_empty_storage_and_ordinary_furniture(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40001680":{"Amount":2},"40000001":{"Amount":1}}}},"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[],"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}},"2":{"ID":2,"ItemID":40000001,"X":4,"Y":4,"Orientation":"GridOrientation_Down"}}}}}},"Marker":1e2}"#;
+        let (scan,_)=scan_grid_instances(raw).unwrap();
+        let ord=|id:&str|scan.private_targets.iter().position(|(t,_)|t.grid_id=="10"&&t.object_id==id).unwrap()+1;
+        let rows=serde_json::json!([{"localOrdinal":ord("1"),"itemId":"40001680","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","includeStorage":true},{"localOrdinal":ord("2"),"itemId":"40000001","expectedX":4,"expectedY":4,"expectedOrientation":"GridOrientation_Down"}]);
+        for limit in [ddv_save_patch::MAX_GRID_MIXED_EDITS,MAX_AREA_FURNITURE_CHANGES]{
+            let result=group_pickup_bounded(raw,&rows.to_string(),2,None,limit).unwrap();
+            let v:Value=serde_json::from_str(&result).unwrap();
+            assert!(v["Player"]["ContainerInventories"].as_object().unwrap().is_empty());
+            assert!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"].as_object().unwrap().is_empty());
+            assert_eq!(v["Player"]["NextContainerInventoryID"],10);
+            assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],3);
+            assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],2);
+            assert!(result.contains("1e2"));
+        }
+        let mut full:Value=serde_json::from_slice(raw).unwrap();
+        full["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
+        assert!(group_pickup_bounded(&serde_json::to_vec(&full).unwrap(),&rows.to_string(),2,None,ddv_save_patch::MAX_GRID_MIXED_EDITS).is_err());
+        let mut wrong=rows.clone();wrong[0].as_object_mut().unwrap().remove("includeStorage");
+        assert!(group_pickup_bounded(raw,&wrong.to_string(),2,None,ddv_save_patch::MAX_GRID_MIXED_EDITS).is_err());
+        let mut wrong=rows.clone();wrong[1]["includeStorage"]=true.into();
+        assert!(group_pickup_bounded(raw,&wrong.to_string(),2,None,ddv_save_patch::MAX_GRID_MIXED_EDITS).is_err());
     }
     #[test]
     fn storage_cut_roundtrip_native_world_and_room_preserves_inventory(){
