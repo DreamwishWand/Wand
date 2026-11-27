@@ -1682,18 +1682,18 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
     if scan.sampled||scan.invalid>0||scan.subgrid_parents.contains(&ordinal){return Err(bad);}
     let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
     if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected){return Err(bad);}
-    let scope=player_house_grid_scope(&root,&target.grid_id)?;
+    let scope=house_exterior_identity(&root,&target.grid_id)?.0;
     let refs=grid_identity_dependencies(profile,target)?;
     if refs.active>0||refs.related>0||refs.unknown>0||remove&&refs.blocking()>0{return Err(bad);}
     let json=std::str::from_utf8(profile).map_err(|_|bad)?;
     let draft=if remove{
-        let verified_grids:HashSet<String>=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?.iter().filter(|(_,g)|g.get("Objects").and_then(Value::as_object).is_some_and(|m|m.values().any(|v|v.get("ItemID").and_then(Value::as_u64)==Some(item)))).filter_map(|(id,_)|player_house_grid_scope(&root,id).ok().filter(|s|s==&scope).map(|_|id.clone())).collect();
+        let verified_grids:HashSet<String>=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?.iter().filter(|(_,g)|g.get("Objects").and_then(Value::as_object).is_some_and(|m|m.values().any(|v|v.get("ItemID").and_then(Value::as_u64)==Some(item)))).filter_map(|(id,_)|house_exterior_identity(&root,id).ok().filter(|s|s.0==scope).map(|_|id.clone())).collect();
         ddv_save_patch::preview_player_house_remove(json,target,expected,orientation,&verified_grids)
     }else{
         let witness=o.get("destination").ok_or(bad)?;
-        if world_grid_scope(witness)?.0!=scope{return Err(bad);}
         let dest=resolve_plain_grid_destination(profile,witness)?;
-        if player_house_grid_scope(&root,&dest.grid_id)?!=scope{return Err(bad);}
+        let native=house_exterior_identity(&root,&dest.grid_id)?;
+        if native.0!=scope||native.1!=dest.layout_path||native.2!=u64::from(dest.tessellation)||native.3!=u64::from(dest.size.0)||native.4!=u64::from(dest.size.1){return Err(bad);}
         let replacement=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?};
         ddv_save_patch::preview_player_house_duplicate_oriented(json,target,expected,&dest,(int("x")?,int("y")?),orientation,replacement)
     }.map_err(|_|CodecError::Patch)?;
@@ -1860,13 +1860,14 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).map_err(|_|bad)?;
     if root["GameInfo"]["Version"].as_u64()!=templates["saveVersion"].as_u64()||templates["saveVersion"].as_u64()!=Some(643){return Err(bad);}
     let item=o["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s)).ok_or(bad)?;
-    let witness=&o["destination"];let (scope,_)=world_grid_scope(witness)?;
+    let witness=&o["destination"];let (scope,_)=if item/100_000==205&&witness["layoutId"].as_str().is_some_and(|s|s.starts_with("SceneLayouts/FloatingIslands/")){island_scope(witness)?}else{world_grid_scope(witness)?};
     let well=templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item)));
     let other=templates["otherBuildings"][&scope].get(item.to_string());
     let detached=if item/100_000==205{detached_player_house_indices(profile)?.get(&item).copied()}else{None};
     if !well&&other.is_none()&&detached.is_none(){return Err(bad);}
     let d=resolve_plain_grid_destination(profile,witness)?;
-    if player_house_grid_scope(&root,&d.grid_id)?!=scope||building_transform_grid_size(&root,&d.grid_id)?!=(u64::from(d.size.0)*u64::from(d.tessellation),u64::from(d.size.1)*u64::from(d.tessellation)){return Err(bad);}
+    let native=house_exterior_identity(&root,&d.grid_id)?;
+    if native.0!=scope||native.1!=d.layout_path||native.2!=u64::from(d.tessellation)||native.3!=u64::from(d.size.0)||native.4!=u64::from(d.size.1){return Err(bad);}
     let collection=&root["World"]["GridCollection"];
     // Refuse unknown or diff representations rather than creating a second
     // identity for a native instance that is already present.
@@ -3805,6 +3806,20 @@ mod terrain_session_tests{
             assert_eq!(out["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
             assert_eq!(out["Player"],original["Player"]);
         }
+        let moved=ddv_save_patch::preview_player_house_world_change(&raw,&t,(1,2),&d,(3,4),"GridOrientation_Down",false).unwrap();
+        let duplicate=serde_json::json!({"playerHouseDuplicate":{"localOrdinal":1,"itemId":"20500002","expectedX":3,"expectedY":4,"orientation":"GridOrientation_Down","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":200,"sizeY":200},"x":8,"y":9,"replacementOrientation":"GridOrientation_Right"}});
+        let copied=group_paste_candidate(moved.patched_json.as_bytes(),&duplicate.to_string()).unwrap();
+        let result:Value=serde_json::from_str(&copied).unwrap();
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["11"]["Objects"]["8"]["Orientation"],"GridOrientation_Right");
+        let remove=serde_json::json!({"playerHouseRemove":{"localOrdinal":1,"itemId":"20500002","expectedX":3,"expectedY":4,"orientation":"GridOrientation_Down"}});
+        let removed:Value=serde_json::from_str(&group_paste_candidate(copied.as_bytes(),&remove.to_string()).unwrap()).unwrap();
+        assert!(removed["World"]["GridCollection"]["Grids"]["11"]["Objects"].get("7").is_none());
+        assert_eq!(removed["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        let mut detached=original.clone();detached["World"]["GridCollection"]["Grids"]["10"]["Objects"]=serde_json::json!({});
+        let reattach=serde_json::json!({"buildingInitial":{"itemId":"20500002","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":200,"sizeY":200},"x":8,"y":9,"orientation":"GridOrientation_Right"}});
+        let restored:Value=serde_json::from_str(&group_paste_candidate(detached.to_string().as_bytes(),&reattach.to_string()).unwrap()).unwrap();
+        assert_eq!(restored["World"]["GridCollection"]["Grids"]["11"]["Objects"]["7"]["State"],state);
+        assert_eq!(restored["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
         let mut primary=original.clone();
         primary["World"]["PlayerHouses"].as_array_mut().unwrap().swap(0,1);
         primary["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]["HouseData"]["PlayerHouseIndex"]=0.into();

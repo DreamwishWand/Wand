@@ -237,7 +237,8 @@ export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly M
  const hit=bypass?mainlandFreeHits(grids,rasters,worldX,worldY):mainlandTerrainHits(grids,rasters,worldX,worldY);
  if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
  const g=hit[0],r=rasters.get(g.key),shape=p.shape;
- if(landscape||building){const from=grids.find(q=>q.key===p.area);if(!from||sourceWorldScope(from)!==sourceWorldScope(g)||!['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'].includes(sourceWorldScope(g)))return null;}
+ if(landscape||building){const from=grids.find(q=>q.key===p.area),house=building&&Math.floor(Number(p.object.itemId)/100000)===205;
+  if(!from||exteriorWorldKey(from)!==exteriorWorldKey(g)||!(bindMainlandGrid(g)||house&&bindFloatingIslandGrid(g)))return null;}
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  if(!r||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!bypass&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor)||shape.cellCount>65536)return null;
  if(!bypass&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;

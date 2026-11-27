@@ -1800,7 +1800,7 @@ mod browser_amount_preview {
             let landscape=item/100_000==402;
             let mut draft=if house||building||landscape{
                 let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
-                let (source_scope,dest_scope)=if house&&world_change.is_some(){
+                let (source_scope,dest_scope)=if house{
                     let from=grid_instance_preview::house_exterior_identity(&root,&target.grid_id).map_err(|_|invalid())?;
                     let to=grid_instance_preview::house_exterior_identity(&root,&dest.grid_id).map_err(|_|invalid())?;
                     if to.1!=dest.layout_path||from.2!=to.2||to.2!=u64::from(dest.tessellation){return Err(invalid());}
