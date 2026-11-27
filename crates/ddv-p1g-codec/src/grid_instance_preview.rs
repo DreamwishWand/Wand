@@ -1673,9 +1673,9 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
  let mut layout_id=None::<String>;let mut world_mode=None::<bool>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
- let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();
+ let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();let mut landscapes=Vec::new();
  for row in rows{
-  let (row,network)=if decoration{let m=row.as_object().filter(|m|m.len()==2&&m.contains_key("furniture")&&m.contains_key("network")).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?))}else{(row,None)};
+  let (row,network,landscape)=if decoration{let m=row.as_object().filter(|m|m.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"))).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?),m.get("landscape"))}else{(row,None,None)};
   let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
   let witness=o.get("destination").ok_or(bad)?;
   let (layout,expected,world)=match island_scope(witness){Ok((s,n))=>(s,n,false),Err(_) if decoration=>{let (s,n)=world_grid_scope(witness)?;(s,n,true)},Err(e)=>return Err(e)};
@@ -1683,6 +1683,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   layout_id=Some(layout);world_mode=Some(world);expected_grids=expected;
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
+  if let Some(l)=landscape{if !world||l.get("destination")!=Some(witness){return Err(bad);}landscape_poses(&l["before"],&d)?;landscape_poses(&l["after"],&d)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
   if let Some(network)=network{
    let n=network.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
    if n.get("destination")!=Some(witness){return Err(bad);}
@@ -1707,13 +1708,14 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
  if full.iter().filter(|(_,g)|{let layout=g.get("GridDefaultLayoutPath").and_then(Value::as_str);if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}}).any(|(key,_)|!grids.contains(key)){return Err(bad);}
- if remove.is_empty()&&add.is_empty()&&networks.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
+ if remove.is_empty()&&add.is_empty()&&networks.is_empty()&&landscapes.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let r=group_pickup_bounded(profile,&serde_json::to_string(&remove).map_err(|_|bad)?,1,None,MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=r;
  }
+ for l in landscapes{let next=landscape_area_candidate(working.as_bytes(),&l)?;working.zeroize();*working=next;}
  for n in networks{
   let next=biome_network_candidate(working.as_bytes(),&serde_json::to_string(&n).map_err(|_|bad)?)?;
   working.zeroize();*working=next;
@@ -2757,6 +2759,74 @@ pub(super) fn inspect_area_network(profile:&[u8],witness:&str)->Result<String,Co
  ddv_save_patch::validate_area_network(&d,&parse_area_network_poses(&Value::Array(rows.clone()))?).map_err(|_|bad)?;
  serde_json::to_string(&rows).map_err(|_|bad)
 }
+type LandscapePose=(u64,i32,i32,usize);
+fn landscape_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination)->Result<Vec<LandscapePose>,CodecError>{
+ let bad=CodecError::Json;let mut seen=HashSet::new();
+ v.as_array().filter(|a|a.len()<=2048).ok_or(bad)?.iter().map(|r|{
+  let o=r.as_object().filter(|o|o.len()==4&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
+  let id=o.get("itemId").and_then(Value::as_u64).filter(|id|id/100_000==402).ok_or(bad)?;
+  let x=o.get("x").and_then(Value::as_u64).filter(|x|*x<u64::from(d.size.0)*u64::from(d.tessellation)).ok_or(bad)? as i32;
+  let y=o.get("y").and_then(Value::as_u64).filter(|y|*y<u64::from(d.size.1)*u64::from(d.tessellation)).ok_or(bad)? as i32;
+  let o=o.get("orientation").and_then(Value::as_u64).filter(|o|*o<4).ok_or(bad)? as usize;
+  if !seen.insert((x,y)){return Err(bad);}Ok((id,x,y,o))
+ }).collect()
+}
+fn landscape_orientation(o:usize)->&'static str{["GridOrientation_Up","GridOrientation_Right","GridOrientation_Down","GridOrientation_Left"][o]}
+fn landscape_observed(profile:&[u8],d:&ddv_save_patch::PlainGridDestination)->Result<HashMap<LandscapePose,Vec<String>>,CodecError>{
+ let bad=CodecError::Json;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let map=root["World"]["GridCollection"]["Grids"][&d.grid_id]["Objects"].as_object().ok_or(bad)?;
+ let mut rows=HashMap::<LandscapePose,Vec<String>>::new();
+ for (key,v) in map{
+  let Some(id)=v["ItemID"].as_u64().filter(|id|id/100_000==402)else{continue;};
+  if v["ID"].as_u64()!=key_id(key)||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||v.get("State").is_some_and(|s|!s.is_null()){continue;}
+  let Some(x)=v["X"].as_i64().and_then(|n|i32::try_from(n).ok())else{continue;};
+  let Some(y)=v["Y"].as_i64().and_then(|n|i32::try_from(n).ok())else{continue;};
+  let Some(o)=(0..4).find(|&o|v["Orientation"].as_str()==Some(landscape_orientation(o)))else{continue;};
+  if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation{continue;}
+  rows.entry((id,x,y,o)).or_default().push(key.clone());
+ }
+ Ok(rows)
+}
+pub(super) fn inspect_area_landscape(profile:&[u8],witness:&str)->Result<String,CodecError>{
+ let bad=CodecError::Json;let v:Value=serde_json::from_str(witness).map_err(|_|bad)?;
+ if island_scope(&v).is_ok(){return Ok("[]".into());}
+ let d=area_network_destination(profile,&v)?;
+ let mut rows:Vec<_>=landscape_observed(profile,&d)?.into_iter().filter_map(|(p,ids)|(ids.len()==1).then_some(p)).collect();
+ rows.sort_unstable();if rows.len()>2048{return Err(CodecError::Bounds);}
+ serde_json::to_string(&rows.into_iter().map(|(item,x,y,o)|serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":o})).collect::<Vec<_>>()).map_err(|_|bad)
+}
+fn landscape_area_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ use ddv_save_patch::{preview_plain_grid_structure,PlainGridStructureAction,preview_landscape_place};
+ let bad=CodecError::Json;
+ let p=plan.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+ let witness=p.get("destination").ok_or(bad)?;if island_scope(witness).is_ok(){return Err(bad);}
+ let d=area_network_destination(profile,witness)?;
+ let before=landscape_poses(p.get("before").ok_or(bad)?,&d)?;let after=landscape_poses(p.get("after").ok_or(bad)?,&d)?;
+ let actual=landscape_observed(profile,&d)?;
+ if before.iter().any(|r|actual.get(r).is_none_or(|v|v.len()!=1)){return Err(bad);}
+ let old:HashSet<_>=before.iter().copied().collect();let next:HashSet<_>=after.iter().copied().collect();
+ let removed:Vec<_>=before.iter().filter(|p|!next.contains(p)).collect();
+ let added:Vec<_>=after.iter().filter(|p|!old.contains(p)).collect();
+ if removed.len()+added.len()>2048{return Err(CodecError::Bounds);}
+ let ids:Vec<_>=removed.iter().map(|p|actual[*p][0].clone()).collect();
+ if !ids.chunks(512).all(|chunk|grid_identity_dependencies_for_ids(profile,&d.grid_id,chunk).is_ok_and(|r|r.blocking()==0&&r.historical==0)){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ for (p,key) in removed.into_iter().zip(ids){
+  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:key,item_id:p.0};
+  let draft=preview_plain_grid_structure(&working,&target,(p.1,p.2),PlainGridStructureAction::Remove).map_err(|_|bad)?;
+  working.zeroize();*working=draft.patched_json;
+ }
+ for p in added{
+  let dest=resolve_plain_grid_destination(working.as_bytes(),witness)?;
+  let draft=preview_landscape_place(&working,&dest,p.0,(p.1,p.2),landscape_orientation(p.3)).map_err(|_|bad)?;
+  working.zeroize();*working=draft.patched_json;
+ }
+ Ok(std::mem::take(&mut *working))
+}
+
 pub(super) fn biome_network_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
  use zeroize::Zeroize;
  let bad=CodecError::Json;
@@ -2808,7 +2878,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  let bad=CodecError::Json;
  if plan.len()>2_000_000{return Err(CodecError::Bounds);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let o=v.as_object().filter(|o|o.len()==2&&o.keys().all(|k|matches!(k.as_str(),"furniture"|"network"))).ok_or(bad)?;
+ let o=v.as_object().filter(|o|o.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"))).ok_or(bad)?;
  let f=o.get("furniture").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
  let n=o.get("network").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
  let witness=f.get("destination").ok_or(bad)?;
@@ -2826,13 +2896,15 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  if old.len()!=before.len()||desired.len()!=after.len()||actual.len()!=old.len()||actual.into_iter().collect::<HashSet<_>>()!=old{return Err(bad);}
  ddv_save_patch::validate_area_network(&dest,&before).map_err(|_|bad)?;
  ddv_save_patch::validate_area_network(&dest,&after).map_err(|_|bad)?;
- if old==desired&&remove.is_empty()&&add.is_empty(){return Err(bad);}
+ let landscape=o.get("landscape");if landscape.is_some_and(|l|l.get("destination")!=Some(witness)){return Err(bad);}
+ if old==desired&&remove.is_empty()&&add.is_empty()&&landscape.is_none_or(|l|l["before"]==l["after"]){return Err(bad);}
  check_area_support_change_count(profile,remove,add)?;
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let next=group_pickup_bounded(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&dest.grid_id),MAX_AREA_FURNITURE_CHANGES)?;
   working.zeroize();*working=next;
  }
+ if let Some(l)=landscape{let next=landscape_area_candidate(working.as_bytes(),l)?;working.zeroize();*working=next;}
  if old!=desired{
   let next=biome_network_candidate(working.as_bytes(),&serde_json::to_string(n).map_err(|_|bad)?)?;
   working.zeroize();*working=next;

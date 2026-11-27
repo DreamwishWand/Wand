@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {verifiedLandscape,landscapeBackupWords,type LandscapePose} from './landscape-decoration-preset.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -29,6 +30,7 @@
  let key='',input:HTMLInputElement,source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',error=false,reading=false,epoch=0,own:Worker|null=null,subscribed:Worker|null=null,requestId=0;
  export let includeFurniture=false;
  let includeSupport=false,currentSupports:SupportAreaTrees|undefined,incomingSupports:SupportAreaTrees|undefined,supportAbort:AbortController|null=null;
+ let currentLandscape:LandscapePose[]|undefined,incomingLandscape:LandscapePose[]|undefined;
  let incomingFurniture:DesignPlacement[]|null=null,stock:Map<number,number>|null=null,stockWorker:Worker|null=null;
  let before:NetworkPose[]|null=null,after:NetworkPose[]|null=null,defs=new Map<number,DesignItemGeometry>(),copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  $: w=networkPresetWords[locale];$: sw=supportAreaWords[locale];$: dw=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
@@ -38,12 +40,12 @@
  $: busy=reading||!!own||!!requestId||!!stockWorker;
  $: ready=!!grid&&source===file&&sourceObjects===objects&&sourceKey===key&&before!==null&&after!==null;
  $: networkReview=ready&&grid&&before&&after&&!includeFurniture?reviewBiomeNetwork(grid,rasters,objects,omitted,before,after,defs):null;
- $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after,supports:incomingSupports},defs,stock,false,currentSupports):null;
+ $: decorationReview=ready&&grid&&before&&after&&includeFurniture&&incomingFurniture&&stock?reviewBiomeDecoration(grid,grids,rasters,objects,omitted,before,{furniture:incomingFurniture,network:after,supports:incomingSupports,landscape:incomingLandscape},defs,stock,false,currentSupports,false,currentLandscape):null;
  $: result=decorationReview??networkReview;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
- function cancel(){epoch++;supportAbort?.abort();supportAbort=null;currentSupports=undefined;incomingSupports=undefined;own?.terminate();own=null;stockWorker?.terminate();stockWorker=null;stock=null;incomingFurniture=null;requestId=0;reading=false;source=null;sourceObjects=null;sourceKey='';before=null;after=null;defs=new Map();error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
+ function cancel(){epoch++;supportAbort?.abort();supportAbort=null;currentSupports=undefined;incomingSupports=undefined;currentLandscape=undefined;incomingLandscape=undefined;own?.terminate();own=null;stockWorker?.terminate();stockWorker=null;stock=null;incomingFurniture=null;requestId=0;reading=false;source=null;sourceObjects=null;sourceKey='';before=null;after=null;defs=new Map();error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
  function setMode(value:boolean){cancel();includeFurniture=value;if(!value)includeSupport=false;}
  function setSupports(value:boolean){cancel();includeSupport=value;}
  function inspect(download:boolean,preset?:File){
@@ -55,23 +57,23 @@
    job.terminate();if(own!==job||epoch!==token)return;own=null;reading=true;
    try{
     if(d?.kind!=='area-network')throw Error('read');
-    const rows=networkRows(d.rows,g);
+    const rows=networkRows(d.rows,g);if(full)currentLandscape=verifiedLandscape(g,objects,d.landscape);
     if(download&&full&&withSupport){if(!worker)throw Error('worker');const ac=new AbortController();supportAbort=ac;currentSupports=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted)return;}
-    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');savePresetFile(text,'wand-biome-'+(full?'decoration-':'network-')+g.key+'.json');return;}
+    if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined,false,currentLandscape)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');savePresetFile(text,'wand-biome-'+(full?'decoration-':'network-')+g.key+'.json');return;}
     if(!preset||!worker||preset.size>(full?BIOME_DECORATION_FILE_LIMIT:1_000_000))throw Error('file');
     const text=await readPresetText(preset,full?BIOME_DECORATION_FILE_LIMIT:1_000_000),combined=full?parseBiomeDecoration(text,g):null,incoming=combined?.network??parseBiomeNetwork(text,g);void rememberPreset(preset,text).catch(()=>{});
     if(epoch!==token||source!==file||sourceObjects!==objects||sourceKey!==key)return;
     if(combined?.supports){const ac=new AbortController();supportAbort=ac;const trees=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);await validateAreaSupportTrees(worker,combined.supports.values(),nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted||source!==file||sourceObjects!==objects||sourceKey!==key)return;currentSupports=trees;incomingSupports=combined.supports;includeSupport=true;}else includeSupport=false;
-    before=rows;after=incoming;incomingFurniture=combined?.furniture??null;
+    before=rows;after=incoming;incomingFurniture=combined?.furniture??null;incomingLandscape=combined?.landscape;
     if(combined){
      const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
      const finish=(d:any)=>{read.terminate();if(stockWorker!==read||epoch!==token)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
      read.onmessage=e=>finish(e.data);read.onerror=()=>finish(null);read.onmessageerror=()=>finish(null);read.postMessage({command:'read-furniture-stock',file:f});
     }
-    const ids=[...new Set([...incoming,...(incomingFurniture??[])].map(p=>p.itemId))];if(ids.length){requestId=nextRequest();worker.postMessage({command:'design-shapes',requestId,key:g.key,itemIds:ids});}
+    const ids=[...new Set([...incoming,...(incomingFurniture??[]),...(incomingLandscape??[])].map(p=>p.itemId))];if(ids.length){requestId=nextRequest();worker.postMessage({command:'design-shapes',requestId,key:g.key,itemIds:ids});}
    }catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
   };
-  job.onmessage=e=>void done(e.data);job.onerror=()=>void done(null);job.onmessageerror=()=>void done(null);job.postMessage({command:'inspect-area-network',file:f,plan:dest});
+  job.onmessage=e=>void done(e.data);job.onerror=()=>void done(null);job.onmessageerror=()=>void done(null);job.postMessage({command:'inspect-area-network',file:f,plan:dest,includeLandscape:full});
  }
  function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)inspect(false,f);}
  function receive(e:MessageEvent){const d=e.data;if(!requestId||d?.requestId!==requestId)return;requestId=0;if(d.kind!=='design-shapes'||d.key!==key||!Array.isArray(d.result)){error=true;return;}defs=new Map(d.result.map((p:DesignItemGeometry)=>[p.itemId,p]));}
@@ -92,7 +94,7 @@
  <input class="biome-network-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!grid||blocked||busy||!!copy||!!omitted} on:click={()=>inspect(true)}>{includeFurniture?dw[1]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={includeFurniture?['wand.preset.biome-decoration@1']:['wand.preset.biome-network@1']} disabled={!grid||blocked||busy||!!copy||!!omitted} label={includeFurniture?dw[2]:w[2]} onPick={f=>inspect(false,f)}/>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
- {#if result}{#if decorationReview}<small>{dw[4]} · {bw[4]} {decorationReview.furniture.retained.length} · {bw[5]} {decorationReview.furniture.removed.length} · {bw[6]} {decorationReview.furniture.ghosts.length}</small><small>{dw[5]} · {bw[4]} {decorationReview.network.retained} · {bw[5]} {decorationReview.network.removed.length} · {bw[6]} {decorationReview.network.ghosts.length}</small><small>{bw[7]} {decorationReview.protectedCount}</small><RestoreStockReview rows={restoreStockRows([decorationReview.furniture],decorationReview.missing)} {locale}/>{#if decorationReview.missing.length}<small role="alert">{bw[8]} · {decorationReview.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}{:else if networkReview}<small>{bw[4]} {networkReview.retained} · {bw[5]} {networkReview.removed.length} · {bw[6]} {networkReview.ghosts.length}</small>{/if}{#if !result.changed}<small>{bw[13]}</small>{/if}{#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!decorationReview?.missing.length} on:click={validate}>{bw[9]}</button>{/if}{:else if after&&!busy}<small role="alert">{bw[12]}</small>{/if}
+ {#if result}{#if decorationReview}<small>{dw[4]} · {bw[4]} {decorationReview.furniture.retained.length} · {bw[5]} {decorationReview.furniture.removed.length} · {bw[6]} {decorationReview.furniture.ghosts.length}</small><small>{dw[5]} · {bw[4]} {decorationReview.network.retained} · {bw[5]} {decorationReview.network.removed.length} · {bw[6]} {decorationReview.network.ghosts.length}</small>{#if decorationReview.landscape}<small>{landscapeBackupWords[locale]} · {bw[4]} {decorationReview.landscape.retained} · {bw[5]} {decorationReview.landscape.removed.length} · {bw[6]} {decorationReview.landscape.ghosts.length}</small>{/if}<small>{bw[7]} {decorationReview.protectedCount}</small><RestoreStockReview rows={restoreStockRows([decorationReview.furniture],decorationReview.missing)} {locale}/>{#if decorationReview.missing.length}<small role="alert">{bw[8]} · {decorationReview.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}{:else if networkReview}<small>{bw[4]} {networkReview.retained} · {bw[5]} {networkReview.removed.length} · {bw[6]} {networkReview.ghosts.length}</small>{/if}{#if !result.changed}<small>{bw[13]}</small>{/if}{#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!decorationReview?.missing.length} on:click={validate}>{bw[9]}</button>{/if}{:else if after&&!busy}<small role="alert">{bw[12]}</small>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
  {#if error||!grid||omitted}<small role="alert">{bw[12]}</small>{/if}
  <button type="button" on:click={onClose}>{bw[10]}</button>

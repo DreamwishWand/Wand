@@ -2204,6 +2204,12 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(draft,true)
         }
 
+        pub fn inspect_area_landscape(&self,witness:&str)->Result<String,JsValue>{
+            let invalid=||fail("DB05_AREA_LANDSCAPE_INVALID");
+            if !self.ready||self.closed{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            grid_instance_preview::inspect_area_landscape(source,witness).map_err(|_|invalid())
+        }
         pub fn inspect_area_network(&self,witness:&str)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_AREA_NETWORK_NOT_OPEN"));}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_AREA_NETWORK_NOT_OPEN"))?.profile.as_slice()};
