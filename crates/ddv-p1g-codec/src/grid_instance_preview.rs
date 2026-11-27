@@ -210,6 +210,20 @@ fn exclusive_anchor_class(item_id:u64)->Option<u64>{
 pub(super) fn validate_exclusive_grid_moves(
     profile:&[u8],moves:&[(&GridCoordinateTarget,(i32,i32))]
 )->Result<(),CodecError>{
+    // Typed building transforms retain identity, but never accept an
+    // anchor outside the original source Grid from an untrusted plan.
+    if moves.iter().any(|(target,_)|target.item_id/10_000_000==2){
+        let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+        for (target,(x,y)) in moves{
+            if target.item_id/10_000_000!=2{continue;}
+            let grid=root["World"]["GridCollection"]["Grids"].get(&target.grid_id).ok_or(CodecError::Json)?;
+            let obj=grid["Objects"].get(&target.object_id).ok_or(CodecError::Json)?;
+            if obj.get("State").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.is_empty())){
+                let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;
+                if *x<0||*y<0||*x as u64>=sx||*y as u64>=sy{return Err(CodecError::Bounds);}
+            }
+        }
+    }
     let exclusive=moves.iter().filter_map(|(target,xy)|
         exclusive_anchor_class(target.item_id).map(|class|(*target,*xy,class))
     ).collect::<Vec<_>>();
@@ -349,9 +363,54 @@ pub(super) fn resolve_grid_mixed_targets(
     Ok(out)
 }
 
-/// Existing on-grid buildings only. Keep native identity, require a simple
-/// full record and reject known/unknown inbound dependencies rather than
-/// attempting to repair entrances, progression or linked scene state.
+/// Resolve the original outdoor Grid from the current source catalog.
+fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+    let bad=CodecError::Json;
+    let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
+    let grid=grids.get(gid).ok_or(bad)?;
+    let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
+    let data=grid["GridDataPath"].as_str().ok_or(bad)?;
+    let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
+    let scope=layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?;
+    if grids.values().filter(|g|g["GridDefaultLayoutPath"].as_str()==Some(layout)&&g["GridDataPath"].as_str()==Some(data)).count()!=1{return Err(bad);}
+    let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
+    let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
+    let mut rows=entry["grids"].as_array().ok_or(bad)?.iter().filter(|g|g["layoutId"].as_str()==Some(layout)&&g["gridDataPath"].as_str()==Some(data)&&g["factor"].as_u64()==Some(factor));
+    let row=rows.next().ok_or(bad)?;
+    if rows.next().is_some(){return Err(bad);}
+    Ok((row["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor,row["sizeY"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor))
+}
+
+/// Validate the native category's state envelope; nested data is not
+/// reconstructed or normalized by the lexical transform. Unknown oneof
+/// cases are unsupported, and identity references are checked separately.
+fn known_building_transform_state(root:&Value,item:u64,state:&Value)->bool{
+    let Some(m)=state.as_object().filter(|m|m.len()==1) else{return false;};
+    let upgrade=|v:&Value|v.as_object().is_some();
+    let skin=|v:&Value|v.as_i64().is_some();
+    match (item%10_000_000)/100_000{
+        0|5=>{
+            let Some(h)=m.get("HouseData").and_then(Value::as_object) else{return false;};
+            if h.keys().any(|k|!matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))||
+               h.get("Built").and_then(Value::as_bool)!=Some(true)||
+               h.get("UpgradeState").is_some_and(|v|!v.is_null()&&!upgrade(v)){return false;}
+            if item/100_000==205{
+                let Some(idx)=h.get("PlayerHouseIndex").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()) else{return false;};
+                let Some(houses)=root["World"]["PlayerHouses"].as_array() else{return false;};
+                houses.get(idx).is_some_and(|v|v["HouseItemID"].as_u64()==Some(item)&&v["Floors"].as_array().is_some_and(|a|!a.is_empty()))&&
+                houses.iter().filter(|v|v["HouseItemID"].as_u64()==Some(item)).count()==1
+            }else{h.get("PlayerHouseIndex").is_none_or(|v|v.as_i64().is_some())}
+        },
+        1=>m.get("StallData").and_then(Value::as_object).is_some_and(|v|v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("ShopData").is_some_and(Value::is_object)&&v.get("CurrentSkinItemID").is_none_or(skin)),
+        2=>m.get("GardenData").and_then(Value::as_object).is_some_and(|v|v.len()==1&&v.get("Slots").and_then(Value::as_array).is_some_and(|a|a.iter().all(Value::is_object))),
+        3=>m.get("BuildingWithSkinData").and_then(Value::as_object).is_some_and(|v|v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("CurrentSkinItemID").is_none_or(skin)),
+        _=>false
+    }
+}
+
+/// Existing on-grid buildings only. Keep native identity and preserve the
+/// entire state byte-for-byte. Reject inbound dependencies instead of
+/// trying to repair entrances, progression or linked scene state.
 fn validate_building_transform(profile:&[u8],target:&GridCoordinateTarget)->Result<(),CodecError>{
     let bad=CodecError::Json;
     if target.kind!=GridObjectKind::Full||!matches!((target.item_id%10_000_000)/100_000,0|1|2|3|5){return Err(bad);}
@@ -364,9 +423,14 @@ fn validate_building_transform(profile:&[u8],target:&GridCoordinateTarget)->Resu
     let obj=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
     if obj.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id)||
        obj.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
-       obj.get("State").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty()))||
        !obj.get("Orientation").and_then(Value::as_str).is_some_and(|v|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&v)){
         return Err(bad);
+    }
+    if let Some(state)=obj.get("State").filter(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty())){
+        if !known_building_transform_state(&root,target.item_id,state){return Err(bad);}
+        let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;
+        let (x,y)=observed_coordinates(obj).ok_or(bad)?;
+        if x<0||y<0||x as u64>=sx||y as u64>=sy{return Err(bad);}
     }
     let refs=grid_identity_dependencies(profile,target)?;
     if refs.blocking()>0{return Err(bad);}
@@ -2759,6 +2823,27 @@ mod terrain_session_tests{
         assert!(check(&state,20000001).is_err());
         let mut offgrid=source.clone();offgrid["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["ItemID"]=20400001.into();
         assert!(check(&offgrid,20400001).is_err());
+    }
+    #[test]
+    fn typed_building_transforms_preserve_state_and_require_original_grid(){
+        let raw=br#"{"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":20500001,"X":4,"Y":5,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":{"Level":1}}}},"2":{"ID":2,"ItemID":20000001,"X":6,"Y":7,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"UpgradeState":null,"PlayerHouseIndex":-1}}},"3":{"ID":3,"ItemID":20100001,"X":8,"Y":9,"Orientation":"GridOrientation_Down","State":{"StallData":{"UpgradeState":{"Level":1},"ShopData":{"Seed":3,"Slots":[],"Marker":1e2},"CurrentSkinItemID":0}}},"4":{"ID":4,"ItemID":20200001,"X":10,"Y":11,"Orientation":"GridOrientation_Down","State":{"GardenData":{"Slots":[{"PlantedSeedItemID":1}]}}},"5":{"ID":5,"ItemID":20300001,"X":12,"Y":13,"Orientation":"GridOrientation_Down","State":{"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":0}}}}}}}}}"#;
+        let items=[20500001,20000001,20100001,20200001,20300001];
+        let selectors=items.iter().enumerate().map(|(i,item)|(i+1,*item,(4+i as i32*2,5+i as i32*2),"full".to_owned(),Some("GridOrientation_Down".to_owned()))).collect::<Vec<_>>();
+        let targets=resolve_grid_mixed_targets(raw,&selectors).unwrap();
+        let moves=targets.iter().map(|t|(t,(20,30))).collect::<Vec<_>>();
+        assert!(validate_exclusive_grid_moves(raw,&moves).is_ok());
+        assert!(validate_exclusive_grid_moves(raw,&[(&targets[0],(400,30))]).is_err());
+        let edits=targets.iter().zip(selectors.iter()).map(|(t,s)|ddv_save_patch::GridMixedEdit{target:t.clone(),expected:s.2,position:Some((20,30)),orientation:Some(("GridOrientation_Down".into(),"GridOrientation_Left".into()))}).collect::<Vec<_>>();
+        let draft=ddv_save_patch::preview_existing_grid_mixed_batch(std::str::from_utf8(raw).unwrap(),&edits).unwrap();
+        let before:Value=serde_json::from_slice(raw).unwrap();
+        let after:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        assert_eq!(before["World"]["PlayerHouses"],after["World"]["PlayerHouses"]);
+        for i in 1..=5{let k=i.to_string();let a=&after["World"]["GridCollection"]["Grids"]["10"]["Objects"][&k];let b=&before["World"]["GridCollection"]["Grids"]["10"]["Objects"][&k];assert_eq!(a["State"],b["State"]);assert_eq!(a["ID"],b["ID"]);assert_eq!(a["X"],20);assert_eq!(a["Orientation"],"GridOrientation_Left");}
+        assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        let mut wrong=before.clone();wrong["World"]["PlayerHouses"][0]["HouseItemID"]=Value::from(20500002);
+        assert!(resolve_grid_mixed_targets(&serde_json::to_vec(&wrong).unwrap(),&selectors).is_err());
+        let mut unknown=before.clone();unknown["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"]["SubGrid"]=serde_json::json!({"GridID":90});
+        assert!(resolve_grid_mixed_targets(&serde_json::to_vec(&unknown).unwrap(),&selectors).is_err());
     }
     #[test]
     fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
