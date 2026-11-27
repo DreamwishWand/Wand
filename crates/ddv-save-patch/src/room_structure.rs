@@ -53,6 +53,9 @@ fn room_geometry(root:&Value,t:RoomFinishTarget,shapes:&[Shape])->Result<(usize,
 // at their existing anchors. This checks coordinate bounds, NOT footprint,
 // terrain permissions or collision. Strict mode never uses this relaxation.
 fn resize_door_changes(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next:&Shape,free:bool)->Option<Vec<(u32,String,i64,i64)>>{
+ resize_door_changes_except(root,t,ids,old,next,free,&HashSet::new())
+}
+fn resize_door_changes_except(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next:&Shape,free:bool,skip:&HashSet<(u32,String)>)->Option<Vec<(u32,String,i64,i64)>>{
  let mut moves=Vec::new();
  for (i,n) in ids.iter().enumerate(){
   if old.paths[i]==next.paths[i]{continue;}
@@ -93,7 +96,7 @@ fn resize_door_changes(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next
   let (ox,oy)=*terrain_dimensions().get(&old.paths[i])?;
   let (nx,ny)=*terrain_dimensions().get(&next.paths[i])?;
   for (key,obj) in objects{
-   if moving_key.as_ref()==Some(key){continue;}
+   if moving_key.as_ref()==Some(key)||skip.contains(&(*n,key.clone())){continue;}
    let item=obj["ItemID"].as_u64()?;
    if item/100000!=400{return None;}
    let (x,y)=(obj["X"].as_i64()?,obj["Y"].as_i64()?);
@@ -143,9 +146,8 @@ fn shrink_pickups(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->Option<Vec<(Gr
 }
 fn recovery_candidate(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next:&Shape)->Option<usize>{
  let rows=shrink_pickups(root,ids,old,next)?;
- let mut staged=root.clone();
- for (target,_,_) in &rows{staged["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"].as_object_mut()?.remove(&target.object_id)?;}
- resize_door_changes(&staged,t,ids,old,next,true)?;
+ let skipped=rows.iter().map(|(t,_,_)|Some((t.grid_id.parse::<u32>().ok()?,t.object_id.clone()))).collect::<Option<HashSet<_>>>()?;
+ resize_door_changes_except(root,t,ids,old,next,true,&skipped)?;
  Some(rows.len())
 }
 pub fn room_resize_recovery_options(root:&Value,t:RoomFinishTarget)->Vec<(String,usize)>{
