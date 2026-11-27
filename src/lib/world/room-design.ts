@@ -54,7 +54,7 @@ export function supportDesignTemplate(raw:unknown,ownerItemId:number,path:string
 export function flatSupportScene(raw:string,owner:number,target:SupportTree,shapes:Readonly<Record<string,import('./source-object-map.ts').SourceObjectShape>>,terrain:TerrainRaster,allowed:ReadonlySet<number>):SupportScene|null{
  if(!target.sourcePath||target.objects.length)return null;
  let doc:ScenePreset|null;try{doc=convertSceneFactor(parseSceneAnyFactor(raw),target.factor);}catch{return null;}
- if(!doc||doc.items.length>32)return null;
+ if(!doc||doc.items.length>32||doc.items.some(p=>!Number.isInteger(p.orientation)))return null;
  let width=0,height=0;
  for(const p of doc.items){const shape=shapes[p.itemId+':'+p.orientation*4];if(!shape||!allowed.has(p.itemId))return null;width=Math.max(width,p.dx+shape.width);height=Math.max(height,p.dy+shape.height);}
  const x=doc.anchor==='center'?Math.floor((terrain.sizeX*target.factor-width)/2):0,y=doc.anchor==='center'?Math.floor((terrain.sizeY*target.factor-height)/2):0;

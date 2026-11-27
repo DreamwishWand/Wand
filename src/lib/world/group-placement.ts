@@ -55,9 +55,9 @@ export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGe
 }
 /** Physical bounds on the common half-cell lattice, used for Scene anchor
  * snapping. A target factor must have source-derived geometry. */
-export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeometry,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:{x:number;y:number},anchor:'corner'|'center'){
+export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeometry,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:{x:number;y:number},anchor:'corner'|'center',free=false){
  if(anchor==='corner')return p;
- const hits=mainlandTerrainHits(grids,rasters,p.x,p.y);if(hits.length!==1)return null;
+ const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,p.x,p.y);if(hits.length!==1)return null;
  const g=hits[0];let width=0,height=0;
  for(const item of clip){const s=defs.get(item.itemId)?.get(g.factor)?.shapes[item.itemId+':'+item.orientation*4];if(!s)return null;width=Math.max(width,item.dx/2+s.width/g.factor);height=Math.max(height,item.dy/2+s.height/g.factor);}
  if(!width||!height)return null;

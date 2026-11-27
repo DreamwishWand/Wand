@@ -122,7 +122,7 @@ export function parseMixedScene(raw:string):MixedScenePreset{
   if(support&&support.ownerItemId!==p.itemId)throw Error('SCENE_OWNER');
   return {...p,support};
  });
- if(!items.some(p=>p.support)||!mixedSceneSizeValid(items))throw Error('SCENE_LIMIT');
+ if(items.some(p=>!Number.isInteger(p.orientation))||!items.some(p=>p.support)||!mixedSceneSizeValid(items))throw Error('SCENE_LIMIT');
  return {schema:'wand.preset.mixed-scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items};
 }
 export function mixedSceneFromClip(clip:readonly DesignClipItem[],supports:readonly (SupportScene|null)[],anchor:'corner'|'center'='center'):MixedScenePreset{
