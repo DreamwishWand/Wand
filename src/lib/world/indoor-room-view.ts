@@ -258,11 +258,12 @@ export function indoorGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record
  return out;
 }
 export type IndoorAlignMode='left'|'right'|'top'|'bottom'|'centerX'|'centerY'|'spaceX'|'spaceY';
-export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],mode:IndoorAlignMode):SupportChildEdit[]|null{
+export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],mode:IndoorAlignMode,free=false):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face),selected=new Set(indices);
  if(!tree||!face?.terrain||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length)return null;
+ if(free&&!indoorFreeFloor(face))return null;
  const horizontal=['left','right','centerX','spaceX'].includes(mode);
- const chosen=indices.map(index=>{const o=tree.objects[index],code=o?CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4:-4,s=o?shapes[o.itemId+':'+code]:null;return o&&s&&s.runs.length&&allowed.has(o.itemId)&&indoorClear(tree,shapes,index)?{index,o,start:horizontal?o.x:o.y,size:horizontal?s.width:s.height}:null;});
+ const chosen=indices.map(index=>{const o=tree.objects[index],code=o?(free?worldOrientationCode(o.orientation):CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4):-4,s=o?shapes[o.itemId+':'+code]:null;return o&&s&&s.runs.length&&allowed.has(o.itemId)&&(free?face.positions[index]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,index))?{index,o,start:horizontal?o.x:o.y,size:horizontal?s.width:s.height}:null;});
  if(chosen.some(p=>!p))return null;
  const rows=chosen.filter(p=>p!==null),lo=Math.min(...rows.map(p=>p.start)),hi=Math.max(...rows.map(p=>p.start+p.size));
  const starts=new Map<number,number>();
@@ -272,8 +273,8 @@ export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<strin
  }else for(const p of rows){const pos=mode==='left'||mode==='top'?lo:mode==='right'||mode==='bottom'?hi-p.size:(lo+hi-p.size)/2;if(!Number.isSafeInteger(pos))return null;starts.set(p.index,pos);}
  const staged={...tree,objects:tree.objects.filter((_,i)=>!selected.has(i))},out:SupportChildEdit[]=[];
  for(const {o,index} of rows){const start=starts.get(index)!,x=horizontal?start:o.x,y=horizontal?o.y:start;
-  if(!supportPlacementFits(staged,shapes,face.terrain,o.itemId,x,y,o.orientation))return null;
-  if(x!==o.x||y!==o.y){const q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,o.orientation);if(!q)return null;out.push({...q[0],index});}
+  if(!(free?freeRoomPose(face,shapes,o.itemId,x,y,o.orientation):supportPlacementFits(staged,shapes,face.terrain,o.itemId,x,y,o.orientation)))return null;
+  if(x!==o.x||y!==o.y){const q=free?indoorFreeTransform(face,shapes,allowed,index,x,y):supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,o.orientation);if(!q)return null;out.push({...q[0],index});}
   staged.objects.push({...o,x,y});
  }
  return out.length?out:null;
