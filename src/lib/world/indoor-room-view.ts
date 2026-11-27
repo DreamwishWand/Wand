@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[];anchorOptions?:string[];recoveryOptions?:[string,number][]};ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';removeRecoverCount?:number;resize?:{current:string;options:string[];anchorOptions?:string[];recoveryOptions?:[string,number][]};ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -35,9 +35,10 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  if(!record(value)||value.contract!=='wand.db05.indoor-rooms@1'||value.geometryVerified!==false||value.writerAuthorized!==false||!Array.isArray(value.rooms)||value.rooms.length>2048)throw Error('INDOOR_REPORT_INVALID');
  let total=0;const roomSlots=new Set<string>();
  return value.rooms.map((room,i)=>{
-  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','removeRecoverCount','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   if(typeof room.roomSlot==='number'){const address=room.house+':'+room.floor+':'+room.roomSlot;if(roomSlots.has(address))throw Error('INDOOR_ROOM_ADDRESS');roomSlots.add(address);}
   if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,19)||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
+  if(room.removeRecoverCount!==undefined&&(!integer(room.removeRecoverCount,1,2048)||!['room','floor'].includes(String(room.removeKind))))throw Error('INDOOR_REMOVE_COUNT_INVALID');
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
   const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
   const slots=room.addRoomSlots;if(slots!==undefined&&(!Array.isArray(slots)||slots.length<1||slots.length>3||new Set(slots).size!==slots.length||slots.some(n=>!integer(n,1,3))||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_ADD_ROOM_INVALID');
@@ -60,7 +61,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    }
    return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
-  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[],addRoomSizes:sizes as string[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove}:{}),ceiling:room.ceiling,surfaces};
+  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[],addRoomSizes:sizes as string[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove,...(typeof room.removeRecoverCount==='number'?{removeRecoverCount:room.removeRecoverCount}:{})}:{}),ceiling:room.ceiling,surfaces};
  });
 }
 export const indoorWords={
@@ -557,7 +558,7 @@ export const addRoomWords={
 
 export function indoorRemoveRoomPlan(room:IndoorRoom|null){
  if(room?.houseItemId!==20500000||!(room.removeKind==='floor'&&room.roomSlot===0&&room.floor>1||room.removeKind==='room'&&integer(room.roomSlot,1,3)))return null;
- return {house:room.house,houseItemId:room.houseItemId,floor:room.floor,slot:room.roomSlot,kind:room.removeKind};
+ return {house:room.house,houseItemId:room.houseItemId,floor:room.floor,slot:room.roomSlot,kind:room.removeKind,...(room.removeRecoverCount?{recoverCount:room.removeRecoverCount}:{})};
 }
 export const removeRoomWords={
  ja:['部屋を削除','最上階を削除','空の部屋と接続ドアを削除します。','空の最上階とエレベーターを削除します。'],
@@ -590,4 +591,15 @@ export const recoverResizeWords={
  'es-ES':['Recoger muebles fuera del límite',' muebles volverán al inventario. No se comprueban las huellas ni los solapamientos restantes.'],
  'zh-CN':['收回范围外的家具','件家具将返回库存。其余家具占地及重叠未验证。'],
  'pt-BR':['Recolher móveis fora da área',' móveis retornarão ao estoque. Áreas ocupadas e sobreposições restantes não são verificadas.']
+} as const;
+
+export const removeRecoveryWords={
+ ja:['個の家具を所持品に回収してから削除します。','部屋と接続ドアを削除します。','最上階の全室とエレベーターを削除します。'],
+ en:[' furniture objects will return to stock before removal.','Remove the room and connecting doors.','Remove every room and the elevator on the top floor.'],
+ fr:[' meubles seront remis en stock avant suppression.','Supprimer la pièce et ses portes.','Supprimer toutes les pièces et l’ascenseur du dernier étage.'],
+ it:[' mobili saranno restituiti prima della rimozione.','Rimuovi la stanza e le porte.','Rimuovi tutte le stanze e l’ascensore dell’ultimo piano.'],
+ de:[' Möbel werden vor dem Entfernen zurückgelegt.','Raum und Verbindungstüren entfernen.','Alle Räume und den Aufzug der obersten Etage entfernen.'],
+ 'es-ES':[' muebles volverán al inventario antes de eliminar.','Eliminar la habitación y sus puertas.','Eliminar todas las habitaciones y el ascensor de la última planta.'],
+ 'zh-CN':['件家具将在删除前返回库存。','删除房间及连接门。','删除顶层全部房间及电梯。'],
+ 'pt-BR':[' móveis retornarão ao estoque antes da remoção.','Remover cômodo e portas.','Remover todos os cômodos e o elevador do último andar.']
 } as const;
