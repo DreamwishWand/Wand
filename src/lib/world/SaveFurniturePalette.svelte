@@ -9,7 +9,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {characterHouseExterior} from './character-house-exteriors.ts';
- import {readLocalHouseTemplates,houseSourceWords} from './player-house-source.ts';
+ import {readLocalHouseTemplates,houseSourceWords,newHouseWords} from './player-house-source.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,buildingSourceEligible,buildingDuplicate,buildingPickup,buildingPlacementSources,initialBuildingEligible,initialBuildingPlacement,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
@@ -56,6 +56,7 @@
  const characterWords={ja:['家の外観を複製','キャラクターの所属・進行は維持。入口と再起動後の動作は未検証です。','余分な外観を撤去'],en:['Duplicate house exterior','Character presence and progress stay unchanged. Entrances and reload behavior are unverified.','Remove redundant exterior'],fr:['Dupliquer la maison','Présence et progression conservées. Entrées et rechargement non vérifiés.','Retirer le doublon'],it:['Duplica esterno','Presenza e progressi conservati. Entrate e ricaricamento non verificati.','Rimuovi duplicato'],de:['Hausfassade duplizieren','Anwesenheit und Fortschritt bleiben erhalten. Eingänge und Neuladen ungeprüft.','Doppelte Fassade entfernen'],'es-ES':['Duplicar exterior','Presencia y progreso sin cambios. Entradas y recarga sin verificar.','Retirar duplicado'],'zh-CN':['复制房屋外观','角色所属和进度保持不变。入口及重新加载行为尚未验证。','移除多余外观'],'pt-BR':['Duplicar exterior','Presença e progresso preservados. Entradas e recarga não verificadas.','Remover duplicata']} as const;
  $: houseToolId=Number((candidate?.plan.itemId??source?.object.itemId??chosen?.object.itemId)??0);
  $: hw=Math.floor(houseToolId/100000)===205?houseWords[locale]:characterHouseExterior(houseToolId)?characterWords[locale]:buildingWords[locale];
+ $: newHouseCandidate=!!candidate&&candidate.plan.action==='place'&&!detached.has(Number(candidate.plan.itemId))&&newHouseIds.has(Number(candidate.plan.itemId))&&localHouseSources.has(Number(candidate.plan.itemId));
  $: houseCandidate=!!candidate&&[200,201,202,203,205].includes(Math.floor(Number(candidate.plan.itemId)/100000));
  $: canRemoveHouse=!!buildingPickup(chosen,objects);
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
@@ -177,7 +178,7 @@
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
-   {#if testExport&&status==='valid'&&candidate&&(landscapeCandidate||houseCandidate)&&copyUrl}<small class="test-warning">{tw[1]} · {houseCandidate?hw[1]:lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
+   {#if testExport&&status==='valid'&&candidate&&(landscapeCandidate||houseCandidate)&&copyUrl}<small class="test-warning">{tw[1]} · {newHouseCandidate?newHouseWords[locale]:houseCandidate?hw[1]:lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
    {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
    {#if testExport}<div class="palette-actions"><button type="button" aria-pressed={!landscapeMode&&!buildingMode} on:click={()=>setPaletteMode('furniture')}>{w[0]}</button><button type="button" aria-pressed={landscapeMode} on:click={()=>setPaletteMode('landscape')}>{lw[0]}</button>{#if freePlacement}<button type="button" aria-pressed={buildingMode} on:click={()=>setPaletteMode('building')}>{buildingTab[locale][0]}</button>{/if}</div>{/if}
    {#if buildingMode}<small>{buildingTab[locale][1]}</small>{#if testExport&&freePlacement}<label class="palette-actions">{houseImportText[0]} <input type="file" multiple accept=".json" disabled={houseImportState==='loading'||placing} on:change={importHouseTemplates}/></label>{#if houseImportState==='error'}<small role="alert">{houseImportText[1]}</small>{:else if houseImportState==='ready'}<small role="status">{houseImportText[2]} · {localHouseSources.size}</small>{/if}{/if}{/if}
