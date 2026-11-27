@@ -26,6 +26,16 @@
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
  }
  function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();points=[];}
+ function beginPan(e:PointerEvent){
+  if(!e.isPrimary||!(e.button===0||e.button===1))return;
+  e.preventDefault();
+  gesture.begin(e,camera.zoom>1);
+  if(camera.zoom>1){try{svg.setPointerCapture(e.pointerId);}catch{/* pointer ended */}}
+ }
+ function endPan(e:PointerEvent){
+  gesture.end(e);
+  if(svg?.hasPointerCapture(e.pointerId)){try{svg.releasePointerCapture(e.pointerId);}catch{/* pointer ended */}}
+ }
  function mark(e:MouseEvent){
   if(gesture.consumeClick()||status!=='ready'||!svg)return;
   const transform=svg.getScreenCTM();if(!transform)return;
@@ -40,7 +50,7 @@
   <label>ローカル検証素材 <input type="file" multiple accept=".json,.png,.webp" on:change={open}/></label>
   {#if map&&source}
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
-   <label><input type="checkbox" bind:checked={locked}/> 全ロック</label>
+   <label><input type="checkbox" bind:checked={locked}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
   {/if}
  </div>
@@ -48,14 +58,15 @@
  {#if map&&source}
   <div class="frame">
    <NativeMapCanvas layers={locked?map.locked:map.unlocked} view={editorViewToNativeCanvas(map,viewport)} {source} activeKey={map.id+':'+locked} onStatus={s=>status=s}/>
-   <svg bind:this={svg} viewBox={viewBox} role="img" aria-label="Editor coordinate candidate"
+   <svg bind:this={svg} viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editor coordinate candidate"
      on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
-     on:pointerdown={e=>gesture.begin(e,camera.zoom>1)}
+     on:pointerdown={beginPan} on:dragstart|preventDefault
      on:pointermove={e=>{const next=gesture.move(e,svg,extent,camera);if(next)camera=next;}}
-     on:pointerup={e=>gesture.end(e)} on:pointercancel={e=>gesture.end(e)} on:pointerleave={()=>gesture.leave()}
+     on:pointerup={endPan} on:pointercancel={endPan} on:lostpointercapture={e=>gesture.end(e)} on:pointerleave={()=>gesture.leave()}
      on:click={mark}>
+    <rect x={viewport.x} y={viewport.y} width={viewport.w} height={viewport.h} fill="transparent" pointer-events="all"/>
     {#if status==='ready'}
-     {#each points as p}<rect x={p.x} y={p.y} width="1" height="1" fill="#ffd84d" fill-opacity=".5" stroke="white" vector-effect="non-scaling-stroke" stroke-width="1"/>{/each}
+     {#each points as p}<rect x={p.x} y={p.y} width="1" height="1" fill="#ffd84d" fill-opacity=".5" stroke="white" vector-effect="non-scaling-stroke" stroke-width="1" pointer-events="none"/>{/each}
     {/if}
    </svg>
    <MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={v=>camera=zoomMapCamera(camera,v,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
@@ -69,7 +80,7 @@
 <style>
  .preview{display:flex;flex-direction:column;gap:6px;padding:8px}
  .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
- .frame{position:relative;min-height:300px;height:70vh;overflow:hidden;background:#181820}
- svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+ .frame{position:relative;min-height:300px;height:70vh;min-width:0;overflow:hidden;user-select:none;background:#181820}
+ svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair;user-select:none;-webkit-user-drag:none}
  p{margin:0;font-size:12px}
 </style>
