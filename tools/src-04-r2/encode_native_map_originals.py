@@ -190,14 +190,19 @@ def run(plan, folders, out, roots, workers):
     return finish(audit, rows, out)
 
 
-def finish(audit, rows, out):
+def finish(audit, rows, out, native_refs=None):
     rebound = rebind(audit, rows)
     unique = {row['sha256']:row['bytes'] for row in rows.values()}
     summary = {'schema':'wand.src04.native-map-lossless-plan@1','gameVersion':'1.26.2',
         'privateOnly':True,'publicationAuthorized':False,'worldPlacementVerified':False,
         'cdnVerified':False,'sourceIdentityCount':len(rows),'uniqueImages':len(unique),
-        'localReused':sum(r['reusedLocal'] for r in rows.values()),'totalBytes':sum(unique.values()),
+        'localReused':sum(r['reusedLocal'] for r in rows.values()),
+        'publishedReused':sum(r.get('reusedPublished',False) for r in rows.values()),
+        'localGenerated':sum(not r['reusedLocal'] and not r.get('reusedPublished',False) for r in rows.values()),
+        'totalBytes':sum(unique.values()),
         'generatedCompositeImages':0,'r2Requests':0,'images':rows}
+    if native_refs is not None:
+        summary['nativeSourceRefs']=native_refs
     write_json(out/'native-cdn-audit-input.json', rebound)
     write_json(out/'native-map-lossless-plan.json', summary)
     return summary
