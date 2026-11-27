@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "partialActor": "コンパニオン本体は一部の体型でのみ表示されます。",
     "pose": "ポーズ",
     "title": "3Dポーズプレビュー（テスト）",
     "note": "ゲーム内の最終姿勢・外見との一致は未検証です。",
@@ -22,6 +23,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "partialActor": "The companion is displayed for only one body type.",
     "pose": "Pose",
     "title": "3D pose preview (test)",
     "note": "In-game appearance and final pose are not yet verified.",
@@ -44,6 +46,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "partialActor": "Le compagnon est affiché pour un seul type de morphologie.",
     "pose": "Pose",
     "title": "Aperçu de la pose en 3D (test)",
     "note": "L'apparence et la pose finale en jeu ne sont pas encore vérifiées.",
@@ -66,6 +69,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "partialActor": "Il compagno è visualizzato per un solo tipo di corporatura.",
     "pose": "Posa",
     "title": "Anteprima posa 3D (test)",
     "note": "L'aspetto e la posa finale nel gioco non sono ancora verificati.",
@@ -88,6 +92,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "partialActor": "Der Begleiter wird nur bei einem Körpertyp angezeigt.",
     "pose": "Pose",
     "title": "3D-Posenvorschau (Test)",
     "note": "Aussehen und endgültige Pose im Spiel sind noch nicht verifiziert.",
@@ -110,6 +115,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "partialActor": "El compañero solo se muestra con un tipo de cuerpo.",
     "pose": "Pose",
     "title": "Vista previa de pose 3D (prueba)",
     "note": "El aspecto y la pose final en el juego aún no se han verificado.",
@@ -132,6 +138,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "partialActor": "伙伴模型仅支持一种体型。",
     "pose": "姿势",
     "title": "3D姿势预览（测试）",
     "note": "尚未验证与游戏内最终姿势及外观的一致性。",
@@ -154,6 +161,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "partialActor": "O companheiro é exibido para apenas um tipo de corpo.",
     "pose": "Pose",
     "title": "Prévia da pose em 3D (teste)",
     "note": "A aparência e a pose final no jogo ainda não foram verificadas.",
