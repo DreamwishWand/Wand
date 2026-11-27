@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 
 ORIGIN="https://media.dreamwishwand.com/"
+USER_AGENT="DreamwishWand-MediaVerifier/1.0 (+https://dreamwishwand.com)"
 KEY=re.compile(r"images/[a-f0-9]{64}\.webp")
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):
@@ -23,7 +24,7 @@ def check(ok,reason):
 def readback(entry):
     key,size=entry
     opener=build_opener(NoRedirect())
-    request=Request(ORIGIN+key,headers={"Accept":"image/webp","Accept-Encoding":"identity"})
+    request=Request(ORIGIN+key,headers={"Accept":"image/webp","Accept-Encoding":"identity","User-Agent":USER_AGENT})
     try:
         with opener.open(request,timeout=30) as response:
             check(response.status==200,"HTTP status")

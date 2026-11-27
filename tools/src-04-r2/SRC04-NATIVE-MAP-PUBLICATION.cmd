@@ -47,7 +47,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Python 3 with Pillow WebP support required: py -3 -m pip install Pillow' }
     }
     $work=Join-Path ([IO.Path]::GetTempPath()) ('wand-native-map-'+[Guid]::NewGuid().ToString('N'))
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/74029fd08ec4b3043c4abfd5cabf2cffcd002685/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/7bb15f275d1519c86e88f0cff5791c2f32e517c6/'
     $scripts=@('verified_image_ledger.py','prepare_native_map_originals.py','encode_native_map_originals.py','encode_native_map_from_bundles.py','audit_native_map_cdn.py','verify_native_map_egl.py','extract_native_lock_textures.py','inspect_native_map_layout.py','native_map_render_graph.py','inspect_native_map_texture_refs.py','build_native_map_geometry.py','build_native_map_lock_graph.py','inspect_native_map_alpha.py','inspect_native_map_registration.py','bind_native_map_images.py','build_native_map_private_preview.mjs','world-map-source-steam-1.26.2.json','world-map-ocean-source-steam-1.26.2.json','publish_native_map_originals.py','publish_recovered_map_parts.py','publish_world_map_parts.py','publish_bundle_thumbnails.py','bundle_thumbnails.py','recover_world_map_parts.py','recover_public_map_parts.py','resolve_shop_catalog.py','resolve_shop_objects.py','extract_memory_sources.py')
     $files=@($scripts | ForEach-Object { 'tools/src-04-r2/'+$_ })
     $files+=@('native-map-draw-plan.ts','native-map-mask-geometry.ts','native-map-canvas-alpha.ts','native-map-blocker-visibility.ts','native-map-renderer.ts') | ForEach-Object { 'src/lib/media/'+$_ }
@@ -81,7 +81,7 @@ try {
         if ((Read-Host 'Type VERIFY to read and check the published CDN bytes (up to 118 GETs and 500 MB)') -ceq 'VERIFY') {
             $audit=Join-Path $out ('cdn-audit-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
             & py -3 -u (Join-Path $work 'tools/src-04-r2/audit_native_map_cdn.py') verify --input (Join-Path $out 'native-cdn-audit-input.json') --out $audit --confirm-read
-            if ($LASTEXITCODE -ne 0) { throw 'CDN audit failed; local images and canonical receipt retained' }
+            if ($LASTEXITCODE -ne 0) { throw "CDN audit incomplete. Return audit.json from $audit; local images and canonical receipt retained" }
             Write-Host "CDN report: $audit"
             $report=Get-Content -LiteralPath (Join-Path $audit 'audit.json') -Raw | ConvertFrom-Json
             if ($report.cdnVerified -eq $true -and (Test-Path -LiteralPath (Join-Path $out 'native-map-publication-receipt.json'))) {

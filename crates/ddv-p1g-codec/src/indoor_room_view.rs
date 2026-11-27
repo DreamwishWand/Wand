@@ -107,6 +107,10 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
   if let Some(item)=houses[h-1].get("HouseItemID").and_then(id).filter(|n|*n/100_000==205){row["houseItemId"]=json!(item);}
   if (0..=3).contains(&slot){row["roomSlot"]=json!(slot);}
   if root["GameInfo"]["Version"].as_u64()==Some(643)&&(0..=3).contains(&slot)&&houses[h-1].get("HouseItemID").and_then(id).is_some_and(|n|n>0)&&room.get("Name").and_then(Value::as_str).is_some_and(|s|s.chars().count()<=128){row["nameEditable"]=json!(true);}
+  if let Some(item)=row.get("houseItemId").and_then(id){if (0..=3).contains(&slot){if let Some((size,options))=ddv_save_patch::room_structure::room_resize_options(&root,ddv_save_patch::RoomFinishTarget{house_index:h-1,house_item_id:item as u32,floor_index:f-1,room_slot:slot as u8}){row["resize"]=json!({"current":size,"options":options});}}}
+  if slot==0{if let Some(item)=row.get("houseItemId").and_then(id){if let Some(count)=ddv_save_patch::room_structure::primary_floor_count(&root,h-1,item as u32){row["appendFloorCount"]=json!(count);}}}
+  if slot==0{if let Some(item)=row.get("houseItemId").and_then(id){let slots=ddv_save_patch::room_structure::room_add_slots(&root,ddv_save_patch::RoomFinishTarget{house_index:h-1,house_item_id:item as u32,floor_index:f-1,room_slot:0});if !slots.is_empty(){row["addRoomSlots"]=json!(slots);}}}
+  if let Some(item)=row.get("houseItemId").and_then(id){if (0..=3).contains(&slot){if let Some(kind)=ddv_save_patch::room_structure::room_removal_kind(&root,ddv_save_patch::RoomFinishTarget{house_index:h-1,house_item_id:item as u32,floor_index:f-1,room_slot:slot as u8}){row["removeKind"]=json!(kind);}}}
   out.push(row);
  }
  Ok(json!({"contract":"wand.db05.indoor-rooms@1","rooms":out,"geometryVerified":false,"writerAuthorized":false,"ownedFinishIds":owned_finishes(&root),"supportParents":support_parents}).to_string())
@@ -183,6 +187,59 @@ pub(super) fn rename_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::G
     let slot=key_id(key).and_then(|n|u8::try_from(n).ok()).filter(|n|*n<=3).ok_or(CodecError::Json)?;
     let house_item_id=house.get("HouseItemID").and_then(id).filter(|n|*n>0).ok_or(CodecError::Json)? as u32;
     return preview_room_rename(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,RoomFinishTarget{house_index:h,house_item_id,floor_index:f,room_slot:slot},expected,replacement).map_err(|_|CodecError::Patch);
+   }}
+  }
+ }
+ Err(CodecError::Json)
+}
+
+pub(super) fn remove_room_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let p:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+ if p.as_object().is_none_or(|m|m.len()!=5){return Err(CodecError::Json);}
+ let house=p["house"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ let item=p["houseItemId"].as_u64().filter(|n|*n==20500000).ok_or(CodecError::Json)?;
+ let floor=p["floor"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ let slot=p["slot"].as_u64().filter(|n|*n<=3).ok_or(CodecError::Json)?;
+ let whole_floor=match p["kind"].as_str(){Some("floor") if slot==0=>true,Some("room") if slot>0=>false,_=>return Err(CodecError::Json)};
+ ddv_save_patch::room_structure::preview_remove_primary_room(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,ddv_save_patch::RoomFinishTarget{house_index:house as usize-1,house_item_id:item as u32,floor_index:floor as usize-1,room_slot:slot as u8},whole_floor).map_err(|_|CodecError::Patch)
+}
+pub(super) fn add_room_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let p:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+ if p.as_object().is_none_or(|m|m.len()!=5){return Err(CodecError::Json);}
+ let house=p["house"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ let item=p["houseItemId"].as_u64().filter(|n|*n==20500000).ok_or(CodecError::Json)?;
+ let floor=p["floor"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ let slot=p["slot"].as_u64().filter(|n|(1..=3).contains(n)).ok_or(CodecError::Json)?;
+ let size=p["size"].as_str().ok_or(CodecError::Json)?;
+ ddv_save_patch::room_structure::preview_add_primary_room(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,ddv_save_patch::RoomFinishTarget{house_index:house as usize-1,house_item_id:item as u32,floor_index:floor as usize-1,room_slot:0},slot as u8,size).map_err(|_|CodecError::Patch)
+}
+pub(super) fn append_floor_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let p:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+ if p.as_object().is_none_or(|m|m.len()!=3){return Err(CodecError::Json);}
+ let house=p["house"].as_u64().filter(|n|(1..=128).contains(n)).ok_or(CodecError::Json)?;
+ let item=p["houseItemId"].as_u64().filter(|n|*n==20500000).ok_or(CodecError::Json)?;
+ let count=p["expectedCount"].as_u64().filter(|n|(1..20).contains(n)).ok_or(CodecError::Json)?;
+ ddv_save_patch::room_structure::preview_append_primary_floor(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,house as usize-1,item as u32,count as usize).map_err(|_|CodecError::Patch)
+}
+pub(super) fn resize_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ use ddv_save_patch::{RoomFinishTarget,room_structure::preview_room_resize};
+ if plan.len()>4096{return Err(CodecError::Bounds);}
+ let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+ let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+ let p=value.as_object().filter(|p|p.len()==3).ok_or(CodecError::Json)?;
+ let ordinal=p.get("roomOrdinal").and_then(Value::as_u64).filter(|n|(1..=2048).contains(n)).ok_or(CodecError::Json)?;
+ let expected=p.get("expected").and_then(Value::as_str).ok_or(CodecError::Json)?;
+ let replacement=p.get("size").and_then(Value::as_str).ok_or(CodecError::Json)?;
+ let houses=root["World"]["PlayerHouses"].as_array().filter(|a|a.len()<=128).ok_or(CodecError::Json)?;
+ let mut seen=0u64;
+ for(h,house)in houses.iter().enumerate(){
+  let Some(floors)=house.get("Floors")else{continue;};let floors=floors.as_array().filter(|a|a.len()<=128).ok_or(CodecError::Json)?;
+  for(f,floor)in floors.iter().enumerate(){
+   let Some(rooms)=floor.get("Rooms")else{continue;};let rooms=rooms.as_object().ok_or(CodecError::Json)?;
+   for key in rooms.keys(){seen+=1;if seen==ordinal{
+    let slot=key_id(key).and_then(|n|u8::try_from(n).ok()).filter(|n|*n<=3).ok_or(CodecError::Json)?;
+    let house_item_id=house.get("HouseItemID").and_then(id).filter(|n|*n>0).ok_or(CodecError::Json)? as u32;
+    return preview_room_resize(std::str::from_utf8(source).map_err(|_|CodecError::Utf8)?,RoomFinishTarget{house_index:h,house_item_id,floor_index:f,room_slot:slot},expected,replacement).map_err(|_|CodecError::Patch);
    }}
   }
  }
