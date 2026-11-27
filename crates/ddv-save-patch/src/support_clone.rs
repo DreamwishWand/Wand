@@ -31,11 +31,12 @@ fn state_child(o:&Value)->Result<Option<u32>,PatchError>{
   }
  }
 }
-fn object(o:&Value,key:&str)->Result<u64,PatchError>{
+fn object(o:&Value,key:&str)->Result<u64,PatchError>{object_mode(o,key,false)}
+fn object_mode(o:&Value,key:&str,diagonal_plain:bool)->Result<u64,PatchError>{
  let m=o.as_object().filter(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))).ok_or(BAD)?;
  if id(m.get("ID").ok_or(BAD)?)?.to_string()!=key||key=="0"{return Err(BAD);}
  coord(o,"X")?;coord(o,"Y")?;
- if !o.get("Orientation").and_then(Value::as_str).is_some_and(|s|OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){return Err(BAD);}
+ if !o.get("Orientation").and_then(Value::as_str).is_some_and(|s|OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)||diagonal_plain&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&o.get("State").is_none_or(Value::is_null)){return Err(BAD);}
  item(m.get("ItemID").ok_or(BAD)?)
 }
 pub(super) fn reserved_ref(v:&Value,ids:&HashSet<u32>,grid_context:bool)->bool{
@@ -377,7 +378,8 @@ pub(super) fn structural_recovery_count(root:&Value,rows:&[(GridCoordinateTarget
   let g=grids.get(&target.grid_id).ok_or(BAD)?;
   if diff.is_some_and(|m|m.contains_key(&target.grid_id)){return Err(BAD);}
   let o=g["Objects"].get(&target.object_id).ok_or(BAD)?;
-  if object(o,&target.object_id)?!=target.item_id||(coord(o,"X")?,coord(o,"Y")?)!=*xy||o["Orientation"].as_str()!=Some(orientation.as_str()){return Err(BAD);}
+  let diagonal_plain=g["TessellationFactor"].as_u64()==Some(1)&&g["GridDefaultLayoutPath"].as_str()==Some("")&&g["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room")&&p.ends_with("-GridData.json"));
+  if object_mode(o,&target.object_id,diagonal_plain)?!=target.item_id||(coord(o,"X")?,coord(o,"Y")?)!=*xy||o["Orientation"].as_str()!=Some(orientation.as_str()){return Err(BAD);}
   let mut items=vec![target.item_id];
   if let Some(child)=state_child(o)?{
    let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next:1,created:Vec::new(),stock:items,templates:HashMap::new(),plain:HashSet::new(),source_only:false};
@@ -396,7 +398,7 @@ pub(super) fn structural_recovery_count(root:&Value,rows:&[(GridCoordinateTarget
  Ok(total)
 }
 pub(super) fn structural_recovery(source:&str,rows:&[(GridCoordinateTarget,(i32,i32),String)],expected:usize)->Result<String,PatchError>{
- use super::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+ use super::bulk_furniture::{BulkPickup,preview_structural_room_pickup};
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  if expected==0||structural_recovery_count(&root,rows)?!=expected{return Err(BAD);}
  let mut plain=Vec::new();let mut support=Vec::new();
@@ -406,7 +408,7 @@ pub(super) fn structural_recovery(source:&str,rows:&[(GridCoordinateTarget,(i32,
   if state_child(o)?.is_some(){support.push(row);}else{plain.push(row);}
  }
  let mut working=source.to_owned();
- if !plain.is_empty(){working=preview_bulk_furniture(&working,&plain,&[])?.patched_json;}
+ if !plain.is_empty(){working=preview_structural_room_pickup(&working,&plain)?.patched_json;}
  if !support.is_empty(){working=preview_bulk_support_pickup(&working,&support)?.patched_json;}
  Ok(working)
 }
