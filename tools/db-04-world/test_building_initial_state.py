@@ -29,18 +29,20 @@ class InitialBuildingStateTest(unittest.TestCase):
             path = Path(directory) / "TestGrids.json"
             path.write_bytes(layout(
                 obj(1, 20300001, field(22, field(1, b""))),
-                obj(2, 20100001, field(7, b"")),
+                obj(2, 20100001, field(7, field(1, b""))),
+                obj(6, 20100011, field(10, b"")),
                 obj(3, 20200001, field(3, field(1, b"") * 2)),
                 obj(4, 20000001, None),
                 obj(5, 40000001, None),
             ))
             result = scan([path])
-        self.assertEqual(result["instanceCount"], 4)
-        self.assertEqual(result["itemCount"], 4)
+        self.assertEqual(result["instanceCount"], 5)
+        self.assertEqual(result["itemCount"], 5)
         self.assertFalse(result["runtimeCreationVerified"])
         rows = {v["itemId"]: v["instances"][0] for v in result["items"]}
         self.assertFalse(rows[20000001]["statePresent"])
-        self.assertEqual(rows[20100001]["unclassifiedFields"], [7])
+        self.assertEqual(rows[20100001]["knownMessages"][0]["kind"], "FishingStallData")
+        self.assertEqual(rows[20100011]["unclassifiedFields"], [10])
         self.assertEqual(rows[20200001]["knownMessages"][0]["fieldShapes"],
                          [{"field": 1, "wire": 2, "count": 2}])
         self.assertEqual(rows[20300001]["knownMessages"][0]["kind"], "BuildingWithSkinData")

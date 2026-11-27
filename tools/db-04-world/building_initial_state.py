@@ -7,7 +7,7 @@ from pathlib import Path
 
 from world import digest, wire_fields, one, native_uint32, native_int32, text_field
 
-KINDS = {3: "GardenData", 5: "HouseData", 6: "StallData", 22: "BuildingWithSkinData"}
+KINDS = {3: "GardenData", 5: "HouseData", 6: "StallData", 7: "FishingStallData", 22: "BuildingWithSkinData"}
 
 
 def field_shapes(blob):
