@@ -508,14 +508,14 @@ export function indoorRoomResizePlan(room:IndoorRoom|null,size:string){
  return {roomOrdinal:room.ordinal,expected:room.resize.current,size};
 }
 export const roomResizeWords={
- ja:['部屋サイズ変更','形状が変わる床・壁は空である必要があります。既存の家具・仕上げを保持し、選択サイズを購入済みとして記録します。'],
- en:['Resize room','Changed surfaces must be empty. Objects and finishes are retained; the selected size is recorded as bought.'],
- fr:['Redimensionner','Les surfaces modifiées doivent être vides. Objets et finitions conservés, taille enregistrée comme achetée.'],
- it:['Ridimensiona stanza','Le superfici modificate devono essere vuote. Oggetti e finiture conservati, dimensione registrata come acquistata.'],
- de:['Raumgröße ändern','Geänderte Flächen müssen leer sein. Objekte und Oberflächen bleiben erhalten, Größe wird als gekauft erfasst.'],
- 'es-ES':['Cambiar tamaño','Las superficies modificadas deben estar vacías. Se conservan objetos y acabados; el tamaño se registra como comprado.'],
- 'zh-CN':['调整房间大小','改变形状的表面必须为空。保留物品和装修，并记录所选尺寸为已购买。'],
- 'pt-BR':['Redimensionar cômodo','As superfícies alteradas devem estar vazias. Objetos e acabamentos mantidos; tamanho registrado como comprado.']
+ ja:['部屋サイズ変更','家具を保持できるサイズのみ選択できます。標準ドアとエレベーターは対応する位置に移動し、選択サイズを購入済みとして記録します。'],
+ en:['Resize room','Only sizes that preserve existing objects are offered. Supported default doors and elevators are recentered; the selected size is recorded as bought.'],
+ fr:['Redimensionner','Seules les tailles préservant les objets sont proposées. Portes et ascenseurs standard recentrés ; taille enregistrée comme achetée.'],
+ it:['Ridimensiona stanza','Sono disponibili solo le dimensioni che preservano gli oggetti. Porte e ascensori standard ricentrati; dimensione registrata come acquistata.'],
+ de:['Raumgröße ändern','Nur Größen, die Objekte erhalten, sind verfügbar. Standardtüren und Aufzüge werden zentriert; Größe wird als gekauft erfasst.'],
+ 'es-ES':['Cambiar tamaño','Solo tamaños que conservan los objetos. Puertas y ascensores estándar centrados; el tamaño se registra como comprado.'],
+ 'zh-CN':['调整房间大小','仅提供可保留现有物品的尺寸。标准门和电梯重新居中，并记录所选尺寸为已购买。'],
+ 'pt-BR':['Redimensionar cômodo','Apenas tamanhos que preservam objetos. Portas e elevadores padrão recentralizados; tamanho registrado como comprado.']
 } as const;
 
 export function indoorAppendFloorPlan(room:IndoorRoom|null){
