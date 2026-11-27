@@ -15,7 +15,9 @@ export interface PosePlaybackState {
 }
 export class PosePlayback {
   private state: PosePlaybackState;
-  constructor(duration: number, private readonly target: PoseSampleTarget) {
+  private readonly target: PoseSampleTarget;
+  constructor(duration: number, target: PoseSampleTarget) {
+    this.target = target;
     if (!Number.isFinite(duration) || duration <= 0) throw new RangeError('Invalid pose duration');
     this.state = {time: 0, duration, playing: false, loop: true, speed: 1};
     this.target.sample(0);
