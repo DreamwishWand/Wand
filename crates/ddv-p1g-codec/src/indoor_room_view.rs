@@ -256,14 +256,33 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
   let faces=room["surfaces"].as_array().ok_or(bad)?;
   let surfaces=row["surfaces"].as_array().filter(|s|s.len()==faces.len()&&s.len()<=9).ok_or(bad)?;
   for (s,face) in surfaces.iter().zip(faces){
-   if s.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"pickup"|"place"|"finish")))||s["surfaceOrdinal"]!=face["ordinal"]||s["factor"]!=face["factor"]||s["sourcePath"]!=face["terrain"]["sourcePath"]||face["gridStatus"]!="full"||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
+   if s.as_object().is_none_or(|m|(m.len()!=6&&! (m.len()==7&&m.get("freePlacement").and_then(Value::as_bool)==Some(true)))||m.keys().any(|k|!matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"pickup"|"place"|"finish"|"freePlacement"))||m.contains_key("freePlacement")&&m.get("freePlacement").and_then(Value::as_bool)!=Some(true))||s["surfaceOrdinal"]!=face["ordinal"]||s["factor"]!=face["factor"]||s["sourcePath"]!=face["terrain"]["sourcePath"]||face["gridStatus"]!="full"||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
    let pickup=s["pickup"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
    let place=s["place"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
    roots=roots.checked_add(pickup.len()+place.len()).ok_or(CodecError::Bounds)?;if roots>4096{return Err(CodecError::Bounds);}
    if !pickup.is_empty(){
-    let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":pickup}).to_string())?;
-    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
-    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+    let free=s.get("freePlacement").and_then(Value::as_bool)==Some(true);
+    let mut batches=Vec::<(bool,Vec<Value>)>::new();
+    if free{
+     if face["kind"]!="floor"{return Err(bad);}
+     let mut indices=std::collections::HashSet::new();
+     for p in pickup{let i=p["index"].as_u64().ok_or(bad)?;if !indices.insert(i){return Err(bad);}}
+     let loose=pickup.iter().filter(|p|p.get("includeSupport").is_none()).cloned().collect::<Vec<_>>();
+     let removed=loose.iter().map(|p|p["index"].as_u64().ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+     let mut strict=Vec::new();
+     for p in pickup.iter().filter(|p|p.get("includeSupport").is_some()){
+      let i=p["index"].as_u64().ok_or(bad)?;let mut p=p.clone();
+      p["index"]=json!(i-removed.iter().filter(|n|**n<i).count() as u64);strict.push(p);
+     }
+     batches.push((true,loose));batches.push((false,strict));
+    }else{batches.push((false,pickup.clone()));}
+    for (free,batch) in batches{
+     if batch.is_empty(){continue;}
+     let mut plan=json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":batch});if free{plan["freePlacement"]=Value::Bool(true);}
+     let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
+     if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+     working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+    }
    }
   }
  }
@@ -271,7 +290,7 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
   let mut surfaces=Vec::new();
   for s in row["surfaces"].as_array().ok_or(bad)?{
    if s["place"].as_array().is_none_or(Vec::is_empty)&&s["finish"].is_null(){continue;}
-   surfaces.push(json!({"surfaceOrdinal":s["surfaceOrdinal"],"sourcePath":s["sourcePath"],"factor":s["factor"],"place":s["place"],"finish":s["finish"]}));
+   let mut face=json!({"surfaceOrdinal":s["surfaceOrdinal"],"sourcePath":s["sourcePath"],"factor":s["factor"],"place":s["place"],"finish":s["finish"]});if s.get("freePlacement").and_then(Value::as_bool)==Some(true){face["freePlacement"]=Value::Bool(true);}surfaces.push(face);
   }
   if !surfaces.is_empty(){
    let next=room_project_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaces":surfaces}).to_string())?;
@@ -306,7 +325,7 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
  let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
  let mut changed=false;
  for row in rows{
-  let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"place"|"finish"))).ok_or(bad)?;
+  let o=row.as_object().filter(|o|(o.len()==5&&!o.contains_key("freePlacement")||o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"place"|"finish"|"freePlacement"))).ok_or(bad)?;
   let s=o["surfaceOrdinal"].as_u64().filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
   if !used.insert(s){return Err(bad);}
   let face=faces.get(s-1).ok_or(bad)?;
@@ -327,9 +346,20 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
    total=total.checked_add(count).ok_or(CodecError::Bounds)?;if total>256{return Err(CodecError::Bounds);}
   }
   if !places.is_empty(){
-   let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":places}).to_string())?;
-   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
-   working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+   let free=o.get("freePlacement").and_then(Value::as_bool)==Some(true);
+   let mut batches=Vec::<(bool,Vec<Value>)>::new();
+   if free{
+    if face["kind"]!="floor"{return Err(bad);}
+    batches.push((false,places.iter().filter(|p|p.get("scene").is_some()).cloned().collect()));
+    batches.push((true,places.iter().filter(|p|p.get("scene").is_none()).cloned().collect()));
+   }else{batches.push((false,places.clone()));}
+   for (free,batch) in batches{
+    if batch.is_empty(){continue;}
+    let mut plan=json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":batch});if free{plan["freePlacement"]=Value::Bool(true);}
+    let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
+    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+   }
   }
   if !o["finish"].is_null(){
    let f=o["finish"].as_object().filter(|v|v.len()==2&&v.contains_key("itemId")&&v.contains_key("expected")).ok_or(bad)?;
@@ -843,6 +873,17 @@ mod tests{
   group["place"][1]["expectedStock"]=2.into();assert!(furniture_candidate(raw,&group.to_string()).is_err());
   let mut p=json!({"roomOrdinal":1,"surfaceOrdinal":1,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":4,"y":4,"orientation":"GridOrientation_Left"}]});
   assert!(furniture_candidate(raw,&p.to_string()).is_ok());p["edits"][0]["y"]=Value::from(-1);assert!(furniture_candidate(raw,&p.to_string()).is_err());
+ }
+ #[test]
+ fn free_scope_restore_reuses_stock_for_overlapping_diagonal_furniture(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":0}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42},"1":{"FloorGridID":43}}},{"Rooms":{"0":{"FloorGridID":44}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":1,"Objects":{}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"44":{"ID":44,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":1,"Objects":{}}}}}}"#;
+  let mut plan=json!({"scope":"floor","rooms":[{"roomOrdinal":1,"surfaces":[{"surfaceOrdinal":1,"sourcePath":"GridData/Rooms/Room8x8-GridData.json","factor":1,"freePlacement":true,"pickup":[],"place":[{"itemId":40000001,"expectedStock":2,"x":7,"y":0,"orientation":"GridOrientation_DownLeft"},{"itemId":40000001,"expectedStock":1,"x":7,"y":0,"orientation":"GridOrientation_Down"}],"finish":null}]},{"roomOrdinal":2,"surfaces":[{"surfaceOrdinal":1,"sourcePath":"GridData/Rooms/Room8x8-GridData.json","factor":1,"freePlacement":true,"pickup":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_DownLeft","expectedStock":0},{"index":1,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","expectedStock":0}],"place":[],"finish":null}]}]});
+  let original:Value=serde_json::from_slice(raw).unwrap();
+  let out=room_project_candidate(raw,&plan.to_string()).unwrap();let result:Value=serde_json::from_str(&out).unwrap();let grids=&result["World"]["GridCollection"]["Grids"];
+  assert_eq!(grids["42"]["Objects"]["1"]["Orientation"],"GridOrientation_DownLeft");assert_eq!(grids["42"]["Objects"]["2"]["X"],7);
+  assert!(grids["43"]["Objects"].as_object().unwrap().is_empty());assert_eq!(grids["44"],original["World"]["GridCollection"]["Grids"]["44"]);
+  assert_eq!(result["Player"]["ListInventories"],original["Player"]["ListInventories"]);assert!(out.contains("1e2"));
+  plan["rooms"][0]["surfaces"][0]["place"][1]["expectedStock"]=2.into();assert!(room_project_candidate(raw,&plan.to_string()).is_err());
  }
  #[test]
  fn indoor_scope_restore_pools_returns_and_keeps_other_floors(){

@@ -17,14 +17,14 @@ export function serializeRoomProject(surfaces:readonly RoomProjectSurface[],sele
  const text=JSON.stringify({schema:'wand.room-design@1',surfaces:surfaces.map(s=>({id:s.id,design:{...JSON.parse(serializeDesign(s.timeline,s.template.grid)),roomFinish:s.finish}})),selected});
  if(text.length>ROOM_PROJECT_FILE_LIMIT)throw Error('ROOM_PROJECT_SIZE');return text;
 }
-export function parseRoomProject(raw:string,templates:readonly RoomDesignTemplate[]):{surfaces:RoomProjectSurface[];selected:number}{
+export function parseRoomProject(raw:string,templates:readonly RoomDesignTemplate[],backup=false):{surfaces:RoomProjectSurface[];selected:number}{
  if(raw.length>ROOM_PROJECT_FILE_LIMIT)throw Error('ROOM_PROJECT_SIZE');const v=JSON.parse(raw);
  if(!v||v.schema!=='wand.room-design@1'||Object.keys(v).length!==3||!Array.isArray(v.surfaces)||!v.surfaces.length||v.surfaces.length>ROOM_PROJECT_WALL_LIMIT+1)throw Error('ROOM_PROJECT');
  const ids=new Set<number>(),surfaces:RoomProjectSurface[]=[];
  for(const row of v.surfaces){
   if(!row||Object.keys(row).length!==2||!Number.isSafeInteger(row.id)||row.id<1||row.id>=Number.MAX_SAFE_INTEGER-1||ids.has(row.id))throw Error('ROOM_SURFACE_ID');
   const template=templates.find(t=>t.grid.key===row.design?.grid?.key);if(!template||template.kind==='support'||(surfaces.length===0?template.kind!=='floor':template.kind!=='wall'))throw Error('ROOM_SURFACE');
-  const placements=parseDesign(JSON.stringify(row.design),template.grid),finish=readRoomFinish(row.design,template.kind)??0;
+  const placements=parseDesign(JSON.stringify(row.design),template.grid,false,backup&&template.kind==='floor'),finish=readRoomFinish(row.design,template.kind)??0;
   ids.add(row.id);surfaces.push({...newRoomSurface(row.id,template),finish,timeline:{snapshots:[placements],cursor:0,nextId:placements.reduce((n,p)=>Math.max(n,p.id+1),1)}});
  }
  if(!ids.has(v.selected))throw Error('ROOM_SELECTED');

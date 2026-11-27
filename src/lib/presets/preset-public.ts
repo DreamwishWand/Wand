@@ -61,10 +61,10 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   }return g??fail();
  }
  function areaGrid(v:any):MainlandGrid{const g=grid(v);return bindMainlandGrid(g)??bindFloatingIslandGrid(g)??fail();}
- function design(d:any,expected?:PublicTerrainGridRef,allowDiagonal=false){
+ function design(d:any,expected?:PublicTerrainGridRef,allowDiagonal=false,roomBackup=false){
   keys(d,['schema','grid','placements'],['roomFinish']);if(d.schema!=='wand.world-design@1')fail();
   const g=grid(d.grid);if(expected&&!sameTerrainGrid(g,expected))fail();
-  const rows=parseDesign(JSON.stringify(d),g,allowDiagonal),finish=readRoomFinish(d,roomFinishKind(g));
+  const rows=parseDesign(JSON.stringify(d),g,allowDiagonal,roomBackup),finish=readRoomFinish(d,roomFinishKind(g));
   const canonical=JSON.parse(serializeDesign({snapshots:[rows],cursor:0,nextId:1},g));if(finish!==undefined)canonical.roomFinish=finish;
   if(!same(canonical,d))fail();
   count(rows.length);for(const p of rows)if(p.attachment)support(p.attachment.scene);
@@ -92,9 +92,9 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   const used=new Set<string>();for(const a of d.areas){const g=grid(identity(a));const match=grids.find(t=>sameTerrainGrid(t,g));if(!match||used.has(g.key))fail();used.add(g.key);fn(a,match!);}
  }
  function worldDecoration(d:any){keys(d,['schema','gameVersion','scope','areas']);const grids=worldGrids(d.scope);parseIslandDecoration(JSON.stringify(d),grids,true);multiarea(d,grids,(a,g)=>decoration(a,g,'world'),a=>a.furniture?.design?.grid);return grids;}
- function room(d:any){
-  keys(d,['schema','surfaces','selected']);const project=parseRoomProject(JSON.stringify(d),catalog.rooms);
-  for(let i=0;i<project.surfaces.length;i++){const s=d.surfaces[i];keys(s,['id','design']);design(s.design,project.surfaces[i].template.grid);}
+ function room(d:any,backup=false){
+  keys(d,['schema','surfaces','selected']);const project=parseRoomProject(JSON.stringify(d),catalog.rooms,backup);
+  for(let i=0;i<project.surfaces.length;i++){const s=d.surfaces[i];keys(s,['id','design']);design(s.design,project.surfaces[i].template.grid,false,backup&&project.surfaces[i].template.kind==='floor');}
  }
  switch(doc.schema){
   case 'wand.preset.scene@1':{const p=parseSceneAnyFactor(raw);if(!same(p,doc))fail();count(p.items.length);break;}
@@ -127,7 +127,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   case 'wand.room-design@1':room(doc);break;
   case 'wand.preset.indoor-decoration@1':{
    keys(doc,['schema','gameVersion','scope','rooms']);if(doc.gameVersion!=='1.26.2'||!doc.rooms.length||doc.rooms.length>2048||doc.scope==='room'&&doc.rooms.length!==1)fail();
-   let floor=0,next=1;for(const e of doc.rooms){keys(e,['floor','room','wallPositions','design']);if(!positive(e.floor,2048)||doc.scope!=='building'&&e.floor!==1||e.floor<floor)fail();if(e.floor!==floor){floor=e.floor;next=1;}if(e.room!==next++)fail();room(e.design);if(!Array.isArray(e.wallPositions)||e.wallPositions.length!==e.design.surfaces.length||e.wallPositions.some((p:unknown,i:number)=>i===0?p!==null:!Number.isSafeInteger(p)||Number(p)<0||Number(p)>32)||new Set(e.wallPositions).size!==e.wallPositions.length)fail();}
+   let floor=0,next=1;for(const e of doc.rooms){keys(e,['floor','room','wallPositions','design']);if(!positive(e.floor,2048)||doc.scope!=='building'&&e.floor!==1||e.floor<floor)fail();if(e.floor!==floor){floor=e.floor;next=1;}if(e.room!==next++)fail();room(e.design,true);if(!Array.isArray(e.wallPositions)||e.wallPositions.length!==e.design.surfaces.length||e.wallPositions.some((p:unknown,i:number)=>i===0?p!==null:!Number.isSafeInteger(p)||Number(p)<0||Number(p)>32)||new Set(e.wallPositions).size!==e.wallPositions.length)fail();}
    break;
   }
   default:fail();

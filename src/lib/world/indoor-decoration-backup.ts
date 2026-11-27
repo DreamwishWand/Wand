@@ -1,10 +1,10 @@
 import {currentDesign,type DesignPlacement} from './design-layout.ts';
 import {parseRoomProject,serializeRoomProject,type RoomProjectSurface} from './room-project-design.ts';
 import type {RoomDesignTemplate} from './room-design.ts';
-import {roomDesignValid} from './room-design.ts';
+import {roomBackupSurfaceValid} from './room-project-capture.ts';
 import {roomFinishIdValid} from './room-finish-design.ts';
 import {roomApplyMatches,type RoomApplyRow,type RoomApplySurfaceGeometry} from './room-project-apply.ts';
-import {indoorGroupPickup,indoorGroupPlace,type IndoorRoom,type IndoorSurface,type IndoorPickup} from './indoor-room-view.ts';
+import {indoorGroupPickup,indoorGroupPlace,indoorFreeFloor,type IndoorRoom,type IndoorSurface,type IndoorPickup} from './indoor-room-view.ts';
 import {supportSceneRootCounts} from './support-scene.ts';
 import {parseReplayStep} from './checkpoint-journal.ts';
 import {addRestoreQuantity} from './restore-stock-review.ts';
@@ -12,7 +12,7 @@ export type IndoorBackupScope='room'|'floor'|'building';
 export const INDOOR_BACKUP_LIMIT=16_000_000;
 export interface IndoorBackupRoom{room:IndoorRoom;surfaces:RoomProjectSurface[]}
 export interface IndoorBackupEntry{floor:number;room:number;wallPositions:(number|null)[];surfaces:RoomProjectSurface[]}
-export interface IndoorRestoreRow extends RoomApplyRow{pickup:IndoorPickup[]}
+export interface IndoorRestoreRow extends RoomApplyRow{pickup:IndoorPickup[];freePlacement?:true}
 export interface IndoorRestorePlan{scope:IndoorBackupScope;rooms:{roomOrdinal:number;surfaces:IndoorRestoreRow[]}[]}
 export function indoorBackupRooms(scope:IndoorBackupScope,selected:IndoorRoom,rooms:readonly IndoorRoom[]):IndoorRoom[]{
  return rooms.filter(r=>r.house===selected.house&&(scope==='building'||r.floor===selected.floor&&(scope==='floor'||r.ordinal===selected.ordinal))).sort((a,b)=>a.floor-b.floor||a.ordinal-b.ordinal);
@@ -32,7 +32,7 @@ export function parseIndoorBackup(raw:string,scope:IndoorBackupScope,targets:rea
  if(!v||Object.keys(v).length!==4||v.schema!=='wand.preset.indoor-decoration@1'||v.gameVersion!=='1.26.2'||v.scope!==scope||!Array.isArray(v.rooms)||v.rooms.length!==targets.length)throw Error('INDOOR_BACKUP_SCOPE');
  return v.rooms.map((e:any,i:number)=>{
   const t=targets[i],k=keys[i];if(!e||Object.keys(e).length!==4||e.floor!==k.floor||e.room!==k.room||!Array.isArray(e.wallPositions)||e.wallPositions.length!==t.surfaces.length||e.wallPositions.some((p:unknown,j:number)=>p!==t.surfaces[j].wallPosition))throw Error('INDOOR_BACKUP_ADDRESS');
-  const doc=parseRoomProject(JSON.stringify(e.design),templates);
+  const doc=parseRoomProject(JSON.stringify(e.design),templates,true);
   if(doc.surfaces.length!==t.surfaces.length||doc.surfaces.some((s,j)=>s.id!==t.surfaces[j].ordinal||!roomApplyMatches(s,t.surfaces[j])))throw Error('INDOOR_BACKUP_TERRAIN');
   return {...k,wallPositions:e.wallPositions,surfaces:doc.surfaces};
  });
@@ -40,7 +40,7 @@ export function parseIndoorBackup(raw:string,scope:IndoorBackupScope,targets:rea
 const poseKey=(p:DesignPlacement)=>JSON.stringify([p.itemId,p.x,p.y,p.orientation,p.attachment?.scene??null]);
 const need=(p:DesignPlacement)=>p.attachment?supportSceneRootCounts(p.attachment.scene):new Map([[p.itemId,1]]);
 export interface IndoorRestoreInput{room:IndoorRoom;before:readonly RoomProjectSurface[];after:readonly RoomProjectSurface[];geometry:ReadonlyMap<number,RoomApplySurfaceGeometry>}
-export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly IndoorRestoreInput[],stock:ReadonlyMap<number,number>,owned:ReadonlySet<number>){
+export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly IndoorRestoreInput[],stock:ReadonlyMap<number,number>,owned:ReadonlySet<number>,free=false){
  if(!inputs.length||inputs.length>2048)return null;
  const balances=new Map(stock),plan:IndoorRestorePlan={scope,rooms:[]},work:{face:IndoorSurface;row:IndoorRestoreRow;desired:DesignPlacement[];geometry:RoomApplySurfaceGeometry}[]=[];
  const returned=new Map<number,number>(),required=new Map<number,number>(),finishItems=new Map<number,number>();
@@ -50,20 +50,37 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
   const rows:IndoorRestoreRow[]=[];plan.rooms.push({roomOrdinal:room.ordinal,surfaces:rows});
   for(const [i,face] of room.surfaces.entries()){
    const b=before[i],a=after[i],g=geometry.get(face.ordinal);
-   if(!g||!face.factor||!roomApplyMatches(b,face)||!roomApplyMatches(a,face)||b.id!==face.ordinal||a.id!==face.ordinal||!roomDesignValid(a.timeline,a.template.grid,a.template.raster,g.design))return null;
+   if(!g||!face.factor||!roomApplyMatches(b,face)||!roomApplyMatches(a,face)||b.id!==face.ordinal||a.id!==face.ordinal||!roomBackupSurfaceValid(face,a,g,free))return null;
    const old=currentDesign(b.timeline),next=currentDesign(a.timeline);if(old.length!==face.positions.length||next.some(p=>p.attachment?.designOnly||!!g.design.get(p.itemId)?.supportPath!==!!p.attachment))return null;
    const wanted=new Map<string,number>();for(const p of next){const key=poseKey(p);wanted.set(key,(wanted.get(key)??0)+1);}
    const keep=new Set<number>(),drop:number[]=[];
    for(const [j,p] of old.entries()){const key=poseKey(p),n=wanted.get(key)??0;if(n){keep.add(j);wanted.set(key,n-1);retained++;}else drop.push(j);}
    const desired=next.filter(p=>{const key=poseKey(p),n=wanted.get(key)??0;if(!n)return false;wanted.set(key,n-1);return true;});
    if(drop.length>32||desired.length>32)return null;
-   const pickup=drop.length?indoorGroupPickup(face,drop,g.allowed,balances,new Set(drop.filter(j=>!!old[j].attachment))):[];
-   if(!pickup)return null;
-   for(const j of drop){for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return null;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}}
+   const freeFloor=free&&indoorFreeFloor(face);
+   const loose=freeFloor?drop.filter(j=>!old[j].attachment):[],strict=drop.filter(j=>!loose.includes(j));
+   const pickup:IndoorPickup[]=[];
+   const account=(indices:readonly number[])=>{
+    for(const j of indices)for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return false;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}
+    return true;
+   };
+   // The codec removes plain leaves first, then remaps support indices
+   // against the remaining records. All stock expectations are batch-local.
+   if(loose.length){
+    const batch=indoorGroupPickup(face,loose,g.freeAllowed??new Set(),balances,new Set(),true);
+    if(!batch||!account(loose))return null;pickup.push(...batch);
+   }
+   if(strict.length){
+    const keepIndices=face.positions.map((_,j)=>j).filter(j=>!loose.includes(j));
+    const reduced={...face,positions:keepIndices.map(j=>face.positions[j])};
+    const mapped=strict.map(j=>keepIndices.indexOf(j)),supportIndices=new Set(mapped.filter((_,i)=>!!old[strict[i]].attachment));
+    const batch=indoorGroupPickup(reduced,mapped,g.allowed,balances,supportIndices);
+    if(!batch||!account(strict))return null;pickup.push(...batch.map((row,i)=>({...row,index:strict[i]})));
+   }
    const kept=face.positions.filter((_,j)=>keep.has(j)),quantities=new Map<number,number>();for(const p of kept)quantities.set(p.itemId,(quantities.get(p.itemId)??0)+1);
    let finish:RoomApplyRow['finish']=null;
    if(a.finish!==face.finish){if(!a.finish||!roomFinishIdValid(a.finish,face.kind)||!owned.has(a.finish)||room.surfaces.length!==5||!room.surfaces.slice(1).every((f,j)=>f.wallPosition===j)||face.kind==='floor'&&face.finish===null)return null;finish={itemId:a.finish,expected:face.finish};addRestoreQuantity(finishItems,a.finish,1);finishes++;}
-   const row:IndoorRestoreRow={surfaceOrdinal:face.ordinal,sourcePath:a.template.grid.gridDataPath,factor:face.factor,pickup,place:[],finish};
+   const row:IndoorRestoreRow={surfaceOrdinal:face.ordinal,sourcePath:a.template.grid.gridDataPath,factor:face.factor,pickup,place:[],finish,...(freeFloor?{freePlacement:true as const}:{})};
    rows.push(row);work.push({face:{...face,positions:kept,items:[...quantities].map(([itemId,quantity])=>({itemId,quantity}))},row,desired,geometry:g});
   }
  }
@@ -76,13 +93,18 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
  if(missing.length)return {plan:null,removed,added:requested,retained,finishes,returned,required,finishItems,missing,changed:true};
  // All returns precede any placement; even different rooms can reuse stock.
  for(const {face,row,desired,geometry:g} of work){
-  const clip=desired.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
-  const place=clip.length?indoorGroupPlace(face,g.shapes,g.allowed,balances,clip,0,0):[];
-  if(!place)return null;
-  for(const [i,p] of desired.entries()){
-   const add=place[i];add.expectedStock=balances.get(p.itemId)??0;
-   for(const [id,n] of need(p)){const value=balances.get(id)??0;if(value<n)return null;balances.set(id,value-n);added+=n;}
-   if(p.attachment)add.scene=p.attachment.scene;
+  const strict=row.freePlacement?desired.filter(p=>!!p.attachment):desired,loose=row.freePlacement?desired.filter(p=>!p.attachment):[];
+  const place:RoomApplyRow['place']=[];
+  for(const [batch,freeBatch] of [[strict,false],[loose,true]] as const){
+   const clip=batch.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
+   const poses=clip.length?indoorGroupPlace(face,g.shapes,freeBatch?(g.freeAllowed??new Set()):g.allowed,balances,clip,0,0,freeBatch):[];
+   if(!poses)return null;
+   for(const [i,p] of batch.entries()){
+    const add=poses[i];add.expectedStock=balances.get(p.itemId)??0;
+    for(const [id,n] of need(p)){const value=balances.get(id)??0;if(value<n)return null;balances.set(id,value-n);added+=n;}
+    if(p.attachment)add.scene=p.attachment.scene;
+    place.push(add);
+   }
   }
   row.place=place;
  }
