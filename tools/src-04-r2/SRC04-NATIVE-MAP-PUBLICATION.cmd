@@ -57,7 +57,16 @@ try {
         & py -3 -u (Join-Path $work 'tools/src-04-r2/publish_native_map_originals.py') --root $out --r2 --max-new-objects 118 --max-new-bytes 536870912
         if ($LASTEXITCODE -ne 0) { throw 'R2 publication failed; local results retained' }
         if (Test-Path -LiteralPath (Join-Path $out 'native-map-publication-receipt.json')) {
-            Write-Host 'Canonical receipt available. CDN verification remains separate.'
+            Write-Host 'Canonical receipt available.'
+        }
+    }
+    if ($mode -ceq 'R2' -and (Test-Path -LiteralPath (Join-Path $out 'native-map-publication-receipt.json'))) {
+        if ((Read-Host 'Type VERIFY to read and check the published CDN bytes (up to 118 GETs and 500 MB)') -ceq 'VERIFY') {
+            $audit=Join-Path $out ('cdn-audit-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+            & py -3 -u (Join-Path $work 'tools/src-04-r2/audit_native_map_cdn.py') verify --input (Join-Path $out 'native-cdn-audit-input.json') --out $audit --confirm-read
+            if ($LASTEXITCODE -ne 0) { throw 'CDN audit failed; local images and canonical receipt retained' }
+            Write-Host "CDN report: $audit"
+            Write-Host 'Return audit.json; per-map manifests remain private test previews.'
         }
     }
     Write-Host "Output directory: $out"
