@@ -58,22 +58,29 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
    const desired=next.filter(p=>{const key=poseKey(p),n=wanted.get(key)??0;if(!n)return false;wanted.set(key,n-1);return true;});
    if(drop.length>32||desired.length>32)return null;
    const freeFloor=free&&indoorFreeFloor(face);
-   // Free removal and addition are explicit, plain-leaf-only operations.
-   // A support tree remains on the normal native writer path.
-   const freeDrop=freeFloor?drop.filter(j=>!old[j].attachment):[];
-   const normalDrop=drop.filter(j=>!freeDrop.includes(j));
-   if(freeFloor&&normalDrop.length&&freeDrop.length)return null;
-   const freePickup=freeDrop.length>0;
-   const pickup=drop.length?indoorGroupPickup(face,drop,freePickup?(g.freeAllowed??new Set()):g.allowed,balances,new Set(drop.filter(j=>!!old[j].attachment)),freePickup):[];
-   if(!pickup)return null;
-   for(const j of drop){for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return null;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}}
+   const loose=freeFloor?drop.filter(j=>!old[j].attachment):[],strict=drop.filter(j=>!loose.includes(j));
+   const pickup:IndoorPickup[]=[];
+   const account=(indices:readonly number[])=>{
+    for(const j of indices)for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return false;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}
+    return true;
+   };
+   // The codec removes plain leaves first, then remaps support indices
+   // against the remaining records. All stock expectations are batch-local.
+   if(loose.length){
+    const batch=indoorGroupPickup(face,loose,g.freeAllowed??new Set(),balances,new Set(),true);
+    if(!batch||!account(loose))return null;pickup.push(...batch);
+   }
+   if(strict.length){
+    const keepIndices=face.positions.map((_,j)=>j).filter(j=>!loose.includes(j));
+    const reduced={...face,positions:keepIndices.map(j=>face.positions[j])};
+    const mapped=strict.map(j=>keepIndices.indexOf(j)),supportIndices=new Set(mapped.filter((_,i)=>!!old[strict[i]].attachment));
+    const batch=indoorGroupPickup(reduced,mapped,g.allowed,balances,supportIndices);
+    if(!batch||!account(strict))return null;pickup.push(...batch.map((row,i)=>({...row,index:strict[i]})));
+   }
    const kept=face.positions.filter((_,j)=>keep.has(j)),quantities=new Map<number,number>();for(const p of kept)quantities.set(p.itemId,(quantities.get(p.itemId)??0)+1);
    let finish:RoomApplyRow['finish']=null;
    if(a.finish!==face.finish){if(!a.finish||!roomFinishIdValid(a.finish,face.kind)||!owned.has(a.finish)||room.surfaces.length!==5||!room.surfaces.slice(1).every((f,j)=>f.wallPosition===j)||face.kind==='floor'&&face.finish===null)return null;finish={itemId:a.finish,expected:face.finish};addRestoreQuantity(finishItems,a.finish,1);finishes++;}
-   const freePlace=freeFloor&&desired.length>0&&desired.every(p=>!p.attachment);
-   if(freeFloor&&desired.some(p=>p.attachment)&&desired.some(p=>!p.attachment))return null;
-   if(freePickup&&desired.some(p=>p.attachment)||freePlace&&normalDrop.length)return null;
-   const row:IndoorRestoreRow={surfaceOrdinal:face.ordinal,sourcePath:a.template.grid.gridDataPath,factor:face.factor,pickup,place:[],finish,...(freePickup||freePlace?{freePlacement:true as const}:{})};
+   const row:IndoorRestoreRow={surfaceOrdinal:face.ordinal,sourcePath:a.template.grid.gridDataPath,factor:face.factor,pickup,place:[],finish,...(freeFloor?{freePlacement:true as const}:{})};
    rows.push(row);work.push({face:{...face,positions:kept,items:[...quantities].map(([itemId,quantity])=>({itemId,quantity}))},row,desired,geometry:g});
   }
  }
@@ -86,13 +93,18 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
  if(missing.length)return {plan:null,removed,added:requested,retained,finishes,returned,required,finishItems,missing,changed:true};
  // All returns precede any placement; even different rooms can reuse stock.
  for(const {face,row,desired,geometry:g} of work){
-  const clip=desired.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
-  const place=clip.length?indoorGroupPlace(face,g.shapes,row.freePlacement?(g.freeAllowed??new Set()):g.allowed,balances,clip,0,0,!!row.freePlacement):[];
-  if(!place)return null;
-  for(const [i,p] of desired.entries()){
-   const add=place[i];add.expectedStock=balances.get(p.itemId)??0;
-   for(const [id,n] of need(p)){const value=balances.get(id)??0;if(value<n)return null;balances.set(id,value-n);added+=n;}
-   if(p.attachment)add.scene=p.attachment.scene;
+  const strict=row.freePlacement?desired.filter(p=>!!p.attachment):desired,loose=row.freePlacement?desired.filter(p=>!p.attachment):[];
+  const place:RoomApplyRow['place']=[];
+  for(const [batch,freeBatch] of [[strict,false],[loose,true]] as const){
+   const clip=batch.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
+   const poses=clip.length?indoorGroupPlace(face,g.shapes,freeBatch?(g.freeAllowed??new Set()):g.allowed,balances,clip,0,0,freeBatch):[];
+   if(!poses)return null;
+   for(const [i,p] of batch.entries()){
+    const add=poses[i];add.expectedStock=balances.get(p.itemId)??0;
+    for(const [id,n] of need(p)){const value=balances.get(id)??0;if(value<n)return null;balances.set(id,value-n);added+=n;}
+    if(p.attachment)add.scene=p.attachment.scene;
+    place.push(add);
+   }
   }
   row.place=place;
  }
