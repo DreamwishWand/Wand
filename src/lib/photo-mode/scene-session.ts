@@ -25,6 +25,7 @@ export interface PoseScene {
   dispose():void;
 }
 export interface PoseView {readonly yaw:number;readonly pitch:number;readonly zoom:number}
+export interface PoseComparison {readonly playback:PosePlaybackState;readonly view:PoseView;readonly hidden:readonly string[]}
 export interface PoseRenderer {
   draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>):void;
   dispose():void;
@@ -57,6 +58,20 @@ export class PoseSceneSession {
   get state():PosePlaybackState{return this.clock.snapshot}
   get camera():PoseView{return {...this.view}}
   get hiddenActors():readonly string[]{return [...this.hidden]}
+  comparison(previous?:PoseComparison):PoseComparison{
+    const hidden=new Set(previous?.hidden??[]);
+    for(const actor of this.scene.actors){if(actor.canHide){if(this.hidden.has(actor.id))hidden.add(actor.id);else hidden.delete(actor.id)}}
+    return {playback:this.state,view:this.camera,hidden:[...hidden]};
+  }
+  restoreComparison(saved:PoseComparison):void{
+    this.view={...saved.view};
+    this.hidden=new Set(this.scene.actors.filter(a=>a.canHide&&saved.hidden.includes(a.id)).map(a=>a.id));
+    this.clock.setSpeed(saved.playback.speed);
+    this.clock.setLoop(saved.playback.loop);
+    this.clock.seek(saved.playback.time);
+    if(saved.playback.playing&&this.state.time<this.scene.duration)this.clock.play();
+    else this.clock.pause();
+  }
   redraw(){if(!this.disposed)this.renderer.draw(this.palettes,this.view,this.hidden)}
   move(dx:number,dy:number,width:number,height:number){this.view=orbit(this.view,dx,dy,width,height);this.redraw()}
   zoom(value:number){if(!Number.isFinite(value))throw new RangeError('Invalid zoom');this.view={...this.view,zoom:Math.max(.5,Math.min(4,value))};this.redraw()}

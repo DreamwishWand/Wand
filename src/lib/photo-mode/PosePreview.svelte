@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {poseSpeeds,type PoseSpeed,type PosePlaybackState} from './playback';
-  import {PoseSceneSession,type PoseScene} from './scene-session';
+  import {PoseSceneSession,type PoseScene,type PoseComparison} from './scene-session';
   import {GpuPoseRenderer} from './gpu-renderer';
 
   type BodyOption={id:string;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>};
@@ -18,18 +18,19 @@
   let zoom=$state(1);
   let abort:AbortController|undefined;
   let generation=0,frame=0,last:number|undefined;
+  let comparison:PoseComparison|undefined;
   let pointer:{id:number;x:number;y:number}|undefined;
   function refresh(){if(session){snapshot=session.state;hidden=session.hiddenActors;zoom=session.camera.zoom}}
   function release(){session?.dispose();session=undefined}
   async function choose(option:BodyOption){
     if(selected===option.id&&status!=='error')return;
     selected=option.id;status='loading';const token=++generation;abort?.abort();abort=new AbortController();
-    const settings=session?.state;release();actors=[];hidden=[];last=undefined;let scene:PoseScene|undefined;let renderer:GpuPoseRenderer|undefined;
+    if(session)comparison=session.comparison(comparison);release();actors=[];hidden=[];last=undefined;let scene:PoseScene|undefined;let renderer:GpuPoseRenderer|undefined;
     try{
       scene=await option.load(abort.signal);if(token!==generation){scene.dispose();return}
       renderer=new GpuPoseRenderer(canvas,scene);session=new PoseSceneSession(scene,renderer);
       scene=undefined;renderer=undefined;
-      if(settings){session.clock.setSpeed(settings.speed);session.clock.setLoop(settings.loop)}
+      if(comparison)session.restoreComparison(comparison);
       actors=session.scene.actors.filter(a=>a.canHide);status='ready';refresh();
     }catch{renderer?.dispose();scene?.dispose();if(token===generation){release();status='error'}}
   }
