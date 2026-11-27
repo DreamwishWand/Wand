@@ -2088,6 +2088,9 @@ fn storage_pickup_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError
  Ok(draft.patched_json)
 }
 fn storage_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+    storage_duplicate_with_target(profile,plan,None)
+}
+fn storage_duplicate_with_target(profile:&[u8],plan:&Value,resolved:Option<&ddv_save_patch::GridCoordinateTarget>)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let o=plan.as_object().filter(|o|o.len()==11&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"copyContents"|"freePlacement"))).ok_or(bad)?;
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
@@ -2098,13 +2101,14 @@ fn storage_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecEr
     let cardinal=|k:&str|o[k].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad);
     let old=(int("expectedX")?,int("expectedY")?);let xy=(int("x")?,int("y")?);
     let free=o["freePlacement"].as_bool().ok_or(bad)?;let copy=o["copyContents"].as_bool().ok_or(bad)?;
-    let target=resolve_grid_orientation_target(profile,ordinal,item,old,"full",cardinal("expectedOrientation")?)?;
+    let target=if let Some(target)=resolved{if target.item_id!=item||target.kind!=GridObjectKind::Full{return Err(bad);}target.clone()}else{resolve_grid_orientation_target(profile,ordinal,item,old,"full",cardinal("expectedOrientation")?)?};
     let from=house_exterior_identity(&root,&target.grid_id)?;
     let d=resolve_plain_grid_destination(profile,&o["destination"])?;
     let to=house_exterior_identity(&root,&d.grid_id)?;
     if to.1!=d.layout_path||to.2!=u64::from(d.tessellation)||to.3!=u64::from(d.size.0)||to.4!=u64::from(d.size.1)||old.0<0||old.1<0||old.0 as u64>=from.3*from.2||old.1 as u64>=from.4*from.2{return Err(bad);}
     let grids=&root["World"]["GridCollection"]["Grids"];
-    if !ddv_save_patch::storage_pose(&root,&grids[&target.grid_id]["Objects"][&target.object_id])||grid_identity_dependencies(profile,&target)?.blocking()>0{return Err(bad);}
+    let object=&grids[&target.grid_id]["Objects"][&target.object_id];
+    if object["Orientation"].as_str()!=Some(cardinal("expectedOrientation")?)||!ddv_save_patch::storage_pose(&root,object)||grid_identity_dependencies(profile,&target)?.blocking()>0{return Err(bad);}
     if !free&&grids[&d.grid_id]["Objects"].as_object().ok_or(bad)?.values().any(|v|v["ItemID"].as_u64().is_none_or(|n|n/100_000!=401)&&v["X"].as_i64()==Some(i64::from(xy.0))&&v["Y"].as_i64()==Some(i64::from(xy.1))){return Err(bad);}
     let fresh=grids[&d.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?.to_string();
     let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[fresh])?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
@@ -2112,11 +2116,43 @@ fn storage_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecEr
     let draft=ddv_save_patch::preview_storage_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,&target,old,&d,xy,cardinal("orientation")?,amount,copy,free).map_err(|_|CodecError::Patch)?;
     Ok(draft.patched_json)
 }
+/// All source ordinals refer to the immutable original. Stage normal furniture
+/// first and use stable native identities for the remaining storage clones.
+fn storage_group_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+    use zeroize::{Zeroize,Zeroizing};
+    let bad=CodecError::Json;
+    let o=plan.as_object().filter(|o|o.len()==2&&o.contains_key("rows")&&o.contains_key("freePlacement")).ok_or(bad)?;
+    let free=o["freePlacement"].as_bool().ok_or(bad)?;
+    let rows=o["rows"].as_array().filter(|r|!r.is_empty()&&r.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let mut normal=Vec::new();let mut storage=Vec::new();let mut seen=HashSet::new();
+    for row in rows{
+        if row.get("copyContents").is_none(){normal.push(row.clone());continue;}
+        if row["freePlacement"].as_bool()!=Some(free){return Err(bad);}
+        let ordinal=row["localOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0&&seen.insert(*n)).ok_or(bad)?;
+        let item=row["itemId"].as_str().and_then(|s|s.parse::<u64>().ok()).ok_or(bad)?;
+        let x=row["expectedX"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+        let y=row["expectedY"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
+        let orientation=row["expectedOrientation"].as_str().ok_or(bad)?;
+        let target=resolve_grid_orientation_target(profile,ordinal,item,(x,y),"full",orientation)?;
+        storage.push((row,target));
+    }
+    if storage.is_empty(){return Err(bad);}
+    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+    if !normal.is_empty(){
+        let next=plain_group_paste_with_mode(profile,&serde_json::to_string(&normal).map_err(|_|bad)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,free)?;
+        working.zeroize();*working=next;
+    }
+    for (row,target) in storage{
+        let next=storage_duplicate_with_target(working.as_bytes(),row,Some(&target))?;
+        working.zeroize();*working=next;
+    }
+    Ok(std::mem::take(&mut *working))
+}
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
-        if o.len()==1{if let Some(p)=o.get("storagePickup"){return storage_pickup_candidate(profile,p);}if let Some(p)=o.get("storageDuplicate"){return storage_duplicate_candidate(profile,p);}if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
+        if o.len()==1{if let Some(p)=o.get("storagePickup"){return storage_pickup_candidate(profile,p);}if let Some(p)=o.get("storageDuplicate"){return storage_duplicate_candidate(profile,p);}if let Some(p)=o.get("storageGroup"){return storage_group_candidate(profile,p);}if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         if rows.iter().any(|r|r.get("scene").is_some()){
@@ -4007,6 +4043,20 @@ mod terrain_session_tests{
         assert_eq!(v["Player"]["NextContainerInventoryID"],11);assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],1);
         assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"],old["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]);
         assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);assert!(result.contains("1e2"));
+        // Two independent sources sharing the original container witness.
+        // The original ordinals remain valid after insertion; stock is staged.
+        let mut mixed=old.clone();mixed["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=4.into();
+        let mut second=mixed["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"].clone();second["ID"]=2.into();second["X"]=3.into();
+        mixed["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]=second;
+        let first=plan["storageDuplicate"].clone();let mut other=first.clone();
+        other["localOrdinal"]=2.into();other["expectedX"]=3.into();other["x"]=6.into();
+        let batch=serde_json::json!({"storageGroup":{"rows":[first,other],"freePlacement":true}});
+        let result=group_paste_candidate(&serde_json::to_vec(&mixed).unwrap(),&batch.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
+        assert_eq!(v["Player"]["ContainerInventories"]["11"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
+        assert_eq!(v["Player"]["NextContainerInventoryID"],12);assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],0);
+        let mut invalid=batch.clone();invalid["storageGroup"]["rows"][1]["expectedX"]=99.into();
+        assert!(group_paste_candidate(&serde_json::to_vec(&mixed).unwrap(),&invalid.to_string()).is_err());
         plan["storageDuplicate"]["copyContents"]=Value::Bool(false);
         let v:Value=serde_json::from_str(&group_paste_candidate(raw,&plan.to_string()).unwrap()).unwrap();assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
         plan["storageDuplicate"]["destination"]["sizeX"]=Value::from(sx+1);assert!(group_paste_candidate(raw,&plan.to_string()).is_err());

@@ -11,7 +11,7 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutClipboardMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,groupSymmetryWords,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,type WorldGroupPose,type WorldSymmetryAxis,type GroupPasteCandidate,type CutWitness,type CutClipboard} from './group-paste.ts';
+ import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutClipboardMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,groupSymmetryWords,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,storageGroupSelection,storageGroupPlan,storageGroupWords,type StorageDuplicateSource,type WorldGroupPose,type WorldSymmetryAxis,type GroupPasteCandidate,type CutWitness,type CutClipboard} from './group-paste.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {DESIGN_FILE_LIMIT,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
@@ -33,6 +33,7 @@
  let clip:readonly DesignClipItem[]=[],defs=new Map<number,Map<number,DesignItemGeometry>>(),pending=new Map<number,{key:string;factor:1|2}>(),counts:Map<number,number>|null=null;
  let read:Worker|null=null,writing:Worker|null=null,subscribed:Worker|null=null,source:File|null=null,point:{x:number;y:number}|null=null,candidate:GroupPasteCandidate|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,error=false,copied=false;
  let images=new Map<number,string>(),cutRows:CutWitness[]|null=null,activeCut:CutClipboard|null=null;
+ let storageSources:(StorageDuplicateSource|null)[]|null=null,copyStorageContents=false;
  let lastFree=false;
  $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  let symmetry:DesignSymmetry|null=null,symmetryOpen=false,symmetryPicking=false,mirrorOnly:WorldGroupPose[]|null=null;
@@ -67,7 +68,7 @@
   return base&&axis?symmetricWorldCandidate(groupCandidatePoses(base),axis,true,grids,rasters,defs,capacity,objects,omitted):base;
  }
  function changeSymmetry(value:DesignSymmetry|null){
-  if(writing||copy||cutRows||freeGroup)return;
+  if(writing||copy||cutRows||storageSources||freeGroup)return;
   symmetry=value;symmetryPicking=false;candidate=null;error=false;
  }
  function chooseMirror(){if(!preview||writing||copy||symmetryPicking)return;candidate=preview;error=false;}
@@ -138,10 +139,11 @@
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null){
-  const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
+  const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
+  const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!r.supportFactor)||!!supportDoc||!!areaDoc))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
-  cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
+  cancel();onBegin();source=file;active=true;clip=[...data];storageSources=storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
@@ -180,20 +182,22 @@
   if(!plan||!counts||!cutRows&&!areaScene&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||activeCut&&!cutClipboardMatches(activeCut,file,scope,objects,freePlacement)){error=true;return;}
   if(supportScene&&(!supportValid||!('supportRows' in q)||![...mixedPlacementCounts(q as MixedScenePlacement)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
   if(areaScene&&(!supportValid||!('areaRows' in q)||![...areaPlacementCounts(q as AreaSceneCandidate)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
-  const output=areaScene?(q as AreaSceneCandidate).areaRows:supportScene?(q as MixedScenePlacement).supportRows:plan;
+  const output=storageSources?storageGroupPlan(storageSources,q,copyStorageContents,freeGroup):areaScene?(q as AreaSceneCandidate).areaRows:supportScene?(q as MixedScenePlacement).supportRows:plan;
+  if(!output){error=true;return;}
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writing=own;error=false;
   const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:cutRows?'group-cut-export':'group-paste-export',file:f,plan:freeGroup?{freePlacement:true,rows:output}:output,allowExperimentalCopy:true});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:cutRows?'group-cut-export':'group-paste-export',file:f,plan:storageSources?output:freeGroup?{freePlacement:true,rows:output}:output,allowExperimentalCopy:true});
  }
  function apply(){if(!allowed||blocked||!copy||!file||source!==file)return;if(activeCut&&!cutClipboardMatches(activeCut,file,scope,objects,freePlacement)){error=true;return;}if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}if(cutRows){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}cancel();}
- export function cancel(){captureWorker?.terminate();captureWorker=null;read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;areaScene=null;supportScene=null;supportRequest=0;supportValid=false;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
+ export function cancel(){captureWorker?.terminate();captureWorker=null;read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;storageSources=null;copyStorageContents=false;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;areaScene=null;supportScene=null;supportRequest=0;supportValid=false;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
 </script>
 <input class="scene-file-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={sceneInput} on:change={openScene}/>
 {#if allowed}
  <PresetFilePicker bind:this={scenePicker} {locale} schemas={SCENE_SCHEMAS} disabled={blocked||!file||!worker||sceneReading} showTrigger={false} onPick={f=>void openSceneFile(f)}/>
  {#if active}<aside class="group-paste" aria-label={w[1]}><strong>{scene||supportScene||areaScene?'Scene':cutRows?cutText[2]:w[1]} · {clip.length}</strong><div class="paste-images">{#each clip as p}{#if images.has(p.itemId)}<img src={images.get(p.itemId)} alt="" loading="lazy"/>{/if}{/each}</div>{#if read||pending.size||supportRequest||writing}<small role="status">{w[6]}</small>{:else if geometryReady&&!candidate}<small>{w[4]}</small>{/if}
- {#if !cutRows&&!copy&&!freeGroup}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
+ {#if storageSources&&!copy}<label><input type="checkbox" bind:checked={copyStorageContents} disabled={!!writing}/>{storageGroupWords[locale]}</label>{/if}
+ {#if !cutRows&&!storageSources&&!copy&&!freeGroup}<button type="button" disabled={!!writing} aria-pressed={symmetryOpen} on:click={()=>symmetryOpen=!symmetryOpen} aria-label={sy[0]}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>{#if symmetryOpen}<WorldSymmetryControls {locale} value={symmetry} width={frame.w} height={frame.h} picking={symmetryPicking} count={clip.length} valid={!!preview} busy={!!writing} onChange={changeSymmetry} onPick={()=>{symmetryPicking=!symmetryPicking;candidate=null;}} onMirror={chooseMirror}/>{/if}{/if}
  {#if scene||supportScene||areaScene||symmetry||mirrorOnly}<small>{gs[0]}</small><div class="scene-required">{#each [...actualRequired] as [id,n] (id)}<div class="scene-row">{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{sceneNames.get(id)??'—'}</span><strong class:shortage={!!counts&&(counts.get(id)??0)<n}>{counts?counts.get(id)??0:'—'} / {n}</strong></div>{/each}</div>{#if counts&&ghost&&!ready&&geometryReady}<small role="alert">{gs[1]}</small>{/if}{#if scene||supportScene||areaScene}<div><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='center'} on:click={()=>changeAnchor('center')}>{st[2]}</button><button type="button" disabled={!!writing||!!copy} aria-pressed={sceneAnchor==='corner'} on:click={()=>changeAnchor('corner')}>{st[3]}</button></div>{/if}{/if}
  {#if !copy}<div><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(-1)} aria-label={w[9]}>⟲</button><button type="button" disabled={!geometryReady||!!writing||!!mirrorOnly} on:click={()=>turn(1)} aria-label={w[10]}>⟳</button>{#if areaScene}<button type="button" disabled={!geometryReady||!!writing} aria-label={areaTransformWords[locale][0]} title={areaTransformWords[locale][0]} on:click={()=>transformArea('vertical')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button><button type="button" disabled={!geometryReady||!!writing} aria-label={areaTransformWords[locale][1]} title={areaTransformWords[locale][1]} on:click={()=>transformArea('horizontal')}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12h18M6 9l6-6 6 6ZM6 15l6 6 6-6Z"/></svg></button>{/if}{#if candidate}<button type="button" disabled={!ready||!!writing} on:click={validate}>{w[7]}</button>{/if}</div>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}{#if error}<small role="alert">{w[5]}</small>{/if}<button type="button" on:click={cancel}>{w[8]}</button></aside>

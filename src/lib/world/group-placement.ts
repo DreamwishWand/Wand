@@ -9,10 +9,11 @@ import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {supportParentEligible} from './subgrid-local.ts';
 
-export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{if(p.object.storage)return allowSupport&&stockSourceEligible(p)&&isCardinal(p.object.orientation);const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
+export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{if(p.object.storageKnown&&!p.object.storage)return false;if(p.object.storage)return allowSupport&&stockSourceEligible(p)&&isCardinal(p.object.orientation);const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
 export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false,free=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
+  if(p.object.storageKnown&&!p.object.storage)return null;
   if(!(p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const code=worldOrientationCode(p.object.orientation);
   if(code===null||code%4!==0&&!free)return null;

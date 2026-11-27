@@ -15,6 +15,24 @@ export type {GroupGeometry,GroupPasteCandidate,GroupPasteRow,WorldGroupPose,Worl
  * bytes, state, or system clipboard. Remains in this tab across world views. */
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
 export const ROOM_CUT_LIMIT=32;
+export interface StorageDuplicateSource{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay}
+export function storageGroupSelection(items:readonly MainlandSavedObject[],free=false){
+ if(!items.some(p=>p.object.storage)||items.some(p=>p.object.subgrid||p.object.storageKnown&&!p.object.storage))return null;
+ const clip=captureFurnitureGroup(items,true,free);
+ if(!clip)return null;
+ const sources=items.map(p=>p.object.storage?{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay}:null);
+ return {clip,sources};
+}
+export function storageGroupPlan(sources:readonly (StorageDuplicateSource|null)[],candidate:GroupPasteCandidate,copyContents:boolean,freePlacement:boolean){
+ if(!sources.some(Boolean)||sources.length!==candidate.rows.length)return null;
+ const rows=candidate.rows.map((p,i)=>{
+  const s=sources[i];if(!s)return p;
+  if(p.itemId!==s.itemId||!CARDINAL_ORIENTATIONS.some(o=>o===p.orientation)||!CARDINAL_ORIENTATIONS.some(o=>o===s.expectedOrientation))return null;
+  return {...s,...p,copyContents,freePlacement};
+ });
+ return rows.every(r=>r!==null)?{storageGroup:{rows,freePlacement}}:null;
+}
+export const storageGroupWords={ja:'収納の中身も複製する',en:'Duplicate storage contents',fr:'Dupliquer le contenu des rangements',it:'Duplica il contenuto dei contenitori',de:'Lagerinhalt duplizieren','es-ES':'Duplicar el contenido del almacenamiento','zh-CN':'同时复制储物内容','pt-BR':'Duplicar conteúdo dos recipientes'} as const;
 export type RoomCutSource={roomOrdinal:number;index:number};
 type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2;storage?:true};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
