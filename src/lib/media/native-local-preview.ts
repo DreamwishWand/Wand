@@ -64,10 +64,13 @@ export function localNativeImageSource(files:readonly File[],maps:readonly Local
 }
 
 export interface LocalNativePreviewPack{readonly maps:readonly LocalNativeMap[];readonly source:ImageSource}
-export async function openLocalNativePreview(files:readonly File[]):Promise<LocalNativePreviewPack>{
- const manifests=files.filter(f=>f.name==='manifest.json');
- check(manifests.length===1&&manifests[0].size<=4*1024*1024,'Select manifest.json and all local images');
- const maps=parseLocalNativePreview(JSON.parse(await manifests[0].text()));
+export async function readNativeManifest(files:readonly File[]):Promise<unknown>{
+ const manifests=files.filter(f=>/\.json$/i.test(f.name));
+ check(manifests.length===1&&manifests[0].size>0&&manifests[0].size<=4*1024*1024,'Select exactly one native map JSON manifest (max 4 MiB)');
+ return JSON.parse(await manifests[0].text());
+}
+export async function openLocalNativePreview(files:readonly File[],doc?:unknown):Promise<LocalNativePreviewPack>{
+ const maps=parseLocalNativePreview(doc===undefined?await readNativeManifest(files):doc);
  return {maps,source:localNativeImageSource(files,maps)};
 }
 const EDITOR_MAP_IDS:Readonly<Record<string,string>>=Object.freeze({
