@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "mermaidDiagnostic": "マーメイドは形状と動作の確認用です。色・質感・衣装の物理変形および一部の動作は未対応です。",
     "secondaryPassOmitted": "発光・輪郭線などの追加描画効果は省略しています。",
     "prop": "小道具",
     "partialActor": "コンパニオン本体は一部の体型でのみ表示されます。",
@@ -25,6 +26,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "mermaidDiagnostic": "Mermaid geometry and motion diagnostic. Colors, materials, cloth physics and some motion remain incomplete.",
     "secondaryPassOmitted": "Additional effects such as glow and outlines are omitted.",
     "prop": "Prop",
     "partialActor": "The companion is displayed for only one body type.",
@@ -50,6 +52,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "mermaidDiagnostic": "Aperçu de diagnostic de la forme et des mouvements de sirène. Les couleurs, matériaux, mouvements de vêtements et certaines animations restent incomplets.",
     "secondaryPassOmitted": "Les effets supplémentaires, tels que la lueur et les contours, sont omis.",
     "prop": "Accessoire",
     "partialActor": "Le compagnon est affiché pour un seul type de morphologie.",
@@ -75,6 +78,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "mermaidDiagnostic": "Anteprima diagnostica di forma e movimento da sirena. Colori, materiali, fisica degli abiti e alcuni movimenti sono incompleti.",
     "secondaryPassOmitted": "Gli effetti aggiuntivi, come bagliore e contorni, sono omessi.",
     "prop": "Accessorio",
     "partialActor": "Il compagno è visualizzato per un solo tipo di corporatura.",
@@ -100,6 +104,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "mermaidDiagnostic": "Diagnosevorschau für Meerjungfrauenform und Bewegung. Farben, Materialien, Kleidungsphysik und einige Bewegungen sind noch unvollständig.",
     "secondaryPassOmitted": "Zusätzliche Effekte wie Leuchten und Konturen werden ausgelassen.",
     "prop": "Requisite",
     "partialActor": "Der Begleiter wird nur bei einem Körpertyp angezeigt.",
@@ -125,6 +130,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "mermaidDiagnostic": "Vista de diagnóstico de la forma y el movimiento de sirena. Los colores, materiales, física de la ropa y algunos movimientos aún están incompletos.",
     "secondaryPassOmitted": "Se omiten efectos adicionales como el brillo y los contornos.",
     "prop": "Accesorio",
     "partialActor": "El compañero solo se muestra con un tipo de cuerpo.",
@@ -150,6 +156,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "mermaidDiagnostic": "美人鱼形状及动作的诊断预览。颜色、材质、衣物物理和部分动作尚未完成。",
     "secondaryPassOmitted": "省略发光、描边等附加效果。",
     "prop": "道具",
     "partialActor": "伙伴模型仅支持一种体型。",
@@ -175,6 +182,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "mermaidDiagnostic": "Prévia de diagnóstico da forma e dos movimentos de sereia. Cores, materiais, física das roupas e alguns movimentos ainda estão incompletos.",
     "secondaryPassOmitted": "Efeitos adicionais, como brilho e contornos, foram omitidos.",
     "prop": "Acessório",
     "partialActor": "O companheiro é exibido para apenas um tipo de corpo.",
