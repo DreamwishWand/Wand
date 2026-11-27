@@ -921,6 +921,26 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
 fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     insert_grid_record(intermediate,destination,item_id,replacement,orientation,None)
 }
+/// Codec supplies a version-pinned native template, never user-provided State.
+pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,level:u64,skin:u64)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    if item_id/100_000!=203||level!=1||skin!=170200005||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+       xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let collection=root.get("World").and_then(|w|w.get("GridCollection")).ok_or(bad)?;
+    let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+    let grid=grids.get(&d.grid_id).ok_or(bad)?;
+    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
+    if !outdoor_world_path(scope,&d.data_path)||grid["ID"].as_u64()!=d.grid_id.parse::<u64>().ok()||
+       grid["GridDefaultLayoutPath"].as_str()!=Some(d.layout_path.as_str())||grid["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
+       grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+       collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
+    let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":level},"CurrentSkinItemID":skin}}).to_string();
+    insert_grid_record(source,d,item_id,xy,orientation,Some(&state))
+}
+
 fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str,state:Option<&str>)->Result<GridCoordinateDraft,PatchError>{
     let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:destination.grid_id.clone(),object_id:"1".into(),item_id};
     let mut locator=JsonLocator::grid_axis(intermediate,&selector,"X")?;
