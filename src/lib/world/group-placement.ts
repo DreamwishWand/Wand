@@ -4,16 +4,16 @@ import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import {rotateDesignClipboard,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
-import {mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandTerrainHits,mainlandFreeHits,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {supportParentEligible} from './subgrid-local.ts';
 
 export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
-export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false):DesignClipItem[]|null{
+export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false,free=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
-  if(!cutEligible(p,allowSupport)||nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  if(!(free?stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const orientation=CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal);
   if(orientation<0)return null;
   return {itemId:Number(p.object.itemId),dx:p.x*2,dy:-p.y*2,orientation};
@@ -52,34 +52,35 @@ export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeomet
  const y=-2*g.origin.position[2]-Math.floor((-p.y-2*g.origin.position[2])*g.factor)/g.factor;
  return {x:x-Math.floor((width*g.factor-1)/2)/g.factor+.001,y:y+Math.floor((height*g.factor-1)/2)/g.factor-.001};
 }
-export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number):GroupPasteCandidate|null{
+export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,free=false):GroupPasteCandidate|null{
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
- const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
+ const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
  const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
  if(clip.some(p=>![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3))return null;
- return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted);
+ return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free);
 }
 export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
 export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
 /** All poses share map coordinates; each independently resolves its exact
  * source Grid. The bounding rectangle's empty corner need not be on land. */
-export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT):GroupPasteCandidate|null{
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false):GroupPasteCandidate|null{
  if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
   const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3)return null;
-  const target=mainlandTerrainHits(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
+  const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
-  const q=stockPlacement(grids,rasters,geo,p.itemId,CARDINAL_ORIENTATIONS[p.orientation],x+.001,y-.001);
+  if(free&&geo.get(t.factor)?.surfaceCapable)return null;
+  const q=stockPlacement(grids,rasters,geo,p.itemId,CARDINAL_ORIENTATIONS[p.orientation],x+.001,y-.001,null,free);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
-  const key=q.area+':'+lx+':'+ly;if(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly))return null;
+  const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
   anchors.add(key);
   // Exact occupied-cell conflicts are refused for ordinary group placement;
   // roads remain visible context. Unknown objects remain a warning.
-  if(stockFootprintFeedback(q,objects,omitted).overlaps>0)return null;
-  for(const other of ghosts){
+  if(!free&&stockFootprintFeedback(q,objects,omitted).overlaps>0)return null;
+  if(!free)for(const other of ghosts){
    const synthetic:MainlandSavedObject={area:other.area,x:other.x,y:other.y,factor:other.factor,shape:other.shape,object:{localOrdinal:1,localGridOrdinal:1,itemId:other.plan.itemId,x:0,y:0,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
    if(stockFootprintFeedback(q,[synthetic]).overlaps>0)return null;
   }
