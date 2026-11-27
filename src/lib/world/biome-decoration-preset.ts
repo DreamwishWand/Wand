@@ -72,12 +72,12 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
  return {plan,furniture,network,landscape,buildingReview,ghosts:[...furniture.ghosts,...network.ghosts,...(landscape?.ghosts??[])],removed:[...furniture.removed,...network.removed,...(landscape?.removed??[])],missing:furniture.missing,changed:furniture.changed||network.changed||!!landscape?.changed||!!buildingReview?.changed,protectedCount:objects.filter(o=>o.area===grid.key&&!['ground','fence'].includes(o.object.layer)&&!furniture.retained.includes(o)&&!removedFurniture.has(o.object.localOrdinal)&&!(currentLandscape??[]).some(p=>landscapePoseKey(p)===landscapePoseKey(landscapeObjectPose(o)))).length};
 }
 export const biomeDecorationWords={
- ja:['Biome装飾Preset','装飾を一括保存','装飾Presetを開く','通常家具・道・フェンスを一括置換します。支持家具・建物・進行関連物は保持します。','家具','道・フェンス','家具も含める'],
- en:['Biome decoration preset','Save decoration','Open decoration preset','Replace ordinary furniture, roads and fences together. Support furniture, buildings and progression objects remain.','Furniture','Roads and fences','Include furniture'],
- fr:['Preset de décoration du biome','Enregistrer la décoration','Ouvrir le preset','Remplace ensemble meubles ordinaires, chemins et clôtures. Les supports, bâtiments et objets de progression restent.','Meubles','Chemins et clôtures','Inclure les meubles'],
- it:['Preset decorazione bioma','Salva decorazione','Apri preset','Sostituisce mobili ordinari, sentieri e recinzioni. Supporti, edifici e oggetti di progressione restano.','Mobili','Sentieri e recinzioni','Includi mobili'],
- de:['Biom-Dekorationsvorlage','Dekoration speichern','Vorlage öffnen','Ersetzt normale Möbel, Wege und Zäune. Auflagen, Gebäude und Fortschrittsobjekte bleiben erhalten.','Möbel','Wege und Zäune','Möbel einschließen'],
- 'es-ES':['Preset de decoración del bioma','Guardar decoración','Abrir preset','Sustituye muebles normales, caminos y vallas. Conserva soportes, edificios y objetos de progreso.','Muebles','Caminos y vallas','Incluir muebles'],
- 'zh-CN':['生态区装饰预设','保存装饰','打开装饰预设','一并替换普通家具、道路和围栏，保留支撑家具、建筑和进度相关物品。','家具','道路和围栏','包含家具'],
- 'pt-BR':['Preset de decoração do bioma','Salvar decoração','Abrir preset','Substitui móveis comuns, caminhos e cercas. Suportes, edifícios e objetos de progresso são preservados.','Móveis','Caminhos e cercas','Incluir móveis']
+ ja:['Biome装飾Preset','装飾を一括保存','装飾Presetを開く','家具・道・フェンスを一括復元します。対応する既存建物は位置・方向を復元し、内部状態は保持します。','家具','道・フェンス','家具も含める'],
+ en:['Biome decoration preset','Save decoration','Open decoration preset','Restore furniture, roads and fences together. Supported existing buildings retain their state while their positions are restored.','Furniture','Roads and fences','Include furniture'],
+ fr:['Preset de décoration du biome','Enregistrer la décoration','Ouvrir le preset','Restaure les meubles, chemins et clôtures. Les bâtiments existants compatibles conservent leur état.','Meubles','Chemins et clôtures','Inclure les meubles'],
+ it:['Preset decorazione bioma','Salva decorazione','Apri preset','Ripristina mobili, sentieri e recinzioni. Gli edifici esistenti compatibili conservano il loro stato.','Mobili','Sentieri e recinzioni','Includi mobili'],
+ de:['Biom-Dekorationsvorlage','Dekoration speichern','Vorlage öffnen','Stellt Möbel, Wege und Zäune wieder her. Unterstützte vorhandene Gebäude behalten ihren Zustand.','Möbel','Wege und Zäune','Möbel einschließen'],
+ 'es-ES':['Preset de decoración del bioma','Guardar decoración','Abrir preset','Restaura muebles, caminos y vallas. Los edificios existentes compatibles conservan su estado.','Muebles','Caminos y vallas','Incluir muebles'],
+ 'zh-CN':['生态区装饰预设','保存装饰','打开装饰预设','一并恢复家具、道路和围栏。支持的现有建筑保留内部状态。','家具','道路和围栏','包含家具'],
+ 'pt-BR':['Preset de decoração do bioma','Salvar decoração','Abrir preset','Restaura móveis, caminhos e cercas. Edifícios existentes compatíveis mantêm seu estado.','Móveis','Caminhos e cercas','Incluir móveis']
 } as const;
