@@ -30,3 +30,23 @@ test('restore returns stock in one room before placing in another',()=>{
  const shortage=buildIndoorRestore('room',[inputs[0]],new Map([[id,0]]),new Set());assert.ok(shortage);assert.equal(shortage.plan,null);assert.deepEqual(shortage.missing,[{itemId:id,quantity:1}]);assert.equal(shortage.required.get(id),1);
  assert.equal(buildIndoorRestore('floor',inputs,new Map(),new Set()),null);
 });
+
+import {captureRoomRows,captureRoomSurface} from '../src/lib/world/room-project-capture.ts';
+import {parseRoomProject} from '../src/lib/world/room-project-design.ts';
+test('free indoor building backup roundtrips diagonal and repeated anchors on native factor one',()=>{
+ const shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],acceptedFloorTypesFlag:1024,path:'M0 0h2v1H0Z'};
+ const shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(n=>[id+':'+n,shape])),g={design:new Map([[id,{itemId:id,name:'Test',layer:'furniture',surfaceCapable:false,shapes}]]),shapes,allowed:new Set([id]),freeAllowed:new Set([id])},geometry=new Map([[1,g]]);
+ const x=floor.grid.sizeX-1,y=0,occupiedFace={...face,items:[{itemId:id,quantity:2}],positions:[{itemId:id,x,y,orientationCode:10,plain:true},{itemId:id,x,y,orientationCode:8,plain:true}]};
+ const occupied={...rooms[1],surfaces:[occupiedFace]},rows=captureRoomRows(occupied,occupiedFace,floor,[],new Map());
+ assert.deepEqual(rows.map(p=>[p.x,p.y,p.orientation]),[[x*2,0,2.5],[x*2,0,2]]);
+ const surface=captureRoomSurface(occupiedFace,floor,rows,g.design,new Set(),g);assert.ok(surface);
+ const blank=newRoomSurface(1,floor),raw=serializeIndoorBackup('floor',[{room:rooms[0],surfaces:[surface]},{room:occupied,surfaces:[blank]}],templates),parsed=parseIndoorBackup(raw,'floor',[rooms[0],occupied],templates);
+ assert.throws(()=>parseRoomProject(JSON.stringify(JSON.parse(raw).rooms[0].design),templates));
+ assert.equal(parsed[0].surfaces[0].timeline.snapshots[0][0].orientation,2.5);
+ const inputs=[{room:rooms[0],before:[blank],after:parsed[0].surfaces,geometry},{room:occupied,before:[surface],after:[blank],geometry}];
+ assert.equal(buildIndoorRestore('floor',inputs,new Map([[id,0]]),new Set()),null);
+ const q=buildIndoorRestore('floor',inputs,new Map([[id,0]]),new Set(),true);assert.ok(q);assert.equal(q.removed,2);assert.equal(q.added,2);
+ assert.equal(q.plan.rooms[0].surfaces[0].freePlacement,true);assert.equal(q.plan.rooms[1].surfaces[0].pickup.length,2);
+ assert.deepEqual(q.plan.rooms[0].surfaces[0].place.map(p=>[p.x,p.y,p.orientation,p.expectedStock]),[[x,0,'GridOrientation_DownLeft',2],[x,0,'GridOrientation_Down',1]]);
+ assert.equal(buildIndoorRestore('floor',[{...inputs[0],room:{...rooms[0],surfaces:[{...face,factor:2}]}},inputs[1]],new Map([[id,0]]),new Set(),true),null);
+});
