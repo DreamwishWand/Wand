@@ -15,3 +15,37 @@ test('viewport culling accounts for mirrored and rotated quads',()=>{
  assert.equal(intersects([16,0,0,16,16,0],v),false);
  assert.equal(intersects([2,0,0,2,-5,-5],v),false);
 });
+
+import {NativeMapRenderer} from '../src/lib/media/native-map-renderer.ts';
+function fakeContext(){
+ const stats={created:0,deleted:0,uploads:0,draws:0};let id=0;
+ const noOp=()=>{};
+ const g=new Proxy({drawingBufferWidth:16,drawingBufferHeight:16,COMPILE_STATUS:1,LINK_STATUS:2,MAX_TEXTURE_SIZE:3,NO_ERROR:0,
+  createShader:()=>({}),createProgram:()=>({}),createVertexArray:()=>({}),getShaderParameter:()=>true,getProgramParameter:()=>true,getUniformLocation:()=>({}),getParameter:()=>32768,isContextLost:()=>false,getError:()=>0,
+  createTexture:()=>({id:++id,created:++stats.created}),deleteTexture:()=>{stats.deleted++;},texImage2D:()=>{stats.uploads++;},drawArrays:()=>{stats.draws++;}},
+ {get:(t,k)=>k in t?t[k]:typeof k==='string'&&/^[A-Z_0-9]+$/.test(k)?10:noOp});
+ return {canvas:{getContext:()=>g},stats};
+}
+const view={x:0,y:0,width:16,height:16};
+const texture={...sdf,kind:'texture',colorSpace:'sRGB'};
+const next={...texture,imageSha256:'b'.repeat(64)};
+test('texture cache reuses GPU allocation and evicts least recently used within budget',async()=>{
+ const {canvas,stats}=fakeContext(),r=new NativeMapRenderer(canvas,32);let loads=0,closed=0;
+ const source=async()=>{loads++;return {width:2,height:2,close(){closed++;}};};
+ await r.render([texture,next],view,source);
+ await r.render([texture,next],view,source);
+ assert.deepEqual(r.cacheStats,{textures:2,estimatedBytes:32});assert.equal(loads,2);assert.equal(stats.uploads,2);
+ const third={...texture,imageSha256:'c'.repeat(64)};
+ await r.render([texture,third],view,source);assert.equal(stats.deleted,1);
+ await r.render([texture,next],view,source);assert.equal(loads,4);assert.equal(stats.deleted,2);
+ r.releaseTextures();assert.deepEqual(r.cacheStats,{textures:0,estimatedBytes:0});assert.equal(stats.deleted,4);assert.equal(closed,loads);r.dispose();
+});
+test('source change, oversized textures and aborted upload release resources',async()=>{
+ const {canvas,stats}=fakeContext(),r=new NativeMapRenderer(canvas,16);let closed=0;
+ const source=async l=>({width:l.size[0],height:l.size[1],close(){closed++;}});
+ await r.render([texture],view,source);
+ await r.render([texture],view,async l=>source(l));assert.equal(stats.deleted,1);
+ const large={...texture,size:[4,4]};await r.render([large],view,source);assert.equal(r.cacheStats.textures,0);assert.equal(stats.deleted,3);
+ const c=new AbortController();await assert.rejects(r.render([texture],view,async l=>{c.abort();return source(l);},c.signal));
+ assert.equal(closed,4);assert.equal(r.cacheStats.estimatedBytes,0);assert.equal(stats.uploads,3);r.dispose();
+});
