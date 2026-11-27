@@ -74,6 +74,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
         let coord=|k:&str|obj.get(k).and_then(Value::as_i64).filter(|n|(-1_000_000..=1_000_000).contains(n));
         if let (Some(x),Some(y))=(coord("X"),coord("Y")){let orientation=match obj.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Up")=>Some(0),Some("GridOrientation_Right")=>Some(4),Some("GridOrientation_Down")=>Some(8),Some("GridOrientation_Left")=>Some(12),Some("GridOrientation_UpRight") if kind=="floor"&&factor==Some(1)=>Some(2),Some("GridOrientation_DownRight") if kind=="floor"&&factor==Some(1)=>Some(6),Some("GridOrientation_DownLeft") if kind=="floor"&&factor==Some(1)=>Some(10),Some("GridOrientation_UpLeft") if kind=="floor"&&factor==Some(1)=>Some(14),_=>None};let mut pose=json!({"itemId":item,"x":x,"y":y,"orientationCode":orientation});
          if factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
+         if terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
       }
@@ -786,6 +787,8 @@ mod tests{
   source["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=json!(1);
   let d=furniture_candidate(&serde_json::to_vec(&source).unwrap(),&plan.to_string()).unwrap();let j:Value=serde_json::from_str(&d.patched_json).unwrap();
   assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["0"],source["World"]["GridCollection"]["Grids"]["42"]["Objects"]["0"]);
+  let projected:Value=serde_json::from_str(&project(d.patched_json.as_bytes()).unwrap()).unwrap();
+  assert_eq!(projected["rooms"][0]["surfaces"][0]["positions"][0]["protected"],true);
   source["World"]["SpawnedObjects"]=json!([{"GridID":42,"GridObjectID":1}]);
   assert!(furniture_candidate(&serde_json::to_vec(&source).unwrap(),&plan.to_string()).is_err());
  }
