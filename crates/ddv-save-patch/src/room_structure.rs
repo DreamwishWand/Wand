@@ -739,6 +739,20 @@ mod tests{
   assert!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("1").is_none());
   assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"],raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]);
   assert!(preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",2).is_err());
+  // A free-rotated plain floor object is recovered without changing a retained neighbor.
+  let g=&mut raw["World"]["GridCollection"]["Grids"]["10"];
+  g["TessellationFactor"]=json!(1);
+  g["Objects"]["1"]["X"]=json!(7);
+  g["Objects"]["1"]["Y"]=json!(3);
+  g["Objects"]["1"]["Orientation"]=json!("GridOrientation_DownLeft");
+  g["Objects"]["2"]["X"]=json!(2);
+  g["Objects"]["2"]["Y"]=json!(2);
+  assert!(room_resize_recovery_options(&raw,t).contains(&("3x3".into(),1)));
+  let d=preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",1).unwrap();
+  let v:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001039"]["Amount"],3);
+  assert!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("1").is_none());
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"],raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]);
   raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]=json!({"Unknown":true});
   assert!(preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",1).is_err());
  }
@@ -762,6 +776,13 @@ mod tests{
   assert_eq!(out["World"]["GridCollection"]["NextGridID"],110);
   assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40001039"]["Amount"],3);
   assert!(preview_remove_primary_room_recover(&v.to_string(),t,true,2).is_err());
+  v["World"]["GridCollection"]["Grids"]["95"]["TessellationFactor"]=json!(1);
+  v["World"]["GridCollection"]["Grids"]["95"]["Objects"]["1"]["Orientation"]=json!("GridOrientation_DownLeft");
+  assert_eq!(room_removal_offer(&v,t),Some(("floor",1)));
+  let d=preview_remove_primary_room_recover(&v.to_string(),t,true,1).unwrap();
+  let out:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(out["World"]["GridCollection"]["Grids"],raw["World"]["GridCollection"]["Grids"]);
+  assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40001039"]["Amount"],3);
   v["World"]["GridCollection"]["Grids"]["95"]["Objects"]["1"]["State"]=json!({"Unknown":true});
   assert!(preview_remove_primary_room_recover(&v.to_string(),t,true,1).is_err());
  }
