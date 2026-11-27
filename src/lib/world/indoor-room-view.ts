@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[];anchorOptions?:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -41,7 +41,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
   const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
   const slots=room.addRoomSlots;if(slots!==undefined&&(!Array.isArray(slots)||slots.length<1||slots.length>3||new Set(slots).size!==slots.length||slots.some(n=>!integer(n,1,3))||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_ADD_ROOM_INVALID');
-  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).length!==2||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)))throw Error('INDOOR_RESIZE_INVALID');
+  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).some(k=>!["current","options","anchorOptions"].includes(k))||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)||resize.anchorOptions!==undefined&&(!Array.isArray(resize.anchorOptions)||resize.anchorOptions.length<1||resize.anchorOptions.length+resize.options.length>26||new Set(resize.anchorOptions).size!==resize.anchorOptions.length||resize.anchorOptions.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current||(resize.options as unknown[]).includes(n)))))throw Error('INDOOR_RESIZE_INVALID');
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
    if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
@@ -504,8 +504,10 @@ export const roomRenameWords={
 } as const;
 
 export function indoorRoomResizePlan(room:IndoorRoom|null,size:string){
- if(!room?.resize?.options.includes(size))return null;
- return {roomOrdinal:room.ordinal,expected:room.resize.current,size};
+ if(!room?.resize)return null;
+ const free=room.resize.anchorOptions?.includes(size)===true;
+ if(!room.resize.options.includes(size)&&!free)return null;
+ return {roomOrdinal:room.ordinal,expected:room.resize.current,size,...(free?{preserveAnchors:true as const}:{})};
 }
 export const roomResizeWords={
  ja:['部屋サイズ変更','家具を保持できるサイズのみ選択できます。標準ドアとエレベーターは対応する位置に移動し、選択サイズを購入済みとして記録します。'],
@@ -561,4 +563,15 @@ export const removeRoomWords={
  'es-ES':['Eliminar habitación','Eliminar última planta','Eliminar la habitación vacía y sus puertas.','Eliminar la última planta vacía y su ascensor.'],
  'zh-CN':['删除房间','删除顶层','删除空房间和连接门。','删除空顶层及电梯。'],
  'pt-BR':['Remover cômodo','Remover último andar','Remover o cômodo vazio e as portas.','Remover o último andar vazio e o elevador.']
+} as const;
+
+export const anchorResizeWords={
+ ja:['自由配置','家具の座標は維持しますが、フットプリントのはみ出しや重なりは検証しません。'],
+ en:['Free placement','Furniture anchors are preserved; footprint overhang and overlap are not checked.'],
+ fr:['Placement libre','Positions conservées ; débordements et chevauchements non vérifiés.'],
+ it:['Posizionamento libero','Coordinate conservate; ingombri e sovrapposizioni non verificati.'],
+ de:['Freie Platzierung','Positionen bleiben erhalten; Überstände und Überlappungen werden nicht geprüft.'],
+ 'es-ES':['Colocación libre','Se conservan posiciones; no se verifican salientes ni solapamientos.'],
+ 'zh-CN':['自由摆放','保留家具坐标，不检查占地范围越界或重叠。'],
+ 'pt-BR':['Posicionamento livre','Posições preservadas; limites da área ocupada e sobreposições não verificados.']
 } as const;
