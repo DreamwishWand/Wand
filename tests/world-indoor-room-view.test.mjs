@@ -346,3 +346,14 @@ test('free room group quarter turns allow overlap and diagonal poses but preserv
  assert.equal(indoorFreeGroupRotate(full,shapes,new Set(),[0,1],1),null);
  assert.equal(indoorFreeGroupRotate({...full,terrain:{...terrain,sizeY:2}},shapes,allowed,[0,1],1),null);
 });
+
+test('free room alignment and spacing retain diagonal orientations and permit stationary overlap',async()=>{
+ const {indoorAlign}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:2,y:2,orientationCode:8,plain:true},{itemId:40000001,x:7,y:3,orientationCode:8,plain:true},{itemId:40000002,x:4,y:2,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape,'40000001:10':shape},allowed=new Set([40000001]);
+ assert.deepEqual(indoorAlign(full,shapes,allowed,[0,1,2],'spaceX',true)?.map(p=>[p.index,p.x,p.y,p.orientation]),[[1,4,2,'GridOrientation_Down']]);
+ assert.deepEqual(indoorAlign(full,shapes,allowed,[0,1],'left',true)?.map(p=>[p.index,p.x,p.y]),[[1,1,2]]);
+ assert.equal(indoorAlign(full,shapes,allowed,[0,3],'left',true),null);
+ assert.equal(indoorAlign(full,shapes,allowed,[0,1],'left'),null);
+});
