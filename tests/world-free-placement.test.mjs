@@ -58,3 +58,20 @@ test('player house exterior duplication targets exact grids in the same world',(
  assert.equal(playerHousePickup(p,[p]),null);
  assert.equal(playerHousePickup(p,[p,{...p,area:h.key,object:{...p.object,localOrdinal:2}}]).plan.action,'remove');
 });
+
+import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode} from '../src/lib/world/saved-map-transform.ts';
+import {stageWorldEdit,projectWorldEdits} from '../src/lib/world/saved-map-batch.ts';
+test('45-degree furniture rotation stages and projects native shape code without widening other types',()=>{
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}]};
+ const map={objects:[o],shapes:{[o.shapeKey]:shape,'40000001:10':shape}};
+ assert.deepEqual(EIGHT_WAY_ORIENTATIONS.map(worldOrientationCode),[0,2,4,6,8,10,12,14]);
+ const turn='GridOrientation_DownLeft';
+ assert.equal(draftSavedMapTransform(o,1,1,turn),null);
+ const t=stageWorldEdit(map,emptyWorldTimeline(),1,1,1,turn,'test',true);
+ assert.ok(t);assert.equal(currentWorldEdits(t)[0].plan.replacementOrientation,turn);
+ const p=projectWorldEdits(map,currentWorldEdits(t)).objects[0];
+ assert.equal(p.orientationCode,10);assert.equal(p.shapeKey,'40000001:10');
+ assert.equal(draftSavedMapTransform({...o,itemId:'20500001',nativeType:'Building'},1,1,turn,true),null);
+ assert.equal(draftSavedMapTransform({...o,subgrid:{}},1,1,turn,true),null);
+ assert.equal(draftSavedMapTransform({...o,itemId:'40100001',layer:'ground'},1,1,turn,true),null);
+});
