@@ -25,3 +25,13 @@ test('a CDN manifest can be opened alone without local PNGs',async()=>{
  const file=new File([JSON.stringify(doc)],'manifest.json');const pack=await openNativePreviewPack([file]);assert.equal(pack.maps[0].id,'MapVillage04');
  await assert.rejects(openNativePreviewPack([file,new File([bytes],'extra.png')]));
 });
+
+test('R2 receipts stay distinct from verified CDN and are still subject to browser digest checks',async()=>{
+ const r2={...doc,schema:'wand.media.native-r2-preview@1',cdnVerified:false,canonicalMetadataVerified:true};
+ const pack=await openNativePreviewPack([new File([JSON.stringify(r2)],'manifest.json')]);
+ assert.equal(pack.maps[0].id,'MapVillage04');
+ assert.throws(()=>parseNativeCdnPreview({...r2,canonicalMetadataVerified:false}));
+ assert.throws(()=>parseNativeCdnPreview({...r2,sourcePixelsVerified:false}));
+ assert.throws(()=>parseNativeCdnPreview({...r2,cdnVerified:true}));
+ await assert.rejects(parseNativeCdnPreview(r2,async()=>response(new Uint8Array(20))).source(layer));
+});
