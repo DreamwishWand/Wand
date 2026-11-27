@@ -37,6 +37,9 @@ test('room project permits only source room geometry and known finishes',()=>{
  const raw=serializeRoomProject([newRoomSurface(1,floor),newRoomSurface(2,wall)],1);valid(raw);
  const bad=JSON.parse(raw);bad.surfaces[0].design.roomFinish=42;reject(bad);
  const backup={schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope:'room',rooms:[{floor:1,room:1,wallPositions:[null,0],design:JSON.parse(raw)}]};valid(JSON.stringify(backup));reject({...backup,rooms:[{...backup.rooms[0],houseId:42}]});
+ const floorBackup={...backup,scope:'floor',rooms:[{...backup.rooms[0],slot:0},{...backup.rooms[0],room:2,slot:2}]};valid(JSON.stringify(floorBackup));
+ reject({...floorBackup,rooms:[floorBackup.rooms[0],{...floorBackup.rooms[1],slot:0}]});
+ reject({...floorBackup,rooms:[floorBackup.rooms[0],{...floorBackup.rooms[1],slot:4}]});
 });
 
 test('publication receipt binds the exact compact file and its semantic metadata',async()=>{
