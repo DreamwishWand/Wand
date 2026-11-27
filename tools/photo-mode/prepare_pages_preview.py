@@ -67,10 +67,11 @@ if __name__=='__main__':
     p.add_argument('--props',type=Path,help='Local copy of native accessory overlay')
     p.add_argument('--actor-material',type=Path,help='Local copy of base material pass actor overlay')
     p.add_argument('--euler-correction',type=Path,help='Local copy of corrected native rotation clips')
+    p.add_argument('--mermaid',type=Path,help='Local copy of mermaid geometry and motion diagnostics')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -97,3 +98,5 @@ if __name__=='__main__':
         apply_material(a.actor_material.read_bytes() if a.actor_material else download_material(), a.dest)
         from prepare_euler_correction import download_euler, apply_euler
         apply_euler(a.euler_correction.read_bytes() if a.euler_correction else download_euler(), a.dest)
+        from prepare_mermaid_preview import download_mermaid, apply_mermaid
+        apply_mermaid(a.mermaid.read_bytes() if a.mermaid else download_mermaid(), a.dest)
