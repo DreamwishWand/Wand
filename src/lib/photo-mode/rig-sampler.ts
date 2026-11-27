@@ -9,7 +9,9 @@ function interpolate(track:RigTrack,time:number){const {times,values,path}=track
 /** Small skeletal matrix evaluation only. Geometry deformation is performed by GPU. */
 export class RigSampler {
  readonly duration:number;readonly jointCounts:readonly number[];
- constructor(private nodes:readonly RigNode[],private skins:readonly RigSkin[],private tracks:readonly RigTrack[]){
+ private nodes:readonly RigNode[];private skins:readonly RigSkin[];private tracks:readonly RigTrack[];
+ constructor(nodes:readonly RigNode[],skins:readonly RigSkin[],tracks:readonly RigTrack[]){
+  this.nodes=nodes;this.skins=skins;this.tracks=tracks;
   check(nodes.length>0&&nodes.length<=4096&&skins.length>0&&tracks.length>0,'Invalid rig');
   for(const [i,n] of nodes.entries())check(Number.isSafeInteger(n.parent)&&n.parent>=-1&&n.parent<i&&n.translation.length===3&&n.scale.length===3&&n.rotation.length===4&&[...n.translation,...n.scale,...n.rotation].every(Number.isFinite)&&Math.abs(Math.hypot(...n.rotation)-1)<.001,'Invalid rest transform');
   for(const s of skins)check(s.joints.length>0&&s.joints.every(j=>Number.isSafeInteger(j)&&j>=0&&j<nodes.length)&&s.inverseBind.length===s.joints.length*16&&s.inverseBind.every(Number.isFinite),'Invalid skin');

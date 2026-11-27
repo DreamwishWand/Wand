@@ -36,7 +36,10 @@ export class GpuPoseRenderer implements PoseRenderer {
   private draws:Draw[]=[];
   private uniforms!:Record<'palette'|'camera'|'albedo'|'tint',WebGLUniformLocation>;
   private disposed=false;
-  constructor(private canvas:HTMLCanvasElement,private scene:PoseScene){
+  private canvas:HTMLCanvasElement;
+  private scene:PoseScene;
+  constructor(canvas:HTMLCanvasElement,scene:PoseScene){
+    this.canvas=canvas;this.scene=scene;
     const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,premultipliedAlpha:false});check(gl,'WebGL2 unavailable');this.gl=gl;
     try{
       check(scene.jointCounts.length>0&&scene.jointCounts.every(n=>Number.isSafeInteger(n)&&n>0&&n<=gl.getParameter(gl.MAX_TEXTURE_SIZE)),'Unsupported joint count');

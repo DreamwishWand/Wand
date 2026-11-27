@@ -40,7 +40,10 @@ export class PoseSceneSession {
   private hidden=new Set<string>();
   private palettes:readonly Float32Array[]=[];
   private disposed=false;
-  constructor(readonly scene:PoseScene,private readonly renderer:PoseRenderer){
+  readonly scene:PoseScene;
+  private readonly renderer:PoseRenderer;
+  constructor(scene:PoseScene,renderer:PoseRenderer){
+    this.scene=scene;this.renderer=renderer;
     this.clock=new PosePlayback(scene.duration,{sample:t=>{
       this.palettes=scene.sample(t);
       if(this.palettes.length!==scene.jointCounts.length||this.palettes.some((p,i)=>p.length!==scene.jointCounts[i]*16))throw new Error('Invalid pose palette');
