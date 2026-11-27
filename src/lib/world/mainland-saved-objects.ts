@@ -220,18 +220,18 @@ export interface MainlandTransferPlan{
  readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string};
 }
 export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,timeline:WorldEditTimeline,worldX:number,worldY:number,free=false):MainlandTransferPlan|null{
- const house=free&&p.object.nativeType==='Building'&&Math.floor(Number(p.object.itemId)/100000)===205;
+ const building=free&&p.object.nativeType==='Building'&&[200,201,202,203,205].includes(Math.floor(Number(p.object.itemId)/100000));
  const landscape=p.object.layer==='landscape'&&Math.floor(Number(p.object.itemId)/100000)===402;
  if(landscape&&(p.object.editRestrictions?.move!=='allowedFlag'||p.object.editRestrictions?.switchGrid!=='allowedFlag'))return null;
- if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p,house)||p.object.layer!=='furniture'&&!landscape&&!house||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||!house&&(nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove'))||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
- const hit=house?mainlandFreeHits(grids,rasters,worldX,worldY):mainlandTerrainHits(grids,rasters,worldX,worldY);
+ if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p,building)||p.object.layer!=='furniture'&&!landscape&&!building||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||!building&&(nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove'))||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ const hit=building?mainlandFreeHits(grids,rasters,worldX,worldY):mainlandTerrainHits(grids,rasters,worldX,worldY);
  if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
  const g=hit[0],r=rasters.get(g.key),shape=p.shape;
- if(landscape||house){const from=grids.find(q=>q.key===p.area);if(!from||sourceWorldScope(from)!==sourceWorldScope(g)||!['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'].includes(sourceWorldScope(g)))return null;}
+ if(landscape||building){const from=grids.find(q=>q.key===p.area);if(!from||sourceWorldScope(from)!==sourceWorldScope(g)||!['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'].includes(sourceWorldScope(g)))return null;}
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
- if(!r||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!house&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor)||shape.cellCount>65536)return null;
- if(!house&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
- if(!house)for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
+ if(!r||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!building&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor)||shape.cellCount>65536)return null;
+ if(!building&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ if(!building)for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
   const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5);
   const owners=mainlandTerrainHits(grids,rasters,q.x,q.y);
   if(owners.length!==1||owners[0].key!==g.key)return null;
