@@ -1520,6 +1520,11 @@ mod browser_amount_preview {
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
             native_preset_backup::review(source,backup).map_err(|_|fail("DB05_PRESET_REVIEW_REJECTED"))
         }
+        pub fn list_detached_player_houses(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_HOUSE_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_HOUSE_NOT_OPEN"))?.profile.as_slice()};
+            grid_instance_preview::detached_player_houses_json(source).map_err(|_|fail("DB05_HOUSE_UNAVAILABLE"))
+        }
         pub fn list_furniture_catalog_stock(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_FURNITURE_STOCK_NOT_OPEN"));}
             let source=match self.kind{

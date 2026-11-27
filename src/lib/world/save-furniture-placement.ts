@@ -72,16 +72,16 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
-export function initialBuildingEligible(id:number,grid:MainlandGrid):boolean{
+export function initialBuildingEligible(id:number,grid:MainlandGrid,detached:ReadonlySet<number>=new Set()):boolean{
  const scope=sourceWorldScope(grid),ids=(initialTemplates.scopes as Record<string,readonly number[]>)[scope];
  const others=(initialTemplates.otherBuildings as Record<string,Record<string,unknown>>)[scope];
- return !!bindMainlandGrid(grid)&&(!!ids?.includes(id)||!!others&&Object.hasOwn(others,String(id)));
+ return !!bindMainlandGrid(grid)&&(!!ids?.includes(id)||!!others&&Object.hasOwn(others,String(id))||Math.floor(id/100000)===205&&detached.has(id));
 }
-export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number):StockCandidate|null{
+export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,detached:ReadonlySet<number>=new Set()):StockCandidate|null{
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandFreeHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
- if(!initialBuildingEligible(id,g)||def?.nativeType!=='Building'||def.itemId!==id||def.surfaceCapable||def.supportPath||!shape||shape.cellCount<1||shape.cellCount>65536)return null;
+ if(!initialBuildingEligible(id,g,detached)||def?.nativeType!=='Building'||def.itemId!==id||def.surfaceCapable||def.supportPath||!shape||shape.cellCount<1||shape.cellCount>65536)return null;
  const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
  if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'place',itemId:String(id),x,y,orientation}};
