@@ -25,7 +25,7 @@ def apply_actors(raw, dest):
                                schema="wand.photo-mode.companion-actor-delta@1",
                                manifest="companion-actor-delta.json")
 
-def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0):
+def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0, partial_count=0):
     require(len(raw)==size and digest(raw)==sha, "actor release integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["publicationAuthorized"] is True
@@ -53,10 +53,16 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
         require(isinstance(variants,dict) and set(variants)<=set(m["items"])
                 and all(isinstance(v,dict) for v in variants.values())
                 and sum(len(v) for v in variants.values())==variant_count,"actor variant coverage")
-        assets={};updates={};alternate_updates={}
+        assets={};updates={};alternate_updates={};partial_rows=0
         def validate_actor(row,player):
             e=entry(row["asset"]);source=row["sourceSha256"];name=e["sha256"]+".glb"
-            require(valid_hash(source) and set(row["anchors"])==set(BODY_TYPES),"actor identity")
+            nonlocal partial_rows
+            bodies=set(row["anchors"])
+            require(valid_hash(source) and bodies and bodies<=set(BODY_TYPES),"actor identity")
+            if bodies!=set(BODY_TYPES):
+                require(partial_count>0 and prior is not None,"partial actor not authorized")
+                partial_rows+=1
+            if prior is not None:require(set(row["playerSourceSha256"])==bodies,"actor player-source coverage")
             if name not in assets:
                 info=files.get(name);require(info is not None and info.file_size==e["bytes"],"missing actor")
                 data=archive.read(info);require(len(data)==e["bytes"] and digest(data)==e["sha256"],"actor integrity")
@@ -69,8 +75,9 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                     and d["scenes"][d["scene"]]["nodes"]==[0] and d["nodes"] and d["skins"] and d["meshes"]
                     and d["images"] and all(im["mimeType"]=="image/png" for im in d["images"])
                     and all(n.get("extras",{}).get("actorId")=="companion" for n in d["nodes"]), "invalid actor scene")
-            dur=duration(d,d["animations"][0]);options={}
+            dur=duration(d,d["animations"][0]);options=dict(player)
             for b in BODY_TYPES:
+                if b not in bodies:continue
                 o=player[b];a=row["anchors"][b]
                 require(o["kind"]=="player" and o["companionIncluded"] is False
                         and (prior is None or row["playerSourceSha256"][b]==o["sourceSha256"])
@@ -92,7 +99,7 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 i=int(key)-1;require(i<len(updated),"unknown alternate index")
                 updated[i]=validate_actor(row,updated[i])
             alternate_updates[item]=updated
-        require(len(assets)==item_count+variant_count and set(files)=={manifest,*assets},"unexpected actor assets")
+        require(partial_rows==partial_count and len(assets)==item_count+variant_count and set(files)=={manifest,*assets},"unexpected actor assets")
         for name,data in assets.items():
             path=dest/name
             if path.exists():require(path.read_bytes()==data,"actor asset conflict")

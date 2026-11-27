@@ -16,6 +16,7 @@ from pose_extend_fast import sample_tracks
 from pose_glb import Glb, REFLECT, trs
 from pose_material import decode_material, decode_texture
 from pose_pet_actor import Source, animator, meshes, resolve_clip, attachment_maps
+from pose_rigid_mesh import rigid_meshes
 from resolve_animation_bundle import digest, read_bundle, unityfs
 from prepare_release_preview import RELEASE_SHA, BODY_TYPES, metadata
 from prepare_companion_delta import DELTA_SHA
@@ -55,6 +56,7 @@ def export_actor(source, hierarchy, nodes, parts, pose, clip, sources, resources
     full=[dict(n) for n in hierarchy];full[0].update(translation=pose["attachedOffset"],rotation=pose["attachedRotation"])
     g=Glb();d=g.doc;d["asset"]["generator"]="Wand companion diagnostic"
     d["asset"]["extras"].update(companionActorDiagnostic=True,shaderParityVerified=False)
+    if any(e.get("normalsDerived") for _,_,_,e in parts):d["asset"]["extras"].update(derivedNormals=True,rigidTransformDiagnostic=True)
     d.update(nodes=[],skins=[],meshes=[],materials=[])
     indices={n["pathId"]:i for i,n in enumerate(full)}
     d["nodes"]=[dict(name="companion/"+n["path"],**trs(n),extras=dict(actorId="companion")) for n in full]
@@ -139,7 +141,13 @@ def generate(a):
                     guid=pose["clipGuids"][body];require(native[body][guid]["clipSha256"]==row[body]["sourceSha256"],"player source mismatch")
                 src=sources[prefab["assetFile"]];require(src.sha==prefab["bundleSha256"],"prefab source mismatch")
                 hierarchy,ani,_,_,ctrl=animator(src,int(prefab["pathId"]))
-                clip,_,_=resolve_clip(src,ctrl,pose,sources);nodes,parts=meshes(src,int(hierarchy[ani]["pathId"]))
+                clip,_,_=resolve_clip(src,ctrl,pose,sources)
+                root=int(hierarchy[ani]["pathId"])
+                descendants,_=src.hierarchy(root)
+                classes={src.objects[p][0] for n in descendants for f,p in src.names[int(n["gameObject"])][1] if f==0}
+                if 137 not in classes and {23,33}<=classes:
+                    nodes,parts=rigid_meshes(src,root,resources[src.cab])
+                else:nodes,parts=meshes(src,root)
                 anchors={}
                 for body in BODY_TYPES:
                     e=row[body]["clip"];wpa=p.read(pf[e["sha256"]+".wpa"]);require(digest(wpa)==e["sha256"] and len(wpa)==e["bytes"],"player clip integrity")
