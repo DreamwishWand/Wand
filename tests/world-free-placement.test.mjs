@@ -73,6 +73,14 @@ test('free player house move uses the destination Grid even without ordinary ter
  const move=mainlandTransferCandidate(p,[g,h],rasters,emptyWorldTimeline(),x,y,true);
  assert.ok(move);assert.equal(move.area,h.key);assert.deepEqual([move.plan.x,move.plan.y],[5,6]);
  assert.equal(mainlandTransferCandidate({...p,object:{...p.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
+ for(const itemId of ['20000001','20100001','20200001','20300001']){
+  const building={...p,object:{...p.object,itemId,shapeKey:itemId+':8'}};
+  assert.equal(mainlandTransferCandidate(building,[g,h],rasters,emptyWorldTimeline(),x,y),null);
+  const transfer=mainlandTransferCandidate(building,[g,h],rasters,emptyWorldTimeline(),x,y,true);
+  assert.ok(transfer);assert.equal(transfer.plan.itemId,itemId);assert.equal(transfer.area,h.key);
+  assert.equal(mainlandTransferCandidate({...building,object:{...building.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
+ }
+ assert.equal(mainlandTransferCandidate({...p,object:{...p.object,itemId:'20400001'}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
 });
 
 import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode} from '../src/lib/world/saved-map-transform.ts';
