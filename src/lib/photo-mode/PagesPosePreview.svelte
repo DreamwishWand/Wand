@@ -18,7 +18,7 @@
       return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal)}]:[];
     });
   });
-  let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded!==false}));
+  let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===undefined}));
   let companionOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===false}));
   let related=$derived(index?relatedPoseItems(index,itemId):[]);
   let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async id=>({id,name:await getRelatedName!(id,locale).catch(()=>null)}))):Promise.resolve([]));
