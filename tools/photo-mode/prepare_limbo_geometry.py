@@ -16,7 +16,7 @@ def download_limbo():
         return response.read(SIZE+1)
 
 def apply_limbo(raw,dest):
-    return apply_actor_archive(raw,dest,size=SIZE,sha=SHA,base_count=263,item_count=17,
+    apply_actor_archive(raw,dest,size=SIZE,sha=SHA,base_count=263,item_count=17,
                                geometry_count=17,schema="wand.photo-mode.companion-limbo-diagnostic@1",
                                manifest="companion-limbo-diagnostic.json",prior={})
 
