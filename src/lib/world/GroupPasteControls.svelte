@@ -19,7 +19,7 @@
  import WorldSymmetryControls from './WorldSymmetryControls.svelte';
  import type {DesignSymmetry} from './design-symmetry.ts';
  import {mainlandExtent,sourceWorldScope} from './mainland-world-coordinates.ts';
- import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
+ import {sceneWords,sceneFromClip,parseSceneAnyFactor,convertSceneFactor,sceneHasDiagonal,sceneItemCounts,type ScenePreset} from './scene-preset.ts';
  import {parseSupportScene,captureSupportScene,SCENE_FURNITURE_LIMIT,mixedSceneCounts,parseMixedScene,mixedSceneFromClip,mixedScenePlacement,mixedPlacementCounts,type MixedScenePlacement,type MixedScenePreset,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
  import {parseAreaScene,areaSceneFromClip,areaSceneCounts,areaPlacementCounts,captureAreaPoses,areaSceneCandidate,parseSceneNetwork,transformAreaScene,type AreaSceneTransform,type AreaScene,type SceneNetwork,type AreaSceneCandidate} from './area-scene.ts';
@@ -46,7 +46,7 @@
  $: if($worldFurnitureCut&&$worldFurnitureCut.file!==file){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);copied=false;}
  $: remainingObjects=cutRows?objects.filter(p=>!cutRows?.some(r=>r.localOrdinal===p.object.localOrdinal&&r.area===p.area)):objects;$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: selection=captureFurnitureGroup(items,false,freePlacement);
- $: freeGroup=freePlacement&&!cutRows&&!scene&&!supportScene&&!areaScene;
+ $: freeGroup=freePlacement&&!cutRows&&!supportScene&&!areaScene&&(!scene||sceneHasDiagonal(scene.items));
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  $: if(active&&(source!==file||blocked))cancel();
  $: required=areaScene?areaSceneCounts(areaScene.items):supportScene?mixedSceneCounts(supportScene.items):sceneItemCounts(clip);
@@ -86,7 +86,7 @@
  }
  export function saveScene(captureItems:readonly MainlandSavedObject[]=items){
   if(blocked||captureWorker)return;
-  const flat=captureFurnitureGroup(captureItems);
+  const flat=captureFurnitureGroup(captureItems,false,freePlacement);
   if(flat){try{const half=sceneFromClip(flat,2);downloadScene(convertSceneFactor(half,1)??half);}catch{sceneError=gs[2];}return;}
   const selected=[...captureItems],areaPoses=captureAreaPoses(selected),poses=areaPoses??captureFurnitureGroup(selected,true),f=file;
   if(!f||!poses||!areaPoses&&(poses.length>SCENE_FURNITURE_LIMIT||!selected.some(p=>p.object.subgrid)))return;
@@ -139,7 +139,7 @@
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null){
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
-  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length)return false;
+  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut||!!supportDoc||!!areaDoc))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
@@ -147,7 +147,7 @@
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
   const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!areaScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
-  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&!cutRows&&!sceneDoc&&!supportDoc&&!areaDoc;
+  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&!cutRows&&!supportDoc&&!areaDoc&&(!sceneDoc||sceneHasDiagonal(sceneDoc.items));
   for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId,freePlacement:free});}
   pending=new Map(pending);for(const id of (areaDoc?[...new Set([...ids,...areaSceneCounts(areaDoc.items).keys()])]:supportDoc?[...mixedSceneCounts(supportDoc.items).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;
