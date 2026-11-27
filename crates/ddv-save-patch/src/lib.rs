@@ -857,7 +857,14 @@ fn saved_outdoor_scope<'a>(layout:&'a str,data:&str)->Option<&'a str>{
     ["Village04","VillageExpansion01","VillageExpansion02","VillageExpansion03","VillageExpansion04","VillageWinnieDLC"].into_iter().find(|s|outdoor_world_path(s,data))
 }
 fn saved_layout_matches(layout:Option<&str>,expected:&str,data:&str)->bool{
-    layout==Some(expected)||layout==Some("")&&full_grid_scope(expected).is_some_and(|scope|outdoor_world_path(scope,data))
+    if layout==Some(expected){return true;}
+    if layout!=Some(""){return false;}
+    if full_grid_scope(expected).is_some_and(|scope|outdoor_world_path(scope,data)){return true;}
+    let Some((family,leaf))=expected.strip_prefix("SceneLayouts/FloatingIslands/").and_then(|p|p.split_once('/'))else{return false;};
+    let Some(name)=family.strip_prefix("FloatingIsland_")else{return false;};
+    if !["Atlantean","Beach","Dark","Desert","FairyTales","Forest","Jungle","Library","Meadow","Mythology","Savannah","Snow","Urban","Wetlands"].contains(&name)||leaf!=format!("{family}Layout.json"){return false;}
+    let folder=if name=="Desert"{"FloatingIlsnad_Desert"}else{family};
+    data.starts_with(&format!("GridData/FloatingIslands/{folder}/{family}"))&&data.ends_with(".json")&&!data.contains("..")&&!data.contains('\\')
 }
 fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
