@@ -279,20 +279,20 @@ export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<strin
  }
  return out.length?out:null;
 }
-export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry,supports:ReadonlyMap<number,SupportScene>=new Map()):IndoorPlace[]|null{
- const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry,supports:ReadonlyMap<number,SupportScene>=new Map(),free=false):IndoorPlace[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||free&&(!indoorFreeFloor(face)||supports.size>0))return null;
  const clip:DesignClipItem[]=[],seen=new Set<string>(),scenes:(SupportScene|null)[]=[],sources:(NonNullable<IndoorPlace['supportSource']>|null)[]=[];
- for(const i of indices){const o=tree.objects[i],support=supports.get(i);if(!o||(!support&&face.positions[i]?.plain!==true)||support&&(axis.mode!=='point'||support.ownerItemId!==o.itemId)||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+ for(const i of indices){const o=tree.objects[i],support=supports.get(i);if(!o||(!support&&face.positions[i]?.plain!==true)||support&&(axis.mode!=='point'||support.ownerItemId!==o.itemId)||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i)&&isCardinal(o.orientation)))return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
-  const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},g,axis);if(!p||p.x<0||p.y<0)return null;
-  const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===CARDINAL_ORIENTATIONS[p.orientation]);
+  const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:worldOrientationCode(o.orientation)!/4},g,axis,free&&tree.factor===1);if(!p||p.x<0||p.y<0)return null;
+  const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[p.orientation*2]);
   if(same.length){if(support||same.length!==1||face.positions[same[0].index]?.plain!==true)return null;continue;}
   const k=p.itemId+':'+p.x+':'+p.y+':'+p.orientation;if(seen.has(k))continue;seen.add(k);
   clip.push({itemId:p.itemId,dx:p.x*2/tree.factor,dy:p.y*2/tree.factor,orientation:p.orientation});
   scenes.push(support??null);sources.push(support?{index:i,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation}:null);
  }
  if(!clip.length)return null;
- if(!scenes.some(Boolean))return indoorGroupPlace(face,shapes,allowed,stock,clip,0,0);
+ if(!scenes.some(Boolean))return indoorGroupPlace(face,shapes,allowed,stock,clip,0,0,free);
  const left=Math.min(...clip.map(p=>p.dx)),top=Math.min(...clip.map(p=>p.dy));
  try{const relative=clip.map(p=>({...p,dx:p.dx-left,dy:p.dy-top})),doc=mixedSceneFromClip(relative,scenes,'corner');return indoorMixedPlacement(face,shapes,allowed,stock,relative,doc,'corner',left*tree.factor/2,top*tree.factor/2,sources);}catch{return null;}
 }
