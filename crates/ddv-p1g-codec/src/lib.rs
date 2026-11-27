@@ -1776,6 +1776,7 @@ mod browser_amount_preview {
                 InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_GRID_TRANSFER_SESSION_INVALID"))?.profile.as_slice()
             };
             let house=item/100_000==205;
+            let building=matches!(item/100_000,200..=203);
             let target=if house{
                 grid_instance_preview::resolve_grid_coordinate_target(original,ordinal,item,expected,"full")
                     .map_err(|_|fail("DB05_GRID_TRANSFER_STALE"))?
@@ -1785,15 +1786,15 @@ mod browser_amount_preview {
             };
             let dependencies=grid_instance_preview::grid_identity_dependencies(original,&target)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DEPENDENCIES_UNRESOLVED"))?;
-            if dependencies.blocking()>0||((house||item/100_000==402)&&dependencies.historical>0){return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
+            if dependencies.blocking()>0||((house||building||item/100_000==402)&&dependencies.historical>0){return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DESTINATION_UNRESOLVED"))?;
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
-            let mut draft=if house{
+            let mut draft=if house||building{
                 let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
                 if root["GameInfo"]["Version"].as_u64()!=Some(643)||text("expectedOrientation")?!=text("orientation")?||
                    grid_instance_preview::player_house_grid_scope(&root,&target.grid_id).map_err(|_|invalid())?!=grid_instance_preview::player_house_grid_scope(&root,&dest.grid_id).map_err(|_|invalid())?{return Err(invalid());}
-                ddv_save_patch::preview_player_house_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)
+                if house{ddv_save_patch::preview_player_house_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else{ddv_save_patch::preview_checked_building_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
             }else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
                 .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized||validate_profile(draft.patched_json.as_bytes()).is_err(){
