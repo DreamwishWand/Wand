@@ -3,6 +3,7 @@
   import WorldShortcutHelp from '$lib/world/WorldShortcutHelp.svelte';
   import {onMount,onDestroy} from 'svelte';
   import {beforeNavigate} from '$app/navigation';
+  import {worldIncoming,worldIncomingWords} from '$lib/world/world-incoming.ts';
   import {base} from '$app/paths';
   import WorldCheckpointControls from '$lib/world/WorldCheckpointControls.svelte';
   import {checkpointWords} from '$lib/world/world-checkpoint-words.ts';
@@ -280,6 +281,7 @@
     selectSaveGrid(next);
   }
   onMount(()=>{
+    if($worldIncoming?.type==='catalog'&&!$localSaveSession.file||$worldIncoming?.type==='preset'&&$worldIncoming.kind==='scene'&&!$localSaveSession.file)designMode=true;
     const unwatch=watchWandLanguage(v=>locale=v);
     const unguard=registerLocalSaveChangeGuard(guardExternalSaveChange);window.addEventListener('beforeunload',guardUnload);
     worker=new Worker(new URL('../../lib/world/public-world-terrain.worker.ts',import.meta.url),{type:'module'});
@@ -313,6 +315,7 @@
 </script>
 <svelte:head><title>World Editor · Dreamwish Wand</title></svelte:head>
 <section class="world-workspace">
+ {#if $worldIncoming}<div class="incoming-world" role="status"><strong>{worldIncomingWords[locale][2]} · {$worldIncoming.type==='catalog'?$worldIncoming.items.length:$worldIncoming.name}</strong><small>{worldIncomingWords[locale][3]}</small><button type="button" aria-label={worldIncomingWords[locale][4]} title={worldIncomingWords[locale][4]} on:click={()=>worldIncoming.set(null)}>×</button></div>{/if}
   <div class="world-navigation" class:overview-navigation-hidden={overviewOpen&&overviewReady&&(designMode||!recoveryBlocked)}><button class="navigation-toggle" type="button" aria-label="ワールド選択" title="ワールド選択" aria-expanded={navigationOpen} on:click={()=>navigationOpen=!navigationOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg></button><nav aria-label="ワールド選択" hidden={!navigationOpen}>
     <div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>setDesignMode(false)}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>setDesignMode(true)}>装飾設計</button></div>
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
@@ -354,6 +357,7 @@
   {#if indoorOpen&&sourceFile}<IndoorRoomView file={sourceFile} {locale} terrainWorker={worker} nextRequest={nextDesignRequest} blocked={currentWorldEdits(timeline).length>0} onClose={()=>indoorOpen=false}/>{/if}
 </section>
 <style>
+ .incoming-world{position:absolute;z-index:20;bottom:8px;left:8px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 8px;max-width:min(320px,calc(100% - 16px));padding:6px 8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:5px;font-size:12px;overflow-wrap:anywhere}.incoming-world small{grid-column:1}.incoming-world button{grid-column:2;grid-row:1/3;align-self:center;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:4px}
   .world-workspace{height:calc(100dvh - var(--shell-height,60px));min-height:0;min-width:0;padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--wand-bg);color:var(--wand-text);overflow:hidden}
   nav{display:flex;align-items:center;gap:5px;flex:0 0 auto;min-width:0;overflow-x:auto;padding:2px}
   .mode-switch{display:flex;gap:4px;flex:none}

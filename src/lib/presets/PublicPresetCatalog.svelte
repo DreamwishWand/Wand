@@ -3,6 +3,8 @@
  import {base} from '$app/paths';
  import type {WandLanguage} from '$lib/ui/preferences';
  import {rememberPreset} from './preset-session.ts';
+ import {goto} from '$app/navigation';
+ import {presetHandoff,worldIncoming,worldIncomingWords} from '../world/world-incoming.ts';
  import {PUBLIC_KINDS,listPublicPresets,downloadPublicPreset,presetPublicEndpoint,publicMediaUrl,type PublicKind,type PublicPresetEntry} from './public-preset-client.ts';
  import {catalogWords} from './catalog-words.ts';
  import {presetPickerWords} from '../world/preset-picker-words.ts';
@@ -18,9 +20,9 @@
   catch{if(alive&&controller===own&&!own.signal.aborted)error=true;}
   finally{if(alive&&controller===own)loading=false;}
  }
- async function importEntry(row:PublicPresetEntry){
+ async function importEntry(row:PublicPresetEntry,place=false){
   if(!origin||importing)return;const own=new AbortController();download=own;importing=row.revisionId;importError=false;
-  try{const result=await downloadPublicPreset(origin,row,base,fetch,own.signal);if(!alive||download!==own)return;await rememberPreset(result.file,result.raw,result.source);if(alive)imported=new Set(imported).add(row.revisionId);}
+  try{const result=await downloadPublicPreset(origin,row,base,fetch,own.signal);if(!alive||download!==own)return;const entry=await rememberPreset(result.file,result.raw,result.source);if(alive){imported=new Set(imported).add(row.revisionId);if(place){const pending=presetHandoff(entry);if(pending){worldIncoming.set(pending);void goto(base+'/world/');}}}}
   catch{if(alive&&!own.signal.aborted)importError=true;}
   finally{if(alive&&download===own)importing='';}
  }
@@ -40,6 +42,7 @@
    <strong>{row.title}</strong><small>{row.creatorName} · {p[kindIndex[row.receipt.kind as PublicKind]]}</small>
    <small>{row.receipt.distinctObjectTypes} / {row.receipt.totalObjects} · {Math.ceil(row.receipt.byteSize/1024).toLocaleString(locale)} KiB</small>
    <button type="button" disabled={!!importing||imported.has(row.revisionId)} on:click={()=>importEntry(row)}>{imported.has(row.revisionId)?w[8]:importing===row.revisionId?w[11]:w[7]}</button>
+   <button type="button" disabled={!!importing} on:click={()=>importEntry(row,true)}>{worldIncomingWords[locale][0]}</button>
   </article>
  {/each}</div>
  {#if imported.size}<small role="status">{w[12]}</small>{/if}
