@@ -105,3 +105,20 @@ test('oblique stock placement and duplicate preserve the selected shape and orie
  assert.equal(stockPlacement([g],rasters,defs,id,orientation,x,y,p,true)?.plan.action,'duplicate');assert.equal(stockPickup(p,true)?.plan.action,'remove');
  assert.equal(stockPlacement([g],rasters,new Map([[1,{...def,surfaceCapable:true}]]),id,orientation,x,y,null,true),null);
 });
+
+import {captureHousePoses,reviewHouseLayout,housePoseRows} from '../src/lib/world/player-house-backup.ts';
+test('world house backup preserves repeated exterior poses and requires every existing skin',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
+ const h=bindMainlandGrid({key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:196,sizeY:100});
+ const p={area:g.key,factor:1,shape:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]},object:{...o,itemId:'20500001',nativeType:'Building'}};
+ const rows=captureHousePoses(g,[p,p]);assert.equal(rows.length,2);
+ const objects=new Map([[g.key,[p,p]],[h.key,[]]]),wanted={itemId:20500001,x:2,y:3,orientation:1};
+ const incoming=new Map([[g.key,{houses:[]}],[h.key,{houses:[wanted,wanted,wanted]}]]);
+ const result=reviewHouseLayout([g,h],objects,incoming,true);
+ assert.ok(result);assert.equal(result.removed,2);assert.equal(result.added,3);assert.equal(result.plans.get(h.key).after.length,3);
+ assert.equal(reviewHouseLayout([g,h],objects,incoming,false),null);
+ assert.equal(reviewHouseLayout([g,h],objects,new Map([[g.key,{houses:[]}],[h.key,{houses:[]}]]),true),null);
+ assert.equal(reviewHouseLayout([g,h],objects,new Map([[g.key,{houses:[]}],[h.key,{houses:[{...wanted,itemId:20500002}]}]]),true),null);
+ assert.throws(()=>housePoseRows([{...wanted,orientation:1.5}],h));
+ assert.throws(()=>housePoseRows([{...wanted,PlayerHouseIndex:0}],h));
+});
