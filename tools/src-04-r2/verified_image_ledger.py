@@ -63,7 +63,10 @@ def build(plan,audit,publication,cdn,prior=None):
         check(set(refs.values())==set(bindings),'Incomplete source reference mapping')
         release['nativeSourceRefs']=refs
     v=plan['gameVersion']
-    check(doc['releases'].get(v,release)==release,'Release mapping changed; retain prior ledger before replacement')
+    old=doc['releases'].get(v)
+    if old and old!=release:
+        history=doc.setdefault('supersededReleases',{}).setdefault(v,[])
+        if old not in history:history.append(old)
     doc['releases'][v]=release
     index(doc)
     return doc
