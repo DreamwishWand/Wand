@@ -1718,7 +1718,7 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     // identity for a native instance that is already present.
     let (scan,_)=scan_grid_instances(profile)?;
     if scan.sampled||scan.invalid>0||scan.private_targets.iter().any(|(t,_)|t.item_id==item){return Err(bad);}
-    if collection.get("DiffGrids").is_some_and(|v|!v.is_null()&&v.as_object().is_none_or(|m|!m.is_empty())){return Err(bad);}
+    if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.values().any(|g|g["GridDefaultLayoutPath"].as_str().and_then(|p|p.split('/').nth(1))==Some(scope.as_str())))){return Err(bad);}
     let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
     let level=templates["template"]["upgradeLevel"].as_u64().ok_or(bad)?;
@@ -2564,6 +2564,29 @@ mod tests{
         assert!(building_layout_candidate_scoped(different.to_string().as_bytes(),&[remove],false).is_err());
         let mut standard=add;standard.as_object_mut().unwrap().remove("freePlacement");
         assert!(building_layout_candidate_scoped(raw.to_string().as_bytes(),&[standard],false).is_err());
+    }
+    #[test]
+    fn initial_well_requires_pinned_scope_template_and_absent_native_instance(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}});
+        let plan=serde_json::json!({"buildingInitial":{"itemId":"20300002","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100},"x":9,"y":10,"orientation":"GridOrientation_Down"}});
+        let output=group_paste_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+        let v:Value=serde_json::from_str(&output).unwrap();
+        let grid=&v["World"]["GridCollection"]["Grids"]["42"];
+        assert_eq!(grid["NextGridObjectID"],6);
+        assert_eq!(grid["Objects"]["5"]["ItemID"],20300002);
+        assert_eq!(grid["Objects"]["5"]["State"],serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":170200005}}));
+        assert_eq!(v["Player"],raw["Player"]);
+        assert!(group_paste_candidate(output.as_bytes(),&plan.to_string()).is_err());
+        for id in ["20300029","20300009","20500001"]{
+            let mut p=plan.clone();p["buildingInitial"]["itemId"]=id.into();
+            assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
+        }
+        let mut p=plan.clone();p["buildingInitial"]["State"]=Value::Null;
+        assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
+        p=plan.clone();p["buildingInitial"]["x"]=196.into();
+        assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
     }
     #[test]
     fn world_building_layout_preserves_native_state_and_identity(){
