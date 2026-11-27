@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -284,4 +284,14 @@ test('room addition only offers source-confirmed slots and sizes',()=>{
  assert.equal(indoorAddRoomPlan(p,2,'12x12'),null);
  assert.equal(indoorAddRoomPlan(p,1,'8x8'),null);
  assert.throws(()=>parseIndoorRooms(report([{...r,addRoomSlots:[0]}])));
+});
+
+test('removal requires a verified empty room or last floor projection',()=>{
+ const r={...room,houseItemId:20500000,roomSlot:1,removeKind:'room'};
+ const p=parseIndoorRooms(report([r]))[0];
+ assert.deepEqual(indoorRemoveRoomPlan(p),{house:1,houseItemId:20500000,floor:1,slot:1,kind:'room'});
+ assert.equal(indoorRemoveRoomPlan(room),null);
+ assert.throws(()=>parseIndoorRooms(report([{...r,roomSlot:0}])));
+ assert.throws(()=>parseIndoorRooms(report([{...r,roomSlot:0,removeKind:'floor'}])));
+ assert.equal(indoorRemoveRoomPlan(parseIndoorRooms(report([{...r,roomSlot:0,floor:2,removeKind:'floor'}]))[0]).kind,'floor');
 });

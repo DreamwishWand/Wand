@@ -298,6 +298,110 @@ pub fn preview_add_primary_room(source:&str,t:RoomFinishTarget,slot:u8,size:&str
  if out.len()>MAX_PROFILE_BYTES||serde_json::from_str::<Value>(&out).map_err(|_|BAD)?!=root{return Err(BAD);}
  Ok(GridCoordinateDraft{patched_json:out,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
+
+fn removable_room_record(r:&Value)->bool{
+ r.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"Name"|"FloorGridID"|"WallGridIDs"|"RoomPrefabAddress"|"Flooring"|"Wallpapers"|"WallpaperOffsetById"|"Ceiling")))
+}
+fn structural_door(g:&Value,item:u64,x:i64,only:bool)->Option<String>{
+ if g["TessellationFactor"].as_u64()!=Some(2){return None;}
+ let objects=g["Objects"].as_object()?;
+ if only&&objects.len()!=1{return None;}
+ let mut candidates=objects.iter().filter(|(_,o)|o["ItemID"].as_u64().is_some_and(|n|n/100000==403));
+ let (key,o)=candidates.next()?;
+ if candidates.next().is_some(){return None;}
+ let oid=key.parse::<u32>().ok()?;
+ if key!=&oid.to_string()||o["ID"].as_u64()!=Some(oid as u64)||o["ItemID"].as_u64()!=Some(item)||o["X"].as_i64()!=Some(x)||o["Y"].as_i64()!=Some(0)||o["Orientation"].as_str()!=Some("GridOrientation_Down")||
+   o.get("State").is_some_and(|v|!v.is_null())||o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+   g["NextGridObjectID"].as_u64().is_none_or(|n|n<=oid as u64){return None;}
+ Some(key.clone())
+}
+fn primary_house(root:&Value,t:RoomFinishTarget)->Option<&Value>{
+ if root["GameInfo"]["Version"].as_u64()!=Some(643)||t.house_item_id!=20500000{return None;}
+ let h=root["World"]["PlayerHouses"].as_array()?.get(t.house_index)?;
+ if h["HouseItemID"].as_u64()!=Some(20500000)||h["InitialRoomGridLayoutPath"].as_str()!=Some(""){return None;}
+ Some(h)
+}
+struct Removal{ids:Vec<u32>,parent:Option<(u32,String)>}
+fn removal_target(root:&Value,t:RoomFinishTarget,whole_floor:bool)->Option<Removal>{
+ let h=primary_house(root,t)?;
+ let floors=h["Floors"].as_array()?;
+ let floor=floors.get(t.floor_index)?;
+ let rooms=floor["Rooms"].as_object()?;
+ if !rooms.contains_key("0")||rooms.keys().any(|k|!matches!(k.as_str(),"0"|"1"|"2"|"3")){return None;}
+ let r=room_value(root,t)?;
+ if !removable_room_record(r){return None;}
+ let shapes=shapes().ok()?;
+ let (si,ids)=room_geometry(root,t,shapes).ok()?;
+ let grids=root["World"]["GridCollection"]["Grids"].as_object()?;
+ let get=|i:usize|grids.get(&ids[i].to_string());
+ let (door_surface,door_item,anchor,parent)=if whole_floor{
+  if t.room_slot!=0||floors.len()<2||t.floor_index+1!=floors.len()||rooms.len()!=1||
+    floor.as_object()?.keys().any(|k|!matches!(k.as_str(),"Rooms"|"BoughtRooms")){return None;}
+  if let Some(b)=floor.get("BoughtRooms"){let b=b.as_object()?;if b.values().any(|v|v.as_object().is_none_or(|m|m.len()!=1)||v["GridDataPaths"].as_array().is_none_or(|a|a.iter().any(|v|!v.is_string()))){return None;}}
+  let a=match shapes[si].paths[3].as_str(){"GridData/Rooms/Wall6x9-GridData.json"=>2,p=>door_anchor(p)?};
+  (3,40300002,a,None)
+ }else{
+  let (pw,cw)=room_connection(t.room_slot)?;
+  let center=RoomFinishTarget{room_slot:0,..t};
+  let (ci,cids)=room_geometry(root,center,shapes).ok()?;
+  let gid=cids[pw+1];
+  if ids.contains(&gid){return None;}
+  let parent_key=structural_door(grids.get(&gid.to_string())?,40300001,door_anchor(&shapes[ci].paths[pw+1])?,false)?;
+  (cw+1,40300001,door_anchor(&shapes[si].paths[cw+1])?,Some((gid,parent_key)))
+ };
+ for i in 0..5{
+  let g=get(i)?;
+  if i==door_surface{structural_door(g,door_item,anchor,true)?;}
+  else if !g["Objects"].as_object()?.is_empty(){return None;}
+ }
+ Some(Removal{ids,parent})
+}
+pub fn room_removal_kind(root:&Value,t:RoomFinishTarget)->Option<&'static str>{
+ if t.room_slot==0{removal_target(root,t,true).map(|_|"floor")}else{removal_target(root,t,false).map(|_|"room")}
+}
+pub fn preview_remove_primary_room(source:&str,t:RoomFinishTarget,whole_floor:bool)->Result<GridCoordinateDraft,PatchError>{
+ validate_json_without_edit(source)?;
+ let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
+ let removal=removal_target(&root,t,whole_floor).ok_or(BAD)?;
+ let ids:HashSet<_>=removal.ids.iter().copied().collect();
+ let gp=vec![k("World"),k("GridCollection"),k("Grids")];
+ let fp=vec![k("World"),k("PlayerHouses"),Segment::Index(t.house_index),k("Floors")];
+ let mut rp=fp.clone();rp.extend([Segment::Index(t.floor_index),k("Rooms")]);
+ let mut out=source.to_owned();
+ if whole_floor{
+  let mut locator=JsonLocator::new(&out,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+  locator.amount_path=vec![Segment::Index(usize::MAX)];
+  let mut last=fp.clone();last.push(Segment::Index(t.floor_index));
+  let mut prior=fp.clone();prior.push(Segment::Index(t.floor_index-1));
+  locator.capture.insert(last.clone(),None);locator.capture.insert(prior.clone(),None);locator.walk_complete()?;
+  let a=locator.capture.get(&prior).and_then(|v|v.clone()).ok_or(BAD)?;
+  let b=locator.capture.get(&last).and_then(|v|v.clone()).ok_or(BAD)?;
+  let separator=&out[a.end..b.start];if separator.trim()!=","{return Err(BAD);}
+  out.replace_range(a.end..b.end,"");
+  root["World"]["PlayerHouses"][t.house_index]["Floors"].as_array_mut().ok_or(BAD)?.pop();
+ }else{
+  out=room_lexical_map_edit(&out,rp,&t.room_slot.to_string(),None)?;
+  root["World"]["PlayerHouses"][t.house_index]["Floors"][t.floor_index]["Rooms"].as_object_mut().ok_or(BAD)?.remove(&t.room_slot.to_string());
+ }
+ for gid in &removal.ids{
+  out=room_lexical_map_edit(&out,gp.clone(),&gid.to_string(),None)?;
+  root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?.remove(&gid.to_string());
+ }
+ if existing_grid_reference(&root,&ids,false){return Err(BAD);}
+ if let Some((gid,key))=removal.parent{
+  // Only the one verified connecting door is removed. Preserve the wall
+  // counter, all other objects, and reject other grid references.
+  let mut refs=root.clone();
+  let pw=room_connection(t.room_slot).ok_or(BAD)?.0;
+  *refs.pointer_mut(&format!("/World/PlayerHouses/{}/Floors/{}/Rooms/0/WallGridIDs/{}",t.house_index,t.floor_index,pw)).ok_or(BAD)?=Value::Null;
+  if existing_grid_reference(&refs,&[gid].into_iter().collect(),false){return Err(BAD);}
+  let mut op=gp.clone();op.extend([k(&gid.to_string()),k("Objects")]);
+  out=room_lexical_map_edit(&out,op,&key,None)?;
+  root["World"]["GridCollection"]["Grids"][gid.to_string()]["Objects"].as_object_mut().ok_or(BAD)?.remove(&key);
+ }
+ if out.len()>MAX_PROFILE_BYTES||serde_json::from_str::<Value>(&out).map_err(|_|BAD)?!=root{return Err(BAD);}
+ Ok(GridCoordinateDraft{patched_json:out,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -352,5 +456,31 @@ mod tests{
   let mut bad=raw.clone();bad["World"]["GridCollection"]["Grids"]["14"]["Objects"]["1"]=json!({"ID":1});assert!(preview_add_primary_room(&bad.to_string(),t,1,"10x10").is_err());
   let mut bad=raw.clone();bad["World"]["Alias"]=json!({"GridID":14});assert!(preview_add_primary_room(&bad.to_string(),t,1,"10x10").is_err());
   assert!(preview_add_primary_room(&raw.to_string(),t,1,"8x8").is_err());
+ }
+ #[test]fn remove_appended_room_and_floor_preserves_allocator_and_purchase_history(){
+  let shape=shapes().unwrap().iter().find(|s|s.name=="12x12").unwrap();
+  let grids:serde_json::Map<String,Value>=shape.paths.iter().enumerate().map(|(i,p)|((10+i).to_string(),json!({"ID":10+i,"GridDataPath":p,"GridDefaultLayoutPath":"","TessellationFactor":2,"NextGridObjectID":0,"Objects":{}}))).collect();
+  let raw=json!({"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500000,"InitialRoomGridLayoutPath":"","Floors":[{"Rooms":{"0":{"Name":"Center","FloorGridID":10,"WallGridIDs":{"0":11,"1":12,"2":13,"3":14},"RoomPrefabAddress":shape.prefab}}}]}],"GridCollection":{"NextGridID":90,"Grids":grids}},"Player":{"Currency":17}});
+  let center=RoomFinishTarget{house_index:0,house_item_id:20500000,floor_index:0,room_slot:0};
+  let added=preview_add_primary_room(&raw.to_string(),center,1,"10x10").unwrap().patched_json;
+  let target=RoomFinishTarget{room_slot:1,..center};
+  let d=preview_remove_primary_room(&added,target,false).unwrap();
+  let v:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(v["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"],raw["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]);
+  assert_eq!(v["World"]["GridCollection"]["NextGridID"],95);
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["14"]["NextGridObjectID"],2);
+  assert_eq!(v["World"]["PlayerHouses"][0]["Floors"][0]["BoughtRooms"]["1"]["GridDataPaths"],json!(["GridData/Rooms/Room20x20-GridData.json"]));
+  let mut bad:Value=serde_json::from_str(&added).unwrap();bad["World"]["GridCollection"]["Grids"]["90"]["Objects"]["1"]=json!({"ID":1,"ItemID":40000001});
+  assert!(preview_remove_primary_room(&bad.to_string(),target,false).is_err());
+  let mut bad:Value=serde_json::from_str(&added).unwrap();bad["World"]["Alias"]=json!({"GridID":90});
+  assert!(preview_remove_primary_room(&bad.to_string(),target,false).is_err());
+  let floor=preview_append_primary_floor(&raw.to_string(),0,20500000,1).unwrap().patched_json;
+  let t=RoomFinishTarget{floor_index:1,..center};
+  let d=preview_remove_primary_room(&floor,t,true).unwrap();
+  let v:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(v["World"]["PlayerHouses"],raw["World"]["PlayerHouses"]);
+  assert_eq!(v["World"]["GridCollection"]["Grids"],raw["World"]["GridCollection"]["Grids"]);
+  assert_eq!(v["World"]["GridCollection"]["NextGridID"],95);
+  assert!(preview_remove_primary_room(&floor,center,true).is_err());
  }
 }
