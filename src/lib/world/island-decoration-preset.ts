@@ -69,7 +69,7 @@ export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:Rea
    for(const run of g.shape.runs)for(let x=0;x<run.width;x++){const hits=mainlandTerrainHits(grids,rasters,g.x+(run.x+x+.5)/g.factor,g.y-(run.y+.5)/g.factor);if(hits.length!==1||hits[0].key!==g.area)return null;}
    if(Math.floor(Number(g.plan.itemId)/100000)===401)continue;
    const others:MainlandSavedObject[]=final.filter(p=>p.area!==g.area);
-   for(const [j,h] of ghosts.entries())if(i!==j&&h.area!==g.area&&h.plan.action==='place'&&Math.floor(Number(h.plan.itemId)/100000)!==401)others.push({area:h.area,x:h.x,y:h.y,factor:h.factor,shape:h.shape,object:{localOrdinal:1_000_000+j,localGridOrdinal:1,itemId:h.plan.itemId,x:h.plan.x,y:h.plan.y,orientation:h.plan.orientation,orientationCode:null,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}});
+   for(const [j,h] of ghosts.entries())if(i!==j&&!freeGhosts.has(h)&&h.area!==g.area&&h.plan.action==='place'&&Math.floor(Number(h.plan.itemId)/100000)!==401)others.push({area:h.area,x:h.x,y:h.y,factor:h.factor,shape:h.shape,object:{localOrdinal:1_000_000+j,localGridOrdinal:1,itemId:h.plan.itemId,x:h.plan.x,y:h.plan.y,orientation:h.plan.orientation,orientationCode:null,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}});
    const feedback=stockFootprintFeedback(g,others);if(feedback.overlaps||feedback.unknown)return null;
   }
  }
