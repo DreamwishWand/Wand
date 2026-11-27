@@ -27,11 +27,15 @@ assert.ok(index.items[partialActor]?.male?.companionIncluded===false&&index.item
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,6);
 const props=['70200018','70200020'];
 assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessoryIncluded===true)),'both prop scenes');
-const ids=[...new Set([...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const materialActor='120000113',secondaryActor='120000109';
+assert.ok(index.items[materialActor]?.male?.companionIncluded===true&&index.items[materialActor]?.female?.companionIncluded===true,'external texture actor');
+assert.ok(index.items[secondaryActor]?.male?.secondaryPassOmitted===true&&index.items[secondaryActor]?.female?.secondaryPassOmitted===true,'base pass actor');
+assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitted===true&&row.female?.secondaryPassOmitted===true).length,6);
+const ids=[...new Set([materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,33);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,26);
 assert.equal(Object.keys(index.items).length,255);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,199);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,206);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
