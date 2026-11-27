@@ -74,7 +74,8 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
    !(m.len()==5||m.len()==6&&v.get("State").is_some_and(Value::is_null))||
    v.get("ID").and_then(Value::as_u64)!=Some(u64::from(id))||v.get("ItemID").and_then(Value::as_u64)!=Some(t.item_id)||
    v.get("X").and_then(Value::as_i64)!=Some(i64::from(p.expected.0))||v.get("Y").and_then(Value::as_i64)!=Some(i64::from(p.expected.1))||
-   v.get("Orientation").and_then(Value::as_str)!=Some(p.orientation)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation){return Err(BAD);}
+   v.get("Orientation").and_then(Value::as_str)!=Some(p.orientation)||
+   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)==Some(1)&&grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).is_some_and(|scope|grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|path|outdoor_world_path(scope,path)))){return Err(BAD);}
   *delta.entry(t.item_id).or_default()+=1;
  }
  for row in places{
@@ -82,7 +83,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   let d=p.destination;let (x,y)=p.xy;
   if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
-   !OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
+   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
   let grid=grids.get(&d.grid_id).ok_or(BAD)?;
   let matches=|v:&Value|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&v.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
   if !matches(grid)||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
