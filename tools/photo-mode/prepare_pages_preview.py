@@ -59,10 +59,11 @@ if __name__=='__main__':
     p.add_argument('--companion-delta',type=Path,help='Local copy of the pinned companion delta')
     p.add_argument('--actor-delta',type=Path,help='Local copy of the pinned companion actor delta')
     p.add_argument('--player-expansion',type=Path,help='Local copy of the second player-motion expansion')
+    p.add_argument('--player-complete',type=Path,help='Local copy of the remaining player poses')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -73,3 +74,5 @@ if __name__=='__main__':
         apply_actors(a.actor_delta.read_bytes() if a.actor_delta else download_actors(), a.dest)
         from prepare_player_expansion import download_expansion, apply_expansion
         apply_expansion(a.player_expansion.read_bytes() if a.player_expansion else download_expansion(), a.dest)
+        from prepare_player_complete import download_complete, apply_complete
+        apply_complete(a.player_complete.read_bytes() if a.player_complete else download_complete(), a.dest)

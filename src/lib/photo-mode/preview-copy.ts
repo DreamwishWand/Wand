@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "pose": "ポーズ",
     "title": "3Dポーズプレビュー（テスト）",
     "note": "ゲーム内の最終姿勢・外見との一致は未検証です。",
     "partial": "現在は1体型のみ対応しています。",
@@ -21,6 +22,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "pose": "Pose",
     "title": "3D pose preview (test)",
     "note": "In-game appearance and final pose are not yet verified.",
     "partial": "Only one body type is currently available.",
@@ -42,6 +44,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "pose": "Pose",
     "title": "Aperçu de la pose en 3D (test)",
     "note": "L'apparence et la pose finale en jeu ne sont pas encore vérifiées.",
     "partial": "Une seule morphologie est disponible actuellement.",
@@ -63,6 +66,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "pose": "Posa",
     "title": "Anteprima posa 3D (test)",
     "note": "L'aspetto e la posa finale nel gioco non sono ancora verificati.",
     "partial": "Al momento è disponibile un solo tipo di corporatura.",
@@ -84,6 +88,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "pose": "Pose",
     "title": "3D-Posenvorschau (Test)",
     "note": "Aussehen und endgültige Pose im Spiel sind noch nicht verifiziert.",
     "partial": "Derzeit ist nur ein Körpertyp verfügbar.",
@@ -105,6 +110,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "pose": "Pose",
     "title": "Vista previa de pose 3D (prueba)",
     "note": "El aspecto y la pose final en el juego aún no se han verificado.",
     "partial": "Por ahora solo hay un tipo de cuerpo disponible.",
@@ -126,6 +132,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "pose": "姿势",
     "title": "3D姿势预览（测试）",
     "note": "尚未验证与游戏内最终姿势及外观的一致性。",
     "partial": "目前仅支持一种体型。",
@@ -147,6 +154,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "pose": "Pose",
     "title": "Prévia da pose em 3D (teste)",
     "note": "A aparência e a pose final no jogo ainda não foram verificadas.",
     "partial": "Apenas um tipo de corpo está disponível no momento.",
