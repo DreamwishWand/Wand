@@ -1452,6 +1452,30 @@ mod browser_amount_preview {
             if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{draft.patched_json.zeroize();return Err(invalid());}
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
+        pub fn prepare_indoor_room_resize_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_ROOM_RESIZE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>4096{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let mut draft=indoor_room_view::resize_candidate(source,plan).map_err(|_|invalid())?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{draft.patched_json.zeroize();return Err(invalid());}
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+        pub fn prepare_indoor_append_floor_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_APPEND_FLOOR_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>4096{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let mut draft=indoor_room_view::append_floor_candidate(source,plan).map_err(|_|invalid())?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{draft.patched_json.zeroize();return Err(invalid());}
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+        pub fn prepare_indoor_add_room_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_ADD_ROOM_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>4096{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let mut draft=indoor_room_view::add_room_candidate(source,plan).map_err(|_|invalid())?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.export_authorized||draft.writer_authorized{draft.patched_json.zeroize();return Err(invalid());}
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
         pub fn prepare_indoor_furniture_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_INDOOR_FURNITURE_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
