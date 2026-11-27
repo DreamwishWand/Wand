@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -218,4 +218,14 @@ test('free floor editor restores repeated anchors and native diagonal Scene pose
  const scene=captureIndoorScene(floor,[0,1],shapes,allowed,true);assert.deepEqual(scene.items.map(p=>p.orientation),[2,2.5]);
  const clip=indoorSceneClip(JSON.stringify(scene),1,true).clip,rows=indoorGroupPlace(floor,shapes,allowed,stock,clip,2,1,true);assert.equal(rows.length,2);assert.equal(rows[1].orientation,'GridOrientation_DownLeft');assert.equal(rows[1].expectedStock,1);
  assert.throws(()=>indoorSceneClip(JSON.stringify(scene),1));
+});
+
+test('house navigator uses exact definition identity and keeps distinct house records',()=>{
+ const a={...room,houseItemId:20500001},b={...a,ordinal:2,floor:2},c={...a,ordinal:3,house:2},d={...room,ordinal:4,house:3};
+ const parsed=parseIndoorRooms(report([a,b,c,d]));
+ assert.deepEqual(parsed,[a,b,c,d]);
+ assert.deepEqual(indoorHouseGroups(parsed),[{house:1,itemId:20500001,firstIndex:0,roomCount:2},{house:2,itemId:20500001,firstIndex:2,roomCount:1},{house:3,firstIndex:3,roomCount:1}]);
+ assert.throws(()=>parseIndoorRooms(report([{...a,houseItemId:40000001}])));
+ assert.throws(()=>parseIndoorRooms(report([{...a,gridId:42}])));
+ assert.deepEqual(indoorHouseGroups([a,{...b,houseItemId:20500002}]),[{house:1,firstIndex:0,roomCount:2}]);
 });

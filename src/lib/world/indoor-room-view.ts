@@ -13,7 +13,16 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
+export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
+ const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
+ for(let i=0;i<rooms.length;i++){
+  const room=rooms[i],group=grouped.get(room.house);
+  if(group){group.roomCount++;if(group.itemId!==room.houseItemId)delete group.itemId;}
+  else grouped.set(room.house,{house:room.house,...(room.houseItemId===undefined?{}:{itemId:room.houseItemId}),firstIndex:i,roomCount:1});
+ }
+ return [...grouped.values()];
+}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
 const finish=(v:unknown):v is number|null=>v===null||integer(v,0,2147483647);
@@ -21,7 +30,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  if(!record(value)||value.contract!=='wand.db05.indoor-rooms@1'||value.geometryVerified!==false||value.writerAuthorized!==false||!Array.isArray(value.rooms)||value.rooms.length>2048)throw Error('INDOOR_REPORT_INVALID');
  let total=0;
  return value.rooms.map((room,i)=>{
-  if(!record(room)||Object.keys(room).length!==6||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(!record(room)||!(Object.keys(room).length===6||Object.keys(room).length===7&&integer(room.houseItemId,20500000,20599999))||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','name','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
    if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
@@ -37,7 +46,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    }
    return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
-  return {ordinal:i+1,house:room.house,floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
+  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
  });
 }
 export const indoorWords={

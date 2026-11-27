@@ -102,7 +102,9 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
    rows.push(row);
   }
   let name=room.get("Name").and_then(Value::as_str).filter(|s|s.chars().count()<=128).unwrap_or("");
-  out.push(json!({"ordinal":out.len()+1,"house":h,"floor":f,"name":name,"ceiling":finish(room.get("Ceiling")),"surfaces":rows}));
+  let mut row=json!({"ordinal":out.len()+1,"house":h,"floor":f,"name":name,"ceiling":finish(room.get("Ceiling")),"surfaces":rows});
+  if let Some(item)=houses[h-1].get("HouseItemID").and_then(id).filter(|n|*n/100_000==205){row["houseItemId"]=json!(item);}
+  out.push(row);
  }
  Ok(json!({"contract":"wand.db05.indoor-rooms@1","rooms":out,"geometryVerified":false,"writerAuthorized":false,"ownedFinishIds":owned_finishes(&root),"supportParents":support_parents}).to_string())
 }
@@ -1021,6 +1023,15 @@ mod tests{
   let w=&report["supportParents"][0];assert_eq!(w["roomOrdinal"],1);assert_eq!(w["surfaceOrdinal"],1);assert_eq!(w["index"],0);assert_eq!(w["localOrdinal"],1);
   let tree=crate::grid_instance_preview::inspect_subgrid_json(raw,1,40000001,(1,2)).unwrap();
   assert_eq!(serde_json::from_str::<Value>(&tree).unwrap()["tree"]["objects"][0]["itemId"],40000002);
+ }
+ #[test]
+ fn house_definition_id_is_public_identity_not_native_grid_identity(){
+  let raw=br#"{"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{"Rooms":{"0":{"FloorGridID":42}}},{"Rooms":{"0":{"FloorGridID":43}}}]},{"HouseItemID":20500002,"Floors":[{"Rooms":{"0":{"FloorGridID":44}}}]},{"HouseItemID":40000001,"Floors":[{"Rooms":{"0":{"FloorGridID":45}}}]}]}}"#;
+  let j:Value=serde_json::from_str(&project(raw).unwrap()).unwrap();
+  assert_eq!(j["rooms"][0]["houseItemId"],20500001);
+  assert_eq!(j["rooms"][1]["houseItemId"],20500001);
+  assert_eq!(j["rooms"][2]["houseItemId"],20500002);
+  assert!(j["rooms"][3].get("houseItemId").is_none());
  }
  #[test]
  fn shared_reference_is_not_projected_twice(){
