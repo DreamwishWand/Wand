@@ -98,7 +98,8 @@ def verification_targets(rows):
             if r["after"] and r["status"] != "catalog_and_dependency_bytes_unchanged"}
 
 
-def verify(root, rows, media_root=None):
+def verify(root, rows, media_root=None, ledger=None):
+    from source_image_ledger import original, thumbnail
     locs = verification_targets(rows)
     hits, images, missing, diagnostics, unsupported = resolve_objects(root, locs)
     matches = existing_artwork(media_root, images.values()) if media_root and images else {}
@@ -111,6 +112,12 @@ def verify(root, rows, media_root=None):
             if pixel:
                 value.update(width=pixel[0], height=pixel[1], decodedRgbaSha256=pixel[2],
                              existingArtworkCandidates=matches.get(pixel, []))
+            if pixel and ledger:
+                o=original(ledger,pixel[2],pixel[0],pixel[1])
+                if o:
+                    t=thumbnail(ledger,o)
+                    value['verifiedCdnOriginal']=o
+                    value['verifiedCdnThumbnail']=t
             candidates.append(value)
         result[guid] = {"candidates": candidates,
                         "singleTypedObject": len(candidates) == 1,
@@ -134,14 +141,17 @@ def main():
                    help="Resolve changed/unverified candidates in current Unity containers")
     p.add_argument("--media-root", type=Path,
                    help="Optional existing private artwork root for pixel-exact reuse checks")
+    p.add_argument("--ledger", type=Path, help="Verified source image ledger; no local WebP required")
     a = p.parse_args()
+    from source_image_ledger import load
+    ledger=load(json.loads(a.ledger.read_bytes())) if a.ledger else None
     old, new = a.old_aa.resolve(strict=True), a.new_aa.resolve(strict=True)
     out = a.out.resolve()
     if (old == new or a.old_version == a.new_version or out.exists()
             or any((x / ".git").exists() for x in out.parents)
             or old in out.parents or new in out.parents):
         raise ValueError("Use distinct versions and a new private output outside the source catalogs and Git")
-    if a.media_root and not a.verify_current:
+    if (a.media_root or a.ledger) and not a.verify_current:
         p.error("--media-root requires --verify-current")
     before, old_pins = read_catalog(old)
     after, new_pins = read_catalog(new)
@@ -158,9 +168,8 @@ def main():
               "oldCatalogSha256": old_pins, "newCatalogSha256": new_pins,
               "oldPromoArtGuids": len(before), "newPromoArtGuids": len(after),
               "counts": dict(sorted(counts.items())), "guidResults": rows,
-              "currentVerification": verify(new, rows, a.media_root.resolve())
-              if a.verify_current and a.media_root else
-              verify(new, rows) if a.verify_current else None}
+              "currentVerification": verify(new, rows, a.media_root.resolve() if a.media_root else None, ledger)
+              if a.verify_current else None}
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("x", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
