@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {readFile} from 'node:fs/promises';
+import {chromium} from 'playwright';
+
+const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
+assert.equal(index.schema,'wand.photo-mode.pages-test@2');
+const byKind=kind=>Object.entries(index.items).find(([,row])=>row.male?.kind===kind&&row.female?.kind===kind)?.[0];
+const ids=[byKind('player'),byKind('pair')];
+assert.ok(ids.every(Boolean),'both scene kinds must be published');
+const base='http://127.0.0.1:4191/Wand';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
+let browser;
+try{
+  let ready=false;
+  for(let i=0;i<80;i++){
+    try{if((await fetch(base+'/photo-mode-preview/index.json')).ok){ready=true;break}}catch{}
+    await new Promise(r=>setTimeout(r,250));
+  }
+  assert.ok(ready,'preview server not ready');
+  browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
+  const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  for(const [i,id] of ids.entries()){
+    await page.goto(base+'/collection/?item='+id);
+    const detail=page.locator('details.pose-test');
+    await detail.locator('summary').waitFor({timeout:60000});
+    await detail.locator('summary').click();
+    const preview=detail.locator('.pose-preview');
+    const body=preview.locator('.body-options button');
+    const seek=preview.locator('input.seek');
+    await body.nth(1).waitFor({state:'visible',timeout:15000});
+    assert.equal(await body.count(),2,'two original body type controls');
+    for(let b=0;b<2;b++){
+      await body.nth(b).click();
+      await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+      assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
+      const duration=Number(await seek.getAttribute('max'));
+      assert.ok(duration>0);
+      await seek.evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))},duration*.5);
+      await preview.locator('select').selectOption('0.5');
+      assert.equal(await preview.locator('select').inputValue(),'0.5');
+      const t=await seek.inputValue();
+      const toggle=preview.locator('input[type=checkbox]');
+      assert.equal(await toggle.count(),i===1?1:0);
+      if(i===1){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
+      const canvas=preview.locator('canvas');
+      await canvas.focus();await canvas.press('ArrowRight');
+      assert.equal(await seek.inputValue(),t);
+      const play=preview.locator('.controls').first().locator('button').first();
+      await play.click();
+      await page.waitForFunction(previous=>{const e=document.querySelector('.pose-preview input.seek');return e&&Math.abs(Number(e.value)-Number(previous))>.01},t,{timeout:10000});
+      await play.click();
+      const paused=await seek.inputValue();
+      await page.waitForTimeout(100);
+      assert.equal(await seek.inputValue(),paused,'pause holds playback position');
+    }
+    console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
+  }
+}finally{await browser?.close();server.kill('SIGTERM')}

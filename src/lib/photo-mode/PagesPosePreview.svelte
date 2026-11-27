@@ -2,17 +2,28 @@
   import {base} from '$app/paths';
   import {onMount} from 'svelte';
   import PosePreview from './PosePreview.svelte';
-  import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPairScene,type BodyType} from './pages-preview.ts';
-  import type {PoseScene} from './scene-session.ts';
-  let {itemId,locale}:{itemId:number;locale:string}=$props();
-  let options=$state<{id:BodyType;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>}[]>([]);
+  import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPreviewScene,relatedPoseItems,type PreviewIndex} from './pages-preview.ts';
+  import {poseCopy} from './preview-copy.ts';
+  import {collectionItemHref} from '$lib/collection/item-permalink.ts';
+  let {itemId,locale,getRelatedName}:{itemId:number;locale:string;getRelatedName?:(id:number,locale:string)=>Promise<string|null>}=$props();
+  let index=$state<PreviewIndex|null>(null);
   let expanded=$state(false);
-  const ja={title:'3Dポーズプレビュー（テスト）',note:'ゲーム内の最終姿勢・外見との一致は未検証です。',partial:'現在は1体型のみ対応しています。',play:'再生',pause:'一時停止',restart:'最初から再生',loop:'ループ',speed:'速度',time:'再生位置',zoom:'拡大縮小',resetView:'視点を戻す',orbit:'ドラッグで回転',loading:'読み込み中',unavailable:'3D表示を利用できません',bodyType:'体型',companion:'コンパニオン'};
-  const en={title:'3D pose preview (test)',note:'In-game appearance and final pose are not yet verified.',partial:'Only one body type is currently available.',play:'Play',pause:'Pause',restart:'Restart',loop:'Loop',speed:'Speed',time:'Time',zoom:'Zoom',resetView:'Reset view',orbit:'Drag to orbit',loading:'Loading',unavailable:'3D rendering unavailable',bodyType:'Body type',companion:'Companion'};
-  let copy=$derived(locale==='ja'?ja:en);
+  let copy=$derived(poseCopy(locale));
+  let row=$derived(index?.items[String(itemId)]);
+  let options=$derived.by(()=>{
+    const m=index,r=row,c=copy;
+    if(!m||!r)return [];
+    return bodyTypes.flatMap((b,i)=>{
+      const entry=r[b];
+      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal)}]:[];
+    });
+  });
+  let playerOnly=$derived(!!row&&bodyTypes.some(b=>row[b]?.kind==='player'));
+  let related=$derived(index?relatedPoseItems(index,itemId):[]);
+  let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async id=>({id,name:await getRelatedName!(id,locale).catch(()=>null)}))):Promise.resolve([]));
   onMount(()=>{
     let alive=true;
-    void loadPagesPoseIndex(base).then(m=>{if(!alive||!m)return;const row=m.items[String(itemId)];if(!row)return;options=bodyTypes.flatMap((b,i)=>{const entry=row[b];return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:copy.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPairScene(base,itemId,entry,copy.companion,signal)}]:[]})}).catch(()=>{});
+    void loadPagesPoseIndex(base).then(m=>{if(alive)index=m}).catch(()=>{});
     return()=>{alive=false};
   });
 </script>
@@ -20,8 +31,18 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if options.length===1}{copy.partial}{/if}</p>
+      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if}</p>
       <PosePreview {options} {copy}/>
+      {#await names then items}
+        {@const found=items.filter(x=>x.name)}
+        {#if found.length}
+          <div class="related-poses"><strong>{copy.related}</strong>
+            {#each found as item (item.id)}
+              <a href={collectionItemHref(base,item.id)}>{item.name}</a>
+            {/each}
+          </div>
+        {/if}
+      {/await}
     {/if}
   </details>
 {/if}
@@ -29,4 +50,7 @@
   .pose-test{margin:8px 0;color:var(--wand-text)}
   summary{cursor:pointer;font-weight:600}
   p{font-size:.8rem}
+  .related-poses{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:.8rem;align-items:center}
+  .related-poses a{color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-menu);padding:4px 6px}
+  .related-poses a:focus-visible{outline:2px solid var(--wand-focus)}
 </style>
