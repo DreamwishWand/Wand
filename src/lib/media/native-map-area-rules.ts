@@ -1,6 +1,6 @@
 import type {Layer,Color} from './native-map-renderer.ts';
 export type AreaRule={readonly areas:readonly number[];readonly alpha:readonly (number|null)[]};
-export type AreaPlan={readonly areaTypes:readonly number[];readonly areaRules:readonly AreaRule[]};
+export type AreaPlan={readonly areaTypes:readonly number[];readonly areaRules:readonly AreaRule[];readonly gridStateLabels?:readonly string[]};
 function check(ok:unknown,msg:string):asserts ok{if(!ok)throw Error(msg);}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 export function selectNativeAreaLayers(base:readonly Layer[],plan:AreaPlan,states:ReadonlyMap<number,boolean>):Layer[]{
@@ -18,7 +18,12 @@ export function parseNativeAreaRules(raw:Record<string,unknown>,locked:readonly 
   check(record(r)&&Array.isArray(r.areas)&&r.areas.length<=8&&r.areas.every((id,i)=>areaTypes.includes(id)&&(i===0||id>(r.areas as number[])[i-1]))&&Array.isArray(r.alpha)&&r.alpha.length===2**r.areas.length&&r.alpha.every(v=>v===null||typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1),'Invalid area rule');
   return {areas:r.areas as number[],alpha:r.alpha as (number|null)[]};
  });
- const plan={areaTypes:areaTypes as number[],areaRules:rules};
+ const gridStateLabels=raw.gridStateLabels;
+ if(gridStateLabels!==undefined){
+  const prefix=raw.id==='MapVillageExpansion4Underwater02'?'Pirate':raw.id==='MapVillageExpansion4Underwater03'?'Candy':raw.id==='MapVillageExpansion4Underwater04'?'Kingdom':null;
+  check(prefix&&areaTypes.length===4&&areaTypes.every((id,i)=>id===i+1)&&Array.isArray(gridStateLabels)&&gridStateLabels.length===4&&gridStateLabels.every((label,i)=>label===prefix+(i+1)),'Invalid source grid state labels');
+ }
+ const plan:AreaPlan={areaTypes:areaTypes as number[],areaRules:rules,...(gridStateLabels===undefined?{}:{gridStateLabels:gridStateLabels as string[]})};
  for(const [state,expected] of [[true,locked],[false,unlocked]] as const){
   const actual=selectNativeAreaLayers(locked,plan,new Map(plan.areaTypes.map(id=>[id,state])));
   check(JSON.stringify(actual)===JSON.stringify(expected),'Area rule endpoint mismatch');
