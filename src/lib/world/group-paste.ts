@@ -1,4 +1,4 @@
-import {CARDINAL_ORIENTATIONS,worldOrientationCode,type Cardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,worldOrientationCode,type Cardinal,type EightWay} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -16,7 +16,7 @@ export type {GroupGeometry,GroupPasteCandidate,GroupPasteRow,WorldGroupPose,Worl
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
 export const ROOM_CUT_LIMIT=32;
 export type RoomCutSource={roomOrdinal:number;index:number};
-type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:Cardinal;area:string;supportFactor?:1|2};
+type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
@@ -77,7 +77,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
  return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
- if(cut.length!==candidate.rows.length||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))return null;
+ if(cut.length!==candidate.rows.length||cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
 }
