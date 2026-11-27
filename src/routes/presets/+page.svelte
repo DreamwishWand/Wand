@@ -1,4 +1,5 @@
 <script lang="ts">
+ import NativeCurrentCards from '$lib/presets/NativeCurrentCards.svelte';
  import NativePresetDetail from '$lib/presets/NativePresetDetail.svelte';
  import NativeSceneConvert from '$lib/presets/NativeSceneConvert.svelte';
  import NativeRestoreReview from '$lib/presets/NativeRestoreReview.svelte';
@@ -10,7 +11,7 @@
  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
  import {localSaveSession} from '$lib/ui/local-save-session';
  import {sessionPresets,rememberPreset,savePresetFile,downloadPresetFile,removeSessionPreset,renameSessionPreset} from '$lib/presets/preset-session.ts';
- import {presetDomain,type PresetDomain,type PresetKind,type SessionPreset} from '$lib/presets/preset-session-format.ts';
+ import {presetHeader,presetDomain,type PresetDomain,type PresetKind,type SessionPreset} from '$lib/presets/preset-session-format.ts';
  import {readPresetText,compactPresetFile,PRESET_ACCEPT} from '$lib/presets/preset-file.ts';
  import {createShareFile} from '$lib/presets/preset-share-file.ts';
  import {presetItems} from '$lib/presets/preset-items.ts';
@@ -22,7 +23,7 @@
  type NativeIndex={contract:string;gameSchema:number;groups:{group:string;status:string;count:number|null}[];rows:NativeRow[];writerAuthorized:false};
  let locale:WandLanguage='ja',root:'wand'|'tom'|'game'|'my'='wand',myDomain:PresetDomain='wand',view:'current'|'backups'|'published'|'browse'='browse',kind:PresetKind|'all'='all',query='',selected=0,alias='',input:HTMLInputElement,reading=false,error=false;
  let job:Worker|null=null,index:NativeIndex|null=null,source:File|null=null,nativeError=false,nativeBusy=false,alive=true,epoch=0;
- let sharing=false,shareError=false;
+ let sharing=false,shareError=false,nativeSelected:SessionPreset|undefined,nativeOrdinal=0;
  let counts:Map<number,number>|null=null,images=new Map<number,string>(),names=new Map<number,string>(),packedSize:number|null=null,detailsEpoch=0,code='',purpose:'decoration'|'shop'='decoration',codeView='';
  const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21,'tom-furniture':22,'tom-clothing':23,'native-decoration':24,'decoration-code':25,'shop-code':26};
  const domains:PresetDomain[]=['wand','tom','game'];
@@ -34,12 +35,13 @@
  $: nativeRows=index?.rows.filter(e=>presetDomain(e.kind)===domain&&(kind==='all'||e.kind===kind))??[];
  $: kinds=(Object.keys(kindIndex) as PresetKind[]).filter(k=>presetDomain(k)===domain);
  $: if(source!==$localSaveSession.file)resetNative($localSaveSession.file);
+ $: if(view==='current'&&source&&!index&&!nativeBusy&&!nativeError)native('index');
  $: void detail(current,locale);
  onMount(()=>watchWandLanguage(v=>locale=v));
  onDestroy(()=>{alive=false;epoch++;detailsEpoch++;job?.terminate();});
- function resetNative(file:File|null){epoch++;job?.terminate();job=null;source=file;index=null;nativeBusy=false;nativeError=false;}
- function switchRoot(v:typeof root){root=v;kind='all';query='';selected=0;view=v==='wand'?'browse':'backups';}
- function switchDomain(v:PresetDomain){myDomain=v;kind='all';query='';selected=0;view='backups';}
+ function resetNative(file:File|null){epoch++;job?.terminate();job=null;source=file;index=null;nativeSelected=undefined;nativeOrdinal=0;nativeBusy=false;nativeError=false;}
+ function switchRoot(v:typeof root){nativeSelected=undefined;nativeOrdinal=0;root=v;kind='all';query='';selected=0;view=v==='wand'?'browse':'backups';}
+ function switchDomain(v:PresetDomain){nativeSelected=undefined;nativeOrdinal=0;myDomain=v;kind='all';query='';selected=0;view='backups';}
  function choose(e:SessionPreset){selected=e.id;alias=e.name;}
  async function add(e:Event){const el=e.currentTarget as HTMLInputElement,files=[...(el.files??[])];el.value='';if(reading)return;reading=true;error=false;try{for(const file of files){try{const row=await rememberPreset(file);if(alive){if(row.domain===domain)choose(row);else error=true;}}catch{if(alive)error=true;}}}finally{if(alive)reading=false;}}
  async function detail(entry:SessionPreset|undefined,language:WandLanguage){
@@ -53,14 +55,14 @@
    if(alive&&token===detailsEpoch)names=new Map(all.filter(([id])=>wanted.has(id)));
   }catch{/* Imported files remain available for the target parser. */}
  }
- function native(command:'index'|'backup',ordinal?:number){
-  if(!source||nativeBusy)return;const file=source,token=++epoch;nativeBusy=true;nativeError=false;
+ function native(command:'index'|'backup'|'inspect',ordinal?:number){
+  if(!source||nativeBusy)return;const file=source,token=++epoch;nativeBusy=true;nativeError=false;if(command==='inspect'){nativeSelected=undefined;nativeOrdinal=ordinal??0;}
   const own=new Worker(new URL('../../lib/presets/native-preset.worker.ts',import.meta.url),{type:'module'});job=own;
   const done=(d:any)=>{own.terminate();if(job!==own||!alive||source!==file||epoch!==token)return;job=null;nativeBusy=false;
    try{if(command==='index'&&d?.kind==='index'&&d.result?.contract==='wand.native-preset-index@1'&&Array.isArray(d.result.rows)&&Array.isArray(d.result.groups)&&d.result.writerAuthorized===false)index=d.result;
-    else if(command==='backup'&&d?.kind==='backup'&&typeof d.raw==='string'){savePresetFile(d.raw,'wand-'+(index?.rows.find(e=>e.ordinal===ordinal)?.kind??'native')+'-backup-'+ordinal+'.json');}
+    else if((command==='backup'||command==='inspect')&&d?.kind==='backup'&&typeof d.raw==='string'){const row=index?.rows.find(e=>e.ordinal===ordinal),name='wand-'+(row?.kind??'native')+'-backup-'+ordinal+'.json';if(command==='backup')savePresetFile(d.raw,name);else if(row){const h=presetHeader(d.raw);if(!h.privateBackup||h.kind!==row.kind)throw Error('native');nativeSelected={...h,id:-row.ordinal,name:row.name||p[kindIndex[row.kind]],file:new File([d.raw],name,{type:'application/json'})};}}
     else throw Error('native');}catch{nativeError=true;}
-  };own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command,file,ordinal});
+  };own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:command==='inspect'?'backup':command,file,ordinal});
  }
  async function shareFile(entry:SessionPreset){
   if(sharing||entry.domain!=='wand')return;sharing=true;shareError=false;
@@ -80,7 +82,10 @@
  {:else if view==='current'}<div class="toolbar"><button type="button" disabled={!source||nativeBusy} on:click={()=>native('index')}>{w[1]}</button><select bind:value={kind} aria-label={w[19]}><option value="all">{w[15]}</option>{#each kinds as k}<option value={k}>{p[kindIndex[k]]}</option>{/each}</select>{#if !source}<small>{w[5]}</small>{/if}</div>
   {#if nativeError}<p role="alert">{w[6]}</p>{/if}
   {#if index?.groups.some(g=>g.status==='unavailable')}<p role="status">{w[7]}</p>{/if}
-  <div class="native-list">{#each nativeRows as row (row.ordinal)}<article><strong>{row.name||p[kindIndex[row.kind]]}</strong><small>{row.storage==='female'?'♀':row.storage==='male'?'♂':''} {w[8]}</small><button type="button" disabled={nativeBusy} on:click={()=>native('backup',row.ordinal)}>{p[6]}</button></article>{:else}{#if index}<p>{p[9]}</p>{/if}{/each}</div>
+  <div class="library">
+   <NativeCurrentCards rows={nativeRows} {locale} {nativeBusy} selected={nativeOrdinal} onInspect={ordinal=>native('inspect',ordinal)} onBackup={ordinal=>native('backup',ordinal)}/>
+   {#if nativeSelected&&nativeRows.some(r=>r.ordinal===nativeOrdinal)}<aside><strong>{nativeSelected.name}</strong><NativePresetDetail entry={nativeSelected} {locale}/>{#if nativeSelected.kind==='native-decoration'}<NativeSceneConvert entry={nativeSelected} {locale}/>{/if}<button type="button" disabled={nativeBusy} on:click={()=>native('backup',nativeOrdinal)}>{p[6]}</button></aside>{/if}
+  </div>
   <small>{w[18]}</small>
  {:else}
   <div class="toolbar"><input type="file" hidden multiple accept={PRESET_ACCEPT} bind:this={input} on:change={add}/><button type="button" disabled={reading} on:click={()=>input.click()}>{p[1]}</button><input type="search" placeholder={p[2]} aria-label={p[2]} bind:value={query}/><select bind:value={kind} aria-label={w[19]}><option value="all">{w[15]}</option>{#each kinds as k}<option value={k}>{p[kindIndex[k]]}</option>{/each}</select></div>

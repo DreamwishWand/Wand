@@ -1458,6 +1458,13 @@ mod browser_amount_preview {
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
             native_preset_backup::export(source,ordinal as usize).map_err(|_|fail("DB05_PRESET_UNAVAILABLE"))
         }
+        pub fn prepare_native_decoration_experimental_copy(&mut self,backup:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_NATIVE_DECORATION_REJECTED");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=native_preset_backup::decoration_restore_candidate(original,backup).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
         pub fn rehearse_tom_restore(&self,backup:&str)->Result<String,JsValue>{
             let invalid=||fail("DB05_TOM_REHEARSAL_REJECTED");
             if !self.ready||self.closed||self.copy_prepared{return Err(invalid());}
