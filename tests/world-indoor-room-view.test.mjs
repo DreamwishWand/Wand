@@ -401,6 +401,7 @@ test('storage root supports cardinal move and explicit storage cut but not leaf 
  assert.ok(indoorFreeRotate(full,shapes,allowed,0,1));
  assert.equal(indoorFreeTransform(full,shapes,allowed,0,3,3,'GridOrientation_DownLeft'),null);
  assert.equal(indoorPickup(full,0,allowed,new Map([[40001680,1]]),true),null);
+ assert.equal(indoorPickup({...full,positions:[{...full.positions[0],storageEmpty:true}]},0,allowed,new Map([[40001680,1]]),true).storageEmpty,true);
  const cut=captureIndoorCut(full,1,[0],shapes,allowed,allowed,new Set(),true);
  assert.equal(cut.rows[0].storage,true);
  assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,2,2,true)[0].storage,true);

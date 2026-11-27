@@ -3959,6 +3959,12 @@ mod terrain_session_tests{
         plan["storageDuplicate"]["copyContents"]=Value::Bool(false);
         let v:Value=serde_json::from_str(&group_paste_candidate(raw,&plan.to_string()).unwrap()).unwrap();assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
         plan["storageDuplicate"]["destination"]["sizeX"]=Value::from(sx+1);assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
+        let pickup=serde_json::json!({"storagePickup":{"localOrdinal":1,"itemId":"40001680","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}});
+        assert!(group_paste_candidate(raw,&pickup.to_string()).is_err());
+        let mut empty=old.clone();empty["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([]);
+        let result=group_paste_candidate(&serde_json::to_vec(&empty).unwrap(),&pickup.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
+        assert!(v["Player"]["ContainerInventories"].as_object().unwrap().is_empty());assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],3);
+
     }
     #[test]
     fn storage_cut_roundtrip_native_world_and_room_preserves_inventory(){
