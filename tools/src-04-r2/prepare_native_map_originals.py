@@ -101,23 +101,23 @@ def run(game,out,reuse,node):
     (lock_root/'receipts').mkdir(exist_ok=True)
     for target in ('hires','lowres'):
         def receipt():
-            with lock_texture(p[target],target)[0] as im:
+            im,source=lock_texture(p[target],target)
+            with im:
                 # Stable lookup identity independent of compression version.
                 meta={'kind':'texture','width':im.width,'height':im.height,'pixelSha256':pixels(im,'texture')}
                 row=encode_one(meta['pixelSha256'],None,meta,lock_root,decoded=im)
             # Resolve the source pathID/CAB using the same original parser.
-            from extract_native_lock_textures import TARGETS
-            _,pid,_,_,_=TARGETS[target]
-            from inspect_native_map_texture_refs import read_cab
-            cab,_,digest=read_cab(p[target])
-            return {'cab':cab,'pathID':str(pid),'bundleSha256':digest,'imageSha256':row['sha256'],
+            return {'cab':source['cab'],'pathID':source['pathID'],'bundleSha256':source['bundleSha256'],'imageSha256':row['sha256'],
                     'roundtripVerified':True,'privateOnly':True,'publicationAuthorized':False}
         stage(stage_root/(target+'-receipt.json'),receipt)
     plan_path=stage_root/'plan.json'
     if not plan_path.exists():
+        pending=plan_path.with_suffix('.tmp')
+        pending.unlink(missing_ok=True)
         subprocess.run([node,'--experimental-strip-types',str(HERE/'build_native_map_private_preview.mjs'),
             *[str(stage_root/(s+'.json')) for s in ('graph','geometry','binding','locks','alpha','hires-receipt','lowres-receipt')],
-            str(plan_path)],check=True)
+            str(pending)],check=True)
+        pending.replace(plan_path)
     plan=json.loads(plan_path.read_bytes())
     print('Checking and reusing original WebPs...',flush=True)
     result=encode(plan,reg,p['hires'],p['lowres'],out,[*reuse,lock_root])
