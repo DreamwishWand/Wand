@@ -5,6 +5,8 @@
   import {defaultMapCamera,mapViewportBounds,mapCameraViewBox,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
   import WorldMapPartLayer from './WorldMapPartLayer.svelte';
   import MapCameraControls from './MapCameraControls.svelte';
+  import PublishedWorldMapPreview from './PublishedWorldMapPreview.svelte';
+  let opened=false;
   let report:WorldMapPartReport|null=null;
   let selected='';
   let files:File[]=[];
@@ -62,8 +64,11 @@
   }
   $: count=coverage(map,files);
 </script>
-<details class="parts-preview">
+<details class="parts-preview" bind:open={opened}>
   <summary>MEDIA 原本マップの個別素材プレビュー</summary>
+  {#if opened}<PublishedWorldMapPreview/>{/if}
+  <details class="local-tools">
+    <summary>ローカル原本の検証（Expert）</summary>
   <div class="tools">
     <label>マップ構成レポート<input type="file" accept=".json" on:change={readReport}/></label>
     <label>原寸WebP素材フォルダ<input type="file" webkitdirectory multiple on:change={readFiles}/></label>
@@ -73,7 +78,7 @@
         {#each report.maps as m}<option value={m.id}>{m.id}</option>{/each}
       </select>
     {/if}
-    {#if map}<button type="button" disabled={loading||count<0} on:click={()=>show(map!)}>個別素材を表示</button>{/if}
+    {#if map}<button type="button" disabled={loading||count<0||count!==map.parts.length} on:click={()=>show(map!)}>個別素材を表示</button>{/if}
     <button type="button" disabled={!report&&!files.length} on:click={()=>{release();report=null;files=[];selected='';error='';}}>解除</button>
   </div>
   <p>原本レポートの配置行列・描画順を使用。元画像を端末内で照合し、合成画像を保存・アップロードしません。設置Gridとの対応は未検証です。</p>
@@ -98,6 +103,7 @@
         onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
     </div>
   {/if}
+  </details>
 </details>
 <style>
   .parts-preview{margin:12px 0;padding:12px;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-card)}
