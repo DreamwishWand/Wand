@@ -744,7 +744,8 @@ fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32
         return Err(PatchError::CoordinateMismatch);
     }
     let original_orientation=old.get("Orientation").and_then(|v|v.as_str()).ok_or(PatchError::OrientationMismatch)?;
-    if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&original_orientation){return Err(PatchError::OrientationMismatch);}
+    if !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&original_orientation)||
+        !support_parent&&target.item_id/100_000==400&&matches!(&action,PlainGridStructureAction::Remove)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&original_orientation)){return Err(PatchError::OrientationMismatch);}
     let map_range=span(&parent)?;
     let objects:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&source[map_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     if objects.len()>100_000{return Err(PatchError::InvalidTarget);}
@@ -1396,7 +1397,10 @@ fn validate_plain_grid_destination(source:&str,destination:&PlainGridDestination
        !matches!(destination.tessellation,1|2)||destination.size.0==0||destination.size.1==0||
        destination.size.0>65536||destination.size.1>65536||
        xy.0<0||xy.1<0||xy.0 as u32>=destination.size.0*destination.tessellation||
-       xy.1 as u32>=destination.size.1*destination.tessellation||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
+       xy.1 as u32>=destination.size.1*destination.tessellation||
+       !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||
+         destination.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&
+         full_grid_scope(&destination.layout_path).is_some_and(|scope|outdoor_world_path(scope,&destination.data_path))){
         return Err(PatchError::InvalidTarget);
     }
     let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
