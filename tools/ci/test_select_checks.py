@@ -1,5 +1,5 @@
 import unittest
-from select_checks import classify, DOMAINS, source_checks
+from select_checks import classify, DOMAINS, source_checks, publication_checks
 
 class ScopeTests(unittest.TestCase):
     def test_docs(self):
@@ -31,6 +31,12 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(all(source_checks(["tools/ci/select_checks.py"]).values()))
         self.assertTrue(all(source_checks([], full=True).values()))
         self.assertFalse(any(source_checks(["README.md"]).values()))
+    def test_photo_publication_scope(self):
+        for path in ("tools/photo-mode/prepare_companion_delta.py",
+                     "src/lib/photo-mode/pages-preview.ts",
+                     "browser/photo-mode-smoke.mjs", "static/photo-mode-preview/index.json"):
+            self.assertTrue(publication_checks([path]), path)
+        self.assertFalse(publication_checks(["src/routes/guide/+page.svelte"]))
     def test_named_smoke(self):
         self.assertTrue(classify(["browser/world-graph-smoke.mjs"])["world"])
         self.assertFalse(classify(["browser/world-graph-smoke.mjs"])["guide"])

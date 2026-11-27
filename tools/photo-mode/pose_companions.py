@@ -34,11 +34,16 @@ def decode_pose(r):
 def extract(path,identity,targets):
     raw=path.read_bytes();version,files=unityfs(raw);require(version=='6000.0.62f1','unsupported bundle');out={};sha=digest(raw)
     for cab,data in files.items():
-        _,objects=serialized_objects(data);ext=externals(data);names={};entries=[];components={}
+        _,objects=serialized_objects(data);ext=externals(data);names={};entries=[];components={};roots=set()
         for pid,(cls,off,size) in objects.items():
             r=Reader(data[off:off+size])
             if cls==1:
                 cc=[r.unpack('iq') for _ in range(r.count(12))];r.take(4);names[pid]=(r.string(),cc)
+            elif cls==4:
+                f,g=r.unpack('iq');r.take(40);r.take(r.count(12)*12);parent=r.unpack('iq')
+                require(f==0 and r.pos==size,'invalid prefab transform')
+                if parent==(0,0):
+                    require(g not in roots,'duplicate root transform');roots.add(g)
             elif cls==142:
                 r.string();n=r.count(12);r.take(n*12)
                 for _ in range(r.count(24)):
@@ -48,8 +53,11 @@ def extract(path,identity,targets):
                 if 1<=f<=len(ext) and (ext[f-1].rsplit('/',1)[-1],script)==identity:
                     require(go[0]==0 and enabled in (0,1),'invalid pose component');components.setdefault(go[1],[]).append((pid,enabled,r))
         for guid,f,pid in entries:
-            if guid not in targets or f!=0 or pid not in names:continue
-            require(guid not in out,'ambiguous prefab GUID');name,cc=names[pid];rec=dict(assetFile=cab,pathId=str(pid),nativeName=name,bundle=path.name,bundleSha256=sha,poseComponents=[])
+            if guid not in targets or f!=0 or pid not in names or pid not in roots:continue
+            if guid in out:
+                require(out[guid]['assetFile']==cab and out[guid]['pathId']==str(pid),'ambiguous prefab root GUID')
+                continue
+            name,cc=names[pid];rec=dict(assetFile=cab,pathId=str(pid),nativeName=name,bundle=path.name,bundleSha256=sha,poseComponents=[])
             for component,enabled,r in components.get(pid,[]):
                 require((0,component) in cc,'broken component backlink')
                 try:pose=decode_pose(r);status='decoded'
