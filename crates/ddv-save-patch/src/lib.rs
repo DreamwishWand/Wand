@@ -908,6 +908,8 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
         locator.capture.insert(path.clone(),None);locator.walk_complete()?;
         let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
         Some(&source[range])
+    }else if target.item_id/100_000==402&&from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("State")).is_some_and(|v|v.is_null()){
+        Some("null")
     }else{None};
     if support_parent&&to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::AmbiguousTarget);}
     let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,support_parent)?;
