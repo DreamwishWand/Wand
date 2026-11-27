@@ -3,17 +3,21 @@
 use super::*;
 use serde_json::{Value,json};
 const BAD:PatchError=PatchError::InvalidTarget;
-#[derive(serde::Deserialize)]
 struct Shape{ name:String,prefab:String,paths:Vec<String> }
-#[derive(serde::Deserialize)]
-struct Catalog{ rooms:Vec<Shape> }
-fn shapes()->Result<Vec<Shape>,PatchError>{
- let catalog:Catalog=serde_json::from_str(include_str!("../../../src/lib/world/room-size-source.json")).map_err(|_|BAD)?;
- if catalog.rooms.len()!=26{return Err(BAD);}
- Ok(catalog.rooms)
+fn shapes()->Result<&'static Vec<Shape>,PatchError>{
+ static CATALOG:std::sync::OnceLock<Result<Vec<Shape>,PatchError>>=std::sync::OnceLock::new();
+ CATALOG.get_or_init(||{
+  let catalog:Value=serde_json::from_str(include_str!("../../../src/lib/world/room-size-source.json")).map_err(|_|BAD)?;
+  let rows=catalog["rooms"].as_array().filter(|a|a.len()==26).ok_or(BAD)?;
+  rows.iter().map(|s|Ok(Shape{name:s["name"].as_str().ok_or(BAD)?.to_owned(),prefab:s["prefab"].as_str().ok_or(BAD)?.to_owned(),paths:s["paths"].as_array().filter(|a|a.len()==5).ok_or(BAD)?.iter().map(|p|p.as_str().map(str::to_owned).ok_or(BAD)).collect::<Result<_,_>>()?})).collect()
+ }).as_ref().map_err(|e|*e)
 }
-fn available(shape:&Shape,terrain:&Value)->bool{
- shape.paths.len()==5&&shape.paths.iter().all(|p|terrain["grids"].as_array().is_some_and(|a|a.iter().any(|r|r[0].as_str()==Some(p.as_str()))))
+fn available(shape:&Shape)->bool{
+ static TERRAIN:std::sync::OnceLock<HashSet<String>>=std::sync::OnceLock::new();
+ let paths=TERRAIN.get_or_init(||{
+  serde_json::from_str::<Value>(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).ok().and_then(|v|v["grids"].as_array().map(|a|a.iter().filter_map(|r|r[0].as_str().map(str::to_owned)).collect())).unwrap_or_default()
+ });
+ shape.paths.len()==5&&shape.paths.iter().all(|p|paths.contains(p))
 }
 fn room_geometry(root:&Value,t:RoomFinishTarget,shapes:&[Shape])->Result<(usize,Vec<u32>),PatchError>{
  if root["GameInfo"]["Version"].as_u64()!=Some(643)||t.house_item_id/100_000!=205||t.room_slot>3||t.house_index>=128||t.floor_index>=128{return Err(BAD);}
@@ -41,19 +45,17 @@ fn room_geometry(root:&Value,t:RoomFinishTarget,shapes:&[Shape])->Result<(usize,
 }
 /// UI witness only: mutation independently checks identity and all references.
 pub fn room_resize_options(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<String>)>{
- let shapes=shapes().ok()?;let (old,_)=room_geometry(root,t,&shapes).ok()?;
- let terrain:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).ok()?;
- if !available(&shapes[old],&terrain){return None;}
- Some((shapes[old].name.clone(),shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s,&terrain)).map(|(_,s)|s.name.clone()).collect()))
+ let shapes=shapes().ok()?;let (old,_)=room_geometry(root,t,shapes).ok()?;
+ if !available(&shapes[old]){return None;}
+ Some((shapes[old].name.clone(),shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)).map(|(_,s)|s.name.clone()).collect()))
 }
 pub fn preview_room_resize(source:&str,t:RoomFinishTarget,expected:&str,replacement:&str)->Result<GridCoordinateDraft,PatchError>{
  validate_json_without_edit(source)?;
  let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
- let shapes=shapes()?;let (old,ids)=room_geometry(&root,t,&shapes)?;
+ let shapes=shapes()?;let (old,ids)=room_geometry(&root,t,shapes)?;
  let next=shapes.iter().find(|s|s.name==replacement).ok_or(BAD)?;
  if shapes[old].name!=expected||expected==replacement{return Err(BAD);}
- let terrain:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|BAD)?;
- if !available(&shapes[old],&terrain)||!available(next,&terrain){return Err(BAD);}
+ if !available(&shapes[old])||!available(next){return Err(BAD);}
  // Ignore only this room's own five references; aliases from any other room,
  // support, history, mission, or other grid reference still block the edit.
  let mut refs=root.clone();

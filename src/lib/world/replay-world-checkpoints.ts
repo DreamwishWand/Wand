@@ -10,7 +10,7 @@ async function replayStep(file:File,step:WorldReplayStep,signal:AbortSignal):Pro
  const own=grid?new Worker(new URL('../save/save-amount-preview.worker.ts',import.meta.url),{type:'module'}):
  command==='transfer-export'?new Worker(new URL('./structure-preview.worker.ts',import.meta.url),{type:'module'}):
  command==='support-child-copy'||command==='support-parent-copy'?new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'}):
- command==='indoor-room-rename-export'||command==='indoor-furniture-export'||command==='room-finish-export'||command==='indoor-room-project-export'?new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'}):
+ command==='indoor-room-resize-export'||command==='indoor-room-rename-export'||command==='indoor-furniture-export'||command==='room-finish-export'||command==='indoor-room-project-export'?new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'}):
  command==='cardinal-road-copy'||command==='cardinal-fence-copy'||command==='cardinal-fence-erase'?new Worker(new URL('./cardinal-road-save.worker.ts',import.meta.url),{type:'module'}):
  new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});
  try{
@@ -25,7 +25,7 @@ async function replayStep(file:File,step:WorldReplayStep,signal:AbortSignal):Pro
     if(settled){d?.bytes?.fill(0);return;}
     try{
      const expected=grid?'copy':command==='transfer-export'?'transfer-copy':command==='support-child-copy'||command==='support-parent-copy'?command:
-       command==='indoor-room-rename-export'?'indoor-room-rename-copy':command==='indoor-room-project-export'?'indoor-room-project-copy':command==='indoor-furniture-export'?'indoor-furniture-copy':command==='room-finish-export'?'room-finish-copy':
+       command==='indoor-room-resize-export'?'indoor-room-resize-copy':command==='indoor-room-rename-export'?'indoor-room-rename-copy':command==='indoor-room-project-export'?'indoor-room-project-copy':command==='indoor-furniture-export'?'indoor-furniture-copy':command==='room-finish-export'?'room-finish-copy':
        command.startsWith('cardinal-')?'cardinal-road-copy':'furniture-stock-copy';
      if(d?.kind!==expected)throw Error('REPLAY_RECEIPT');
      const copy=experimentalCopyDownload(d,file);URL.revokeObjectURL(copy.url);end(null,copy.file);
