@@ -1,5 +1,6 @@
 import {biomeFurnitureSnapshot,biomeFurnitureReplacement,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {landscapeRows,reviewLandscape,landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
+import {buildingPoseRows} from './building-pose-backup.ts';
 import {housePoseRows} from './player-house-backup.ts';
 import {parseSupportScene,supportSceneRootCounts} from './support-scene.ts';
 import {parseWholeArea} from './whole-area-preset.ts';
@@ -24,15 +25,15 @@ export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly Mainla
 export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false,world=false){
  if(text.length>BIOME_DECORATION_FILE_LIMIT)throw Error('DECORATION_LIMIT');
  const doc=JSON.parse(text);
- if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).some(k=>!['schema','gameVersion','furniture','network','supports','landscape','houses'].includes(k))||doc.schema!==(world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
- if(doc.houses!==undefined&&!world)throw Error('HOUSE_LAYOUT_SCOPE');
+ if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).some(k=>!['schema','gameVersion','furniture','network','supports','landscape','houses','buildings'].includes(k))||doc.schema!==(world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
+ if((doc.houses!==undefined||doc.buildings!==undefined)&&!world)throw Error('HOUSE_LAYOUT_SCOPE');
  const furniture=parseWholeArea(JSON.stringify(doc.furniture),grid,world?'world-grid':island?'floating-island':'biome'),network=parseBiomeNetwork(JSON.stringify(doc.network),grid);
  let supports:Map<number,ReturnType<typeof parseSupportScene>>|undefined;
  if(Object.prototype.hasOwnProperty.call(doc,'supports')){
   if(!Array.isArray(doc.supports)||doc.supports.length>furniture.length)throw Error('SUPPORT_CONTEXT');supports=new Map();
   for(const row of doc.supports){if(!row||Object.keys(row).length!==2||!Number.isSafeInteger(row.placementId)||supports.has(row.placementId))throw Error('SUPPORT_CONTEXT');const p=furniture.find(p=>p.id===row.placementId),scene=parseSupportScene(JSON.stringify(row.scene));if(!p||!Number.isInteger(p.orientation)||p.itemId!==scene.ownerItemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)throw Error('SUPPORT_OWNER');supports.set(row.placementId,scene);}
  }
- return {furniture,network,supports,...(doc.houses!==undefined?{houses:housePoseRows(doc.houses,grid)}:{}),...(doc.landscape!==undefined?{landscape:landscapeRows(doc.landscape,grid)}:{})};
+ return {furniture,network,supports,...(doc.houses!==undefined?{houses:housePoseRows(doc.houses,grid)}:{}),...(doc.buildings!==undefined?{buildings:buildingPoseRows(doc.buildings,grid)}:{}),...(doc.landscape!==undefined?{landscape:landscapeRows(doc.landscape,grid)}:{})};
 }
 function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
  if(g.plan.action!=='place')throw Error('GHOST_POSE');

@@ -122,3 +122,23 @@ test('world house backup preserves repeated exterior poses and requires every ex
  assert.throws(()=>housePoseRows([{...wanted,orientation:1.5}],h));
  assert.throws(()=>housePoseRows([{...wanted,PlayerHouseIndex:0}],h));
 });
+
+import {captureBuildingPoses,reviewBuildingLayout,buildingPoseRows} from '../src/lib/world/building-pose-backup.ts';
+test('building layout restores only unambiguous existing same-grid objects',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
+ const h=bindMainlandGrid({key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:196,sizeY:100});
+ const p={area:g.key,factor:1,shape:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]},object:{...o,itemId:'20100001',nativeType:'Building'}};
+ const q={...p,object:{...p.object,localOrdinal:2,itemId:'20200001',x:4,y:5}};
+ const rows=captureBuildingPoses(g,[p,q]);assert.equal(rows.length,2);
+ const objects=new Map([[g.key,[p,q]],[h.key,[]]]),wanted=rows.map(p=>({...p,x:8,y:9,orientation:1}));
+ const incoming=new Map([[g.key,{buildings:wanted}],[h.key,{buildings:[]}]]);
+ const result=reviewBuildingLayout([g,h],objects,incoming,true);
+ assert.ok(result);assert.equal(result.moved,2);assert.deepEqual(result.plans.get(g.key).after,wanted);
+ assert.equal(reviewBuildingLayout([g,h],objects,incoming,false),null);
+ assert.equal(reviewBuildingLayout([g,h],objects,new Map([[g.key,{buildings:[]}],[h.key,{buildings:wanted}]]),true),null);
+ assert.equal(reviewBuildingLayout([g,h],objects,new Map([[g.key,{buildings:[...wanted,wanted[0]]}],[h.key,{buildings:[]}]]),true),null);
+ const duplicate={...p,object:{...p.object,localOrdinal:3,x:5,y:5}};
+ assert.equal(reviewBuildingLayout([g,h],new Map([[g.key,[p,duplicate]],[h.key,[]]]),new Map([[g.key,{buildings:[wanted[0],{...wanted[0],x:9}]}],[h.key,{buildings:[]}]]),true),null);
+ assert.throws(()=>buildingPoseRows([{...wanted[0],itemId:20500001}],g));
+ assert.deepEqual(captureBuildingPoses(g,[p,{...duplicate,shape:null}]),[]);
+});
