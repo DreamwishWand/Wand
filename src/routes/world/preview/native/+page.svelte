@@ -39,7 +39,7 @@
  function attachReference(){
   if(!map||!lastPoint||typeof knownX!=='number'||typeof knownZ!=='number'||!Number.isFinite(knownX)||!Number.isFinite(knownZ)||!reference.trim())return;
   const p={...lastPoint,worldXZ:[knownX,knownZ] as const,reference:reference.trim()};
-  nativeLandmarkMeasurement(map,p);points=[...points.slice(0,-1),p];knownX=undefined;knownZ=undefined;reference='';
+  try{nativeLandmarkMeasurement(map,p);points=[...points.slice(0,-1),p];knownX=undefined;knownZ=undefined;reference='';reportError='';}catch(e){reportError=e instanceof Error?e.message:'比較点の座標が無効です';}
  }
  async function exportLandmarks(){
   if(!map||!points.length)return;
