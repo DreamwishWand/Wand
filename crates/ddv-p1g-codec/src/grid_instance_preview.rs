@@ -1460,6 +1460,11 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
+    if let Some(o)=value.as_object(){
+        if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
+        let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
+        return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
+    }
     if let Some(rows)=value.as_array().filter(|rows|rows.iter().any(|r|r.get("network").is_some())){return area_scene_candidate(profile,rows);}
     if value.as_array().is_some_and(|rows|rows.iter().any(|r|r.get("scene").is_some())){
         return mixed_scene_candidate(profile,&value);
@@ -1554,6 +1559,9 @@ fn plain_group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecErro
     plain_group_paste_bounded(profile,plan,ddv_save_patch::MAX_GRID_MIXED_EDITS)
 }
 fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String,CodecError>{
+    plain_group_paste_with_mode(profile,plan,limit,false)
+}
+fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->Result<String,CodecError>{
     use ddv_save_patch::{PlainGridDestination,FurnitureStockAction,preview_furniture_stock_transaction};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
@@ -1575,12 +1583,12 @@ fn plain_group_paste_bounded(profile:&[u8],plan:&str,limit:usize)->Result<String
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
-        if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
+        if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
         let objects=grid.get("Objects").and_then(Value::as_object).ok_or(bad)?;
         // Ground paths may remain under furniture. Do not silently stack new
         // ordinary furniture on another non-ground anchor.
-        if objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(bad);}
+        if !free&&objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(bad);}
         *count_by_grid.entry(d.grid_id.clone()).or_default()+=1;
         let stock=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
         let c=counts.entry(item).or_insert((stock,0));c.1+=1;if c.1>c.0{return Err(bad);}
@@ -2050,6 +2058,16 @@ mod tests{
         assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["Orientation"],"GridOrientation_Left");
         assert!(d.contains("\"Marker\":1e2"));
         plan[1]["x"]=Value::from(1);assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
+        let free=serde_json::json!({"freePlacement":true,"rows":plan});
+        let stacked:Value=serde_json::from_str(&group_paste_candidate(raw,&free.to_string()).unwrap()).unwrap();
+        let objects=&stacked["World"]["GridCollection"]["Grids"]["42"]["Objects"];
+        assert_eq!(objects["3"]["X"],1);assert_eq!(objects["4"]["X"],1);
+        assert_eq!(objects["3"]["ID"],3);assert_eq!(objects["4"]["ID"],4);
+        assert_eq!(stacked["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+        let mut invalid=free.clone();invalid["rows"][0]["x"]=Value::from(16);
+        assert!(group_paste_candidate(raw,&invalid.to_string()).is_err());
+        invalid=free.clone();invalid["rows"][0]["scene"]=Value::Null;
+        assert!(group_paste_candidate(raw,&invalid.to_string()).is_err());
         plan[1]["x"]=Value::from(4);let mut stale:Value=serde_json::from_slice(raw).unwrap();
         stale["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"]=Value::from(1);
         assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
