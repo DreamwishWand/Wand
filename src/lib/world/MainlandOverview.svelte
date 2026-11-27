@@ -225,7 +225,7 @@ $: cutWords=groupCutWords[locale];
  $: copyWords=testSaveWords[locale]??testSaveWords.en;
  const testExport=browser&&testSaveExportEnabled(window.location);
  const nativePreviewEnabled=testExport&&new URLSearchParams(window.location.search).get('native-map')==='1';
- let nativePanel=false,nativePack:LocalNativePreviewPack|null=null,nativeVisible=true,nativeHasFrame=false,nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
+ let nativePanel=false,nativePack:LocalNativePreviewPack|null=null,nativeVisible=true,nativeFrameId='',nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
  const nativeLabels={
  ja:['原本背景（検証）','素材を選択','背景を表示','地形レイヤーの濃さ','座標未校正・検証用背景','このワールドの素材がありません','原本背景の読み込み・描画に失敗しました'],
  en:['Original background (test)','Choose files','Show background','Terrain opacity','Uncalibrated background preview','No assets for this world','Background load or render failed'],
@@ -238,7 +238,7 @@ $: cutWords=groupCutWords[locale];
  } as const;
  $: nativeWords=nativeLabels[locale]??nativeLabels.en;
  $: nativeMap=nativePreviewEnabled?nativeMapForEditor(nativePack,worldKey,independent):null;
- $: nativeActive=!!nativeMap&&nativeVisible&&nativeHasFrame;
+ $: nativeActive=!!nativeMap&&nativeVisible&&nativeFrameId===nativeMap.id;
  async function openNativeBackground(e:Event){
   const input=e.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';
   if(!files.length)return;
@@ -246,12 +246,12 @@ $: cutWords=groupCutWords[locale];
   try{
    const pack=await openLocalNativePreview(files);
    if(ticket!==nativeTicket)return;
-   nativeHasFrame=false;nativePack=pack;nativeVisible=true;
+   nativeFrameId='';nativePack=pack;nativeVisible=true;
   }catch{if(ticket===nativeTicket)nativeError=nativeWords[6];}
  }
- function nativeStatus(status:'drawing'|'ready'|'error'){
-  if(status==='ready'){nativeHasFrame=true;nativeError='';}
-  if(status==='error'){nativeHasFrame=false;nativeError=nativeWords[6];}
+ function nativeStatus(status:'drawing'|'ready'|'error',id:string){
+  if(status==='ready'){nativeFrameId=id;nativeError='';}
+  if(status==='error'){nativeFrameId='';nativeError=nativeWords[6];}
  }
  let freePlacement=false;
  const freeWords={ja:['自由配置','ゲーム内の配置・操作制限を解除します。ゲームが配置を修正する場合があります。'],en:['Free placement','Ignore game placement and operation restrictions. The game may adjust placements.'],fr:['Placement libre','Ignore les restrictions du jeu. Le jeu peut corriger les placements.'],it:['Posizionamento libero','Ignora i limiti del gioco. Il gioco può correggere le posizioni.'],de:['Freie Platzierung','Spielbeschränkungen ignorieren. Das Spiel kann Platzierungen korrigieren.'],'es-ES':['Colocación libre','Ignora las restricciones del juego. El juego puede ajustar la colocación.'],'zh-CN':['自由摆放','忽略游戏摆放和操作限制。游戏可能调整位置。'],'pt-BR':['Posicionamento livre','Ignora restrições do jogo. O jogo pode ajustar posições.']} as const;
@@ -603,7 +603,7 @@ $: cutWords=groupCutWords[locale];
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  {#if nativeMap&&nativePack&&nativeVisible}
   {#key nativePack}
-   <div class="native-editor-background"><NativeMapCanvas layers={nativeMap.unlocked} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeMap.id} onStatus={nativeStatus}/></div>
+   <div class="native-editor-background"><NativeMapCanvas layers={nativeMap.unlocked} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeMap.id} onStatus={s=>nativeStatus(s,nativeMap?.id??'')}/></div>
   {/key}
  {/if}
  <button class="mainland-map" class:native-preview-backed={nativeActive} type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
@@ -658,7 +658,7 @@ $: cutWords=groupCutWords[locale];
  </button>
  {#if nativePreviewEnabled&&nativePanel&&!independent}<aside class="native-background-panel" aria-label={nativeWords[0]}>
   <label>{nativeWords[1]} <input type="file" multiple accept=".json,.png,.webp" on:change={openNativeBackground}/></label>
-  {#if nativeMap}<label><input type="checkbox" checked={nativeVisible} on:change={e=>{nativeVisible=e.currentTarget.checked;if(!nativeVisible)nativeHasFrame=false;}}/>{nativeWords[2]}</label>
+  {#if nativeMap}<label><input type="checkbox" checked={nativeVisible} on:change={e=>{nativeVisible=e.currentTarget.checked;if(!nativeVisible)nativeFrameId='';}}/>{nativeWords[2]}</label>
   <label>{nativeWords[3]} <input type="range" min="0" max="1" step=".05" bind:value={nativeTerrainOpacity}/></label>
   <small>{nativeWords[4]}</small>{:else if nativePack}<small>{nativeWords[5]}</small>{/if}
   {#if nativeError}<small role="alert">{nativeError}</small>{/if}
