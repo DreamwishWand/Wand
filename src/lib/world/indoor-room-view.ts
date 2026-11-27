@@ -507,12 +507,12 @@ export function indoorRoomResizePlan(room:IndoorRoom|null,size:string){
 export const roomResizeWords={
  ja:['部屋サイズ変更','形状が変わる床・壁は空である必要があります。既存の家具・仕上げを保持し、選択サイズを購入済みとして記録します。'],
  en:['Resize room','Changed surfaces must be empty. Objects and finishes are retained; the selected size is recorded as bought.'],
- fr:['Redimensionner','Pièce vide uniquement. Finitions conservées, taille enregistrée comme achetée.'],
- it:['Ridimensiona stanza','Solo stanze vuote. Finiture conservate, dimensione registrata come acquistata.'],
- de:['Raumgröße ändern','Nur leere Räume. Oberflächen bleiben erhalten, Größe wird als gekauft erfasst.'],
- 'es-ES':['Cambiar tamaño','Solo habitaciones vacías. Se conservan acabados y se registra el tamaño como comprado.'],
- 'zh-CN':['调整房间大小','仅限空房间。保留装修，并记录所选尺寸为已购买。'],
- 'pt-BR':['Redimensionar cômodo','Apenas cômodos vazios. Acabamentos mantidos e tamanho registrado como comprado.']
+ fr:['Redimensionner','Les surfaces modifiées doivent être vides. Objets et finitions conservés, taille enregistrée comme achetée.'],
+ it:['Ridimensiona stanza','Le superfici modificate devono essere vuote. Oggetti e finiture conservati, dimensione registrata come acquistata.'],
+ de:['Raumgröße ändern','Geänderte Flächen müssen leer sein. Objekte und Oberflächen bleiben erhalten, Größe wird als gekauft erfasst.'],
+ 'es-ES':['Cambiar tamaño','Las superficies modificadas deben estar vacías. Se conservan objetos y acabados; el tamaño se registra como comprado.'],
+ 'zh-CN':['调整房间大小','改变形状的表面必须为空。保留物品和装修，并记录所选尺寸为已购买。'],
+ 'pt-BR':['Redimensionar cômodo','As superfícies alteradas devem estar vazias. Objetos e acabamentos mantidos; tamanho registrado como comprado.']
 } as const;
 
 export function indoorAppendFloorPlan(room:IndoorRoom|null){
@@ -520,7 +520,7 @@ export function indoorAppendFloorPlan(room:IndoorRoom|null){
  return {house:room.house,houseItemId:room.houseItemId,expectedCount:room.appendFloorCount};
 }
 export const floorAppendWords={
- ja:['階を追加','空の3×3の階を最上階に追加します。'],
+ ja:['階を追加','エレベーター付きの空の3×3の階を最上階に追加します。'],
  en:['Add floor','Append an empty 3 × 3 floor with an elevator.'],
  fr:['Ajouter un étage','Ajouter un étage vide de 3 × 3 avec ascenseur.'],
  it:['Aggiungi piano','Aggiungi un piano vuoto 3 × 3 con ascensore.'],

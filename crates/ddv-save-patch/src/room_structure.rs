@@ -1,4 +1,4 @@
-//! Source-correlated empty-room resizing. No furniture, ownership, or unknown
+//! Source-correlated room resizing and native floor creation. No furniture, ownership, or unknown
 //! Grid records are deleted; existing room and Grid identities remain stable.
 use super::*;
 use serde_json::{Value,json};
@@ -53,7 +53,9 @@ fn resize_eligible(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->bool{
 pub fn room_resize_options(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<String>)>{
  let shapes=shapes().ok()?;let (old,ids)=room_geometry(root,t,shapes).ok()?;
  if !available(&shapes[old]){return None;}
- Some((shapes[old].name.clone(),shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)&&resize_eligible(root,&ids,&shapes[old],s)).map(|(_,s)|s.name.clone()).collect()))
+ let options:Vec<_>=shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)&&resize_eligible(root,&ids,&shapes[old],s)).map(|(_,s)|s.name.clone()).collect();
+ if options.is_empty(){return None;}
+ Some((shapes[old].name.clone(),options))
 }
 // Do not treat GridCollection or a GridObject counter as a Grid reference.
 fn existing_grid_reference(v:&Value,ids:&HashSet<u32>,marked:bool)->bool{
