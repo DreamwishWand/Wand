@@ -3926,6 +3926,22 @@ mod terrain_session_tests{
         plan["rows"][0]["destination"]["sizeX"]=Value::from(b["sizeX"].as_u64().unwrap()+1);assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
     }
     #[test]
+    fn storage_duplicate_outdoor_uses_independent_container_and_existing_stock(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40001680":{"Amount":2}}}},"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
+        let old:Value=serde_json::from_slice(raw).unwrap();
+        let (_,layout,factor,sx,sy)=outdoor_identity(&old,"10").unwrap();
+        let mut plan=serde_json::json!({"storageDuplicate":{"localOrdinal":1,"itemId":"40001680","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":{"layoutId":layout,"gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":factor,"sizeX":sx,"sizeY":sy},"x":4,"y":5,"orientation":"GridOrientation_Left","copyContents":true,"freePlacement":true}});
+        let result=group_paste_candidate(raw,&plan.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(v["Player"]["ContainerInventories"]["9"],old["Player"]["ContainerInventories"]["9"]);
+        assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
+        assert_eq!(v["Player"]["NextContainerInventoryID"],11);assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],1);
+        assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"],old["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]);
+        assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);assert!(result.contains("1e2"));
+        plan["storageDuplicate"]["copyContents"]=Value::Bool(false);
+        let v:Value=serde_json::from_str(&group_paste_candidate(raw,&plan.to_string()).unwrap()).unwrap();assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
+        plan["storageDuplicate"]["destination"]["sizeX"]=Value::from(sx+1);assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
+    }
+    #[test]
     fn storage_cut_roundtrip_native_world_and_room_preserves_inventory(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"Unknown":1e2}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
         let source:Value=serde_json::from_slice(raw).unwrap();
