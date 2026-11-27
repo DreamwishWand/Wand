@@ -65,19 +65,19 @@ export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeomet
  const y=-2*g.origin.position[2]-Math.floor((-p.y-2*g.origin.position[2])*g.factor)/g.factor;
  return {x:x-Math.floor((width*g.factor-1)/2)/g.factor+.001,y:y+Math.floor((height*g.factor-1)/2)/g.factor-.001};
 }
-export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,free=false):GroupPasteCandidate|null{
+export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,free=false,verifiedSupport:ReadonlySet<number>=new Set()):GroupPasteCandidate|null{
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
  const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
  if(clip.some(p=>![p.dx,p.dy,p.orientation*2].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>=4||!free&&!Number.isInteger(p.orientation)))return null;
- return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free);
+ return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free,false,verifiedSupport);
 }
 export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
 export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
 /** All poses share map coordinates; each independently resolves its exact
  * source Grid. The bounding rectangle's empty corner need not be on land. */
-export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false,allowDiagonal=false):GroupPasteCandidate|null{
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false,allowDiagonal=false,verifiedSupport:ReadonlySet<number>=new Set()):GroupPasteCandidate|null{
  if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
@@ -85,7 +85,7 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
   const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
-  if(free&&(Math.floor(p.itemId/100000)!==400||geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath))return null;
+  if(free&&(Math.floor(p.itemId/100000)!==400||((geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath)&&(!verifiedSupport.has(p.itemId)||!Number.isInteger(p.orientation)))))return null;
   const q=stockPlacement(grids,rasters,geo,p.itemId,EIGHT_WAY_ORIENTATIONS[p.orientation*2],x+.001,y-.001,null,free,allowDiagonal);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
