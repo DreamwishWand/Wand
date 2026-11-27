@@ -28,12 +28,12 @@ export function generalBuildingSourceEligible(p:MainlandSavedObject|null):p is M
 export function buildingSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{return playerHouseSourceEligible(p)||generalBuildingSourceEligible(p);}
 /** Existing source records only; no default building state is synthesized. */
 export function buildingPlacementSources(grids:readonly MainlandGrid[],objects:readonly MainlandSavedObject[]):Map<number,MainlandSavedObject>{
- const byGrid=new Map(grids.filter(g=>!!bindMainlandGrid(g)).map(g=>[g.key,g]));
+ const byGrid=new Map(grids.filter(g=>!!bindMainlandGrid(g)||!!bindFloatingIslandGrid(g)).map(g=>[g.key,g]));
  const sources=new Map<number,MainlandSavedObject>();
  for(const p of objects){
   if(!buildingSourceEligible(p)||!p.shape?.cellCount||p.shape.cellCount>65536)continue;
   const g=byGrid.get(p.area);
-  if(!g||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
+  if(!g||!bindMainlandGrid(g)&&!playerHouseSourceEligible(p)||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
   const id=Number(p.object.itemId),old=sources.get(id);
   if(!old||p.object.localOrdinal<old.object.localOrdinal)sources.set(id,p);
  }
@@ -48,7 +48,9 @@ export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:Readonly
  if(!buildingSourceEligible(p)||!p.shape||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandFreeHits(grids,rasters,wx,wy);
  const from=grids.find(g=>g.key===p.area);
- if(!from||!bindMainlandGrid(from)||hits.length!==1||sourceWorldScope(hits[0])!==sourceWorldScope(from)||hits[0].factor!==p.factor||!bindMainlandGrid(hits[0]))return null;
+ const house=playerHouseSourceEligible(p),bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(house?bindFloatingIslandGrid(g):null);
+ const scope=(g:MainlandGrid)=>sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);
+ if(!from||!bound(from)||hits.length!==1||scope(hits[0])!==scope(from)||hits[0].factor!==p.factor||!bound(hits[0]))return null;
  const g=hits[0],x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
  if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
  const direction=orientation??p.object.orientation;
@@ -58,13 +60,13 @@ export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:Readonly
  if(!shape||!shape.cellCount||shape.cellCount>65536)return null;
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'duplicate',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x,y,...(direction===p.object.orientation?{}:{replacementOrientation:direction})}};
 }
-export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
- if(!playerHouseSourceEligible(p)||!p.shape||!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
+export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[],allowDetached=false):StockCandidate|null{
+ if(!playerHouseSourceEligible(p)||!p.shape||!allowDetached&&!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 export function buildingPickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
  if(!buildingSourceEligible(p)||!p.shape)return null;
- if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects);
+ if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects,true);
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
@@ -75,7 +77,8 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
 export function initialBuildingEligible(id:number,grid:MainlandGrid,detached:ReadonlySet<number>=new Set()):boolean{
  const scope=sourceWorldScope(grid),ids=(initialTemplates.scopes as Record<string,readonly number[]>)[scope];
  const others=(initialTemplates.otherBuildings as Record<string,Record<string,unknown>>)[scope];
- return !!bindMainlandGrid(grid)&&(!!ids?.includes(id)||!!others&&Object.hasOwn(others,String(id))||Math.floor(id/100000)===205&&detached.has(id));
+ return (!!bindMainlandGrid(grid)&&(!!ids?.includes(id)||!!others&&Object.hasOwn(others,String(id))))||
+  Math.floor(id/100000)===205&&detached.has(id)&&!!(bindMainlandGrid(grid)??bindFloatingIslandGrid(grid));
 }
 export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,detached:ReadonlySet<number>=new Set()):StockCandidate|null{
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;

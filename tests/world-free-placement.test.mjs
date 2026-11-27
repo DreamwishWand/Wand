@@ -57,6 +57,7 @@ test('player house exterior duplication targets exact grids in the same world',(
  const cross=playerHouseDuplicate([g,h],new Map([[g.key,r],[h.key,rr]]),p,h.bounds.x+5.1,h.bounds.y+h.bounds.h-6.1);
  assert.ok(cross);assert.equal(cross.area,h.key);
  assert.equal(playerHousePickup(p,[p]),null);
+ assert.equal(playerHousePickup(p,[p],true)?.plan.action,'remove');
  assert.equal(playerHousePickup(p,[p,{...p,area:h.key,object:{...p.object,localOrdinal:2}}]).plan.action,'remove');
 });
 
