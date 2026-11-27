@@ -56,8 +56,10 @@ def prepare_geometry(plan, registration):
             'images':expected,'maps':out}
 
 
-def run(plan,registration,hires,lowres,out,roots):
+def run(plan,registration,hires,lowres,out,roots,ledger=None):
     from verify_native_map_egl import index_assets, decode
+    from verified_image_ledger import index, lookup
+    prior=index(ledger) if ledger else {}
     out=private_path(out)
     audit=prepare_geometry(plan,registration)
     rows=index_assets(hires,lowres,plan['refs'])
@@ -74,11 +76,15 @@ def run(plan,registration,hires,lowres,out,roots):
         # Decode the version-pinned texture; never trust an old encoded filename as its pixel witness.
         with decode(row) as original:
             meta['pixelSha256']=pixels(original,meta['kind'])
-            reusable=None if (out/'receipts'/(sha+'.json')).is_file() else match_reuse(candidates,meta)
-            receipts[sha]=encode_one(sha,None,meta,out,reusable,decoded=original)
+            published=lookup(prior,sha,meta)
+            if published:
+                receipts[sha]=published
+            else:
+                reusable=None if (out/'receipts'/(sha+'.json')).is_file() else match_reuse(candidates,meta)
+                receipts[sha]=encode_one(sha,None,meta,out,reusable,decoded=original)
         r=receipts[sha]
         print(f"Verified {len(receipts)}/118: {r['sha256']} ({r['bytes']} bytes)",flush=True)
-    return finish(audit,receipts,out)
+    return finish(audit,receipts,out,native_refs=dict(plan['refs']))
 
 
 def main():
@@ -86,9 +92,10 @@ def main():
     for key in ('plan','registration','hires','lowres','out'):
         p.add_argument('--'+key,type=Path,required=True)
     p.add_argument('--reuse-dir',type=Path,action='append',default=[])
+    p.add_argument('--ledger',type=Path)
     a=p.parse_args()
     summary=run(json.loads(a.plan.read_bytes()),json.loads(a.registration.read_bytes()),
-                a.hires,a.lowres,a.out,a.reuse_dir)
+                a.hires,a.lowres,a.out,a.reuse_dir,json.loads(a.ledger.read_bytes()) if a.ledger else None)
     print(summary['uniqueImages'],'unique original WebPs;',summary['totalBytes'],'bytes; no network writes')
 
 
