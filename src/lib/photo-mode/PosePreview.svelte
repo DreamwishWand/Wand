@@ -40,12 +40,12 @@
   function up(e:PointerEvent){if(pointer?.id===e.pointerId)pointer=undefined}
   function key(e:KeyboardEvent){const r=canvas.getBoundingClientRect();if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home')act(s=>s.resetView());else if(r.width&&r.height)act(s=>s.move(e.key==='ArrowLeft'?-r.width/24:e.key==='ArrowRight'?r.width/24:0,e.key==='ArrowUp'?-r.height/24:e.key==='ArrowDown'?r.height/24:0,r.width,r.height))}
   function lost(e:Event){e.preventDefault();release();status='error'}
-  onMount(()=>{const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);if(options.length)void choose(options[0]);else status='error';frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();release()}});
+  onMount(()=>{canvas.addEventListener('webglcontextlost',lost);const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);if(options.length)void choose(options[0]);else status='error';frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);release()}});
 </script>
 
 <section class="pose-preview" aria-label={copy.bodyType}>
   <div class="viewport">
-    <canvas bind:this={canvas} tabindex="0" aria-label={copy.orbit} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onkeydown={key} onwebglcontextlost={lost}></canvas>
+    <canvas bind:this={canvas} tabindex="0" aria-label={copy.orbit} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onkeydown={key}></canvas>
     <div class="body-options" aria-label={copy.bodyType}>
       {#each options as option (option.id)}
         <button type="button" title={option.label} aria-label={option.label} aria-pressed={selected===option.id} onclick={()=>void choose(option)}><img src={option.iconUrl} alt="" width="44" height="44"/></button>
