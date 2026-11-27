@@ -46,7 +46,7 @@ pub fn probe_collection_read_projections_json(decoded_json:&str)->String{
     if decoded_json.len()>MAX_BYTES{return ERROR.to_owned();}
     let Ok(root)=serde_json::from_str::<Value>(decoded_json) else{return ERROR.to_owned();};
     serde_json::json!({"discovery":inspect_collection_discovery(&root),
-        "memoryFlags":inspect_memory_flags(&root)}).to_string()
+        "memoryFlags":inspect_memory_flags(&root),"avatarAppearance":crate::avatar_appearance::inspect_avatar_appearance(&root)}).to_string()
 }
 #[cfg(test)]
 mod tests {
