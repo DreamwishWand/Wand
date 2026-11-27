@@ -93,6 +93,41 @@ fn validate_allocator(entries:&[Entry<'_>],kind:&str,next:u32)->Result<bool,Code
  }
  Ok(true)
 }
+
+fn positive_base_stock(source:&[u8],kind:&str,base:u32)->Option<u32>{
+ let (role,code,label)=match kind{"tom-furniture"=>(0,4,"Furniture"),"tom-clothing"=>(1,5,"Clothing"),_=>return None};
+ if base/10_000_000!=code{return None;}
+ let root:Map=serde_json::from_slice(source).ok()?;
+ let player=obj(get(&root,"Player").ok()?).ok()?;
+ let inventories=obj(get(&player,"ListInventories").ok()?).ok()?;
+ let inventory=obj(get(&inventories,&role.to_string()).ok()?).ok()?;
+ if inventory.get("ID").is_some_and(|v|number(v).ok()!=Some(role)){return None;}
+ let typ=get(&inventory,"CompatibleItemType").ok()?;
+ if number(typ).ok()!=Some(code)&&!serde_json::from_str::<String>(typ.get()).ok().is_some_and(|s|s.eq_ignore_ascii_case(label)||s==format!("ItemType_{label}")){return None;}
+ let rows=obj(get(&inventory,"Inventory").ok()?).ok()?;
+ let row=obj(get(&rows,&base.to_string()).ok()?).ok()?;
+ let amount=number(get(&row,"Amount").ok()?).ok()?;
+ (amount>0&&amount<=i32::MAX as u32).then_some(amount)
+}
+fn replaceable_decoration(raw:&RawValue,version:u32)->bool{
+ let wrapped=format!("{{\"schema\":\"wand.preset.native-backup@1\",\"gameSchema\":{},\"kind\":\"native-decoration\",\"storage\":\"decoration\",\"baseItemId\":null,\"payload\":{}}}",version,raw.get());
+ decoration_install_payload(&wrapped).is_ok()
+}
+fn decoration_replacement_options(source:&[u8],version:u32)->Result<Vec<Value>,CodecError>{
+ let root:Map=serde_json::from_slice(source).map_err(|_|BAD)?;
+ let w=obj(get(&root,"World")?)?;
+ let rows:Vec<&RawValue>=serde_json::from_str(get(&w,"DecorationPresets")?.get()).map_err(|_|BAD)?;
+ if rows.len()>MAX_ROWS{return Err(BAD);}
+ let mut options=Vec::new();
+ for (i,row) in rows.iter().enumerate(){
+  if replaceable_decoration(row,version){
+   let p=obj(row)?;let name:String=serde_json::from_str(get(&p,"PresetName")?.get()).map_err(|_|BAD)?;
+   options.push(json!({"slot":i+1,"name":name}));
+  }
+ }
+ Ok(options)
+}
+
 pub(super) fn review(source:&[u8],backup:&str)->Result<String,CodecError>{
  if backup.len()>MAX_FILE{return Err(CodecError::Bounds);}
  let raw:Map=serde_json::from_str(backup).map_err(|_|BAD)?;
@@ -143,12 +178,14 @@ pub(super) fn review(source:&[u8],backup:&str)->Result<String,CodecError>{
  let source_kind=if kind=="native-decoration"{None}else{fields.get("Source").and_then(|r|number(r).ok()).filter(|n|*n<=2)};
  let slot_counts=if kind=="native-decoration"&&target_readable{decoration_slot_info(source).ok()}else{None};
  let decoration_candidate=kind=="native-decoration"&&version==s.version&&target_readable&&matches==0&&slot_counts.is_some_and(|(a,_)|a<LEGACY_ACTIVE_LIMIT)&&decoration_install_payload(backup).is_ok();
+ let positive_stock=base.and_then(|id|positive_base_stock(source,&kind,id));
+ let replace_options=if kind=="native-decoration"&&version==s.version&&target_readable&&matches==0&&decoration_install_payload(backup).is_ok(){decoration_replacement_options(source,version).unwrap_or_default()}else{Vec::new()};
  let receipt=json!({"contract":"wand.native-preset-restore-review@1","kind":kind,"storage":storage,"baseItemId":base,
   "schemaMatches":version==s.version,"backupSchema":version,"targetSchema":s.version,"targetReadable":target_readable,
   "matchingDesigns":if target_readable{Some(matches)}else{None},
   "existingDesignsForItem":if target_readable{Some(target_count)}else{None},
   "allocatorConsistent":allocator,"designSource":source_kind,"requiresNewId":kind!="native-decoration",
-  "activeSlots":slot_counts.map(|(a,_)|a),"legacySlotLimit":if slot_counts.is_some(){Some(LEGACY_ACTIVE_LIMIT)}else{None},"decorationTestCandidate":decoration_candidate,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
+  "positiveBaseStock":positive_stock,"replacementSlots":replace_options,"activeSlots":slot_counts.map(|(a,_)|a),"legacySlotLimit":if slot_counts.is_some(){Some(LEGACY_ACTIVE_LIMIT)}else{None},"decorationTestCandidate":decoration_candidate,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
  serde_json::to_string(&receipt).map_err(|_|BAD)
 }
 
@@ -315,6 +352,28 @@ pub(super) fn decoration_restore_candidate(source:&[u8],backup:&str)->Result<Str
  Ok(candidate)
 }
 
+
+pub(super) fn decoration_replace_candidate(source:&[u8],backup:&str,slot:usize)->Result<String,CodecError>{
+ let src=std::str::from_utf8(source).map_err(|_|BAD)?;
+ if backup.len()>MAX_FILE||ddv_save_patch::validate_json_without_edit(src).is_err()||ddv_save_patch::validate_json_without_edit(backup).is_err(){return Err(BAD);}
+ let check:Value=serde_json::from_str(&review(source,backup)?).map_err(|_|BAD)?;
+ if check["schemaMatches"]!=true||check["targetReadable"]!=true||check["kind"]!="native-decoration"||check["matchingDesigns"]!=0{return Err(BAD);}
+ if !check["replacementSlots"].as_array().is_some_and(|a|a.iter().any(|v|v["slot"].as_u64()==Some(slot as u64))){return Err(BAD);}
+ let payload=decoration_install_payload(backup)?;
+ let root:Map=serde_json::from_str(src).map_err(|_|BAD)?;
+ let w=obj(get(&root,"World")?)?;
+ let rows:Vec<&RawValue>=serde_json::from_str(get(&w,"DecorationPresets")?.get()).map_err(|_|BAD)?;
+ let index=slot.checked_sub(1).ok_or(BAD)?;let target=*rows.get(index).ok_or(BAD)?;
+ let counts=decoration_slot_info(source)?;
+ let candidate=patch(src,vec![replace_raw(src,target,payload.get().to_owned())?])?;
+ if decoration_slot_info(candidate.as_bytes())?!=counts{return Err(BAD);}
+ let after:Map=serde_json::from_str(&candidate).map_err(|_|BAD)?;
+ let w=obj(get(&after,"World")?)?;
+ let new_rows:Vec<&RawValue>=serde_json::from_str(get(&w,"DecorationPresets")?.get()).map_err(|_|BAD)?;
+ if rows.len()!=new_rows.len()||new_rows[index].get()!=payload.get()||rows.iter().zip(&new_rows).enumerate().any(|(i,(old,new))|i!=index&&old.get()!=new.get()){return Err(BAD);}
+ Ok(candidate)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -402,5 +461,25 @@ mod tests{
   let payload:Value=serde_json::from_str(backup).unwrap();
   let many=json!({"GameInfo":{"Version":643},"Player":{},"World":{"DecorationPresets":vec![payload["payload"].clone();20]}});
   assert!(decoration_restore_candidate(many.to_string().as_bytes(),&backup.replace("Scene","Different")).is_err());
+ }
+
+ #[test]
+ fn replacement_preserves_physical_slot_count_and_unrelated_bytes(){
+  let payload=r#"{"PresetName":"Scene","ThumbnailItems":[40000001],"StateFlags":0,"ShareInfo":null,"GridCollection":{"NextGridID":1,"DiffGrids":{},"Grids":{"0":{"ID":0,"GridDataPath":"","GridDefaultLayoutPath":"","TessellationFactor":2,"NextGridObjectID":1,"Objects":{"0":{"ID":0,"ItemID":40000001,"X":0,"Y":0,"Orientation":"GridOrientation_Up","State":null}}}}}}"#;
+  let old=payload.replace("Scene","Old");
+  let source=format!("{{\"GameInfo\":{{\"Version\":643}},\"Player\":{{}},\"World\":{{\"DecorationPresets\":[{{\"PresetName\":\"Deleted\",\"StateFlags\":16}},{},{}]}},\"Other\":1e-70}}",old,old.replace("\"ShareInfo\":null","\"ShareInfo\":{\"Code\":\"PRIVATE\"}"));
+  let backup=format!("{{\"schema\":\"wand.preset.native-backup@1\",\"gameSchema\":643,\"kind\":\"native-decoration\",\"storage\":\"decoration\",\"baseItemId\":null,\"payload\":{}}}",payload);
+  assert!(decoration_replace_candidate(source.as_bytes(),&backup,1).is_err());
+  assert!(decoration_replace_candidate(source.as_bytes(),&backup,3).is_err());
+  let candidate=decoration_replace_candidate(source.as_bytes(),&backup,2).unwrap();
+  assert_eq!(decoration_slot_info(candidate.as_bytes()).unwrap(),(2,3));
+  assert!(candidate.contains("\"Other\":1e-70"));assert!(candidate.contains("PRIVATE"));assert!(candidate.contains("Deleted"));
+  let v:Value=serde_json::from_str(&candidate).unwrap();assert_eq!(v["World"]["DecorationPresets"][1]["PresetName"],"Scene");
+ }
+ #[test]
+ fn positive_base_stock_does_not_infer_missing(){
+  let raw=br#"{"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"Furniture","Inventory":{"40000001":{"Amount":2},"40000002":{"Amount":0}}},"1":{"ID":1,"CompatibleItemType":"ItemType_Clothing","Inventory":{"50000001":{"Amount":1}}}}}}"#;
+  assert_eq!(positive_base_stock(raw,"tom-furniture",40000001),Some(2));assert_eq!(positive_base_stock(raw,"tom-furniture",40000002),None);
+  assert_eq!(positive_base_stock(raw,"tom-furniture",40000003),None);assert_eq!(positive_base_stock(raw,"tom-clothing",50000001),Some(1));
  }
 }

@@ -1465,6 +1465,13 @@ mod browser_amount_preview {
             let patched=native_preset_backup::decoration_restore_candidate(original,backup).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
+        pub fn prepare_native_decoration_replace_experimental_copy(&mut self,backup:&str,slot:u32,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_NATIVE_DECORATION_REPLACE_REJECTED");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=native_preset_backup::decoration_replace_candidate(original,backup,slot as usize).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
         pub fn rehearse_tom_restore(&self,backup:&str)->Result<String,JsValue>{
             let invalid=||fail("DB05_TOM_REHEARSAL_REJECTED");
             if !self.ready||self.closed||self.copy_prepared{return Err(invalid());}

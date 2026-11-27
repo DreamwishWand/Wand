@@ -8,15 +8,17 @@ const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMess
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
  try{
-  if(!['index','backup','review','rehearse','decoration-export'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024)throw Error('request');
+  if(!['index','backup','review','rehearse','decoration-export','decoration-replace'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024)throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
   wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
-  if(data.command==='decoration-export'){
+  if(data.command==='decoration-export'||data.command==='decoration-replace'){
    if(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true||!(data.backup instanceof File))throw Error('test-only');
    const raw=await readPresetText(data.backup);
-   const copy=readExperimentalCopy(wasm.prepare_native_decoration_experimental_copy(raw,true),n=>wasm!.take_copy_chunk(n));
+   if(data.command==='decoration-replace'&&(!Number.isSafeInteger(data.slot)||data.slot<1||data.slot>4096))throw Error('slot');
+   const length=data.command==='decoration-replace'?wasm.prepare_native_decoration_replace_experimental_copy(raw,data.slot,true):wasm.prepare_native_decoration_experimental_copy(raw,true);
+   const copy=readExperimentalCopy(length,n=>wasm!.take_copy_chunk(n));
    scope.postMessage({kind:'decoration-copy',...copy},[copy.bytes.buffer]);return;
   }
   if(data.command==='index')scope.postMessage({kind:'index',result:JSON.parse(wasm.list_native_presets())});
