@@ -9,7 +9,9 @@ const rows=[
  ['显示碎片','全部收集','全部清除','清除所有已收集碎片？','部分碎片形状尚未验证。','选择碎片','碎片'],
  ['Mostrar peças','Coletar tudo','Limpar tudo','Limpar todas as peças coletadas?','Algumas formas não foram verificadas.','Selecionar peça','Peça']
 ] as const;
+const stateRows=[["セーブのピース状態は未確認","ピース表示を利用できません"],["Saved piece state unknown","Piece display unavailable"],["État des pièces de la sauvegarde inconnu","Affichage des pièces indisponible"],["Stato dei pezzi del salvataggio sconosciuto","Visualizzazione dei pezzi non disponibile"],["Spielstand-Teilstatus unbekannt","Teileanzeige nicht verfügbar"],["Estado de piezas de la partida desconocido","Vista de piezas no disponible"],["存档碎片状态未知","碎片显示不可用"],["Estado das peças do arquivo salvo desconhecido","Exibição de peças indisponível"]] as const;
 export function memoryPieceCopy(locale:string){
   const r=rows[languages.indexOf(locale)]??rows[1];
-  return {split:r[0],all:r[1],clear:r[2],confirmClear:r[3],unverified:r[4],select:r[5],piece:r[6]};
+  const state=stateRows[languages.indexOf(locale)]??stateRows[1];
+  return {unknown:state[0],unavailable:state[1],split:r[0],all:r[1],clear:r[2],confirmClear:r[3],unverified:r[4],select:r[5],piece:r[6]};
 }

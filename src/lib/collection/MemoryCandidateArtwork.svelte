@@ -5,7 +5,7 @@
   import {memoryCandidateFlags} from '$lib/media/saved-memory-flags';
   import {getMemorySources} from '$lib/media/memory-media';
   import {maskPreviewEligible} from '$lib/media/memory-mask-preview-evidence';
-  import {completeMemoryBits,recordedMemoryBits,exactMemoryHit} from '$lib/media/memory-piece-state';
+  import {completeMemoryBits,knownMemoryBits,exactMemoryHit,memoryMaskPixel} from '$lib/media/memory-piece-state';
   import type {CollectionEntry} from './runtime';
   export let itemId:number;
   export let flags:SavedMemoryFlags|null|undefined=undefined;
@@ -16,47 +16,47 @@
   export let showPieces=false;
   export let editable=false;
   export let disabled=false;
+  export let saveSelected=false;
+  export let unknownLabel='';
+  export let unavailableLabel='';
   export let onPiece:(bit:number)=>void=()=>{};
   let host:HTMLElement;
   let canvas:HTMLCanvasElement;
   let visible=false;
   let ready=false;
-  let mode:'contours'|'candidate'|'manual'|'complete'='contours';
+  let unavailable=false;
+  let mode:'contours'|'candidate'|'manual'|'complete'|'unknown'='contours';
   let controller:AbortController|null=null;
   let observer:IntersectionObserver|null=null;
   let maskBitmap:ImageBitmap|null=null;
   let maskHash='';
   let picking=false;
-  async function render(id:number,projection:SavedMemoryFlags|null|undefined,record:CollectionEntry|undefined,detail:boolean,active:boolean,split:boolean){
-    controller?.abort();controller=null;ready=false;
+  async function render(id:number,projection:SavedMemoryFlags|null|undefined,record:CollectionEntry|undefined,detail:boolean,active:boolean,split:boolean,hasSave:boolean){
+    controller?.abort();controller=null;ready=false;unavailable=false;
     if(canvas){canvas.width=1;canvas.height=1;}
     const source=getMemorySources(id);
     if(!source)return;
     const full=completeMemoryBits(source.numberOfShards);
-    const bits=recordedMemoryBits(record,source.numberOfShards);
+    const bits=knownMemoryBits(record,source.numberOfShards,hasSave);
     const eligible=maskPreviewEligible(source.mask.sha256,source.numberOfShards);
     const candidate=eligible?memoryCandidateFlags(projection,id,source.numberOfShards):null;
     const value=candidate??bits;
-    mode=candidate!==null?'candidate':value===full&&!split?'complete':eligible?'manual':'contours';
+    mode=candidate!==null?'candidate':value===null?'unknown':value===full&&!split?'complete':eligible?'manual':'contours';
     if(!active||mode==='complete')return;
     const request=new AbortController();controller=request;
     try{
       const {enqueueMemoryCandidate}=await import('$lib/media/memory-candidate-render');
       if(request.signal.aborted)return;
-      await enqueueMemoryCandidate(canvas,source,eligible?value:null,detail,request.signal);
+      await enqueueMemoryCandidate(canvas,source,eligible&&value!==null?value:null,detail,request.signal);
       if(!request.signal.aborted)ready=true;
-    }catch{/* Preserve ordinary artwork if original assets or GPU are unavailable. */}
+    }catch{if(!request.signal.aborted)unavailable=true;}
   }
-  $: void render(itemId,flags,entry,large,visible,showPieces);
+  $: void render(itemId,flags,entry,large,visible,showPieces,saveSelected);
   async function pick(event:MouseEvent){
     const source=getMemorySources(itemId),request=controller;
-    if(!editable||disabled||picking||!ready||mode==='contours'||!source||!request)return;
-    const rect=canvas.getBoundingClientRect();
-    const scale=Math.min(rect.width/canvas.width,rect.height/canvas.height);
-    const w=canvas.width*scale,h=canvas.height*scale;
-    const u=(event.clientX-rect.left-(rect.width-w)/2)/w;
-    const v=(event.clientY-rect.top-(rect.height-h)/2)/h;
-    if(u<0||u>=1||v<0||v>=1)return;
+    if(!editable||disabled||picking||!ready||mode!=='manual'||!source||!request)return;
+    const point=memoryMaskPixel(event.clientX,event.clientY,canvas.getBoundingClientRect(),canvas.width,canvas.height,source.mask.width,source.mask.height);
+    if(!point)return;
     picking=true;
     try{
       if(maskHash!==source.mask.sha256||!maskBitmap){
@@ -70,7 +70,7 @@
       const ctx=pixel.getContext('2d',{willReadFrequently:true});
       if(!ctx)return;
       ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(maskBitmap,Math.floor(u*maskBitmap.width),Math.floor(v*maskBitmap.height),1,1,0,0,1,1);
+      ctx.drawImage(maskBitmap,point.x,point.y,1,1,0,0,1,1);
       const bit=exactMemoryHit(ctx.getImageData(0,0,1,1).data,source.numberOfShards);
       if(bit!==null&&!request.signal.aborted)onPiece(bit);
     }catch{/* Ambiguous or unavailable mask pixels do not change records. */}
@@ -85,8 +85,15 @@
 </script>
 <span class="memory-candidate" bind:this={host} data-memory-candidate={ready?'rendered':'fallback'} data-memory-view={mode}>
   <canvas bind:this={canvas} hidden={!ready} role="img" aria-label={alt}></canvas>
-  {#if !ready}<ItemArtwork {itemId} {alt} {sourcePath} {large}/>{/if}
-  {#if editable&&ready&&mode!=='contours'}
+  {#if !ready}
+    <span class="memory-fallback" class:concealed={mode!=='complete'}>
+      <ItemArtwork {itemId} {alt} {sourcePath} {large}/>
+    </span>
+  {/if}
+  {#if mode==='unknown'||mode==='contours'||(unavailable&&mode!=='complete')}
+    <span class="memory-uncertain" role="img" aria-label={mode==='unknown'?unknownLabel:unavailableLabel} title={mode==='unknown'?unknownLabel:unavailableLabel}>?</span>
+  {/if}
+  {#if editable&&ready&&mode==='manual'}
     <button type="button" class="piece-hit" disabled={disabled||picking} aria-label={alt} on:click={pick}></button>
   {/if}
 </span>
@@ -94,6 +101,9 @@
   .memory-candidate{position:relative;display:grid;place-items:center;width:100%;height:100%;min-width:0;min-height:0}
   canvas{display:block;width:100%;height:100%;object-fit:contain}
   canvas[hidden]{display:none}
+  .memory-fallback{width:100%;height:100%;min-width:0;min-height:0;display:grid;place-items:center}
+  .memory-fallback.concealed{opacity:.25;filter:grayscale(1)}
+  .memory-uncertain{position:absolute;inset-inline-end:4px;inset-block-end:4px;display:grid;place-items:center;width:1.4em;height:1.4em;border-radius:50%;color:#fff;background:#34465c;border:1px solid #91b9dc;font-size:.85em;font-weight:700;pointer-events:none}
   .piece-hit{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent;cursor:crosshair}
   .piece-hit:disabled{cursor:default}
 </style>
