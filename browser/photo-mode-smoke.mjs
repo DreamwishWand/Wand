@@ -9,16 +9,18 @@ const byKind=kind=>Object.entries(index.items).find(([,row])=>row.male?.kind===k
 const companionOnly=Object.entries(index.items).find(([,row])=>row.male?.kind==='player'&&row.male?.companionIncluded===false)?.[0];
 const attached=Object.entries(index.items).find(([,row])=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true)?.[0];
 const expansion='120000009';
-assert.ok(index.items[expansion]?.male?.companionIncluded===false&&index.items[expansion]?.female?.companionIncluded===false,'new companion scene');
+assert.ok(index.items[expansion]?.male?.kind==='player'&&index.items[expansion]?.female?.kind==='player','new companion scene');
 const multi='120000197';
 assert.equal(Object.keys(index.variants).length,4);
 assert.equal(index.variants[multi].length,1);
 assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
-const ids=[byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi];
+const expandedActor='120000238';
+assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.items[expandedActor]?.female?.companionIncluded===true,'new actor scene');
+const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,202);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,128);
 assert.equal(Object.keys(index.items).length,255);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,36);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,110);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
@@ -52,8 +54,10 @@ try{
       assert.equal(await preview.locator('select').inputValue(),'0.5');
       const t=await seek.inputValue();
       const toggle=preview.locator('input[type=checkbox]');
-      assert.equal(await toggle.count(),i===1||i===3?1:0);
-      if(i===1||i===3){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
+      const option=index.items[id][b===0?'male':'female'];
+      const hasActor=option.kind==='pair'||option.companionIncluded===true;
+      assert.equal(await toggle.count(),hasActor?1:0);
+      if(hasActor){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
       const canvas=preview.locator('canvas');
       await canvas.focus();await canvas.press('ArrowRight');
       assert.equal(await seek.inputValue(),t);
