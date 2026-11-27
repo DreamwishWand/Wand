@@ -358,7 +358,7 @@ export function captureIndoorMixedScene(face:IndoorSurface|null,indices:readonly
 }
 export function indoorSceneClip(text:string,factor:1|2):{clip:DesignClipItem[];anchor:ScenePreset['anchor']}{
  const scene=convertSceneFactor(parseSceneAnyFactor(text),factor);
- if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400))throw Error('INDOOR_SCENE_UNSUPPORTED');
+ if(!scene||scene.items.length>ROOM_CUT_LIMIT||scene.items.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation)))throw Error('INDOOR_SCENE_UNSUPPORTED');
  return {clip:scene.items.map(p=>({...p,dx:p.dx*2/factor,dy:p.dy*2/factor})),anchor:scene.anchor};
 }
 export function indoorScenePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number){
