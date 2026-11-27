@@ -6,17 +6,17 @@ import {worldMoveEligible,exclusiveAnchorClass} from './saved-map-transform.ts';
 export const MAP_ALIGNMENT=['left','right','top','bottom','center-x','center-y','distribute-x','distribute-y'] as const;
 export type MapAlignment=typeof MAP_ALIGNMENT[number];
 type Bounds={object:SavedShapeObject;left:number;right:number;top:number;bottom:number};
-function occupiedBounds(map:SavedShapeMap,o:SavedShapeObject):Bounds|null{
+function occupiedBounds(map:SavedShapeMap,o:SavedShapeObject,free=false):Bounds|null{
  const shape=o.shapeKey?map.shapes[o.shapeKey]:null;
- if(!shape?.runs.length||!worldMoveEligible(o)||exclusiveAnchorClass(o.itemId))return null;
+ if(!shape?.runs.length||!worldMoveEligible(o,free)||exclusiveAnchorClass(o.itemId))return null;
  let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
  for(const run of shape.runs){left=Math.min(left,o.x+run.x);right=Math.max(right,o.x+run.x+run.width);top=Math.min(top,o.y+run.y);bottom=Math.max(bottom,o.y+run.y+1);}
  return [left,right,top,bottom].every(Number.isSafeInteger)&&right>left&&bottom>top?{object:o,left,right,top,bottom}:null;
 }
-export function alignmentTargets(map:SavedShapeMap,objects:readonly SavedShapeObject[],mode:MapAlignment):GroupTarget[]|null{
+export function alignmentTargets(map:SavedShapeMap,objects:readonly SavedShapeObject[],mode:MapAlignment,free=false):GroupTarget[]|null{
  const distribute=mode==='distribute-x'||mode==='distribute-y';
  if(!MAP_ALIGNMENT.includes(mode)||objects.length<(distribute?3:2)||new Set(objects.map(o=>o.localOrdinal)).size!==objects.length||objects.some(o=>o.localGridOrdinal!==objects[0].localGridOrdinal))return null;
- const bounds=objects.map(o=>occupiedBounds(map,o));if(bounds.some(v=>v===null))return null;
+ const bounds=objects.map(o=>occupiedBounds(map,o,free));if(bounds.some(v=>v===null))return null;
  const rows=bounds as Bounds[],horizontal=mode==='left'||mode==='right'||mode==='center-x'||mode==='distribute-x';
  const start=horizontal?'left':'top',end=horizontal?'right':'bottom';
  const low=Math.min(...rows.map(o=>o[start])),high=Math.max(...rows.map(o=>o[end]));

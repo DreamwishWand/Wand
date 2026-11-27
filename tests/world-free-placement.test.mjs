@@ -19,3 +19,18 @@ test('nonstandard placement falls back only to a unique source rectangle',()=>{
  assert.equal(mainlandFreeHits([g,h],new Map([['g',r],['h',r]]),1,-1).length,2);
  assert.equal(mainlandFreeHits([g],new Map([['g',r]]),4,-1).length,0);
 });
+
+import {alignmentTargets} from '../src/lib/world/map-alignment.ts';
+import {stageWorldTargets,emptyWorldTimeline,currentWorldEdits} from '../src/lib/world/saved-map-batch.ts';
+test('free alignment permits restricted furniture but not structural dependencies or networks',()=>{
+ const a=o,b={...o,localOrdinal:2,x:5,y:3};
+ const map={objects:[a,b],shapes:{[o.shapeKey]:{width:1,height:1,runs:[{x:0,y:0,width:1}]}}};
+ assert.equal(alignmentTargets(map,map.objects,'left'),null);
+ const targets=alignmentTargets(map,map.objects,'left',true);
+ assert.ok(targets);assert.deepEqual(targets.map(t=>[t.x,t.y]),[[1,1],[1,3]]);
+ const next=stageWorldTargets(map,emptyWorldTimeline(),targets,'test',true);
+ assert.ok(next);assert.equal(currentWorldEdits(next).length,1);
+ assert.equal(currentWorldEdits(next)[0].plan.replacementX,1);
+ assert.equal(alignmentTargets(map,[a,{...b,subgrid:{}}],'left',true),null);
+ assert.equal(alignmentTargets(map,[a,{...b,itemId:'40100068',layer:'ground'}],'left',true),null);
+});

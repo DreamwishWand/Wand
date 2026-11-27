@@ -193,7 +193,7 @@ export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],
  }
  const first=maps.get(items[0].area)!;
  const worldMap:SavedShapeMap={...first,objects,shapes};
- const targets:GroupTarget[]|null=typeof action==='number'?groupTargets(worldMap,objects,0,0,action,free):alignmentTargets(worldMap,objects,action);
+ const targets:GroupTarget[]|null=typeof action==='number'?groupTargets(worldMap,objects,0,0,action,free):alignmentTargets(worldMap,objects,action,free);
  if(!targets)return invalid;
  const byId=new Map(items.map(p=>[p.object.localOrdinal,p]));
  const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
