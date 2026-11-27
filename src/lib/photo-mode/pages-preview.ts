@@ -1,6 +1,7 @@
 import {openPrivateDiagnostic} from '../../../tools/photo-mode/gpu-scene-loader.ts';
 import {combine,attachCompanion,attachProp,verifyBlob,type BlobEntry,type ClipEntry,type Manifest,type ActorEntry,type ActorAnchor} from '../../../tools/photo-mode/split-loader.ts';
 import type {PoseScene} from './scene-session.ts';
+import {collectionItemHref,collectionItemIdFromSearch} from '../collection/item-permalink.ts';
 export const bodyTypes=['male','female'] as const;
 export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
@@ -77,9 +78,32 @@ export function poseRows(index:Pick<PreviewIndex,'items'|'variants'>,itemId:numb
   const id=String(itemId),first=index.items[id];
   return first?[first,...(index.variants?.[id]??[])]:[];
 }
-/** Only exact original player-clip hashes for both body types establish a shared pose. */
+/** Exact original player-clip hashes for both body types establish a shared pose. */
+export function poseSourceIdentity(row:PoseRow|undefined):string|null{
+  if(!row?.male||!row.female)return null;
+  return row.male.sourceSha256+'.'+row.female.sourceSha256;
+}
+export function relatedPoseMatches(index:Pick<PreviewIndex,'items'|'variants'>,itemId:number,poseIndex=0):{itemId:number;poseIndex:number;identity:string}[]{
+  const identity=poseSourceIdentity(poseRows(index,itemId)[poseIndex]);
+  if(!identity)return [];
+  return Object.keys(index.items).map(Number).sort((a,b)=>a-b).flatMap(id=>{
+    if(id===itemId)return [];
+    const match=poseRows(index,id).findIndex(row=>poseSourceIdentity(row)===identity);
+    return match>=0?[{itemId:id,poseIndex:match,identity}]:[];
+  });
+}
 export function relatedPoseItems(index:Pick<PreviewIndex,'items'|'variants'>,itemId:number,poseIndex=0):number[]{
-  const target=poseRows(index,itemId)[poseIndex];
-  if(!target||!bodyTypes.every(b=>target[b]))return [];
-  return Object.keys(index.items).map(Number).filter(id=>id!==itemId&&poseRows(index,id).some(row=>bodyTypes.every(b=>row[b]&&row[b]!.sourceSha256===target[b]!.sourceSha256))).sort((a,b)=>a-b);
+  return relatedPoseMatches(index,itemId,poseIndex).map(x=>x.itemId);
+}
+const poseIdentityPattern=/^[a-f0-9]{64}\.[a-f0-9]{64}$/;
+export function collectionPoseHref(base:string,itemId:number,identity:string):string{
+  check(poseIdentityPattern.test(identity),'Invalid pose identity');
+  return collectionItemHref(base,itemId)+'&pose='+identity;
+}
+export function collectionPoseFromSearch(index:Pick<PreviewIndex,'items'|'variants'>,itemId:number,search:string):number|null{
+  if(collectionItemIdFromSearch(search)!==itemId)return null;
+  const keys=new URLSearchParams(search).getAll('pose');
+  if(keys.length!==1||!poseIdentityPattern.test(keys[0]))return null;
+  const match=poseRows(index,itemId).findIndex(row=>poseSourceIdentity(row)===keys[0]);
+  return match>=0?match:null;
 }

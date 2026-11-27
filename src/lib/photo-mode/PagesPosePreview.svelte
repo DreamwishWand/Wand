@@ -2,9 +2,8 @@
   import {base} from '$app/paths';
   import {onMount} from 'svelte';
   import PosePreview from './PosePreview.svelte';
-  import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPreviewScene,relatedPoseItems,poseRows,type PreviewIndex} from './pages-preview.ts';
+  import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPreviewScene,relatedPoseMatches,collectionPoseHref,collectionPoseFromSearch,poseRows,type PreviewIndex} from './pages-preview.ts';
   import {poseCopy} from './preview-copy.ts';
-  import {collectionItemHref} from '$lib/collection/item-permalink.ts';
   let {itemId,locale,getRelatedName}:{itemId:number;locale:string;getRelatedName?:(id:number,locale:string)=>Promise<string|null>}=$props();
   let index=$state<PreviewIndex|null>(null);
   let expanded=$state(false);
@@ -27,11 +26,11 @@
   let secondaryPassOmitted=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===true&&o.secondaryPassOmitted===true}));
   let limboGeometryDiagnostic=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===true&&o.limboGeometryDiagnostic===true}));
   let mermaidDiagnostic=$derived(bodyTypes.some(b=>row?.[b]?.kind==='mermaid'));
-  let related=$derived(index?relatedPoseItems(index,itemId,poseIndex):[]);
-  let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async id=>({id,name:await getRelatedName!(id,locale).catch(()=>null)}))):Promise.resolve([]));
+  let related=$derived(index?relatedPoseMatches(index,itemId,poseIndex):[]);
+  let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async match=>({...match,name:await getRelatedName!(match.itemId,locale).catch(()=>null)}))):Promise.resolve([]));
   onMount(()=>{
     let alive=true;
-    void loadPagesPoseIndex(base).then(m=>{if(alive)index=m}).catch(()=>{});
+    void loadPagesPoseIndex(base).then(m=>{if(alive){index=m;if(m){const linked=collectionPoseFromSearch(m,itemId,window.location.search);if(linked!==null){selection={itemId,pose:linked};expanded=true}}}}).catch(()=>{});
     return()=>{alive=false};
   });
 </script>
@@ -54,8 +53,8 @@
         {@const found=items.filter(x=>x.name)}
         {#if found.length}
           <div class="related-poses"><strong>{copy.related}</strong>
-            {#each found as item (item.id)}
-              <a href={collectionItemHref(base,item.id)}>{item.name}</a>
+            {#each found as item (item.itemId)}
+              <a href={collectionPoseHref(base,item.itemId,item.identity)}>{item.name}{#if item.poseIndex>0} · {copy.pose} {item.poseIndex+1}{/if}</a>
             {/each}
           </div>
         {/if}

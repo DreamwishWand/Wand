@@ -119,4 +119,13 @@ try{
     }
     console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
   }
+  const alternate=index.variants[maxDog][0];
+  const identity=alternate.male.sourceSha256+'.'+alternate.female.sourceSha256;
+  await page.goto(base+'/collection/?item='+maxDog+'&pose='+identity);
+  const linked=page.locator('details.pose-test');
+  await linked.locator('.pose-variants button').nth(1).waitFor({timeout:60000});
+  assert.equal(await linked.getAttribute('open'),'');
+  assert.equal(await linked.locator('.pose-variants button').nth(1).getAttribute('aria-pressed'),'true');
+  await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+  console.log('Exact native alternate pose permalink ready:',maxDog);
 }finally{await browser?.close();server.kill('SIGTERM')}
