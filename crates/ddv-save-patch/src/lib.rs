@@ -1038,10 +1038,14 @@ pub fn preview_checked_building_transfer(source:&str,target:&GridCoordinateTarge
 
 /// Caller must additionally validate clone-specific native state and dependencies.
 pub fn preview_checked_building_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_checked_building_duplicate_oriented(source,target,expected,d,xy,orientation,orientation)
+}
+
+pub fn preview_checked_building_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||
-       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&replacement_orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
        xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
     validate_json_without_edit(source)?;
     let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
@@ -1071,7 +1075,7 @@ pub fn preview_checked_building_duplicate(source:&str,target:&GridCoordinateTarg
         let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
         Some(&source[range])
     }else{None};
-    insert_grid_record(source,d,target.item_id,xy,orientation,state)
+    insert_grid_record(source,d,target.item_id,xy,replacement_orientation,state)
 }
 
 /// Caller has validated the exact existing building, state and identity references.
