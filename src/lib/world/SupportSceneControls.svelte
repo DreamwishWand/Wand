@@ -46,7 +46,7 @@
   reset();const token=epoch,original=file;source=original;reading=true;
   try{if(f.size>262144)throw Error('size');const raw=await readPresetText(f,262144);if(epoch!==token||file!==original)return;
    let doc:SupportScene;try{doc=parseSupportScene(raw);}catch{
-    const flat=convertSceneFactor(parseSceneAnyFactor(raw),tree.factor);if(!flat||!tree.sourcePath||tree.objects.length||flat.items.length>32||!worker)throw Error('flat scene');
+    const flat=convertSceneFactor(parseSceneAnyFactor(raw),tree.factor);if(!flat||!tree.sourcePath||tree.objects.length||flat.items.length>32||flat.items.some(p=>!Number.isInteger(p.orientation))||!worker)throw Error('flat scene');
     flatRaw=raw;flatImport=true;const items=[...new Set(flat.items.map(p=>p.itemId))].flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));
     request=nextRequest();worker.postMessage({command:'support-shapes',requestId:request,factor:tree.factor,items,sourcePath:tree.sourcePath,ownerItemId});return;
    }scene=doc;requestShapes(doc);requestGeometry(doc);
