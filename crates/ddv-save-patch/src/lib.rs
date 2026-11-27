@@ -942,26 +942,17 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
-/// Duplicate an existing PlayerHouse exterior while retaining its shared
-/// interior binding. The codec resolves the source and allocator dependencies.
-pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+/// Verify the existing exterior and its shared interior without modifying it.
+fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<&'a serde_json::Map<String,serde_json::Value>,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
-    if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||target.grid_id!=d.grid_id||
-       !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
-       xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
-       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
-    validate_json_without_edit(source)?;
-    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
-    let world=root.get("World").ok_or(bad)?;
+    if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
     let c=world.get("GridCollection").ok_or(bad)?;
-    let grid=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(bad)?;
-    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    if !outdoor_world_path(scope,&d.data_path)||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
-       grid.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
-       grid.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
-       grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
-       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
+    let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
+    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
+       !grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s))||
+       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
     let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
     if o.len()!=6||o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        o.get("ID").and_then(Value::as_u64)!=target.object_id.parse::<u64>().ok()||
@@ -979,8 +970,65 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
     if interior.get("HouseItemID").and_then(Value::as_u64)!=Some(target.item_id)||
        interiors.iter().filter(|h|h.get("HouseItemID").and_then(Value::as_u64)==Some(target.item_id)).count()!=1||
        !interior.get("Floors").and_then(Value::as_array).is_some_and(|a|!a.is_empty()){return Err(bad);}
+    Ok(state)
+}
+
+/// Duplicate an existing PlayerHouse exterior within the same outdoor world.
+pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    if !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+       xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let world=root.get("World").ok_or(bad)?;
+    let state=checked_player_house_state(world,target,expected,orientation)?;
+    let c=world.get("GridCollection").ok_or(bad)?;
+    let grids=c.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+    let from=grids.get(&target.grid_id).ok_or(bad)?;
+    let to=grids.get(&d.grid_id).ok_or(bad)?;
+    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
+    if from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope)||
+       from.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+       !outdoor_world_path(scope,&d.data_path)||to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
+       to.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
+       to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
+       to.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
     let state_json=serde_json::to_string(state).map_err(|_|bad)?;
     insert_grid_record(source,d,target.item_id,xy,orientation,Some(&state_json))
+}
+
+/// Remove only an exterior when another exact exterior in the same world
+/// retains the same interior binding. Never delete the last exterior here.
+pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,verified_grids:&HashSet<String>)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let world=root.get("World").ok_or(bad)?;
+    let state=checked_player_house_state(world,target,expected,orientation)?;
+    let grids=world.get("GridCollection").and_then(|c|c.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
+    let scope=grids.get(&target.grid_id).and_then(|g|g.get("GridDefaultLayoutPath")).and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    let mut surviving=false;
+    for (gid,g) in grids{
+        if !verified_grids.contains(gid){continue;}
+        if g.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope){continue;}
+        let Some(objects)=g.get("Objects").and_then(Value::as_object) else{continue;};
+        for (oid,o) in objects{
+            if gid==&target.grid_id&&oid==&target.object_id||o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id){continue;}
+            let Some(x)=o.get("X").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()) else{continue;};
+            let Some(y)=o.get("Y").and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()) else{continue;};
+            let Some(turn)=o.get("Orientation").and_then(Value::as_str) else{continue;};
+            let other=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:oid.clone(),item_id:target.item_id};
+            if checked_player_house_state(world,&other,(x,y),turn).is_ok_and(|s|s==state){surviving=true;break;}
+        }
+        if surviving{break;}
+    }
+    if !surviving{return Err(bad);}
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+    let candidate=room_lexical_map_edit(source,path,&target.object_id,None)?;
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
 /// State-free landscape only, using an observed source record and a resolved outdoor

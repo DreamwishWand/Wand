@@ -8,7 +8,7 @@
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
- import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,playerHouseSourceEligible,playerHouseDuplicate,type StockCandidate} from './save-furniture-placement.ts';
+ import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,playerHouseSourceEligible,playerHouseDuplicate,playerHousePickup,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
@@ -37,9 +37,10 @@
  $: w=stockToolWords[locale]??stockToolWords.en;
  const landscapeWords={ja:['景観・樹木','景観を複製','景観を撤去','在庫は変更しません'],en:['Landscaping','Duplicate landscape','Remove landscape','Inventory unchanged'],fr:['Paysage','Dupliquer le paysage','Retirer le paysage','Inventaire inchangé'],it:['Paesaggio','Duplica paesaggio','Rimuovi paesaggio','Inventario invariato'],de:['Landschaft','Landschaft duplizieren','Landschaft entfernen','Inventar unverändert'],'es-ES':['Paisaje','Duplicar paisaje','Retirar paisaje','Inventario sin cambios'],'zh-CN':['景观与树木','复制景观','移除景观','库存不变'],'pt-BR':['Paisagem','Duplicar paisagem','Remover paisagem','Inventário inalterado']} as const;
  $: lw=landscapeWords[locale];
- const houseWords={ja:['家の外観を複製','同じ内装を共有します'],en:['Duplicate house exterior','Shares the same interior'],fr:['Dupliquer la maison','Même intérieur partagé'],it:['Duplica esterno casa','Interno condiviso'],de:['Hausfassade duplizieren','Gemeinsamer Innenraum'],'es-ES':['Duplicar exterior','Interior compartido'],'zh-CN':['复制房屋外观','共享同一室内空间'],'pt-BR':['Duplicar exterior da casa','Interior compartilhado']} as const;
+ const houseWords={ja:['家の外観を複製','同じ内装を共有します','外観のみ撤去'],en:['Duplicate house exterior','Shares the same interior','Remove exterior only'],fr:['Dupliquer la maison','Même intérieur partagé','Retirer l’extérieur'],it:['Duplica esterno casa','Interno condiviso','Rimuovi esterno'],de:['Hausfassade duplizieren','Gemeinsamer Innenraum','Nur Fassade entfernen'],'es-ES':['Duplicar exterior','Interior compartido','Retirar solo exterior'],'zh-CN':['复制房屋外观','共享同一室内空间','仅移除外观'],'pt-BR':['Duplicar exterior da casa','Interior compartilhado','Remover só o exterior']} as const;
  $: hw=houseWords[locale];
- $: houseCandidate=!!candidate&&candidate.plan.action==='duplicate'&&Math.floor(Number(candidate.plan.itemId)/100000)===205;
+ $: houseCandidate=!!candidate&&Math.floor(Number(candidate.plan.itemId)/100000)===205;
+ $: canRemoveHouse=!!playerHousePickup(chosen,objects);
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
  $: ow=stockFootprintWords[locale]??stockFootprintWords.en;
  $: footprint=candidate&&candidate.plan.action!=='remove'?stockFootprintFeedback(candidate,objects,omitted):null;
@@ -78,6 +79,11 @@
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file||!playerHouseSourceEligible(chosen))return;
   const p=chosen;cancel();onBegin();itemId=Number(p.object.itemId);source=p;orientation=p.object.orientation as Cardinal;placing=true;
  }
+ function pickupHouse(){
+  if(!testExport||!freePlacement||blocked||!canStart||!open||!file)return;
+  const p=chosen,q=playerHousePickup(p,objects);if(!p||!q)return;
+  cancel();onBegin();source=p;candidate=q;run(true,false,true);
+ }
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
  export function pick(p:{x:number;y:number}){if(!placing||blocked||!canStart||shapeRequests.size||status==='working')return;
@@ -91,7 +97,7 @@
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&!house&&(status!=='valid'||!stockChange)))return;
   const q=candidate,f=file;
   const command=house?'group-paste-export':landscape?'landscape-export':exporting?'furniture-stock-export':'furniture-stock-preview';
-  const plan=house&&q.plan.action==='duplicate'&&source?{playerHouseDuplicate:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y}}:q.plan;
+  const plan=house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{playerHouseDuplicate:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y}}:{playerHouseRemove:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):q.plan;
   ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
   const finish=(data:unknown)=>{
@@ -118,7 +124,7 @@
   <div class="palette-head"><strong>{w[0]}</strong><button type="button" aria-label={w[8]} on:click={onClose}>×</button></div>
   {#if blocked||!canStart}<small role="status">{w[12]}</small>{:else}
    {#if testExport&&chosen&&landscapeSourceEligible(chosen,freePlacement)&&!placing&&!candidate}<div class="palette-actions"><button type="button" disabled={!freePlacement&&chosen.object.editRestrictions?.move!=='allowedFlag'} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{lw[1]}</button><button type="button" on:click={pickup}>{lw[2]}</button></div><small>{lw[3]}</small>{/if}
-   {#if testExport&&freePlacement&&playerHouseSourceEligible(chosen)&&!placing&&!candidate}<div class="palette-actions"><button type="button" on:click={beginHouse}>{hw[0]}</button></div><small>{hw[1]}</small>{/if}
+   {#if testExport&&freePlacement&&playerHouseSourceEligible(chosen)&&!placing&&!candidate}<div class="palette-actions"><button type="button" on:click={beginHouse}>{hw[0]}</button><button type="button" disabled={!canRemoveHouse} on:click={pickupHouse}>{hw[2]}</button></div><small>{hw[1]}</small>{/if}
    {#if chosen&&stockSourceEligible(chosen,freePlacement)&&!placing&&!candidate}
     <div class="palette-actions"><button type="button" disabled={!duplicateEligible} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{w[4]}</button><button type="button" disabled={!counts?.has(Number(chosen.object.itemId))} on:click={pickup}>{w[5]}</button></div>
    {/if}
