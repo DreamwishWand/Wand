@@ -37,7 +37,7 @@
  $: if(worker!==seen)subscribe(worker);
  $: if(file!==lastFile||room!==lastRoom){lastFile=file;lastRoom=room;reset();}
  let lastFile=file,lastRoom=room,lastFree=freePlacement;
- $: if(freePlacement!==lastFree){lastFree=freePlacement;epoch++;busy=false;reset();}
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;epoch++;writer?.terminate();writer=null;reader?.terminate();reader=null;rejectRead?.(Error('mode changed'));rejectRead=null;busy=false;reset();}
  function subscribe(next:Worker){seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('worker changed'));requests.clear();seen=next;seen.addEventListener('message',receive);}
  function receive(e:MessageEvent){const d=e.data,p=requests.get(d?.requestId);if(!p)return;requests.delete(d.requestId);if(d.kind==='error')p.reject(Error('worker'));else p.resolve(d);}
  function request(own:Worker,data:Record<string,unknown>):Promise<any>{if(!alive||own!==worker)return Promise.reject(Error('worker'));return new Promise((resolve,reject)=>{const id=nextRequest();requests.set(id,{resolve,reject});try{own.postMessage({...data,requestId:id});}catch{requests.delete(id);reject(Error('request'));}});}
