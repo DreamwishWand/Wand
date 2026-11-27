@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];removeKind?:'room'|'floor';resize?:{current:string;options:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -35,10 +35,11 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  if(!record(value)||value.contract!=='wand.db05.indoor-rooms@1'||value.geometryVerified!==false||value.writerAuthorized!==false||!Array.isArray(value.rooms)||value.rooms.length>2048)throw Error('INDOOR_REPORT_INVALID');
  let total=0;const roomSlots=new Set<string>();
  return value.rooms.map((room,i)=>{
-  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','removeKind','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   if(typeof room.roomSlot==='number'){const address=room.house+':'+room.floor+':'+room.roomSlot;if(roomSlots.has(address))throw Error('INDOOR_ROOM_ADDRESS');roomSlots.add(address);}
   if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,19)||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
+  const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
   const slots=room.addRoomSlots;if(slots!==undefined&&(!Array.isArray(slots)||slots.length<1||slots.length>3||new Set(slots).size!==slots.length||slots.some(n=>!integer(n,1,3))||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_ADD_ROOM_INVALID');
   const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).length!==2||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)))throw Error('INDOOR_RESIZE_INVALID');
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
@@ -56,7 +57,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    }
    return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
-  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove}:{}),ceiling:room.ceiling,surfaces};
+  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[],addRoomSizes:sizes as string[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove}:{}),ceiling:room.ceiling,surfaces};
  });
 }
 export const indoorWords={
@@ -533,7 +534,7 @@ export const floorAppendWords={
 } as const;
 
 export function indoorAddRoomPlan(room:IndoorRoom|null,slot:number,size:string){
- if(room?.houseItemId!==20500000||room.roomSlot!==0||!room.addRoomSlots?.includes(slot)||!['10x10','12x12'].includes(size))return null;
+ if(room?.houseItemId!==20500000||room.roomSlot!==0||!room.addRoomSlots?.includes(slot)||!room.addRoomSizes?.includes(size))return null;
  return {house:room.house,houseItemId:room.houseItemId,floor:room.floor,slot,size};
 }
 export const addRoomWords={
