@@ -981,6 +981,18 @@ pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item
     insert_grid_record(source,d,item_id,xy,orientation,Some(&state))
 }
 
+/// Native room templates may contain object zero and empty counters at zero.
+/// Preserve existing zero records, but allocate only positive fresh identities.
+/// This exception is scoped to validated room surfaces, not outdoor grids.
+pub fn room_grid_next_object_id(grid:&serde_json::Value)->Result<u32,PatchError>{
+ use serde_json::Value;
+ let path=grid.get("GridDataPath").and_then(Value::as_str).ok_or(PatchError::InvalidTarget)?;
+ if !path.starts_with("GridData/Rooms/Room")&&!path.starts_with("GridData/Rooms/Wall"){return Err(PatchError::InvalidTarget);}
+ let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::InvalidTarget)?;
+ let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(PatchError::InvalidTarget)?;
+ if map.len()>=100_000||map.iter().any(|(key,obj)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||obj.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(PatchError::AmbiguousTarget);}
+ Ok(next.max(1))
+}
 fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str,state:Option<&str>)->Result<GridCoordinateDraft,PatchError>{
     let selector=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:destination.grid_id.clone(),object_id:"1".into(),item_id};
     let mut locator=JsonLocator::grid_axis(intermediate,&selector,"X")?;
@@ -992,10 +1004,17 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
     let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
     let mr=span(&objects)?;let cr=span(&counter)?;
     let map:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&intermediate[mr.clone()]).map_err(|_|PatchError::InvalidDocument)?;
-    let next=intermediate[cr.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
-    if map.len()>=100_000||next==0||map.iter().any(|(key,obj)|key.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=*key||n>=next||obj.get("ID").and_then(|v|v.as_u64())!=Some(n as u64))){
-        return Err(PatchError::AmbiguousTarget);
-    }
+    let raw_next=intermediate[cr.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
+    let room=destination.layout_path.is_empty()&&(destination.data_path.starts_with("GridData/Rooms/Room")||destination.data_path.starts_with("GridData/Rooms/Wall"));
+    let next=if room{
+        let root:serde_json::Value=serde_json::from_str(intermediate).map_err(|_|PatchError::InvalidDocument)?;
+        let grid=&root["World"]["GridCollection"]["Grids"][&destination.grid_id];
+        if grid["GridDataPath"].as_str()!=Some(destination.data_path.as_str())||grid["NextGridObjectID"].as_u64()!=Some(u64::from(raw_next)){return Err(PatchError::AmbiguousTarget);}
+        room_grid_next_object_id(grid)?
+    }else{
+        if map.len()>=100_000||raw_next==0||map.iter().any(|(key,obj)|key.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=*key||n>=raw_next||obj.get("ID").and_then(|v|v.as_u64())!=Some(n as u64))){return Err(PatchError::AmbiguousTarget);}
+        raw_next
+    };
     let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
     let suffix=state.map(|s|format!(",\"State\":{}",s)).unwrap_or_default();
     let member=format!("{}\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"{}}}",
