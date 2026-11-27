@@ -5,7 +5,7 @@ export type View={x:number;y:number;width:number;height:number};
 export type ImageLayer=Layer&{kind:'texture'|'sdf';imageSha256:string;size:readonly [number,number];wrap:readonly [number,number]};
 export type MaskSpec={kind:'rect';overlayToMaskUv:Affine}|{kind:'alpha';overlayToMaskUv:Affine;image:ImageLayer};
 export type NativeMapProgress={done:number;total:number};
-export type ImageSource=(layer:ImageLayer,signal?:AbortSignal)=>Promise<ImageBitmap>;
+export type ImageSource=((layer:ImageLayer,signal?:AbortSignal)=>Promise<ImageBitmap>)&{beginFrame?:(signal?:AbortSignal)=>{source:ImageSource;prefetch:(rows:readonly ImageLayer[])=>void;dispose:()=>void}};
 const vertex=`#version 300 es
 precision highp float;
 uniform vec2 a,b,c,origin,span;
@@ -42,6 +42,7 @@ void main(){
   color.a*=inside*(maskKind==2?texture(maskTex,m).a:1.0);
  }
 }`;
+function textureKey(row:ImageLayer){return [row.imageSha256,...row.size,...row.wrap,row.colorSpace].join(':');}
 function check(ok:unknown,message:string):asserts ok{if(!ok)throw new Error(message);}
 export function intersects(m:Affine,v:View):boolean{
  const [a,b,c,d,x,y]=m;
@@ -95,33 +96,50 @@ export class NativeMapRenderer{
   check(!this.busy&&!this.disposed,'Renderer unavailable');check([view.x,view.y,view.width,view.height].every(Number.isFinite)&&view.width>0&&view.height>0,'Invalid viewport');
   layers.forEach(validateLayer);this.busy=true;const g=this.gl;const u=this.uniforms;let drawn=0,skipped=0;
   if(this.source!==source){this.clearTextures();this.source=source;}
+  let frame:ReturnType<NonNullable<ImageSource['beginFrame']>>|undefined;
   try{
-   signal?.throwIfAborted();check(!g.isContextLost(),'Context lost');g.viewport(0,0,g.drawingBufferWidth,g.drawingBufferHeight);g.useProgram(this.program);g.bindVertexArray(this.vao);
+   signal?.throwIfAborted();frame=source.beginFrame?.(signal);const read=frame?.source??source;
+   const visible=layers.filter(l=>intersects(l.unitQuadToCanvas,view));let visibleIndex=0;
+   check(!g.isContextLost(),'Context lost');g.viewport(0,0,g.drawingBufferWidth,g.drawingBufferHeight);g.useProgram(this.program);g.bindVertexArray(this.vao);
    g.disable(g.DEPTH_TEST);g.disable(g.CULL_FACE);g.disable(g.SCISSOR_TEST);g.disable(g.STENCIL_TEST);g.disable(g.DITHER);g.colorMask(true,true,true,true);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);
    g.enable(g.BLEND);g.blendEquation(g.FUNC_ADD);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);
    g.uniform2f(u.origin,view.x,view.y);g.uniform2f(u.span,view.width,view.height);g.uniform1i(u.tex,0);g.uniform1i(u.maskTex,1);
-   const total=layers.filter(l=>intersects(l.unitQuadToCanvas,view)).length;
-   onProgress?.({done:0,total});
+   onProgress?.({done:0,total:visible.length});
    for(const l of layers){
     signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');if(!intersects(l.unitQuadToCanvas,view)){skipped++;continue;}
+    if(frame){
+     const rows:ImageLayer[]=[],seen=new Set<string>();
+     for(let i=visibleIndex;i<visible.length&&rows.length<3;i++){
+      const v=visible[i],images:ImageLayer[]=[];
+      if(v.kind!=='fill')images.push(v as ImageLayer);
+      if(v.mask?.kind==='alpha')images.push(v.mask.image);
+      for(const row of images){
+       if(rows.length>=3)break;
+       const key=textureKey(row);
+       if(!this.textures.has(key)&&!seen.has(row.imageSha256)){seen.add(row.imageSha256);rows.push(row);}
+      }
+     }
+     frame.prefetch(rows);
+    }
+    visibleIndex++;
     const [a,b,c,d,x,y]=l.unitQuadToCanvas;g.uniform2f(u.a,a,b);g.uniform2f(u.b,c,d);g.uniform2f(u.c,x,y);g.uniform4f(u.tint,...l.rgba);g.uniform1i(u.kind,l.kind==='fill'?0:l.kind==='texture'?1:2);
     const held=new Set<WebGLTexture>(),temporary=new Set<WebGLTexture>();
     try{
-     const main=l.kind==='fill'?null:await this.acquireTexture(l as ImageLayer,source,held,temporary,signal);
-     const mask=l.mask?.kind==='alpha'?await this.acquireTexture(l.mask.image,source,held,temporary,signal):null;
+     const main=l.kind==='fill'?null:await this.acquireTexture(l as ImageLayer,read,held,temporary,signal);
+     const mask=l.mask?.kind==='alpha'?await this.acquireTexture(l.mask.image,read,held,temporary,signal):null;
      signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');
      g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,main);
      g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,mask);
      g.uniform1i(u.maskKind,l.mask?.kind==='alpha'?2:l.mask?1:0);
      if(l.mask){const [a,b,c,d,x,y]=l.mask.overlayToMaskUv;g.uniform2f(u.maskA,a,b);g.uniform2f(u.maskB,c,d);g.uniform2f(u.maskC,x,y);}
-     g.drawArrays(g.TRIANGLE_STRIP,0,4);check(g.getError()===g.NO_ERROR,'WebGL draw failed');drawn++;onProgress?.({done:drawn,total});
+     g.drawArrays(g.TRIANGLE_STRIP,0,4);check(g.getError()===g.NO_ERROR,'WebGL draw failed');drawn++;onProgress?.({done:drawn,total:visible.length});
     }finally{for(const t of temporary)g.deleteTexture(t);}
    }
    g.flush();return {drawn,skipped};
-  }finally{this.busy=false;}
+  }finally{try{frame?.dispose();}finally{this.busy=false;}}
  }
  private async acquireTexture(row:ImageLayer,source:ImageSource,held:Set<WebGLTexture>,temporary:Set<WebGLTexture>,signal?:AbortSignal){
-  const g=this.gl,key=[row.imageSha256,...row.size,...row.wrap,row.colorSpace].join(':');
+  const g=this.gl,key=textureKey(row);
   const cached=this.textures.get(key);
   if(cached){this.textures.delete(key);this.textures.set(key,cached);held.add(cached.texture);return cached.texture;}
   const bytes=row.size[0]*row.size[1]*4,bitmap=await source(row,signal);

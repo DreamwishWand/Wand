@@ -62,3 +62,41 @@ test('encoded cache evicts LRU entries and never stores failed decodes',async()=
   assert.equal(calls,4);
  }finally{if(old)globalThis.createImageBitmap=old;else delete globalThis.createImageBitmap;}
 });
+
+test('frame prefetch overlaps three verified encoded reads and does not decode ahead',async()=>{
+ const payloads=Array.from({length:4},(_,i)=>Uint8Array.from({length:20},(_,j)=>i+j));
+ const rows=payloads.map(b=>({...layer,imageSha256:createHash('sha256').update(b).digest('hex')}));
+ const manifest={...doc,images:Object.fromEntries(rows.map(r=>[r.imageSha256,{width:2,height:2,bytes:20}])),maps:[{...doc.maps[0],locked:rows,unlocked:rows}]};
+ const waiting=new Map();let calls=0,decodes=0;
+ const pack=parseNativeCdnPreview(manifest,async url=>{
+  calls++;const sha=rows.find(r=>String(url).includes(r.imageSha256)).imageSha256;
+  return new Promise(resolve=>waiting.set(sha,()=>resolve(response(payloads[rows.findIndex(r=>r.imageSha256===sha)]))));
+ });
+ const old=globalThis.createImageBitmap;const frame=pack.source.beginFrame();
+ try{
+  globalThis.createImageBitmap=async()=>{decodes++;return {width:2,height:2,close(){}}};
+  frame.prefetch(rows);assert.equal(calls,3);assert.equal(decodes,0);
+  waiting.get(rows[2].imageSha256)();waiting.get(rows[1].imageSha256)();
+  const first=frame.source(rows[0]);waiting.get(rows[0].imageSha256)();(await first).close();
+  assert.equal(decodes,1);assert.equal(calls,3);
+  frame.prefetch(rows.slice(1));assert.equal(calls,4);
+  waiting.get(rows[3].imageSha256)();
+  for(const row of rows.slice(1))(await frame.source(row)).close();
+  assert.equal(decodes,4);assert.equal(calls,4);
+  (await pack.source(rows[0])).close();assert.equal(calls,4);
+ }finally{frame.dispose();if(old)globalThis.createImageBitmap=old;else delete globalThis.createImageBitmap;}
+});
+test('frame disposal aborts speculative requests; rejected reads never become verified cache hits',async()=>{
+ let calls=0;let signal;
+ const pack=parseNativeCdnPreview(doc,async(_url,init)=>{
+  calls++;signal=init.signal;
+  if(calls===1)return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));
+  return response(bytes);
+ });
+ const frame=pack.source.beginFrame();
+ frame.prefetch([layer]);assert.equal(calls,1);frame.dispose();assert.equal(signal.aborted,true);
+ await assert.rejects(frame.source(layer));
+ const old=globalThis.createImageBitmap;
+ try{globalThis.createImageBitmap=async()=>({width:2,height:2,close(){}});(await pack.source(layer)).close();assert.equal(calls,2);}
+ finally{if(old)globalThis.createImageBitmap=old;else delete globalThis.createImageBitmap;}
+});
