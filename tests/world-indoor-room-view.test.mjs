@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorCeilingFinishPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -313,4 +313,19 @@ test('shrink recovery requires explicit size and exact return count',()=>{
  assert.deepEqual(indoorRoomResizePlan(p,'3x3'),{roomOrdinal:1,expected:'6x6',size:'3x3',recoverCount:2});
  assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,recoveryOptions:[['3x3',0]]}}])));
  assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,options:['3x3']}}])));
+});
+
+test('removal plan carries explicit recovered furniture count',()=>{
+ const r={...room,houseItemId:20500000,roomSlot:0,floor:2,removeKind:'floor',removeRecoverCount:7};
+ const p=parseIndoorRooms(report([r]))[0];
+ assert.deepEqual(indoorRemoveRoomPlan(p),{house:1,houseItemId:20500000,floor:2,slot:0,kind:'floor',recoverCount:7});
+ assert.throws(()=>parseIndoorRooms(report([{...r,removeRecoverCount:0}])));
+ assert.throws(()=>parseIndoorRooms(report([{...r,removeKind:undefined}])));
+});
+test('ceiling plan uses existing scalar and only flooring IDs',()=>{
+ const r={...room,ceiling:160100136,surfaces:[{...room.surfaces[0]},...Array.from({length:4},(_,i)=>({...room.surfaces[0],kind:'wall',wallPosition:i,ordinal:i+2}))]};
+ assert.deepEqual(indoorCeilingFinishPlan(r,160100031),{roomOrdinal:1,itemId:160100031,kind:'ceiling',wall:null,expected:160100136});
+ assert.equal(indoorCeilingFinishPlan(r,160000000),null);
+ assert.equal(indoorCeilingFinishPlan(r,160100136),null);
+ assert.equal(indoorCeilingFinishPlan({...r,ceiling:null},160100031),null);
 });

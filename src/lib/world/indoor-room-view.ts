@@ -603,3 +603,8 @@ export const removeRecoveryWords={
  'zh-CN':['件家具将在删除前返回库存。','删除房间及连接门。','删除顶层全部房间及电梯。'],
  'pt-BR':[' móveis retornarão ao estoque antes da remoção.','Remover cômodo e portas.','Remover todos os cômodos e o elevador do último andar.']
 } as const;
+
+export function indoorCeilingFinishPlan(room:IndoorRoom|null,itemId:number){
+ if(!room||!integer(room.ceiling,0,2147483647)||!integer(itemId,160100000,160199999)||room.ceiling===itemId||room.surfaces.length!==5||room.surfaces.slice(1).some((s,i)=>s.wallPosition!==i))return null;
+ return {roomOrdinal:room.ordinal,itemId,kind:'ceiling' as const,wall:null,expected:room.ceiling};
+}
