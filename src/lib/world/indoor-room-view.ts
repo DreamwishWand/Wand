@@ -370,11 +370,37 @@ export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly num
  if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const counts=new Map<number,number>(),clip:DesignClipItem[]=[];
  for(const i of indices){
-  const o=tree.objects[i];if(!o||face.positions[i]?.storage||!(free?face.positions[i]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
+  const o=tree.objects[i];if(!o||face.positions[i]?.storage||face.positions[i]?.storageKnown||!(free?face.positions[i]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
   const count=(counts.get(o.itemId)??0)+1;if(count>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,count);
   clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:(worldOrientationCode(o.orientation)??-4)/4});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));return clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
+}
+export type IndoorStorageCloneSource=Omit<NonNullable<IndoorPlace['storageSource']>,'copyContents'>;
+export function indoorStorageDuplicateSelection(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false){
+ const tree=indoorEditableTree(face);
+ if(!tree||face?.kind!=='floor'||!face.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+ const clip:DesignClipItem[]=[],sources:(IndoorStorageCloneSource|null)[]=[],counts=new Map<number,number>();
+ for(const i of indices){
+  const o=tree.objects[i],p=face.positions[i];if(!o||!p||p.protected||!allowed.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!(p.storage===true&&isCardinal(o.orientation)||p.plain===true&&!p.storageKnown)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i)))return null;
+  const code=worldOrientationCode(o.orientation);if(code===null)return null;
+  const n=(counts.get(o.itemId)??0)+1;if(n>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,n);
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:code/4});
+  sources.push(p.storage?{index:i,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation}:null);
+ }
+ if(!sources.some(Boolean))return null;
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
+ return {clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),sources};
+}
+export function indoorStorageDuplicatePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],sources:readonly (IndoorStorageCloneSource|null)[],copyContents:boolean,x:number,y:number,free=false):IndoorPlace[]|null{
+ if(!face||clip.length!==sources.length||!sources.some(Boolean))return null;
+ const tree=indoorEditableTree(face);if(!tree)return null;
+ for(const [i,s] of sources.entries()){
+  if(!s)continue;
+  const o=tree.objects[s.index];if(!o||!face.positions[s.index]?.storage||o.itemId!==clip[i].itemId||o.x!==s.expectedX||o.y!==s.expectedY||o.orientation!==s.expectedOrientation||!Number.isInteger(clip[i].orientation))return null;
+ }
+ const rows=indoorGroupPlace(face,shapes,allowed,stock,clip,x,y,free);
+ return rows?.map((p,i)=>{const s=sources[i];return s?{...p,storageSource:{...s,copyContents}}:p;})??null;
 }
 export function indoorGroupPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],x:number,y:number,free=false):IndoorPlace[]|null{
  const tree=indoorEditableTree(face);
