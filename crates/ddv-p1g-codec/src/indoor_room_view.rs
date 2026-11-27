@@ -837,6 +837,23 @@ mod tests{
   plan["transfer"][0]["orientation"]=json!("GridOrientation_Left");plan["transfer"][0].as_object_mut().unwrap().remove("storage");assert!(furniture_candidate(raw,&plan.to_string()).is_err());
  }
  #[test]
+ fn storage_duplicate_allocates_independent_container_and_preserves_original(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40001680":{"Amount":2}}}},"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"BlockMoveTo":false,"ExtraSize":0}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
+  let old:Value=serde_json::from_slice(raw).unwrap();
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"place":[{"itemId":40001680,"expectedStock":2,"x":3,"y":3,"orientation":"GridOrientation_Left","storageSource":{"index":0,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","copyContents":true}}]});
+  let draft=furniture_candidate(raw,&plan.to_string()).unwrap();let after:Value=serde_json::from_str(&draft.patched_json).unwrap();
+  assert_eq!(after["Player"]["ContainerInventories"]["9"],old["Player"]["ContainerInventories"]["9"]);
+  assert_eq!(after["Player"]["ContainerInventories"]["10"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
+  assert_eq!(after["Player"]["ContainerInventories"]["10"]["ID"],10);assert_eq!(after["Player"]["NextContainerInventoryID"],11);
+  assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],1);
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],old["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);assert!(draft.patched_json.contains("1e2"));
+  plan["place"][0]["storageSource"]["copyContents"]=json!(false);
+  let empty:Value=serde_json::from_str(&furniture_candidate(raw,&plan.to_string()).unwrap().patched_json).unwrap();assert_eq!(empty["Player"]["ContainerInventories"]["10"]["Inventory"],json!([]));
+  let mut invalid=old.clone();invalid["World"]["Unknown"]=json!({"ContainerInventoryID":10});assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
+  let mut stateful=old;stateful["Player"]["ContainerInventories"]["9"]["Inventory"][0]["State"]=json!({"Unknown":1});plan["place"][0]["storageSource"]["copyContents"]=json!(true);assert!(furniture_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
+ }
+ #[test]
  fn storage_root_moves_without_changing_container_or_state(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"Unknown":1e2}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}},"2":{"ID":2,"ItemID":40000001,"X":6,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"edits":[{"index":0,"itemId":40001680,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":6,"y":2,"orientation":"GridOrientation_Left"}]});
