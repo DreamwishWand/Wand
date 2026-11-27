@@ -381,6 +381,31 @@ fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecErr
     Ok((row["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor,row["sizeY"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor))
 }
 
+/// Only ordinary leaf furniture, on a proven factor-one outdoor Grid.
+pub(super) fn validate_oblique_grid_edits(profile:&[u8],edits:&[ddv_save_patch::GridMixedEdit])->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    for e in edits{
+        let grid=&root["World"]["GridCollection"]["Grids"][&e.target.grid_id];
+        let obj=&grid["Objects"][&e.target.object_id];
+        let diagonal=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
+        let old=obj["Orientation"].as_str().unwrap_or("");
+        if !diagonal(old)&&!e.orientation.as_ref().is_some_and(|(a,b)|diagonal(a)||diagonal(b)){continue;}
+        if root["GameInfo"]["Version"].as_u64()!=Some(643)||e.target.kind!=GridObjectKind::Full||e.target.item_id/100_000!=400||
+           grid["ID"].as_u64()!=key_id(&e.target.grid_id)||obj["ID"].as_u64()!=key_id(&e.target.object_id)||
+           grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(1)||
+           root["World"]["GridCollection"].get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&e.target.grid_id)))||
+           obj.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+           obj.get("State").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.is_empty()))||
+           !ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old)||
+           grid_identity_dependencies(profile,&e.target)?.blocking()>0{return Err(bad);}
+        let (sx,sy)=building_transform_grid_size(&root,&e.target.grid_id)?;
+        let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx&&(y as u64)<sy;
+        if !valid(e.expected)||e.position.is_some_and(|p|!valid(p)){return Err(bad);}
+    }
+    Ok(())
+}
+
 /// Validate the native category's state envelope; nested data is not
 /// reconstructed or normalized by the lexical transform. Unknown oneof
 /// cases are unsupported, and identity references are checked separately.
