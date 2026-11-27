@@ -17,21 +17,7 @@ fn room_terrain(catalog:&Value,path:&str,kind:&str)->Option<Value>{
 fn terrain_catalog()->Result<Value,CodecError>{
  serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|CodecError::Json)
 }
-// A storage root may share a container with another native object. A
-// coordinate-only edit never reallocates, copies, or mutates that container.
-fn storage_pose(root:&Value,obj:&Value)->bool{
- let Some(state)=obj.get("State").and_then(Value::as_object).filter(|s|s.len()==1)else{return false;};
- let Some(s)=state.get("Storage").and_then(Value::as_object)else{return false;};
- if s.keys().any(|k|!matches!(k.as_str(),"ContainerInventoryID"|"DefaultContainerInventoryData"|"UnlockKeyItemID"|"UnlockLocId"|"DesignID"))||
-    s.get("DefaultContainerInventoryData").and_then(Value::as_str).is_none_or(str::is_empty)||
-    s.get("UnlockKeyItemID").is_some_and(|v|v.as_u64().is_none())||
-    s.get("UnlockLocId").is_some_and(|v|v.as_str().is_none())||
-    s.get("DesignID").is_some_and(|v|!v.is_null()){return false;}
- let Some(id)=s.get("ContainerInventoryID").and_then(Value::as_u64).filter(|n|*n>0&&*n<=u32::MAX as u64)else{return false;};
- let c=&root["Player"]["ContainerInventories"][id.to_string()];
- c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
- c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
-}
+use ddv_save_patch::storage_pose;
 pub(super) fn project(source:&[u8])->Result<String,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
  let world=root.get("World").and_then(Value::as_object).ok_or(CodecError::Json)?;
@@ -272,7 +258,7 @@ pub(super) fn resize_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::G
 /// With no source room raster, only identical-footprint rotation/swap (UI
 /// geometry witness) and stock pickup are enabled. No arbitrary new cells.
 /// Resolve a cut witness from an exact owned floor, independently of UI state.
-fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected:(i32,i32),old:&str,support_factor:Option<u32>,free:bool)->Result<ddv_save_patch::GridCoordinateTarget,CodecError>{
+fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected:(i32,i32),old:&str,support_factor:Option<u32>,free:bool,storage:bool)->Result<ddv_save_patch::GridCoordinateTarget,CodecError>{
  use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
  let bad=CodecError::Json;
  let w=row.as_object().filter(|r|r.len()==2&&r.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"index"))).ok_or(bad)?;
@@ -307,7 +293,7 @@ fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)?;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)?;
   let (x,y)=expected;if x<0||y<0||x as u64>=sx*u64::from(f)||y as u64>=sy*u64::from(f)||t.get("values").and_then(|v|v.get((y as usize/f as usize)*sx as usize+x as usize/f as usize)).and_then(Value::as_u64).is_none_or(|n|n==0){return Err(bad);}
   crate::grid_instance_preview::subgrid_tree(collection.as_object().ok_or(bad)?,&gid,key)?;
- }else if obj.get("State").is_some_and(|s|!s.is_null()){return Err(bad);}
+ }else if storage{if !storage_pose(root,obj)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}}else if obj.get("State").is_some_and(|s|!s.is_null()){return Err(bad);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:item};
  let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
  if refs.blocking()>0||refs.historical>0{return Err(bad);}
@@ -320,11 +306,13 @@ pub(super) fn room_to_outdoor_candidate_mode(source:&[u8],row:&Value,free:bool)-
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
- let o=row.as_object().filter(|r|r.len()==if support.is_some(){10}else{9}&&r.keys().all(|k|matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"))).ok_or(bad)?;
+ let storage=row.get("storage").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+ if storage&&support.is_some(){return Err(bad);}
+ let o=row.as_object().filter(|r|r.len()==9+usize::from(support.is_some())+usize::from(storage)&&r.keys().all(|k|matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"|"storage"))).ok_or(bad)?;
  let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let expected=(int("expectedX")?,int("expectedY")?);
- let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support,free)?;
+ let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support,free,storage)?;
  let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,o.get("destination").ok_or(bad)?)?;
  let xy=(int("x")?,int("y")?);
  let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
@@ -332,7 +320,7 @@ pub(super) fn room_to_outdoor_candidate_mode(source:&[u8],row:&Value,free:bool)-
  let dest=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
  if !free&&dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
  let json=std::str::from_utf8(source).map_err(|_|bad)?;
- let draft=if let Some(f)=support{
+ let draft=if storage{let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}ddv_save_patch::preview_storage_transfer(json,&target,expected,&d,xy,orientation,false,free).map_err(|_|CodecError::Patch)?}else if let Some(f)=support{
   if f!=d.tessellation{return Err(bad);}
   let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
   let fresh=c["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
@@ -586,13 +574,15 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let mut seen=std::collections::HashSet::new();let mut anchors=std::collections::HashSet::new();let mut moves=Vec::new();
   for row in rows{
   let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
-  if row.as_object().is_none_or(|r|r.len()!=if support.is_some(){9}else{8}||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"))){return Err(bad);}
+  let storage=row.get("storage").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+  if storage&&(support.is_some()||row.get("roomSource").is_none()){return Err(bad);}
+  if row.as_object().is_none_or(|r|r.len()!=8+usize::from(support.is_some())+usize::from(storage)||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"|"storage"))){return Err(bad);}
   let room_source=row.get("roomSource");
   if support.is_some()&&(free||support!=Some(factor)){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-  let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support,free)?}else{
+  let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support,free,storage)?}else{
    let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
    if let Some(f)=support{crate::grid_instance_preview::resolve_outdoor_support_cut_target(source,source_ordinal,item,expected,old,f)?}else{crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?}
   };
@@ -604,7 +594,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if (if free{!within_room(xy)||!allowed_orientation(orientation)}else{!on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy)})||target.grid_id==gid||!seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}
   let tree=if support.is_some(){Some(crate::grid_instance_preview::subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)}else{None};
-  moves.push((target,expected,xy,orientation.to_owned(),room_source.is_some(),tree));
+  moves.push((target,expected,xy,orientation.to_owned(),room_source.is_some(),tree,storage));
   }
   let t=terrain.ok_or(bad)?;
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)? as u32;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)? as u32;
@@ -615,8 +605,8 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:grid.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?.to_owned(),tessellation:factor,size:(sx,sy)};
   let mut working=Zeroizing::new(json.to_owned());
   let mut last=None;
-  for (target,expected,xy,orientation,room_source,tree) in moves{
-   let mut draft=if let Some(tree)=tree{
+  for (target,expected,xy,orientation,room_source,tree,storage) in moves{
+   let mut draft=if storage{ddv_save_patch::preview_storage_transfer(&working,&target,expected,&d,xy,&orientation,true,free).map_err(|_|CodecError::Patch)?}else if let Some(tree)=tree{
     let before:Value=serde_json::from_str(&working).map_err(|_|bad)?;
     let fresh=ddv_save_patch::room_grid_next_object_id(&before["World"]["GridCollection"]["Grids"][&gid]).map_err(|_|bad)?.to_string();
     let result=(if room_source{ddv_save_patch::preview_indoor_support_parent_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_support_transfer(&working,&target,expected,&d,xy,&orientation)}).map_err(|_|CodecError::Patch)?;
