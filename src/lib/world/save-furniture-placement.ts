@@ -1,5 +1,5 @@
 /** Original terrain and ordinary furniture only. A candidate never authorizes Save writes. */
-import {mainlandMapAnchor,mainlandTerrainHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal,type Cardinal} from './saved-map-transform.ts';
@@ -10,40 +10,40 @@ export interface StockDestination{layoutId:string;gridDataPath:string;factor:1|2
 export type StockPlan={action:'place';itemId:string;x:number;y:number;orientation:Cardinal}|{action:'duplicate'|'remove';localOrdinal:number;itemId:string;expectedX:number;expectedY:number;x:number|null;y:number|null};
 export interface StockCandidate{area:string;x:number;y:number;factor:1|2;shape:SourceObjectShape;plan:StockPlan;destination:StockDestination|null}
 export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===400;
-export function stockSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
- return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');
+export function stockSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
+ return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
 }
 export const landscapeId=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===402;
-export function landscapePlacementEligible(g:DesignItemGeometry){return landscapeId(g.itemId)&&g.layer==='landscape'&&!g.surfaceCapable&&!g.supportPath&&g.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(g.editRestrictions,'select');}
-export function landscapeSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
- return !!p?.shape&&landscapeId(Number(p.object.itemId))&&p.object.layer==='landscape'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&p.object.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(p.object.editRestrictions,'select');
+export function landscapePlacementEligible(g:DesignItemGeometry,free=false){return landscapeId(g.itemId)&&g.layer==='landscape'&&!g.surfaceCapable&&!g.supportPath&&(free||g.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(g.editRestrictions,'select'));}
+export function landscapeSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
+ return !!p?.shape&&landscapeId(Number(p.object.itemId))&&p.object.layer==='landscape'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&(free||p.object.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(p.object.editRestrictions,'select'));
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
-export function stockPickup(p:MainlandSavedObject|null):StockCandidate|null{
- if(!p||!p.shape||!stockSourceEligible(p)&&!landscapeSourceEligible(p))return null;
+export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidate|null{
+ if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
-export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:Cardinal,wx:number,wy:number,source:MainlandSavedObject|null=null):StockCandidate|null{
- const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source)||source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
+export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:Cardinal,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false):StockCandidate|null{
+ const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
- const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
+ const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
- if(landscape){if(!landscapePlacementEligible(def)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
+ if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ if(landscape){if(!landscapePlacementEligible(def,free)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&!free&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
  const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
- if(x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!free&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length))return null;
  let count=0;
  for(const run of shape.runs){
   if(![run.x,run.y,run.width].every(Number.isSafeInteger)||run.x<0||run.y<0||run.width<1||run.x+run.width>shape.width||run.y>=shape.height)return null;
   for(let dx=0;dx<run.width;dx++){
    const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),owners=mainlandTerrainHits(grids,rasters,q.x,q.y);
-   if(owners.length!==1||owners[0].key!==g.key)return null;count++;
+   if(!free&&(owners.length!==1||owners[0].key!==g.key))return null;count++;
   }
  }
  if(count!==shape.cellCount)return null;
  let plan:StockPlan={action:'place',itemId:String(id),x,y,orientation};
  if(source){
-  if(!(landscape?landscapeSourceEligible(source):stockSourceEligible(source))||source.object.itemId!==String(id)||source.object.orientation!==orientation||nativeActionBlocked(source.object.editRestrictions,'move')||(source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
+  if(!(landscape?landscapeSourceEligible(source,free):stockSourceEligible(source,free))||source.object.itemId!==String(id)||source.object.orientation!==orientation||!free&&nativeActionBlocked(source.object.editRestrictions,'move')||(!free&&source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
   plan={action:'duplicate',localOrdinal:source.object.localOrdinal,itemId:String(id),expectedX:source.object.x,expectedY:source.object.y,x,y};
  }
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan,destination:witness(g)};

@@ -25,17 +25,15 @@ function worldTransformKindEligible(o:SavedShapeObject|null):boolean{
   }
   return o.shapeKey!==null&&['furniture','surface','landscape'].includes(o.layer);
 }
-export function worldMoveEligible(o:SavedShapeObject|null):boolean{
-  return worldTransformKindEligible(o)&&!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move')&&
-    (o?.nativeType!=='Building'||o.editRestrictions?.move==='allowedFlag');
+export function worldMoveEligible(o:SavedShapeObject|null,free=false):boolean{
+  return worldTransformKindEligible(o)&&(free&&!exclusiveAnchorClass(o!.itemId)||!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move')&&(o?.nativeType!=='Building'||o.editRestrictions?.move==='allowedFlag'));
 }
-export function worldRotateEligible(o:SavedShapeObject|null):boolean{
+export function worldRotateEligible(o:SavedShapeObject|null,free=false):boolean{
   return worldTransformKindEligible(o)&&!exclusiveAnchorClass(o!.itemId)&&isCardinal(o!.orientation)&&
-    !nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate')&&
-    (o?.nativeType!=='Building'||o.editRestrictions?.rotate==='allowedFlag');
+    (free||!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate')&&(o?.nativeType!=='Building'||o.editRestrictions?.rotate==='allowedFlag'));
 }
-export function worldTransformEligible(o:SavedShapeObject|null):boolean{
-  return worldMoveEligible(o)||worldRotateEligible(o);
+export function worldTransformEligible(o:SavedShapeObject|null,free=false):boolean{
+  return worldMoveEligible(o,free)||worldRotateEligible(o,free);
 }
 export function exclusiveAnchorConflict(map:SavedShapeMap,o:SavedShapeObject|null,x:unknown,y:unknown):boolean{
   if(!o||!int32(x)||!int32(y)||(x===o.x&&y===o.y))return false;
@@ -44,13 +42,13 @@ export function exclusiveAnchorConflict(map:SavedShapeMap,o:SavedShapeObject|nul
     other.localGridOrdinal===o.localGridOrdinal&&other.x===x&&other.y===y&&
     exclusiveAnchorClass(other.itemId)===kind);
 }
-export function draftSavedMapTransform(o:SavedShapeObject|null,x:number|undefined,y:number|undefined,orientation:string|null){
-  if(!o||!worldTransformEligible(o)||!int32(x)||!int32(y))return null;
+export function draftSavedMapTransform(o:SavedShapeObject|null,x:number|undefined,y:number|undefined,orientation:string|null,free=false){
+  if(!o||!worldTransformEligible(o,free)||!int32(x)||!int32(y))return null;
   const moved=x!==o.x||y!==o.y;
   const turned=orientation!==o.orientation;
   // Preserve exact orientation on road/fence moves until connection/edge semantics are verified.
-  if(moved&&!worldMoveEligible(o))return null;
-  if(turned&&(!worldRotateEligible(o)||!isCardinal(orientation)))return null;
+  if(moved&&!worldMoveEligible(o,free))return null;
+  if(turned&&(!worldRotateEligible(o,free)||!isCardinal(orientation)))return null;
   if(!moved&&!turned)return null;
   return {localOrdinal:o.localOrdinal,itemId:o.itemId,recordKind:'full' as const,
     expectedX:o.x,expectedY:o.y,replacementX:moved?x:null,replacementY:moved?y:null,

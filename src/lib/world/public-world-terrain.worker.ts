@@ -393,10 +393,10 @@ scope.onmessage=async({data})=>{
       for(const [key,d] of definitions){
         const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
         const building=data.allowBuildings===true&&buildingDesignEligible(itemId,d);
-        if(!building&&(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select')))continue;
+        if(!building&&(d.nativeType!=='Furniture'||!footprint||data.freePlacement!==true&&nativeActionBlocked(sourceEditRestrictions(d),'select')))continue;
         const layer=sourceMapLayer(building?'Building':'Furniture',itemId,footprint?.acceptedFloorTypesFlag??null);
         if(!building&&(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d)))continue;
-        if(landscapeOnly&&(layer!=='landscape'||Math.floor(itemId/100000)!==402||sourceEditRestrictions(d).remove!=='allowedFlag'||((footprint?.acceptedFloorTypesFlag??0)&4096)!==0||!!(landscapeSupports?.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath))continue;
+        if(landscapeOnly&&(layer!=='landscape'||Math.floor(itemId/100000)!==402||data.freePlacement!==true&&sourceEditRestrictions(d).remove!=='allowedFlag'||((footprint?.acceptedFloorTypesFlag??0)&4096)!==0||!!(landscapeSupports?.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath))continue;
         if(building&&!buildingCache?.resolve(itemId,8).shapeKey)continue;
         items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer,...(building?{nativeType:'Building' as const}:{})});
       }
@@ -417,7 +417,7 @@ scope.onmessage=async({data})=>{
         const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition);
         if(!building&&definition?.nativeType!=='Furniture')throw Error('item type');
         const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
-        if(!item.shapeKey||!building&&item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
+        if(!item.shapeKey||!building&&item.layer==='other'||data.freePlacement!==true&&nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
         for(const code of [0,4,12])cache.resolve(itemId,code);
         runs+=Object.values(cache.shapes).reduce((n,shape)=>n+shape.runs.length,0);
         if(runs>1_000_000)throw Error('geometry limit');

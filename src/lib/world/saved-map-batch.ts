@@ -38,15 +38,15 @@ export function projectWorldEdits(map:SavedShapeMap,edits:readonly WorldStagedEd
   })};
 }
 export function stageWorldEdit(map:SavedShapeMap,t:WorldEditTimeline,ordinal:number,
-    x:number|undefined,y:number|undefined,orientation:string|null,warning:string):WorldEditTimeline|null{
+    x:number|undefined,y:number|undefined,orientation:string|null,warning:string,free=false):WorldEditTimeline|null{
   const previous=currentWorldEdits(t);
   const original=map.objects.find(o=>o.localOrdinal===ordinal);
   const effectiveMap=projectWorldEdits(map,previous);
   const effective=effectiveMap.objects.find(o=>o.localOrdinal===ordinal);
   const prior=previous.find(e=>e.plan.localOrdinal===ordinal);
-  if(!original||!effective||(prior&&!matchesOriginal(original,prior))||!draftSavedMapTransform(effective,x,y,orientation)||
+  if(!original||!effective||(prior&&!matchesOriginal(original,prior))||!draftSavedMapTransform(effective,x,y,orientation,free)||
     exclusiveAnchorConflict(effectiveMap,effective,x,y))return null;
-  const plan=draftSavedMapTransform(original,x,y,orientation);
+  const plan=draftSavedMapTransform(original,x,y,orientation,free);
   if(!plan&&(x!==original.x||y!==original.y||orientation!==original.orientation))return null;
   const name=original.name??'Item '+original.itemId;
   const edits=previous.filter(e=>e.plan.localOrdinal!==ordinal);
@@ -60,11 +60,11 @@ export interface GroupTarget{readonly ordinal:number;readonly x:number;readonly 
 /** Rotate mapped footprint bounding boxes about the group's top-left corner,
  * in the displayed local coordinate system (positive Y downward).
  * Reuse cardinal source shapes; no road/fence or parent rotation inferred. */
-export function groupTargets(map:SavedShapeMap,objects:readonly SavedShapeObject[],dx:number,dy:number,turns=0):GroupTarget[]|null{
+export function groupTargets(map:SavedShapeMap,objects:readonly SavedShapeObject[],dx:number,dy:number,turns=0,free=false):GroupTarget[]|null{
  if(objects.length<2||objects.length>WORLD_BATCH_LIMIT||![dx,dy,turns].every(Number.isSafeInteger))return null;
  const turn=((turns%4)+4)%4;
- if(!objects.every(o=>worldMoveEligible(o)&&o.localGridOrdinal===objects[0].localGridOrdinal))return null;
- if(turn&&!objects.every(o=>worldRotateEligible(o)&&o.shapeKey&&map.shapes[o.shapeKey]))return null;
+ if(!objects.every(o=>worldMoveEligible(o,free)&&o.localGridOrdinal===objects[0].localGridOrdinal))return null;
+ if(turn&&!objects.every(o=>worldRotateEligible(o,free)&&o.shapeKey&&map.shapes[o.shapeKey]))return null;
  let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
  for(const o of objects){const s=o.shapeKey?map.shapes[o.shapeKey]:null;left=Math.min(left,o.x);top=Math.min(top,o.y);right=Math.max(right,o.x+(s?.width??1));bottom=Math.max(bottom,o.y+(s?.height??1));}
  const result:GroupTarget[]=[];
@@ -105,7 +105,7 @@ export function stageWorldAlignment(map:SavedShapeMap,t:WorldEditTimeline,ordina
  const targets=alignmentTargets(effective,selected,mode);
  return targets?stageWorldTargets(map,t,targets,warning):null;
 }
-export function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:readonly GroupTarget[],warning:string):WorldEditTimeline|null{
+export function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:readonly GroupTarget[],warning:string,free=false):WorldEditTimeline|null{
   if(targets.length<2||targets.length>WORLD_BATCH_LIMIT)return null;
   const ids=new Set(targets.map(o=>o.ordinal));if(ids.size!==targets.length)return null;
   const previous=currentWorldEdits(t),effectiveMap=projectWorldEdits(map,previous);
@@ -118,11 +118,11 @@ export function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:
   const destinations=new Set<string>();let changed=false;
   for(const target of targets){
     const id=target.ordinal,o=originalById.get(id),e=effectiveById.get(id),prior=priorById.get(id);
-    if(!o||!e||!worldMoveEligible(e)||e.localGridOrdinal!==grid||(prior&&!matchesOriginal(o,prior)))return null;
+    if(!o||!e||!worldMoveEligible(e,free)||e.localGridOrdinal!==grid||(prior&&!matchesOriginal(o,prior)))return null;
     const {x,y,orientation}=target,modified=x!==e.x||y!==e.y||orientation!==e.orientation;
-    if(modified&&!draftSavedMapTransform(e,x,y,orientation))return null;
+    if(modified&&!draftSavedMapTransform(e,x,y,orientation,free))return null;
     changed||=modified;
-    const plan=draftSavedMapTransform(o,x,y,orientation);
+    const plan=draftSavedMapTransform(o,x,y,orientation,free);
     if(!plan&&(x!==o.x||y!==o.y||orientation!==o.orientation))return null;
     const cls=exclusiveAnchorClass(e.itemId);
     if(cls){const k=cls+':'+x+':'+y;if(destinations.has(k))return null;destinations.add(k);}

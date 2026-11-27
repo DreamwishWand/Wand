@@ -84,36 +84,37 @@ import {CARDINAL_ORIENTATIONS,isCardinal,worldMoveEligible,worldRotateEligible,e
  * scoped tools remain available for other verified native edit operations.
  * Both the original and every destination occupied cell must resolve to
  * the same root; no cross-grid mutation or support transfer is inferred. */
-export function mainlandSavedMoveEligible(p:MainlandSavedObject|null){
- return !!p?.shape&&p.object.layer!=='surface'&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object);
+export function mainlandSavedMoveEligible(p:MainlandSavedObject|null,free=false){
+ return !!p?.shape&&p.object.layer!=='surface'&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object,free);
 }
 /** Position-only network group editing. Native state stays untouched. */
-export function mainlandSavedGroupMoveEligible(p:MainlandSavedObject|null){
- return !!p?.shape&&p.object.layer!=='surface'&&worldMoveEligible(p.object)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
+export function mainlandSavedGroupMoveEligible(p:MainlandSavedObject|null,free=false){
+ return !!p?.shape&&p.object.layer!=='surface'&&worldMoveEligible(p.object,free)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
 }
-export function mainlandSavedRotateEligible(p:MainlandSavedObject|null){
- return !!p?.shape&&p.object.layer!=='surface'&&worldRotateEligible(p.object);
+export function mainlandSavedRotateEligible(p:MainlandSavedObject|null,free=false){
+ return !!p?.shape&&p.object.layer!=='surface'&&worldRotateEligible(p.object,free);
 }
 export interface MainlandSavedDraft{readonly x:number;readonly y:number;readonly shape:SourceObjectShape;readonly valid:boolean;readonly next:WorldEditTimeline|null}
-export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null,geometryOnly=false):MainlandSavedDraft|null{
+export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null,geometryOnly=false,free=false):MainlandSavedDraft|null{
  const g=grids.find(g=>g.key===p.area),m=maps.get(p.area),r=rasters.get(p.area);
  if(!g||!m||!r||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  const shape=m.shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];if(!shape)return null;
  const moved=x!==p.object.x||y!==p.object.y,turned=orientation!==p.object.orientation;
  const anchor=mainlandMapAnchor(g,x,y);
- let valid=(moved||turned)&&(!moved||(geometryOnly?mainlandSavedGroupMoveEligible(p):mainlandSavedMoveEligible(p)))&&(!turned||mainlandSavedRotateEligible(p))&&
- x>=0&&y>=0&&x+shape.width<=g.sizeX*g.factor&&y+shape.height<=g.sizeY*g.factor&&shape.cellCount<=65536;
- if(valid){
+ const bypass=free&&!exclusiveAnchorClass(p.object.itemId);
+ let valid=(moved||turned)&&(!moved||(geometryOnly?mainlandSavedGroupMoveEligible(p,free):mainlandSavedMoveEligible(p,free)))&&(!turned||mainlandSavedRotateEligible(p,free))&&
+ x>=0&&y>=0&&x<g.sizeX*g.factor&&y<g.sizeY*g.factor&&(bypass||x+shape.width<=g.sizeX*g.factor&&y+shape.height<=g.sizeY*g.factor)&&shape.cellCount<=65536;
+ if(valid&&!bypass){
   outer:for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
    const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5);
    const hits=mainlandTerrainHits(grids,rasters,q.x,q.y);
    if(hits.length!==1||hits[0].key!==g.key){valid=false;break outer;}
   }
  }
- if(valid&&p.object.nativeType==='Building'&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)valid=false;
+ if(valid&&!bypass&&p.object.nativeType==='Building'&&terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)valid=false;
  if(geometryOnly)return {...anchor,shape,valid,next:null};
- const next=valid?stageWorldEdit(m,timeline,p.object.localOrdinal,x,y,orientation,terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length?'原本地形属性不一致候補・衝突未判定':'衝突・上下関係未判定'):null;
+ const next=valid?stageWorldEdit(m,timeline,p.object.localOrdinal,x,y,orientation,terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length?'原本地形属性不一致候補・衝突未判定':'衝突・上下関係未判定',free):null;
  return {...anchor,shape,valid:!!next,next};
 }
 
@@ -124,9 +125,9 @@ export function mainlandSavedCell(p:MainlandSavedObject):{x:number;z:number}|nul
  const x=p.x*p.factor,z=-p.y*p.factor;
  return Number.isSafeInteger(x)&&Number.isSafeInteger(z)?{x,z}:null;
 }
-export function mainlandSavedDraftAtCell(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,x:number,z:number,orientation:string|null){
+export function mainlandSavedDraftAtCell(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,x:number,z:number,orientation:string|null,free=false){
  if(!Number.isSafeInteger(x)||!Number.isSafeInteger(z)||!mainlandSavedCell(p))return null;
- return mainlandSavedDraft(p,grids,rasters,maps,timeline,(x+.5)/p.factor,-(z+.5)/p.factor,orientation);
+ return mainlandSavedDraft(p,grids,rasters,maps,timeline,(x+.5)/p.factor,-(z+.5)/p.factor,orientation,false,free);
 }
 
 /** Shared map-coordinate translation. Every object retains its original
@@ -138,7 +139,7 @@ export interface MainlandGroupDraft{
  readonly ghosts:readonly {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[];
  readonly next:WorldEditTimeline|null;
 }
-export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,dx:number,dz:number):MainlandGroupDraft{
+export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,dx:number,dz:number,free=false):MainlandGroupDraft{
  const factor=mainlandGroupFactor(items);
  const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
  const invalid={ghosts,next:null};
@@ -152,17 +153,17 @@ export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],gri
   let valid=true;
   for(const p of items){
    const x=p.x+dx/factor,y=p.y-dz/factor;
-   const q=mainlandSavedGroupMoveEligible(p)?mainlandSavedDraft(p,grids,rasters,maps,timeline,x+.5/p.factor,y-.5/p.factor,p.object.orientation,true):null;
+   const q=mainlandSavedGroupMoveEligible(p,free)?mainlandSavedDraft(p,grids,rasters,maps,timeline,x+.5/p.factor,y-.5/p.factor,p.object.orientation,true,free):null;
    ghosts.push({object:p,draft:q,x,y});
    if(!q?.valid){valid=false;continue;}
    targets.push({ordinal:p.object.localOrdinal,x:p.object.x+dx*p.factor/factor,y:p.object.y+dz*p.factor/factor,orientation:p.object.orientation,shapeKey:p.object.shapeKey});
   }
-  return {ghosts,next:valid?stageWorldTargets(scope,timeline,targets,'衝突・上下関係・接続未判定'):null};
+  return {ghosts,next:valid?stageWorldTargets(scope,timeline,targets,'衝突・上下関係・接続未判定',free):null};
  }
  let working=timeline,valid=true;
  for(const p of items){
   const pos=mainlandSavedCell(p),x=p.x+dx/factor,y=p.y-dz/factor;
-  const q=pos&&mainlandSavedMoveEligible(p)?mainlandSavedDraftAtCell(p,grids,rasters,maps,working,pos.x+dx*p.factor/factor,pos.z+dz*p.factor/factor,p.object.orientation):null;
+  const q=pos&&mainlandSavedMoveEligible(p,free)?mainlandSavedDraftAtCell(p,grids,rasters,maps,working,pos.x+dx*p.factor/factor,pos.z+dz*p.factor/factor,p.object.orientation,free):null;
   ghosts.push({object:p,draft:q,x,y});
   if(!q?.next)valid=false;else working=q.next;
  }
@@ -175,9 +176,9 @@ export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],gri
 /** Reuse the established scoped group transform on a shared logical world
  * lattice. Rotation/align requires a uniform native resolution; mixed
  * resolutions retain translation support. No rounding to foreign cells. */
-export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,action:MapAlignment|number):MainlandGroupDraft{
+export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,action:MapAlignment|number,free=false):MainlandGroupDraft{
  const invalid:MainlandGroupDraft={ghosts:[],next:null};
- if(items.length<2||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length||items.some(p=>!mainlandSavedMoveEligible(p)||p.factor!==items[0].factor))return invalid;
+ if(items.length<2||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length||items.some(p=>!mainlandSavedMoveEligible(p,free)||p.factor!==items[0].factor))return invalid;
  const factor=items[0].factor,shapes:Record<string,SourceObjectShape>={},objects:SavedShapeObject[]=[];
  for(const p of items){
   const pos=mainlandSavedCell(p),map=maps.get(p.area);
@@ -192,7 +193,7 @@ export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],
  }
  const first=maps.get(items[0].area)!;
  const worldMap:SavedShapeMap={...first,objects,shapes};
- const targets:GroupTarget[]|null=typeof action==='number'?groupTargets(worldMap,objects,0,0,action):alignmentTargets(worldMap,objects,action);
+ const targets:GroupTarget[]|null=typeof action==='number'?groupTargets(worldMap,objects,0,0,action,free):alignmentTargets(worldMap,objects,action);
  if(!targets)return invalid;
  const byId=new Map(items.map(p=>[p.object.localOrdinal,p]));
  const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
@@ -202,7 +203,7 @@ export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],
   const pos=mainlandSavedCell(p)!;
   if(pos.x===target.x&&pos.z===target.y&&p.object.orientation===target.orientation)continue;
   changed=true;
-  const q=mainlandSavedDraftAtCell(p,grids,rasters,maps,working,target.x,target.y,target.orientation);
+  const q=mainlandSavedDraftAtCell(p,grids,rasters,maps,working,target.x,target.y,target.orientation,free);
   ghosts.push({object:p,draft:q,x:target.x/factor,y:-target.y/factor});
   if(!q?.next)valid=false;else working=q.next;
  }
