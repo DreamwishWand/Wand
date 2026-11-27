@@ -79,7 +79,7 @@ export function visibleMainlandSaved(objects:readonly MainlandSavedObject[],v:{x
  return objects.filter(p=>p.x<=v.x+v.w+1&&p.x+(p.shape?.width??1)/p.factor>=v.x-1&&p.y>=v.y-1&&p.y-(p.shape?.height??1)/p.factor<=v.y+v.h+1);
 }
 
-import {CARDINAL_ORIENTATIONS,isCardinal,worldMoveEligible,worldRotateEligible,exclusiveAnchorClass} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,isCardinal,worldOrientationAllowed,worldOrientationCode,worldMoveEligible,worldRotateEligible,exclusiveAnchorClass} from './saved-map-transform.ts';
 /** Only known free-standing furniture/landscape is eligible here. Existing
  * scoped tools remain available for other verified native edit operations.
  * Both the original and every destination occupied cell must resolve to
@@ -97,9 +97,9 @@ export function mainlandSavedRotateEligible(p:MainlandSavedObject|null,free=fals
 export interface MainlandSavedDraft{readonly x:number;readonly y:number;readonly shape:SourceObjectShape;readonly valid:boolean;readonly next:WorldEditTimeline|null}
 export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null,geometryOnly=false,free=false):MainlandSavedDraft|null{
  const g=grids.find(g=>g.key===p.area),m=maps.get(p.area),r=rasters.get(p.area);
- if(!g||!m||!r||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ if(!g||!m||!r||!p.shape||!worldOrientationAllowed(p.object,orientation,free&&g.factor===1)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
- const shape=m.shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];if(!shape)return null;
+ const shape=m.shapes[p.object.itemId+':'+worldOrientationCode(orientation)];if(!shape)return null;
  const moved=x!==p.object.x||y!==p.object.y,turned=orientation!==p.object.orientation;
  const anchor=mainlandMapAnchor(g,x,y);
  const bypass=free&&!exclusiveAnchorClass(p.object.itemId);
