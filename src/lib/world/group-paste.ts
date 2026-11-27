@@ -1,4 +1,4 @@
-import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,worldOrientationCode,type Cardinal} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -71,10 +71,10 @@ export function symmetricWorldCandidate(original:readonly WorldGroupPose[],axis:
  return groupAbsoluteCandidate(out,grids,rasters,defs,stock,objects,omitted);
 }
 export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPose[]{
- return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(candidate.rows[i].orientation)}));
+ return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
- if(cut.length!==candidate.rows.length)return null;
+ if(cut.length!==candidate.rows.length||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
 }
