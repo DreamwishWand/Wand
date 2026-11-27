@@ -8,6 +8,7 @@
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
+ import {characterHouseExterior} from './character-house-exteriors.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,buildingSourceEligible,buildingDuplicate,buildingPickup,buildingPlacementSources,initialBuildingEligible,initialBuildingPlacement,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
@@ -41,7 +42,9 @@
  const houseWords={ja:['家の外観を複製','内装は保持されます。最後の外観は再配置可能な場合のみ撤去できます。','外観のみ撤去'],en:['Duplicate house exterior','Interior is retained. Last exterior removal requires a recoverable interior.','Remove exterior only'],fr:['Dupliquer la maison','Intérieur conservé. Dernier extérieur : intérieur récupérable requis.','Retirer l’extérieur'],it:['Duplica esterno casa','Interno conservato. Ultimo esterno: interno recuperabile richiesto.','Rimuovi esterno'],de:['Hausfassade duplizieren','Innenraum bleibt erhalten. Letzte Fassade nur bei wiederherstellbarem Innenraum.','Nur Fassade entfernen'],'es-ES':['Duplicar exterior','Interior conservado. El último exterior requiere un interior recuperable.','Retirar solo exterior'],'zh-CN':['复制房屋外观','保留室内空间。仅可移除能够重新放置的最后一个外观。','仅移除外观'],'pt-BR':['Duplicar exterior da casa','Interior preservado. O último exterior exige interior recuperável.','Remover só o exterior']} as const;
  const buildingTab={ja:['建物','既存建物の複製・対応する建物の新規配置（テスト）'],en:['Buildings','Copy existing or place supported new buildings (test)'],fr:['Bâtiments','Copier ou placer des bâtiments compatibles (test)'],it:['Edifici','Copia o posiziona edifici compatibili (test)'],de:['Gebäude','Gebäude kopieren oder neu platzieren (Test)'],'es-ES':['Edificios','Copiar o colocar edificios compatibles (prueba)'],'zh-CN':['建筑','复制或新建支持的建筑（测试）'],'pt-BR':['Edifícios','Copiar ou colocar edifícios compatíveis (teste)']} as const;
  const buildingWords={ja:['建物を複製','内部状態を検証して外観を編集します','建物を撤去'],en:['Duplicate building','Building state is checked before editing','Remove building'],fr:['Dupliquer le bâtiment','État vérifié avant modification','Retirer le bâtiment'],it:['Duplica edificio','Stato verificato prima della modifica','Rimuovi edificio'],de:['Gebäude duplizieren','Zustand wird vor Bearbeitung geprüft','Gebäude entfernen'],'es-ES':['Duplicar edificio','Estado comprobado antes de editar','Retirar edificio'],'zh-CN':['复制建筑','编辑前验证建筑状态','移除建筑'],'pt-BR':['Duplicar edifício','Estado verificado antes de editar','Remover edifício']} as const;
- $: hw=Math.floor(Number((candidate?.plan.itemId??source?.object.itemId??chosen?.object.itemId)??0)/100000)===205?houseWords[locale]:buildingWords[locale];
+ const characterWords={ja:['家の外観を複製','キャラクターの所属・進行は維持。入口と再起動後の動作は未検証です。','余分な外観を撤去'],en:['Duplicate house exterior','Character presence and progress stay unchanged. Entrances and reload behavior are unverified.','Remove redundant exterior'],fr:['Dupliquer la maison','Présence et progression conservées. Entrées et rechargement non vérifiés.','Retirer le doublon'],it:['Duplica esterno','Presenza e progressi conservati. Entrate e ricaricamento non verificati.','Rimuovi duplicato'],de:['Hausfassade duplizieren','Anwesenheit und Fortschritt bleiben erhalten. Eingänge und Neuladen ungeprüft.','Doppelte Fassade entfernen'],'es-ES':['Duplicar exterior','Presencia y progreso sin cambios. Entradas y recarga sin verificar.','Retirar duplicado'],'zh-CN':['复制房屋外观','角色所属和进度保持不变。入口及重新加载行为尚未验证。','移除多余外观'],'pt-BR':['Duplicar exterior','Presença e progresso preservados. Entradas e recarga não verificadas.','Remover duplicata']} as const;
+ $: houseToolId=Number((candidate?.plan.itemId??source?.object.itemId??chosen?.object.itemId)??0);
+ $: hw=Math.floor(houseToolId/100000)===205?houseWords[locale]:characterHouseExterior(houseToolId)?characterWords[locale]:buildingWords[locale];
  $: houseCandidate=!!candidate&&[200,201,202,203,205].includes(Math.floor(Number(candidate.plan.itemId)/100000));
  $: canRemoveHouse=!!buildingPickup(chosen,objects);
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
@@ -80,7 +83,10 @@
   if(d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='design-catalog'&&Array.isArray(d.items)){catalog=d.items;catalogState='ready';limit=80;}else catalogState='error';return;}
   const request=shapeRequests.get(d?.requestId);if(!request)return;
   shapeRequests.delete(d.requestId);shapeRequests=new Map(shapeRequests);
-  if(d.kind!=='design-shape'||d.key!==request.key||d.result?.itemId!==itemId){cancel();status='error';return;}
+  if(d.kind!=='design-shape'||d.key!==request.key||d.result?.itemId!==itemId){
+   if(source&&buildingSourceEligible(source)&&source.shape){return;}
+   cancel();status='error';return;
+  }
   definitions=new Map(definitions).set(request.factor,d.result as DesignItemGeometry);
  }
  export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}

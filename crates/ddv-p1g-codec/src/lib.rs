@@ -1793,7 +1793,8 @@ mod browser_amount_preview {
             };
             let dependencies=grid_instance_preview::grid_identity_dependencies(original,&target)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DEPENDENCIES_UNRESOLVED"))?;
-            if dependencies.blocking()>0||((house||building||item/100_000==402)&&dependencies.historical>0){return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
+            let character_copy=world_change==Some("duplicate")&&grid_instance_preview::character_house_exterior(item);
+            if if character_copy{dependencies.active+dependencies.related+dependencies.unknown>0}else{dependencies.blocking()>0||((house||building||item/100_000==402)&&dependencies.historical>0)}{return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DESTINATION_UNRESOLVED"))?;
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;

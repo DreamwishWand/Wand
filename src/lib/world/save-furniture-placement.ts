@@ -68,6 +68,7 @@ export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly Ma
 export function buildingPickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
  if(!buildingSourceEligible(p)||!p.shape)return null;
  if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects,true);
+ if(characterHouseExterior(Number(p.object.itemId))&&!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&generalBuildingSourceEligible(o)))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}

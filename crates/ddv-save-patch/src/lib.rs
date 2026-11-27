@@ -1209,6 +1209,12 @@ fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expe
 
 /// Caller has validated the exact existing building, state and identity references.
 pub fn preview_checked_building_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    checked_building_remove_mode(source,target,expected,orientation,false)
+}
+pub fn preview_character_house_exterior_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    checked_building_remove_mode(source,target,expected,orientation,true)
+}
+fn checked_building_remove_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,character_only:bool)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
@@ -1217,8 +1223,13 @@ pub fn preview_checked_building_remove(source:&str,target:&GridCoordinateTarget,
     let c=root.get("World").and_then(|w|w.get("GridCollection")).ok_or(bad)?;
     if c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
     let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
-    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
-    if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s)){return Err(bad);}
+    if character_only{
+        if target.item_id/100_000!=200||house_exterior_world(grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?,grid["GridDataPath"].as_str().ok_or(bad)?).is_none(){return Err(bad);}
+    }else{
+        let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
+        if !grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s)){return Err(bad);}
+    }
+    if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok(){return Err(bad);}
     let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
     if o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        o.get("ID").and_then(Value::as_u64)!=target.object_id.parse::<u64>().ok()||o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id)||
