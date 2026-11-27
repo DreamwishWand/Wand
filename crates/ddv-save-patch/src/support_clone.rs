@@ -3,6 +3,20 @@
 use super::*;
 use serde_json::{Map,Value};
 const LIMIT:usize=32;
+pub(super) const MAX_WORLD_GRID_RECORDS:usize=8192;
+/// Global Grid allocator for both furniture support trees and future room grids.
+/// Count full and diff records together; neither may reserve a new identity.
+pub(super) fn checked_grid_allocator(c:&Map<String,Value>)->Result<u32,PatchError>{
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ let next=id(c.get("NextGridID").ok_or(BAD)?)?;
+ if next==0||grids.len()+diff.map_or(0,Map::len)>MAX_WORLD_GRID_RECORDS||
+ grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||g["ID"].as_u64()!=Some(u64::from(n)))){return Err(BAD);}
+ Ok(next)
+}
+pub(super) fn grid_capacity(grids:&Map<String,Value>,diff:Option<&Map<String,Value>>,added:usize)->bool{
+ grids.len().checked_add(diff.map_or(0,Map::len)).and_then(|n|n.checked_add(added)).is_some_and(|n|n<=MAX_WORLD_GRID_RECORDS)
+}
 const BAD:PatchError=PatchError::InvalidTarget;
 fn id(v:&Value)->Result<u32,PatchError>{v.as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(BAD)}
 fn item(v:&Value)->Result<u64,PatchError>{v.as_u64().filter(|n|n/100_000==400).ok_or(BAD)}
@@ -133,8 +147,7 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
  let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
  let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
- let next=id(c.get("NextGridID").ok_or(BAD)?)?;
- if next==0||grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
+ let next=checked_grid_allocator(c)?;
  let source_grid=grids.get(&target.grid_id).ok_or(BAD)?;
  let src=source_grid.get("Objects").and_then(|m|m.get(&target.object_id)).ok_or(BAD)?;
  if object(src,&target.object_id)?!=target.item_id||(coord(src,"X")?,coord(src,"Y")?)!=expected{return Err(BAD);}
@@ -167,8 +180,7 @@ fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orie
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
  let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
  let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
- let next=id(c.get("NextGridID").ok_or(BAD)?)?;
- if next==0||grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
+ let next=checked_grid_allocator(c)?;
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
  if dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id};
@@ -177,6 +189,7 @@ fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orie
  install(source,&root,&target,d,xy,orientation,next,tree,serde_json::json!({"SubGrid":{"GridID":new_child,"DesignID":null}}))
 }
 fn install(source:&str,root:&Value,target:&GridCoordinateTarget,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,next:u32,tree:CloneTree<'_>,state:Value)->Result<GridCoordinateDraft,PatchError>{
+ if !grid_capacity(tree.grids,tree.diff,tree.created.len()){return Err(BAD);}
  let reserved=(next..tree.next).collect::<HashSet<_>>();
  if reserved_ref(root,&reserved,false){return Err(BAD);}
  let working=super::bulk_furniture::preview_bulk_stock(source,&tree.stock,false)?;

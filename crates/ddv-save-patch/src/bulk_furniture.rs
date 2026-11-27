@@ -57,8 +57,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
  let mut next_grid=0u32;let mut created=Vec::<(u32,Value)>::new();let mut count=0usize;
  let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
  if has_support{
-  next_grid=c.get("NextGridID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(BAD)?;
-  if grids.len()>2048||diff.is_some_and(|m|m.len()>2048)||grids.iter().chain(diff.into_iter().flat_map(|m|m.iter())).any(|(key,g)|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next_grid||g.get("ID").and_then(Value::as_u64)!=Some(u64::from(n)))){return Err(BAD);}
+  next_grid=super::support_clone::checked_grid_allocator(c.as_object().ok_or(BAD)?)?;
  }
  let original_next_grid=next_grid;
  for p in pickups{
@@ -100,7 +99,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
    for item in items{*delta.entry(item).or_default()-=1;}
    object["State"]=serde_json::json!({"SubGrid":{"GridID":child,"DesignID":null}});
   }else{count+=1;*delta.entry(p.item_id).or_default()-=1;}
-  if count>LIMIT||grids.len()+created.len()>2048&&has_support{return Err(BAD);}
+  if count>LIMIT||has_support&&!super::support_clone::grid_capacity(grids,diff,created.len()){return Err(BAD);}
   change.add.push(object);
  }
  if has_support&&super::support_clone::reserved_ref(&root,&(original_next_grid..next_grid).collect::<HashSet<_>>(),false){return Err(BAD);}
@@ -271,6 +270,21 @@ mod mixed_placement_tests{
   assert_eq!(actual["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],5);
   assert!(batch.patched_json.contains("\"Unknown\":1e2"));
   let mut stale=src.clone();stale["ExternalGridID"]=Value::from(101);assert!(preview_bulk_scene_place(&stale.to_string(),&rows).is_err());
+  let mut large=src.clone();
+  large["World"]["GridCollection"]["NextGridID"]=9000.into();
+  for id in 100..2600{large["World"]["GridCollection"]["Grids"][id.to_string()]=serde_json::json!({"ID":id,"Objects":{}});}
+  for id in 3000..4000{large["World"]["GridCollection"]["DiffGrids"][id.to_string()]=serde_json::json!({"ID":id,"ModifiedObjects":{}});}
+  let source=large.to_string();
+  let one=crate::support_clone::preview_support_scene_place(&source,40005160,&d,(1,1),"GridOrientation_Down",&tree).unwrap();
+  let two=preview_furniture_stock_transaction(&one.patched_json,2,FurnitureStockAction::Place{destination:&d,item_id:40005161,xy:(2,2),orientation:"GridOrientation_Down"}).unwrap();
+  let three=crate::support_clone::preview_support_scene_place(&two.patched_json,40005160,&d,(3,3),"GridOrientation_Down",&tree).unwrap();
+  let batch=preview_bulk_scene_place(&source,&rows).unwrap();
+  let actual:Value=serde_json::from_str(&batch.patched_json).unwrap();
+  assert_eq!(actual,serde_json::from_str::<Value>(&three.patched_json).unwrap());
+  assert_eq!(actual["World"]["GridCollection"]["NextGridID"],9002);
+  assert_eq!(actual["World"]["GridCollection"]["DiffGrids"],large["World"]["GridCollection"]["DiffGrids"]);
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["2599"],large["World"]["GridCollection"]["Grids"]["2599"]);
+  let mut stale=large.clone();stale["ExternalGridID"]=9001.into();assert!(preview_bulk_scene_place(&stale.to_string(),&rows).is_err());
   let mut low=src;low["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"]=Value::from(2);assert!(preview_bulk_scene_place(&low.to_string(),&rows).is_err());
  }
 }
