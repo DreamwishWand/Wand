@@ -1,11 +1,15 @@
 <script lang="ts">
  import {type ImageSource} from '$lib/media/native-map-renderer.ts';
  import {openNativePreviewPack} from '$lib/media/native-cdn-preview.ts';
+ import {browser} from '$app/environment';
+ import {nativePreviewSession} from '$lib/media/native-preview-session.ts';
  import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
- let maps:readonly LocalNativeMap[]=[],map:LocalNativeMap|null=null,source:ImageSource|null=null,selected='',locked=false;
+ const initial=browser?nativePreviewSession.get():null;
+ const initialMap=(ms:readonly LocalNativeMap[])=>ms.find(m=>m.id==='MapVillage04')?.id??ms[0]?.id??'';
+ let maps:readonly LocalNativeMap[]=initial?.maps??[],map:LocalNativeMap|null=null,source:ImageSource|null=initial?.source??null,selected=initialMap(maps),locked=false;
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
  let points:{x:number;y:number}[]=[];
@@ -20,9 +24,10 @@
   try{
    const {maps:next,source:provider}=await openNativePreviewPack(files);
    if(revision!==ticket)return;
-   maps=next;source=provider;selected=next[0].id;camera=defaultMapCamera();points=[];status='drawing';
+   nativePreviewSession.set({maps:next,source:provider});maps=next;source=provider;selected=initialMap(next);camera=defaultMapCamera();points=[];status='drawing';
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
  }
+ function clear(){ticket++;nativePreviewSession.clear();maps=[];source=null;selected='';points=[];error='';}
  function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();points=[];}
  function beginPan(e:PointerEvent){
   if(!e.isPrimary||!(e.button===0||e.button===1))return;
@@ -47,6 +52,7 @@
  <div class="tools">
   <label>ローカル検証素材 <input type="file" multiple accept=".json,.png,.webp" on:change={open}/></label>
   {#if map&&source}
+   <button type="button" on:click={clear}>素材を解除</button>
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
    <label><input type="checkbox" bind:checked={locked}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>

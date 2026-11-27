@@ -2,11 +2,13 @@ import {parseLocalNativePreview,requiredLocalImages,openLocalNativePreview,type 
 import {publicImageUrl} from './public-image-key.ts';
 import type {ImageSource} from './native-map-renderer.ts';
 const LIMIT=80*1024*1024;
+const CACHE_LIMIT=64*1024*1024;
 const ORIGIN='https://media.dreamwishwand.com';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function check(ok:unknown,msg:string):asserts ok{if(!ok)throw Error(msg);}
 /** Private test manifest with source-pixel-checked CDN or R2 images. Each browser fetch still verifies bytes. Not placement or manifest publication authority. */
-export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch):LocalNativePreviewPack{
+export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cacheLimit=CACHE_LIMIT):LocalNativePreviewPack{
+ check(Number.isSafeInteger(cacheLimit)&&cacheLimit>=0&&cacheLimit<=CACHE_LIMIT,'Invalid encoded cache budget');
  check(record(doc)&&doc.sourcePixelsVerified===true&&record(doc.images),'Invalid map preview receipt');
  const verifiedCdn=doc.schema==='wand.media.native-cdn-preview@1'&&doc.cdnVerified===true;
  const verifiedR2=doc.schema==='wand.media.native-r2-preview@1'&&doc.canonicalMetadataVerified===true&&doc.cdnVerified===false;
@@ -17,8 +19,11 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch):Lo
  for(const [sha,sz] of required){
   const m=doc.images[sha];check(record(m)&&m.width===sz[0]&&m.height===sz[1]&&typeof m.bytes==='number'&&Number.isSafeInteger(m.bytes)&&m.bytes>=20&&m.bytes<=LIMIT,'CDN image metadata mismatch');images.set(sha,m.bytes);
  }
- const source:ImageSource=async(layer,signal)=>{
+ const cache=new Map<string,Blob>();let resident=0;
+ async function readVerified(layer:Parameters<ImageSource>[0],signal?:AbortSignal):Promise<Blob>{
   signal?.throwIfAborted();const size=images.get(layer.imageSha256);check(size,'Unknown CDN image');
+  const old=cache.get(layer.imageSha256);
+  if(old){cache.delete(layer.imageSha256);cache.set(layer.imageSha256,old);return old;}
   const response=await request(publicImageUrl(ORIGIN,'original',layer.imageSha256),{signal,mode:'cors',credentials:'omit',redirect:'error',cache:'default'});
   check(response.ok&&response.headers.get('content-type')?.split(';')[0].trim()==='image/webp'&&response.body,'CDN response invalid');
   const len=response.headers.get('content-length');check(len===null||Number(len)===size,'CDN length mismatch');
@@ -29,8 +34,16 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch):Lo
   }finally{if(!finished)await reader.cancel().catch(()=>{});reader.releaseLock();}
   const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
   check(digest===layer.imageSha256,'CDN image digest mismatch');signal?.throwIfAborted();
-  const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/webp'}),{colorSpaceConversion:'none',premultiplyAlpha:'none',imageOrientation:'none'});
+  return new Blob([bytes],{type:'image/webp'});
+ }
+ const source:ImageSource=async(layer,signal)=>{
+  const blob=await readVerified(layer,signal);signal?.throwIfAborted();
+  const bitmap=await createImageBitmap(blob,{colorSpaceConversion:'none',premultiplyAlpha:'none',imageOrientation:'none'});
   if(signal?.aborted||bitmap.width!==layer.size[0]||bitmap.height!==layer.size[1]){bitmap.close();signal?.throwIfAborted();throw Error('CDN image dimensions mismatch');}
+  if(blob.size<=cacheLimit&&!cache.has(layer.imageSha256)){
+   for(const [key,value] of cache){if(resident+blob.size<=cacheLimit)break;cache.delete(key);resident-=value.size;}
+   cache.set(layer.imageSha256,blob);resident+=blob.size;
+  }
   return bitmap;
  };
  return {maps,source};
