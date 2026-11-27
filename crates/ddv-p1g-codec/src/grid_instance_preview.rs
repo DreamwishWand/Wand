@@ -364,7 +364,7 @@ pub(super) fn resolve_grid_mixed_targets(
 }
 
 /// Resolve the original outdoor Grid from the current source catalog.
-fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+pub(super) fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
     let bad=CodecError::Json;
     let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
     let grid=grids.get(gid).ok_or(bad)?;
