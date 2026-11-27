@@ -1784,7 +1784,8 @@ mod browser_amount_preview {
             let house=item/100_000==205;
             let building=matches!(item/100_000,200..=203);
             if world_change.is_some()&&!building&&!house{return Err(invalid());}
-            let target=if house{
+            let character_copy=world_change==Some("duplicate")&&grid_instance_preview::character_house_exterior(item);
+            let target=if house||character_copy{
                 grid_instance_preview::resolve_grid_coordinate_target(original,ordinal,item,expected,"full")
                     .map_err(|_|fail("DB05_GRID_TRANSFER_STALE"))?
             }else{
@@ -1793,12 +1794,16 @@ mod browser_amount_preview {
             };
             let dependencies=grid_instance_preview::grid_identity_dependencies(original,&target)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DEPENDENCIES_UNRESOLVED"))?;
-            if dependencies.blocking()>0||((house||building||item/100_000==402)&&dependencies.historical>0){return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
+            if if character_copy{dependencies.active+dependencies.related+dependencies.unknown>0}else{dependencies.blocking()>0||((house||building||item/100_000==402)&&dependencies.historical>0)}{return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DESTINATION_UNRESOLVED"))?;
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let landscape=item/100_000==402;
-            let mut draft=if house||building||landscape{
+            let mut draft=if world_change.is_some()&&grid_instance_preview::character_house_exterior(item){
+                if world_change!=Some("duplicate")||text("expectedOrientation")?!=text("orientation")?{return Err(invalid());}
+                grid_instance_preview::character_house_copy_candidate(original,&target,expected,&dest,(int("x")?,int("y")?),text("expectedOrientation")?,text("orientation")?,true)
+                    .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?
+            }else{if house||building||landscape{
                 let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
                 let (source_scope,dest_scope)=if house{
                     let from=grid_instance_preview::house_exterior_identity(&root,&target.grid_id).map_err(|_|invalid())?;
@@ -1815,7 +1820,7 @@ mod browser_amount_preview {
                    dest_size!=(u64::from(dest.size.0)*u64::from(dest.tessellation),u64::from(dest.size.1)*u64::from(dest.tessellation)){return Err(invalid());}
                 if let Some(mode)=world_change{if house{ddv_save_patch::preview_player_house_world_change(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?,mode=="duplicate")}else{ddv_save_patch::preview_checked_building_world_change(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?,mode=="duplicate")}}else if house{ddv_save_patch::preview_player_house_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else if building{ddv_save_patch::preview_checked_building_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
             }else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
-                .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
+                .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?};
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized||validate_profile(draft.patched_json.as_bytes()).is_err(){
                 draft.patched_json.zeroize();return Err(fail("DB05_GRID_TRANSFER_INVALID_DRAFT"));
             }

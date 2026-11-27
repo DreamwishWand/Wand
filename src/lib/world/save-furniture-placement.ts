@@ -1,3 +1,4 @@
+import {characterHouseExterior} from './character-house-exteriors.ts';
 import initialTemplates from './building-initial-templates.json' with { type: 'json' };
 /** Original terrain and ordinary furniture only. A candidate never authorizes Save writes. */
 import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
@@ -33,7 +34,7 @@ export function buildingPlacementSources(grids:readonly MainlandGrid[],objects:r
  for(const p of objects){
   if(!buildingSourceEligible(p)||!p.shape?.cellCount||p.shape.cellCount>65536)continue;
   const g=byGrid.get(p.area);
-  if(!g||!bindMainlandGrid(g)&&!playerHouseSourceEligible(p)||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
+  if(!g||!bindMainlandGrid(g)&&!characterHouseExterior(Number(p.object.itemId))&&!playerHouseSourceEligible(p)||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
   const id=Number(p.object.itemId),old=sources.get(id);
   if(!old||p.object.localOrdinal<old.object.localOrdinal)sources.set(id,p);
  }
@@ -48,7 +49,7 @@ export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:Readonly
  if(!buildingSourceEligible(p)||!p.shape||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandFreeHits(grids,rasters,wx,wy);
  const from=grids.find(g=>g.key===p.area);
- const house=playerHouseSourceEligible(p),bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(house?bindFloatingIslandGrid(g):null);
+ const islandEligible=characterHouseExterior(Number(p.object.itemId))||playerHouseSourceEligible(p),bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(islandEligible?bindFloatingIslandGrid(g):null);
  const scope=(g:MainlandGrid)=>sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);
  if(!from||!bound(from)||hits.length!==1||scope(hits[0])!==scope(from)||hits[0].factor!==p.factor||!bound(hits[0]))return null;
  const g=hits[0],x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
