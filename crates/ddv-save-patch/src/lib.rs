@@ -1780,6 +1780,14 @@ pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarg
  let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
  preview_plain_grid_place(&removed.patched_json,d,target.item_id,xy,orientation)
 }
+/// Free room export to a verified outdoor terrain grid. The codec proves
+/// native dimensions and the exclusive room identity before calling this.
+pub fn preview_free_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
+ validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
 pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
