@@ -63,7 +63,8 @@ impl CloneTree<'_>{
      !matches!(m.get("TessellationFactor").map_or(Some(1),Value::as_u64),Some(1|2)){return Err(BAD);}
   self.templates.entry(owner).or_default().push(old);
   let counter=id(m.get("NextGridObjectID").ok_or(BAD)?)?;
-  if counter==0{return Err(BAD);}
+  // Empty native furniture grids may have a zero counter. Keep the original counter when cloning.
+  support_grid_next_object_id(&g)?;
   let fresh=self.next;self.next=self.next.checked_add(1).ok_or(BAD)?;
   // Reserve the entry before descending, including the empty-surface case.
   let slot=self.created.len();self.created.push((fresh,Value::Null));
@@ -362,5 +363,71 @@ mod bulk_support_pickup_tests{
   assert!(preview_bulk_support_pickup(&stale.to_string(),&rows).is_err());
   let mut duplicate=source;duplicate["World"]["GridCollection"]["Grids"]["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"]=Value::from(80);
   assert!(preview_bulk_support_pickup(&duplicate.to_string(),&rows).is_err());
+ }
+}
+
+// Shared validation of structural recovery roots, including all descendants.
+// The writer repeats ownership and reference validation before committing.
+pub(super) fn structural_recovery_count(root:&Value,rows:&[(GridCoordinateTarget,(i32,i32),String)])->Result<usize,PatchError>{
+ let c=root["World"]["GridCollection"].as_object().ok_or(BAD)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(BAD)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
+ let mut seen=HashSet::new();let mut counts=HashMap::<u64,u64>::new();let mut total=0usize;
+ for (target,xy,orientation) in rows{
+  let g=grids.get(&target.grid_id).ok_or(BAD)?;
+  if diff.is_some_and(|m|m.contains_key(&target.grid_id)){return Err(BAD);}
+  let o=g["Objects"].get(&target.object_id).ok_or(BAD)?;
+  if object(o,&target.object_id)?!=target.item_id||(coord(o,"X")?,coord(o,"Y")?)!=*xy||o["Orientation"].as_str()!=Some(orientation.as_str()){return Err(BAD);}
+  let mut items=vec![target.item_id];
+  if let Some(child)=state_child(o)?{
+   let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next:1,created:Vec::new(),stock:items,templates:HashMap::new(),plain:HashSet::new(),source_only:false};
+   tree.clone_grid(child,target.item_id,0)?;
+   for n in tree.seen{if !seen.insert(n){return Err(BAD);}}
+   items=tree.stock;
+  }
+  for i in items{
+   total+=1;if total>2048{return Err(BAD);}
+   let n=counts.entry(i).or_default();*n+=1;
+   let stock=root["Player"]["ListInventories"]["0"]["Inventory"][i.to_string()]["Amount"].as_u64().ok_or(BAD)?;
+   if stock.checked_add(*n).is_none_or(|n|n>i32::MAX as u64){return Err(BAD);}
+  }
+ }
+ if rows.iter().any(|(t,_,_)|t.grid_id.parse::<u32>().ok().is_some_and(|n|seen.contains(&n))){return Err(BAD);}
+ Ok(total)
+}
+pub(super) fn structural_recovery(source:&str,rows:&[(GridCoordinateTarget,(i32,i32),String)],expected:usize)->Result<String,PatchError>{
+ use super::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+ let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
+ if expected==0||structural_recovery_count(&root,rows)?!=expected{return Err(BAD);}
+ let mut plain=Vec::new();let mut support=Vec::new();
+ for (target,xy,orientation) in rows{
+  let o=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+  let row=BulkPickup{target,expected:*xy,orientation};
+  if state_child(o)?.is_some(){support.push(row);}else{plain.push(row);}
+ }
+ let mut working=source.to_owned();
+ if !plain.is_empty(){working=preview_bulk_furniture(&working,&plain,&[])?.patched_json;}
+ if !support.is_empty(){working=preview_bulk_support_pickup(&working,&support)?.patched_json;}
+ Ok(working)
+}
+#[cfg(test)]
+mod structural_recovery_tests{
+ use super::*;
+ #[test]fn empty_and_populated_support_trees_recover_exact_stock(){
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":0},"40005161":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"7":{"ID":7,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":80}}},"2":{"ID":2,"ItemID":40005160,"X":3,"Y":3,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":81}}}}},"80":{"ID":80,"GridDataPath":"GridData/Furniture/A.json","TessellationFactor":2,"NextGridObjectID":0,"Objects":{}},"81":{"ID":81,"GridDataPath":"GridData/Furniture/A.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}}}}});
+  let rows=vec![(GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:"1".into(),item_id:40005160},(1,1),"GridOrientation_Down".into()),(GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:"2".into(),item_id:40005160},(3,3),"GridOrientation_Down".into())];
+  assert_eq!(structural_recovery_count(&raw,&rows).unwrap(),3);
+  let result=structural_recovery(&raw.to_string(),&rows,3).unwrap();
+  let v:Value=serde_json::from_str(&result).unwrap();
+  assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"],2);
+  assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],3);
+  assert!(v["World"]["GridCollection"]["Grids"].get("80").is_none());
+  assert!(v["World"]["GridCollection"]["Grids"].get("81").is_none());
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["7"]["NextGridObjectID"],4);
+  assert!(structural_recovery(&raw.to_string(),&rows,2).is_err());
+  let mut bad=raw.clone();bad["World"]["GridCollection"]["Grids"]["80"]["Objects"]["1"]=serde_json::json!({"ID":1});
+  assert!(structural_recovery_count(&bad,&rows).is_err());
+  let mut alias=raw;alias["World"]["Alias"]=serde_json::json!({"GridID":80});
+  assert!(structural_recovery(&alias.to_string(),&rows,3).is_err());
  }
 }

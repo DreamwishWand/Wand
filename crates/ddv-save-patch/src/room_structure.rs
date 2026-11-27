@@ -115,7 +115,6 @@ fn resize_door_changes_except(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Sha
 // raster. Recovery never deletes a stateful or unrecognized record.
 fn shrink_pickups(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->Option<Vec<(GridCoordinateTarget,(i32,i32),String)>>{
  let mut rows=Vec::new();
- let mut counts=std::collections::HashMap::<u64,u64>::new();
  for (i,gid) in ids.iter().enumerate(){
   if old.paths[i]==next.paths[i]{continue;}
   let g=&root["World"]["GridCollection"]["Grids"][gid.to_string()];
@@ -133,11 +132,8 @@ fn shrink_pickups(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->Option<Vec<(Gr
    if x<nx*factor&&y<ny*factor{continue;}
    let oid=key.parse::<u32>().ok()?;
    let orientation=o["Orientation"].as_str()?;
-   if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||o.get("State").is_some_and(|v|!v.is_null())||
+   if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||
       o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
-   let count=counts.entry(item).or_default();*count+=1;
-   let stock=root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64()?;
-   if stock.checked_add(*count)?>i32::MAX as u64{return None;}
    rows.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.to_string(),object_id:key.clone(),item_id:item},(i32::try_from(x).ok()?,i32::try_from(y).ok()?),orientation.to_owned()));
    if rows.len()>2048{return None;}
   }
@@ -148,7 +144,7 @@ fn recovery_candidate(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next:
  let rows=shrink_pickups(root,ids,old,next)?;
  let skipped=rows.iter().map(|(t,_,_)|Some((t.grid_id.parse::<u32>().ok()?,t.object_id.clone()))).collect::<Option<HashSet<_>>>()?;
  resize_door_changes_except(root,t,ids,old,next,true,&skipped)?;
- Some(rows.len())
+ crate::support_clone::structural_recovery_count(root,&rows).ok()
 }
 pub fn room_resize_recovery_options(root:&Value,t:RoomFinishTarget)->Vec<(String,usize)>{
  let Ok(shapes)=shapes()else{return vec![];};let Ok((old,ids))=room_geometry(root,t,shapes)else{return vec![];};
@@ -156,7 +152,6 @@ pub fn room_resize_recovery_options(root:&Value,t:RoomFinishTarget)->Vec<(String
  shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)).filter_map(|(_,s)|recovery_candidate(root,t,&ids,&shapes[old],s).map(|n|(s.name.clone(),n))).collect()
 }
 pub fn preview_room_resize_recover(source:&str,t:RoomFinishTarget,expected:&str,replacement:&str,expected_count:usize)->Result<GridCoordinateDraft,PatchError>{
- use crate::bulk_furniture::{BulkPickup,preview_bulk_furniture};
  validate_json_without_edit(source)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let shapes=shapes()?;let (old,ids)=room_geometry(&root,t,shapes)?;
@@ -169,11 +164,9 @@ pub fn preview_room_resize_recover(source:&str,t:RoomFinishTarget,expected:&str,
  r.remove("FloorGridID");r.remove("WallGridIDs");
  if existing_grid_reference(&refs,&ids.iter().copied().collect(),false){return Err(BAD);}
  let rows=shrink_pickups(&root,&ids,&shapes[old],next).ok_or(BAD)?;
- if rows.len()!=expected_count{return Err(BAD);}
- let pickups=rows.iter().map(|(target,xy,orientation)|BulkPickup{target,expected:*xy,orientation}).collect::<Vec<_>>();
- let recovered=preview_bulk_furniture(source,&pickups,&[])?;
+ let recovered=crate::support_clone::structural_recovery(source,&rows,expected_count)?;
  // The intermediate result is never exported. Both stages must succeed.
- preview_room_resize_mode(&recovered.patched_json,t,expected,replacement,true)
+ preview_room_resize_mode(&recovered,t,expected,replacement,true)
 }
 pub fn room_resize_choices(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<String>,Vec<String>)>{
  let shapes=shapes().ok()?;let (old,ids)=room_geometry(root,t,shapes).ok()?;
@@ -511,7 +504,7 @@ fn removal_target(root:&Value,t:RoomFinishTarget,whole_floor:bool,recover:bool)-
   let key=structural_door(grids.get(&gid.to_string())?,40300001,door_anchor(&catalog[ci].paths[pw+1])?,false)?;
   (vec![t.room_slot],Some((gid,key)))
  };
- let mut ids=Vec::new();let mut pickups=Vec::new();let mut counts=std::collections::HashMap::<u64,u64>::new();
+ let mut ids=Vec::new();let mut pickups=Vec::new();
  for slot in slots{
   let target=RoomFinishTarget{room_slot:slot,..t};
   if !removable_room_record(room_value(root,target)?){return None;}
@@ -536,11 +529,8 @@ fn removal_target(root:&Value,t:RoomFinishTarget,whole_floor:bool,recover:bool)-
     let item=o["ItemID"].as_u64()?;
     let oid=key.parse::<u32>().ok()?;
     let orientation=o["Orientation"].as_str()?;
-    if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||o.get("State").is_some_and(|v|!v.is_null())||o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
+    if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
     let x=i32::try_from(o["X"].as_i64()?).ok()?;let y=i32::try_from(o["Y"].as_i64()?).ok()?;
-    let count=counts.entry(item).or_default();*count+=1;
-    let stock=root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64()?;
-    if stock.checked_add(*count)?>i32::MAX as u64{return None;}
     pickups.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.to_string(),object_id:key.clone(),item_id:item},(x,y),orientation.to_owned()));
     if pickups.len()>2048{return None;}
    }
@@ -553,21 +543,19 @@ pub fn room_removal_offer(root:&Value,t:RoomFinishTarget)->Option<(&'static str,
  if let Some(plan)=removal_target(root,t,floor,false){return Some((if floor{"floor"}else{"room"},plan.pickups.len()));}
  let plan=removal_target(root,t,floor,true)?;
  if plan.pickups.is_empty(){return None;}
- Some((if floor{"floor"}else{"room"},plan.pickups.len()))
+ let count=crate::support_clone::structural_recovery_count(root,&plan.pickups).ok()?;
+ Some((if floor{"floor"}else{"room"},count))
 }
 pub fn room_removal_kind(root:&Value,t:RoomFinishTarget)->Option<&'static str>{
  removal_target(root,t,t.room_slot==0,false).map(|_|if t.room_slot==0{"floor"}else{"room"})
 }
 pub fn preview_remove_primary_room_recover(source:&str,t:RoomFinishTarget,whole_floor:bool,count:usize)->Result<GridCoordinateDraft,PatchError>{
- use crate::bulk_furniture::{BulkPickup,preview_bulk_furniture};
  validate_json_without_edit(source)?;
  if count==0||count>2048{return Err(BAD);}
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let plan=removal_target(&root,t,whole_floor,true).ok_or(BAD)?;
- if plan.pickups.len()!=count{return Err(BAD);}
- let rows=plan.pickups.iter().map(|(target,xy,orientation)|BulkPickup{target,expected:*xy,orientation}).collect::<Vec<_>>();
- let staged=preview_bulk_furniture(source,&rows,&[])?;
- preview_remove_primary_room(&staged.patched_json,t,whole_floor)
+ let staged=crate::support_clone::structural_recovery(source,&plan.pickups,count)?;
+ preview_remove_primary_room(&staged,t,whole_floor)
 }
 pub fn preview_remove_primary_room(source:&str,t:RoomFinishTarget,whole_floor:bool)->Result<GridCoordinateDraft,PatchError>{
  validate_json_without_edit(source)?;
