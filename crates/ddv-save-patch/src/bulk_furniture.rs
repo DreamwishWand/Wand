@@ -39,17 +39,21 @@ fn grid_changes(id:&str,grid:&Value,collection:&Value,allocating:bool)->Result<G
 /// each ordinary phase across all affected Grids and stock entries.
 pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkPlace<'_>])->Result<GridCoordinateDraft,PatchError>{
  let rows=places.iter().map(|p|BulkScenePlace{pose:BulkPlace{destination:p.destination,item_id:p.item_id,xy:p.xy,orientation:p.orientation,free_placement:p.free_placement},tree:None}).collect::<Vec<_>>();
- bulk_patch(source,pickups,&rows,false)
+ bulk_patch(source,pickups,&rows,false,&HashMap::new())
 }
 /// Mixed roots are allocated in input order, with a single global child
 /// allocator and a single stock balance across every destination.
-pub fn preview_bulk_scene_place(source:&str,places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{bulk_patch(source,&[],places,false)}
+pub fn preview_bulk_scene_place(source:&str,places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{bulk_patch(source,&[],places,false,&HashMap::new())}
 // Only room_structure may authorize the known indoor floor geometry, after
 // validating the room's native Grid binding and the selected recovery roots.
 pub(super) fn preview_structural_room_pickup(source:&str,pickups:&[BulkPickup<'_>])->Result<GridCoordinateDraft,PatchError>{
- bulk_patch(source,pickups,&[],true)
+ bulk_patch(source,pickups,&[],true,&HashMap::new())
 }
-fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>],structural_room:bool)->Result<GridCoordinateDraft,PatchError>{
+/// Allocate independent empty storage rows in the same batch as furniture.
+pub fn preview_bulk_storage_scene_place(source:&str,places:&[BulkScenePlace<'_>],templates:&HashMap<u64,(&str,u32)>)->Result<GridCoordinateDraft,PatchError>{
+ bulk_patch(source,&[],places,false,templates)
+}
+fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>],structural_room:bool,templates:&HashMap<u64,(&str,u32)>)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||pickups.is_empty()==places.is_empty()||pickups.len()+places.len()>LIMIT{return Err(BAD);}
  let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(BAD)?;
@@ -65,6 +69,16 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   next_grid=super::support_clone::checked_grid_allocator(c.as_object().ok_or(BAD)?)?;
  }
  let original_next_grid=next_grid;
+ let storage_count=places.iter().filter(|p|templates.contains_key(&p.pose.item_id)).count();
+ let has_storage=storage_count>0;
+ let mut new_containers=Vec::<(u32,Value)>::new();let mut next_container=0u32;let mut containers_empty=false;
+ if has_storage{
+  let m=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()+storage_count<=8192).ok_or(BAD)?;
+  containers_empty=m.is_empty();
+  next_container=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(BAD)?;
+  if m.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*k||n>=next_container||v["ID"].as_u64()!=Some(u64::from(n)))){return Err(BAD);}
+ }
+ let first_container=next_container;
  for p in pickups{
   let t=p.target;if t.kind!=GridObjectKind::Full||t.item_id/100_000!=400{return Err(BAD);}
   let grid=grids.get(&t.grid_id).ok_or(BAD)?;
@@ -98,7 +112,13 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   if objects.len()+change.add.len()>=100_000||!p.free_placement&&objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(BAD);}
   let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
   let mut object=serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation});
-  if let Some(scene)=row.tree{
+  if let Some(&(template,size))=templates.get(&p.item_id){
+   if row.tree.is_some()||template!="Chest_48Slot"||size!=48||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(BAD);}
+   let id=next_container;next_container=id.checked_add(1).ok_or(BAD)?;
+   new_containers.push((id,serde_json::json!({"ID":id,"Size":size,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":p.item_id,"ExtraSize":0})));
+   object["State"]=serde_json::json!({"Storage":{"ContainerInventoryID":id,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
+   count+=1;*delta.entry(p.item_id).or_default()-=1;
+  }else if let Some(scene)=row.tree{
    let (child,following,children,items)=super::support_clone::build_source_tree(grids,diff,next_grid,p.item_id,scene)?;
    next_grid=following;created.extend(children);count+=items.len();
    for item in items{*delta.entry(item).or_default()-=1;}
@@ -108,6 +128,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   change.add.push(object);
  }
  if has_support&&super::support_clone::reserved_ref(&root,&(original_next_grid..next_grid).collect::<HashSet<_>>(),false){return Err(BAD);}
+ if has_storage&&player_house_create::container_refs_in_range(&root,first_container,next_container,false){return Err(BAD);}
  let mut stock=Vec::new();
  for (item,d) in delta{
   let old=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).filter(|n|*n<=i32::MAX as u64).ok_or(BAD)?;
@@ -120,6 +141,8 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
  for v in changes.values(){locator.capture.insert(v.objects_path.clone(),None);if !v.add.is_empty(){locator.capture.insert(v.counter_path.clone(),None);}}
  let gp=vec![k("World"),k("GridCollection"),k("Grids")];let gc=vec![k("World"),k("GridCollection"),k("NextGridID")];
  if has_support{locator.capture.insert(gp.clone(),None);locator.capture.insert(gc.clone(),None);}
+ let mp=vec![k("Player"),k("ContainerInventories")];let mc=vec![k("Player"),k("NextContainerInventoryID")];
+ if has_storage{locator.capture.insert(mp.clone(),None);locator.capture.insert(mc.clone(),None);}
  locator.walk_complete()?;
  let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
  let mut edits=Vec::<(Range<usize>,String)>::new();
@@ -129,6 +152,12 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   if source[counter.clone()].parse::<u32>().ok()!=Some(original_next_grid){return Err(BAD);}
   let mut members=String::new();for (id,g) in &created{members.push_str(&format!(",\"{}\":{}",id,g));}
   edits.push((range.end-1..range.end-1,members));edits.push((counter,next_grid.to_string()));
+ }
+ if has_storage{
+  let range=span(&mp)?;let counter=span(&mc)?;
+  if source[counter.clone()].parse::<u32>().ok()!=Some(first_container){return Err(BAD);}
+  let mut members=String::new();for (i,(id,row)) in new_containers.iter().enumerate(){members.push_str(&format!("{}\"{}\":{}",if i==0&&containers_empty{""}else{","},id,row));}
+  edits.push((range.end-1..range.end-1,members));edits.push((counter,next_container.to_string()));
  }
  let mut maps=Vec::new();
  for (id,v) in &changes{
@@ -165,6 +194,11 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   let g=root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?;
   for (id,value) in created{if g.insert(id.to_string(),value).is_some(){return Err(BAD);}}
   root["World"]["GridCollection"]["NextGridID"]=Value::from(next_grid);
+ }
+ if has_storage{
+  let m=root["Player"]["ContainerInventories"].as_object_mut().ok_or(BAD)?;
+  for (id,row) in new_containers{if m.insert(id.to_string(),row).is_some(){return Err(BAD);}}
+  root["Player"]["NextContainerInventoryID"]=Value::from(next_container);
  }
  for (item,_,new) in stock{root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"]=Value::from(new);}
  edits.sort_unstable_by_key(|(r,_)|r.start);

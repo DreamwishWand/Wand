@@ -2250,11 +2250,21 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
     }
-    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&poses.iter().any(|(_,item,..)|crate::storage_source::is_storage(*item)){return Err(bad);}
     if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
-        use ddv_save_patch::bulk_furniture::{BulkPlace,preview_bulk_furniture};
+        use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_furniture,preview_bulk_storage_scene_place};
         let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
-        let mut draft=preview_bulk_furniture(std::str::from_utf8(profile).map_err(|_|bad)?,&[],&places).map_err(|_|CodecError::Patch)?;
+        let mut templates=HashMap::new();
+        for p in &places{if crate::storage_source::is_storage(p.item_id){
+            let (template,capacity)=crate::storage_source::initial_storage_template(p.item_id).ok_or(bad)?;
+            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&p.destination.grid_id)?;
+            if layout!=p.destination.layout_path||factor!=u64::from(p.destination.tessellation)||sx!=u64::from(p.destination.size.0)||sy!=u64::from(p.destination.size.1){return Err(bad);}
+            templates.insert(p.item_id,(template,capacity));
+        }}
+        let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+        let mut draft=if templates.is_empty(){preview_bulk_furniture(json,&[],&places)}else{
+            let rows=places.into_iter().map(|pose|BulkScenePlace{pose,tree:None}).collect::<Vec<_>>();
+            preview_bulk_storage_scene_place(json,&rows,&templates)
+        }.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         return Ok(draft.patched_json);
     }
