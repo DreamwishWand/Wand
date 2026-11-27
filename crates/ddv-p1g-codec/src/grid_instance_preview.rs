@@ -411,24 +411,38 @@ pub(super) fn validate_oblique_grid_edits(profile:&[u8],edits:&[ddv_save_patch::
 /// cases are unsupported, and identity references are checked separately.
 fn known_building_transform_state(root:&Value,item:u64,state:&Value)->bool{
     let Some(m)=state.as_object().filter(|m|m.len()==1) else{return false;};
-    let upgrade=|v:&Value|v.as_object().is_some();
+    let family=item/100_000;
+    let upgrade=|v:&Value|v.is_null()||v.as_object().is_some();
     let skin=|v:&Value|v.as_i64().is_some();
-    match (item%10_000_000)/100_000{
-        0|5=>{
-            let Some(h)=m.get("HouseData").and_then(Value::as_object) else{return false;};
+    // Item category is not the GridState discriminant. Schema-643 native
+    // observations include skinned houses/stalls and HouseData on class 203.
+    if matches!(family,200|203|205){
+        if let Some(h)=m.get("HouseData").and_then(Value::as_object){
             if h.keys().any(|k|!matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))||
                h.get("Built").and_then(Value::as_bool)!=Some(true)||
-               h.get("UpgradeState").is_some_and(|v|!v.is_null()&&!upgrade(v)){return false;}
-            if item/100_000==205{
+               h.get("UpgradeState").is_some_and(|v|!upgrade(v)){return false;}
+            if family==205{
                 let Some(idx)=h.get("PlayerHouseIndex").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()) else{return false;};
                 let Some(houses)=root["World"]["PlayerHouses"].as_array() else{return false;};
-                houses.get(idx).is_some_and(|v|v["HouseItemID"].as_u64()==Some(item)&&v["Floors"].as_array().is_some_and(|a|!a.is_empty()))&&
-                houses.iter().filter(|v|v["HouseItemID"].as_u64()==Some(item)).count()==1
-            }else{h.get("PlayerHouseIndex").is_none_or(|v|v.as_i64().is_some())}
+                return houses.get(idx).is_some_and(|v|v["HouseItemID"].as_u64()==Some(item)&&v["Floors"].as_array().is_some_and(|a|!a.is_empty()))&&
+                houses.iter().filter(|v|v["HouseItemID"].as_u64()==Some(item)).count()==1;
+            }
+            return h.get("PlayerHouseIndex").is_none_or(|v|v.as_i64().is_some());
+        }
+    }
+    if matches!(family,200|201|203){
+        if let Some(v)=m.get("BuildingWithSkinData").and_then(Value::as_object){
+            return v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("CurrentSkinItemID").is_none_or(skin);
+        }
+    }
+    match family{
+        201=>{
+            if let Some(v)=m.get("StallData").and_then(Value::as_object){
+                return v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("ShopData").is_some_and(|v|v.is_null()||v.is_object())&&v.get("CurrentSkinItemID").is_none_or(skin);
+            }
+            m.get("FishingStallData").and_then(Value::as_object).is_some_and(|v|v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"LastCollect"|"PendingFishes"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("LastCollect").is_some_and(Value::is_string)&&v.get("PendingFishes").is_some_and(Value::is_array))
         },
-        1=>m.get("StallData").and_then(Value::as_object).is_some_and(|v|v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("ShopData").is_some_and(Value::is_object)&&v.get("CurrentSkinItemID").is_none_or(skin)),
-        2=>m.get("GardenData").and_then(Value::as_object).is_some_and(|v|v.len()==1&&v.get("Slots").and_then(Value::as_array).is_some_and(|a|a.iter().all(Value::is_object))),
-        3=>m.get("BuildingWithSkinData").and_then(Value::as_object).is_some_and(|v|v.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&v.get("UpgradeState").is_some_and(upgrade)&&v.get("CurrentSkinItemID").is_none_or(skin)),
+        202=>m.get("GardenData").and_then(Value::as_object).is_some_and(|v|v.len()==1&&v.get("Slots").and_then(Value::as_array).is_some_and(|a|a.iter().all(Value::is_object))),
         _=>false
     }
 }
@@ -1609,13 +1623,39 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
 fn building_clone_state(item:u64,state:Option<&Value>)->bool{
     let Some(v)=state.filter(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty())) else{return true;};
     let Some(m)=v.as_object().filter(|m|m.len()==1) else{return false;};
+    let family=item/100_000;
     let upgrade=|v:&Value|v.is_null()||v.as_object().is_some_and(|o|o.keys().all(|k|k=="Level")&&o.get("Level").and_then(Value::as_u64).is_some());
-    let skin=|v:&Value|v.as_i64().is_some();
-    match item/100_000{
-        200=>m.get("HouseData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))&&h.get("Built").and_then(Value::as_bool)==Some(true)&&h.get("UpgradeState").is_none_or(upgrade)&&h.get("PlayerHouseIndex").is_none_or(|v|v.as_i64()==Some(-1))),
-        201=>m.get("StallData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(skin)&&h.get("ShopData").and_then(Value::as_object).is_some_and(|o|o.is_empty())),
-        202=>m.get("GardenData").and_then(Value::as_object).is_some_and(|h|h.len()==1&&h.get("Slots").and_then(Value::as_array).is_some_and(|a|a.is_empty())),
-        203=>m.get("BuildingWithSkinData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(skin)),
+    let int=|v:&Value|v.as_i64().is_some();
+    let timestamp=|v:&Value|v.as_str().is_some_and(|s|!s.is_empty()&&s.len()<=64);
+    if matches!(family,200|203){
+        if let Some(h)=m.get("HouseData").and_then(Value::as_object){
+            // The non-player house index is a scalar default (0 in observed
+            // schema 643); a nonzero interior index is not cloned.
+            return h.keys().all(|k|matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))&&h.get("Built").and_then(Value::as_bool)==Some(true)&&h.get("UpgradeState").is_none_or(upgrade)&&h.get("PlayerHouseIndex").is_none_or(|v|matches!(v.as_i64(),Some(-1|0)));
+        }
+    }
+    if matches!(family,200|201|203){
+        if let Some(h)=m.get("BuildingWithSkinData").and_then(Value::as_object){
+            return h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(int);
+        }
+    }
+    match family{
+        201=>{
+            if let Some(h)=m.get("StallData").and_then(Value::as_object){
+                return h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(int)&&
+                h.get("ShopData").is_some_and(|v|v.is_null()||v.as_object().is_some_and(|shop|{
+                    if shop.is_empty(){return true;}
+                    shop.len()==4&&shop.get("LastRefresh").is_some_and(timestamp)&&shop.get("NumRefresh").is_some_and(int)&&shop.get("Seed").is_some_and(int)&&
+                    shop.get("Slots").and_then(Value::as_array).is_some_and(|a|a.len()<=128&&a.iter().all(|slot|slot.as_object().is_some_and(|s|
+                        s.len()==4&&s.get("SlotId").is_some_and(int)&&s.get("MaxAmount").is_some_and(int)&&s.get("Regen").is_some_and(Value::is_null)&&
+                        s.get("Item").and_then(Value::as_object).is_some_and(|i|i.len()==2&&i.get("id").is_some_and(int)&&i.get("amount").is_some_and(int)))))
+                }));
+            }
+            m.get("FishingStallData").and_then(Value::as_object).is_some_and(|h|h.len()==3&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("LastCollect").is_some_and(timestamp)&&h.get("PendingFishes").and_then(Value::as_array).is_some_and(|a|a.is_empty()))
+        },
+        202=>m.get("GardenData").and_then(Value::as_object).is_some_and(|h|h.len()==1&&h.get("Slots").and_then(Value::as_array).is_some_and(|a|a.len()<=128&&a.iter().all(|slot|slot.as_object().is_some_and(|s|
+            s.len()==3&&s.get("PlantedSeedItemID").is_some_and(int)&&s.get("LastActivity").is_some_and(timestamp)&&
+            s.get("Harvest").and_then(Value::as_object).is_some_and(|harvest|harvest.len()==4&&harvest.get("EndOfGrowth").is_some_and(timestamp)&&harvest.get("EndOfLife").is_some_and(|v|v.is_null()||timestamp(v))&&harvest.get("NumberOfProductionLeft").is_some_and(int)&&harvest.get("SaplingGridObjectID").and_then(Value::as_i64)==Some(0))))),
         _=>false
     }
 }
