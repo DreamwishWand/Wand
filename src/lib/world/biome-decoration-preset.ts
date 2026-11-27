@@ -36,7 +36,7 @@ function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
  if(g.plan.action!=='place')throw Error('GHOST_POSE');
  return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:worldOrientationCode(g.plan.orientation),shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
 }
-export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees;landscape?:readonly LandscapePose[]},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees,world=false,currentLandscape?:readonly LandscapePose[]){
+export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees;landscape?:readonly LandscapePose[]},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees,world=false,currentLandscape?:readonly LandscapePose[],free=false){
  if(incoming.supports&&!currentSupports||incoming.landscape!==undefined&&!currentLandscape)return null;
  const supportContext=incoming.supports&&currentSupports?{before:currentSupports,after:incoming.supports}:undefined;
  if(!captureBiomeDecoration(grid,objects,omitted,before,island,supportContext?.before,world))return null;
@@ -49,7 +49,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
  // Furniture may occupy a removed fence but never a retained fence.
  const landscapeOld=new Set((currentLandscape??[]).map(landscapePoseKey)),landscapeNext=new Set((incoming.landscape??[]).map(landscapePoseKey));
  const landscapeRemoved=incoming.landscape===undefined?[]:objects.filter(o=>o.area===grid.key&&landscapeOld.has(landscapePoseKey(landscapeObjectPose(o)))&&!landscapeNext.has(landscapePoseKey(landscapeObjectPose(o))));
- const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o)),omitted,incoming.furniture,defs,stock,island,supportContext,world);
+ const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o)),omitted,incoming.furniture,defs,stock,island,supportContext,world,free);
  if(!furniture)return null;
  const removedFurniture=new Set(furniture.removed.map(o=>o.object.localOrdinal));
  const finalFurniture=objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o));
@@ -60,7 +60,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
  if(incoming.landscape!==undefined&&!landscape)return null;
  const network=reviewBiomeNetwork(grid,rasters,[...finalFurniture,...addedFurniture,...(landscape?.ghosts??[]).map((g,i)=>ghostObject(g,2_000_000+i))],omitted,before,incoming.network,defs);
  if(!network)return null;
- for(const g of furniture.ghosts){const feedback=stockFootprintFeedback(g,objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!deletedNetworkOrdinals.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o)),omitted);if(feedback.unknown||feedback.overlaps)return null;}
+ for(const [i,g] of furniture.ghosts.entries()){if(furniture.plan.add[i].freePlacement)continue;const feedback=stockFootprintFeedback(g,objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!deletedNetworkOrdinals.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o)),omitted);if(feedback.unknown||feedback.overlaps)return null;}
  const plan={furniture:furniture.plan,network:network.plan,...(landscape?.changed?{landscape:landscape.plan}:{})};
  try{parseReplayStep({command:'biome-decoration-export',plan});}catch{return null;}
  return {plan,furniture,network,landscape,ghosts:[...furniture.ghosts,...network.ghosts,...(landscape?.ghosts??[])],removed:[...furniture.removed,...network.removed,...(landscape?.removed??[])],missing:furniture.missing,changed:furniture.changed||network.changed||!!landscape?.changed,protectedCount:objects.filter(o=>o.area===grid.key&&!['ground','fence'].includes(o.object.layer)&&!furniture.retained.includes(o)&&!removedFurniture.has(o.object.localOrdinal)&&!(currentLandscape??[]).some(p=>landscapePoseKey(p)===landscapePoseKey(landscapeObjectPose(o)))).length};
