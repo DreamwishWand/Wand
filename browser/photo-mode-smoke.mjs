@@ -28,6 +28,7 @@ try{
     const preview=detail.locator('.pose-preview');
     const body=preview.locator('.body-options button');
     const seek=preview.locator('input.seek');
+    await body.nth(1).waitFor({state:'visible',timeout:15000});
     assert.equal(await body.count(),2,'two original body type controls');
     for(let b=0;b<2;b++){
       await body.nth(b).click();
@@ -45,6 +46,13 @@ try{
       const canvas=preview.locator('canvas');
       await canvas.focus();await canvas.press('ArrowRight');
       assert.equal(await seek.inputValue(),t);
+      const play=preview.locator('.controls').first().locator('button').first();
+      await play.click();
+      await page.waitForFunction(previous=>{const e=document.querySelector('.pose-preview input.seek');return e&&Math.abs(Number(e.value)-Number(previous))>.01},t,{timeout:10000});
+      await play.click();
+      const paused=await seek.inputValue();
+      await page.waitForTimeout(100);
+      assert.equal(await seek.inputValue(),paused,'pause holds playback position');
     }
     console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
   }
