@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "nativeLoops": "原本の異なる再生周期を個別に再現しています。ゲーム内の同期は未検証です。",
     "residualMotion": "一部のドラゴンの動作参照は未解決です。",
     "limboGeometryDiagnostic": "コンパニオンの形状・動作確認用です。色は原本パラメーターの簡易表示で、特殊シェーダー・発光等は未対応です。",
     "mermaidDiagnostic": "マーメイドは形状と動作の確認用です。色・質感・衣装の物理変形および一部の動作は未対応です。",
@@ -28,6 +29,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "nativeLoops": "Original unequal clip periods are sampled independently; in-game synchronization is unverified.",
     "residualMotion": "Some dragon motion bindings remain unresolved.",
     "limboGeometryDiagnostic": "Companion geometry and motion diagnostic. Colors are a simplified projection of source parameters; special shaders and glow are not reproduced.",
     "mermaidDiagnostic": "Mermaid geometry and motion diagnostic. Colors, materials, cloth physics and some motion remain incomplete.",
@@ -56,6 +58,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "nativeLoops": "Les cycles originaux de durées différentes sont lus indépendamment ; la synchronisation en jeu reste à vérifier.",
     "residualMotion": "Certaines liaisons de mouvement du dragon restent non résolues.",
     "limboGeometryDiagnostic": "Diagnostic de la forme et des mouvements du compagnon. Les couleurs sont simplifiées ; les shaders spéciaux et la lueur ne sont pas reproduits.",
     "mermaidDiagnostic": "Aperçu de diagnostic de la forme et des mouvements de sirène. Les couleurs, matériaux, mouvements de vêtements et certaines animations restent incomplets.",
@@ -84,6 +87,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "nativeLoops": "I cicli originali di durata diversa sono riprodotti separatamente; la sincronizzazione in gioco non è verificata.",
     "residualMotion": "Alcuni riferimenti di movimento del drago non sono ancora risolti.",
     "limboGeometryDiagnostic": "Anteprima diagnostica di forma e movimento del compagno. Colori semplificati dai parametri originali; shader speciali e bagliore non riprodotti.",
     "mermaidDiagnostic": "Anteprima diagnostica di forma e movimento da sirena. Colori, materiali, fisica degli abiti e alcuni movimenti sono incompleti.",
@@ -112,6 +116,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "nativeLoops": "Unterschiedlich lange Originalzyklen werden unabhängig wiedergegeben; die Synchronisation im Spiel ist nicht verifiziert.",
     "residualMotion": "Einige Bewegungsbindungen des Drachen sind noch nicht aufgelöst.",
     "limboGeometryDiagnostic": "Diagnosevorschau von Form und Bewegung des Begleiters. Vereinfachte Originalfarben; Spezialshader und Leuchteffekte fehlen.",
     "mermaidDiagnostic": "Diagnosevorschau für Meerjungfrauenform und Bewegung. Farben, Materialien, Kleidungsphysik und einige Bewegungen sind noch unvollständig.",
@@ -140,6 +145,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "nativeLoops": "Los ciclos originales de distinta duración se reproducen de forma independiente; la sincronización en el juego no está verificada.",
     "residualMotion": "Algunas referencias de movimiento del dragón aún no se han resuelto.",
     "limboGeometryDiagnostic": "Vista de diagnóstico de forma y movimiento del compañero. Colores simplificados; no se reproducen los sombreadores especiales ni el brillo.",
     "mermaidDiagnostic": "Vista de diagnóstico de la forma y el movimiento de sirena. Los colores, materiales, física de la ropa y algunos movimientos aún están incompletos.",
@@ -168,6 +174,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "nativeLoops": "独立播放原始的不同动画周期；尚未验证游戏内同步。",
     "residualMotion": "部分龙的动作绑定尚未解析。",
     "limboGeometryDiagnostic": "伙伴形状和动作的诊断预览。颜色为原始参数的简化显示，尚未复现特殊着色器和发光效果。",
     "mermaidDiagnostic": "美人鱼形状及动作的诊断预览。颜色、材质、衣物物理和部分动作尚未完成。",
@@ -196,6 +203,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "nativeLoops": "Os ciclos originais de durações diferentes são reproduzidos independentemente; a sincronização no jogo não foi verificada.",
     "residualMotion": "Algumas referências de movimento do dragão ainda não foram resolvidas.",
     "limboGeometryDiagnostic": "Prévia de diagnóstico da forma e movimento do companheiro. Cores simplificadas a partir dos parâmetros originais; shaders especiais e brilho não reproduzidos.",
     "mermaidDiagnostic": "Prévia de diagnóstico da forma e dos movimentos de sereia. Cores, materiais, física das roupas e alguns movimentos ainda estão incompletos.",

@@ -25,7 +25,7 @@ def apply_actors(raw, dest):
                                schema="wand.photo-mode.companion-actor-delta@1",
                                manifest="companion-actor-delta.json")
 
-def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0, partial_count=0, secondary_count=0, geometry_count=0):
+def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None, variant_count=0, partial_count=0, secondary_count=0, geometry_count=0, shared_asset_count=None, native_loop_count=0, source_matched=False):
     require(len(raw)==size and digest(raw)==sha, "actor release integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["publicationAuthorized"] is True
@@ -49,14 +49,28 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 and m["models"]==models and len(m["items"])==item_count,"actor release identity")
         if prior is not None:
             require(all(m.get(k)==v for k,v in prior.items()),"actor expansion base identity")
+        if source_matched:
+            primary={};matched_variants={}
+            for item,rows in m["items"].items():
+                require(item in public["items"] and isinstance(rows,list),"unknown source-matched companion")
+                published=[public["items"][item],*public.get("variants",{}).get(item,[])]
+                require(len(rows)==len(published),"source pose coverage")
+                seen=set()
+                for row in rows:
+                    hits=[i for i,option in enumerate(published) if all(option.get(b,{}).get("sourceSha256")==row["playerSourceSha256"].get(b) for b in BODY_TYPES)]
+                    require(len(hits)==1 and hits[0] not in seen,"ambiguous source pose")
+                    i=hits[0];seen.add(i)
+                    if i==0:primary[item]=row
+                    else:matched_variants.setdefault(item,{})[str(i)]=row
+            m["items"]=primary;m["variants"]=matched_variants
         variants=m.get("variants",{})
         require(isinstance(variants,dict) and set(variants)<=set(m["items"])
                 and all(isinstance(v,dict) for v in variants.values())
                 and sum(len(v) for v in variants.values())==variant_count,"actor variant coverage")
-        assets={};updates={};alternate_updates={};partial_rows=0;secondary_rows=0;geometry_rows=0
+        assets={};updates={};alternate_updates={};partial_rows=0;secondary_rows=0;geometry_rows=0;native_loop_rows=0
         def validate_actor(row,player):
             e=entry(row["asset"]);source=row["sourceSha256"];name=e["sha256"]+".glb"
-            nonlocal partial_rows,secondary_rows,geometry_rows
+            nonlocal partial_rows,secondary_rows,geometry_rows,native_loop_rows
             bodies=set(row["anchors"])
             require(valid_hash(source) and bodies and bodies<=set(BODY_TYPES),"actor identity")
             if bodies!=set(BODY_TYPES):
@@ -87,6 +101,10 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 require(secondary_count>0,"secondary-pass projection not authorized")
                 secondary_rows+=1
             dur=duration(d,d["animations"][0]);options=dict(player)
+            loops=row.get("nativeLoops")
+            if loops is not None:
+                require(native_loop_count>0 and set(loops)==bodies,"independent native timing not authorized")
+                native_loop_rows+=1
             for b in BODY_TYPES:
                 if b not in bodies:continue
                 o=player[b];a=row["anchors"][b]
@@ -96,8 +114,13 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                         and nodes[b][a["node"]]["name"]==a["path"],"actor attachment identity")
                 c=entry(o["clip"]);wpa=(dest/(c["sha256"]+".wpa")).read_bytes()
                 require(len(wpa)==c["bytes"] and digest(wpa)==c["sha256"],"player animation integrity")
-                pd=metadata(wpa,True);require(abs(duration(pd,pd["animation"])-dur)<1e-5,"actor timing mismatch")
+                pd=metadata(wpa,True);player_duration=duration(pd,pd["animation"])
+                if loops is None:require(abs(player_duration-dur)<1e-5,"actor timing mismatch")
+                else:
+                    timing=loops[b]
+                    require(set(timing)=={"player","companion"} and all(type(v) in (float,int) and 0<v<=600 for v in timing.values()) and abs(timing["player"]-player_duration)<1e-5 and abs(timing["companion"]-dur)<1e-5 and abs(player_duration-dur)>1e-5,"native timing mismatch")
                 options[b]={**o,"companionIncluded":True,"actor":{**e,"sourceSha256":source},"anchor":a}
+                if loops is not None:options[b]["nativeLoops"]=loops[b]
                 if secondary:options[b]["secondaryPassOmitted"]=True
                 if geometry:options[b]["limboGeometryDiagnostic"]=True
             return options
@@ -112,7 +135,7 @@ def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema,
                 i=int(key)-1;require(i<len(updated),"unknown alternate index")
                 updated[i]=validate_actor(row,updated[i])
             alternate_updates[item]=updated
-        require(partial_rows==partial_count and secondary_rows==secondary_count and geometry_rows==geometry_count and len(assets)==item_count+variant_count and set(files)=={manifest,*assets},"unexpected actor assets")
+        require(partial_rows==partial_count and secondary_rows==secondary_count and geometry_rows==geometry_count and native_loop_rows==native_loop_count and len(assets)==(shared_asset_count if shared_asset_count is not None else item_count+variant_count) and set(files)=={manifest,*assets},"unexpected actor assets")
         for name,data in assets.items():
             path=dest/name
             if path.exists():require(path.read_bytes()==data,"actor asset conflict")
