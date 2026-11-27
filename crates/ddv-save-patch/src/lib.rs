@@ -1860,7 +1860,7 @@ pub fn preview_furniture_stock_transaction(source:&str,expected_stock:u32,action
 #[derive(Clone,Copy)]
 pub struct RoomFinishTarget{pub house_index:usize,pub house_item_id:u32,pub floor_index:usize,pub room_slot:u8}
 #[derive(Clone,Copy)]
-pub enum RoomFinishAction{Flooring{expected:u32},Wallpaper{wall:Option<u8>,expected:[Option<u32>;4]}}
+pub enum RoomFinishAction{Flooring{expected:u32},Ceiling{expected:u32},Wallpaper{wall:Option<u8>,expected:[Option<u32>;4]}}
 fn room_value<'a>(root:&'a serde_json::Value,target:RoomFinishTarget)->Option<&'a serde_json::Value>{
  let h=root.get("World")?.get("PlayerHouses")?.get(target.house_index)?;
  if h.get("HouseItemID")?.as_u64()!=Some(u64::from(target.house_item_id)){return None;}
@@ -1903,7 +1903,7 @@ fn room_lexical_map_edit(source:&str,parent:Vec<Segment>,key:&str,replacement:Op
 pub fn preview_room_finish(source:&str,target:RoomFinishTarget,item:u32,action:RoomFinishAction)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::Value;
  if target.house_index>=128||target.floor_index>=128||target.room_slot>3||target.house_item_id==0||source.is_empty()||source.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidTarget);}
- let subtype=if matches!(action,RoomFinishAction::Flooring{..}){1601}else{1600};
+ let subtype=if matches!(action,RoomFinishAction::Flooring{..}|RoomFinishAction::Ceiling{..}){1601}else{1600};
  if item/100000!=subtype{return Err(PatchError::InvalidTarget);}
  validate_json_without_edit(source)?;
  let mut expected_root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
@@ -1931,6 +1931,13 @@ pub fn preview_room_finish(source:&str,target:RoomFinishTarget,item:u32,action:R
    if room.get("Flooring").and_then(Value::as_u64)!=Some(u64::from(expected))||expected==item{return Err(PatchError::ItemMismatch);}
    candidate=room_lexical_map_edit(&candidate,base,"Flooring",Some(item))?;
    *expected_root.pointer_mut(&(pointer+"/Flooring")).ok_or(PatchError::MissingTarget)?=Value::from(item);
+  }
+  RoomFinishAction::Ceiling{expected}=>{
+   // Steam 1.26.2 ChangePlayerHouseCeiling.ApplyThis (RVA 0x467F1E0):
+   // validates flooring type, HasItem(item,1), then writes Room + 0x50.
+   if expected_root["GameInfo"]["Version"].as_u64()!=Some(643)||room.get("Ceiling").and_then(Value::as_u64)!=Some(u64::from(expected))||expected==item{return Err(PatchError::ItemMismatch);}
+   candidate=room_lexical_map_edit(&candidate,base,"Ceiling",Some(item))?;
+   *expected_root.pointer_mut(&(pointer+"/Ceiling")).ok_or(PatchError::MissingTarget)?=Value::from(item);
   }
   RoomFinishAction::Wallpaper{wall,expected}=>{
    if wall.is_some_and(|w|w>3){return Err(PatchError::InvalidTarget);}
@@ -2914,5 +2921,20 @@ mod area_network_tests{
   let result=preview_area_network_replacement(SOURCE,&dest(),&old,&next).unwrap();
   assert_eq!(result.allocated.len(),original.len());
   let mut invalid=next.clone();invalid[0].x=1;assert!(preview_area_network_replacement(SOURCE,&dest(),&old,&invalid).is_err());
+ }
+}
+
+#[cfg(test)]
+mod ceiling_finish_native_tests{
+ use super::*;
+ #[test]fn ceiling_accepts_owned_flooring_only_and_preserves_all_other_fields(){
+  let root=serde_json::json!({"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500000,"Floors":[{"Rooms":{"0":{"FloorGridID":10,"WallGridIDs":{"0":11,"1":12,"2":13,"3":14},"Flooring":160100000,"Ceiling":160100136,"Wallpapers":{"0":160000000},"Unknown":{"x":4}}}}]}]},"Player":{"ListInventories":{"4":{"ID":4,"CompatibleItemType":"ItemType_Trimming","Inventory":{"160100031":{"Amount":1},"160000000":{"Amount":1}}}}}});
+  let t=RoomFinishTarget{house_index:0,house_item_id:20500000,floor_index:0,room_slot:0};
+  let d=preview_room_finish(&root.to_string(),t,160100031,RoomFinishAction::Ceiling{expected:160100136}).unwrap();
+  let mut want=root.clone();want["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]["0"]["Ceiling"]=serde_json::json!(160100031);
+  assert_eq!(serde_json::from_str::<serde_json::Value>(&d.patched_json).unwrap(),want);
+  assert!(preview_room_finish(&root.to_string(),t,160000000,RoomFinishAction::Ceiling{expected:160100136}).is_err());
+  assert!(preview_room_finish(&root.to_string(),t,160100032,RoomFinishAction::Ceiling{expected:160100136}).is_err());
+  assert!(preview_room_finish(&root.to_string(),t,160100031,RoomFinishAction::Ceiling{expected:160100000}).is_err());
  }
 }
