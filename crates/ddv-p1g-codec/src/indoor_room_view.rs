@@ -17,6 +17,21 @@ fn room_terrain(catalog:&Value,path:&str,kind:&str)->Option<Value>{
 fn terrain_catalog()->Result<Value,CodecError>{
  serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|CodecError::Json)
 }
+// A storage root may share a container with another native object. A
+// coordinate-only edit never reallocates, copies, or mutates that container.
+fn storage_pose(root:&Value,obj:&Value)->bool{
+ let Some(state)=obj.get("State").and_then(Value::as_object).filter(|s|s.len()==1)else{return false;};
+ let Some(s)=state.get("Storage").and_then(Value::as_object)else{return false;};
+ if s.keys().any(|k|!matches!(k.as_str(),"ContainerInventoryID"|"DefaultContainerInventoryData"|"UnlockKeyItemID"|"UnlockLocId"|"DesignID"))||
+    s.get("DefaultContainerInventoryData").and_then(Value::as_str).is_none_or(str::is_empty)||
+    s.get("UnlockKeyItemID").is_some_and(|v|v.as_u64().is_none())||
+    s.get("UnlockLocId").is_some_and(|v|v.as_str().is_none())||
+    s.get("DesignID").is_some_and(|v|!v.is_null()){return false;}
+ let Some(id)=s.get("ContainerInventoryID").and_then(Value::as_u64).filter(|n|*n>0&&*n<=u32::MAX as u64)else{return false;};
+ let c=&root["Player"]["ContainerInventories"][id.to_string()];
+ c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
+ c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
+}
 pub(super) fn project(source:&[u8])->Result<String,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
  let world=root.get("World").and_then(Value::as_object).ok_or(CodecError::Json)?;
@@ -74,6 +89,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
         let coord=|k:&str|obj.get(k).and_then(Value::as_i64).filter(|n|(-1_000_000..=1_000_000).contains(n));
         if let (Some(x),Some(y))=(coord("X"),coord("Y")){let orientation=match obj.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Up")=>Some(0),Some("GridOrientation_Right")=>Some(4),Some("GridOrientation_Down")=>Some(8),Some("GridOrientation_Left")=>Some(12),Some("GridOrientation_UpRight") if kind=="floor"&&factor==Some(1)=>Some(2),Some("GridOrientation_DownRight") if kind=="floor"&&factor==Some(1)=>Some(6),Some("GridOrientation_DownLeft") if kind=="floor"&&factor==Some(1)=>Some(10),Some("GridOrientation_UpLeft") if kind=="floor"&&factor==Some(1)=>Some(14),_=>None};let mut pose=json!({"itemId":item,"x":x,"y":y,"orientationCode":orientation});
          if factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
+         if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);}
          if terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
@@ -550,9 +566,13 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   // ordinary leaf path. Coordinate edits keep the same owned subtree.
   let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
-   if free||!(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
-   let c=collection.as_object().ok_or(bad)?;
-   crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
+   if surface==1&&!support_pickup&&(p.contains_key("edits")||p.contains_key("align"))&&storage_pose(&root,obj){
+    if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
+   }else{
+    if free||!(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
+    let c=collection.as_object().ok_or(bad)?;
+    crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
+   }
   }else if support_pickup{return Err(bad);}
   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:item};
   if crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.blocking()>0{return Err(bad);}
@@ -723,7 +743,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   if row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
   let (target,expected,old)=resolve(row)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  if !allowed_orientation(orientation){return Err(bad);}
+  if !allowed_orientation(orientation)||storage_pose(&root,&objects[&target.object_id])&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
   if mode.is_some()&&(!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
   if alignment&&(old!=orientation||!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if free{if !within_room(xy)||xy==expected&&old==orientation{return Err(bad);}}
