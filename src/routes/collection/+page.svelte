@@ -6,7 +6,7 @@
   import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
   import {getMemorySources} from '$lib/media/memory-media';
   import {maskPreviewEligible} from '$lib/media/memory-mask-preview-evidence';
-  import {recordedMemoryBits,completeMemoryBits,memoryPieceCount} from '$lib/media/memory-piece-state';
+  import {knownMemoryBits,completeMemoryBits,memoryPieceCount} from '$lib/media/memory-piece-state';
   import {memoryPieceCopy} from '$lib/collection/memory-piece-copy';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
@@ -52,7 +52,7 @@
   let showMemoryPieces=false;
   $: memoryCopy=memoryPieceCopy(locale);
   $: selectedMemory=selectedItem?getMemorySources(selectedItem.itemId):null;
-  $: selectedMemoryBits=selectedMemory?recordedMemoryBits(selectedEntry,selectedMemory.numberOfShards):0;
+  $: selectedMemoryBits=selectedMemory?knownMemoryBits(selectedEntry,selectedMemory.numberOfShards,Boolean($localSaveSession.file)):0;
   $: selectedMemoryEligible=selectedMemory?maskPreviewEligible(selectedMemory.mask.sha256,selectedMemory.numberOfShards):false;
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
@@ -814,11 +814,11 @@
     const previous=selectedMemoryBits;
     if(bits===previous)return;
     void commit(()=>runtime!.setEntry(id,{memoryPieces:bits}),{
-      title:selectedItem.label,change:memoryPieceCount(previous)+'/'+total+' → '+memoryPieceCount(bits)+'/'+total
+      title:selectedItem.label,change:(previous===null?'?':memoryPieceCount(previous))+'/'+total+' → '+memoryPieceCount(bits)+'/'+total
     });
   }
   function toggleMemoryPiece(bit:number):void{
-    if(!selectedMemoryEligible||memoryPreviewRequested)return;
+    if(!selectedMemoryEligible||memoryPreviewRequested||selectedMemoryBits===null)return;
     setMemoryPieces(selectedMemoryBits^bit);
   }
   function toggleItemStatus(id:number):void{
@@ -1526,7 +1526,7 @@
                       <button type="button" class="item-card-body" on:click={(event)=>void showItem(item.itemId,event)}
                         aria-label={`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">
-                          {#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}
+                          {#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}
                         </span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
@@ -1604,7 +1604,7 @@
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
-                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}{#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}{/if}</span>
+                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}{#if getMemorySources(item.itemId)!==null}<MemoryCandidateArtwork itemId={item.itemId} entry={entries[String(item.itemId)]} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} sourcePath={gameImageMap[String(item.itemId)]??null}/>{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>{/if}{/if}</span>
                         <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
                           <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
                         </span>
@@ -1728,12 +1728,12 @@
                   on:click={closeItem} aria-label={copy.closeDetails}>×</button>
               </div>
             </div>
-            <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
+            <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
             {#if selectedMemory}
               <div class="memory-piece-toolbar">
-                <strong>{memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
+                <strong>{selectedMemoryBits===null?'?':memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
                 <label><input type="checkbox" bind:checked={showMemoryPieces}/>{memoryCopy.split}</label>
                 {#if memoryPreviewRequested}
                   <a class="memory-comparison-link" href={base+'/media/memory-preview/'}>{locale==='ja'?'詳細比較（開発用）':'Detailed comparison (development)'}</a>
@@ -1741,7 +1741,8 @@
                 {:else}
                   <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===completeMemoryBits(selectedMemory.numberOfShards)} on:click={()=>setMemoryPieces(completeMemoryBits(selectedMemory!.numberOfShards))}>{memoryCopy.all}</button>
                   <button type="button" disabled={busy||Boolean(storeError)||selectedMemoryBits===0} on:click={()=>setMemoryPieces(0)}>{memoryCopy.clear}</button>
-                  {#if !selectedMemoryEligible}<small>{memoryCopy.unverified}</small>
+                  {#if selectedMemoryBits===null}<small>{memoryCopy.unknown}</small>
+                  {:else if !selectedMemoryEligible}<small>{memoryCopy.unverified}</small>
                   {:else if selectedMemoryBits!==completeMemoryBits(selectedMemory.numberOfShards)||showMemoryPieces}
                     <div class="memory-piece-buttons" role="group" aria-label={memoryCopy.select}>
                       {#each Array.from({length:selectedMemory.numberOfShards},(_,i)=>i) as i}
