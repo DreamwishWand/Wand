@@ -824,6 +824,19 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
 mod tests{
  use super::*;
  #[test]
+ fn storage_root_moves_without_changing_container_or_state(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"Unknown":1e2}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}},"2":{"ID":2,"ItemID":40000001,"X":6,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"edits":[{"index":0,"itemId":40001680,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":6,"y":2,"orientation":"GridOrientation_Left"}]});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();
+  let mut expected:Value=serde_json::from_slice(raw).unwrap();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"]=6.into();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["Orientation"]=json!("GridOrientation_Left");
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);assert!(d.patched_json.contains("1e2"));
+  let report:Value=serde_json::from_str(&project(raw).unwrap()).unwrap();assert_eq!(report["rooms"][0]["surfaces"][0]["positions"][0]["storage"],true);
+  plan["edits"][0]["orientation"]=json!("GridOrientation_DownLeft");assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  plan["edits"][0]["orientation"]=json!("GridOrientation_Left");
+  let mut invalid:Value=serde_json::from_slice(raw).unwrap();invalid["Player"]["ContainerInventories"]["9"]["ID"]=10.into();assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
+  invalid["Player"]["ContainerInventories"]["9"]["ID"]=9.into();invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["Unknown"]=json!({});assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
+ }
+ #[test]
  fn free_room_floor_allows_repeated_anchors_but_rejects_state_and_outside_bounds(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":6,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":6,"y":2,"orientation":"GridOrientation_DownLeft"}]});
