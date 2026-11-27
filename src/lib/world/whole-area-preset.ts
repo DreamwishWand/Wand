@@ -23,7 +23,7 @@ export function parseWholeArea(text:string,grid:PublicTerrainGridRef,kind:WholeA
  if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).length!==4||doc.schema!=='wand.preset.whole-area-design@1'||doc.gameVersion!=='1.26.2'||doc.kind!==kind)throw Error('AREA_PRESET_INVALID');
  const d=doc.design;
  if(!d||typeof d!=='object'||Array.isArray(d)||Object.keys(d).length!==3||!Array.isArray(d.placements)||d.placements.some((p:unknown)=>!p||typeof p!=='object'||Array.isArray(p)||Object.keys(p).length!==5))throw Error('AREA_PRESET_PAYLOAD');
- return parseDesign(JSON.stringify(d),grid);
+ return parseDesign(JSON.stringify(d),grid,kind!=='floating-island'&&grid.factor===1&&/^SceneLayouts\/(Village04|VillageExpansion0[1-4]|VillageWinnieDLC)\//.test(grid.layoutId));
 }
 export function reviewWholeArea(t:DesignTimeline,placements:readonly DesignPlacement[]){
  const before=currentDesign(t),key=(p:DesignPlacement)=>[p.itemId,p.x,p.y,p.orientation].join(':'),counts=new Map<string,number>();
