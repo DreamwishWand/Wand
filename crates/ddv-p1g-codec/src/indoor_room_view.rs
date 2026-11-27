@@ -776,7 +776,7 @@ mod tests{
  }
  #[test]
  fn native_room_zero_allocator_and_original_zero_object_are_compatible_with_placement(){
-  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":0,"Objects":{}}}}}}}"#;
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":0,"Objects":{}}}}}}"#;
   let plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"place":[{"itemId":40000001,"expectedStock":2,"x":2,"y":2,"orientation":"GridOrientation_Down"},{"itemId":40000001,"expectedStock":1,"x":3,"y":3,"orientation":"GridOrientation_Down"}]});
   let d=furniture_candidate(raw,&plan.to_string()).unwrap();let j:Value=serde_json::from_str(&d.patched_json).unwrap();
   let g=&j["World"]["GridCollection"]["Grids"]["42"];assert_eq!(g["NextGridObjectID"],3);assert_eq!(g["Objects"]["1"]["ID"],1);assert_eq!(g["Objects"]["2"]["ID"],2);assert!(d.patched_json.contains("\"Marker\":1e2"));
