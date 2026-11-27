@@ -1,5 +1,6 @@
 import {validateLayer,type Layer,type ImageLayer,type ImageSource,type Affine,type View} from './native-map-renderer.ts';
-export interface LocalNativeMap{readonly id:string;readonly width:number;readonly height:number;readonly ticksToCanvas:Affine;readonly locked:readonly Layer[];readonly unlocked:readonly Layer[]}
+import {parseNativeAreaRules,type AreaPlan} from './native-map-area-rules.ts';
+export interface LocalNativeMap{readonly id:string;readonly width:number;readonly height:number;readonly ticksToCanvas:Affine;readonly locked:readonly Layer[];readonly unlocked:readonly Layer[];readonly areaPlan?:AreaPlan}
 const sha=/^[a-f0-9]{64}$/;
 const object=(x:unknown):x is Record<string,unknown>=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 function check(ok:unknown,message:string):asserts ok{if(!ok)throw Error(message);}
@@ -29,7 +30,9 @@ export function parseLocalNativePreview(value:unknown):LocalNativeMap[]{
   check(object(m)&&typeof m.id==='string'&&/^MapVillage[A-Za-z0-9]+$/.test(m.id)&&!ids.has(m.id)&&dimension(m.width)&&dimension(m.height)&&Array.isArray(m.ticksToCanvas)&&m.ticksToCanvas.length===6&&m.ticksToCanvas.every(Number.isFinite),'Invalid native map');
   const t=m.ticksToCanvas;check(t[0]>0&&t[3]>0&&t[1]===0&&t[2]===0,'Invalid editor coordinate basis');ids.add(m.id);
   const layers=(x:unknown)=>{check(Array.isArray(x)&&x.length>0&&x.length<=512,'Invalid draw plan');return x.map(l=>parseLayer(l));};
-  return {id:m.id,width:m.width,height:m.height,ticksToCanvas:t as unknown as Affine,locked:layers(m.locked),unlocked:layers(m.unlocked)};
+  const locked=layers(m.locked),unlocked=layers(m.unlocked);
+  const areaPlan=m.areaTypes!==undefined||m.areaRules!==undefined?parseNativeAreaRules(m,locked,unlocked):undefined;
+  return {id:m.id,width:m.width,height:m.height,ticksToCanvas:t as unknown as Affine,locked,unlocked,...(areaPlan?{areaPlan}:{})};
  });
 }
 export function nativeEditorExtent(m:LocalNativeMap){const [a,,,,e,f]=m.ticksToCanvas,d=m.ticksToCanvas[3];return {x:-e/a,y:-f/d,w:m.width/a,h:m.height/d};}

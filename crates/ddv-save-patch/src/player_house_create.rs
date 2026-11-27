@@ -142,7 +142,7 @@ fn existing_identity(v:&Value,item:u64,index:u64)->bool{
     }
 }
 // Fresh storage allocation intentionally leaves detached/orphan contents untouched.
-fn container_ref(v:&Value,fresh:u32,marked:bool)->bool{
+pub(super) fn container_ref(v:&Value,fresh:u32,marked:bool)->bool{
     match v{
         Value::Object(m)=>m.iter().any(|(k,v)|{
             let key=k.to_ascii_lowercase();

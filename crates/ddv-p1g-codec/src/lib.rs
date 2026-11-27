@@ -14,6 +14,7 @@ use zeroize::Zeroize;
 mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
+mod storage_source;
 mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
@@ -21,6 +22,8 @@ mod indoor_room_view;
 mod native_preset_backup;
 mod native_tom_visual;
 mod native_preset_scene;
+#[cfg(feature="wasm")]
+mod saved_area_flags;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -1396,6 +1399,14 @@ mod browser_amount_preview {
             grid_instance_preview::saved_grid_instances_json(profile)
                 .map_err(|_|fail("DB05_GRID_INSTANCE_READ_INVALID"))
         }
+        pub fn list_saved_area_flags(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"));}
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"))?.profile.as_slice()
+            };
+            super::saved_area_flags::saved_area_flags(profile).map_err(|_|fail("DB05_AREA_FLAGS_INVALID"))
+        }
         pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
                 return Err(fail("DB05_GRID_INDEX_NOT_OPEN"));
@@ -2214,7 +2225,16 @@ mod browser_amount_preview {
                 let dest=grid_instance_preview::resolve_plain_grid_destination(original,&dest).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                 let orientation=o.get("orientation").and_then(|v|v.as_str()).ok_or_else(invalid)?;
                 check_destination(&dest,orientation)?;
-                preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
+                if crate::storage_source::is_storage(item){
+                    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(invalid());}
+                    let (_,layout,factor,sx,sy)=grid_instance_preview::house_exterior_identity(&root,&dest.grid_id).map_err(|_|invalid())?;
+                    if layout!=dest.layout_path||factor!=u64::from(dest.tessellation)||sx!=u64::from(dest.size.0)||sy!=u64::from(dest.size.1){return Err(invalid());}
+                    let next=root["World"]["GridCollection"]["Grids"][&dest.grid_id]["NextGridObjectID"].as_u64().ok_or_else(invalid)?.to_string();
+                    let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&[next]).map_err(|_|invalid())?;
+                    if refs.blocking()>0||refs.historical>0{return Err(invalid());}
+                    let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or_else(invalid)?;
+                    ddv_save_patch::preview_initial_storage(json,&dest,item,(int("x")?,int("y")?),orientation,stock,template,capacity,false,false)
+                }else{preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})}
             }else{
                 // Reuse the original-source structural rehearsal, including
                 // dependency blocking when the removal guard is available.

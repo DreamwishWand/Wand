@@ -711,7 +711,10 @@ pub fn preview_plain_grid_structure(
     preview_grid_structure(source,target,expected,action,false)
 }
 fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),action:PlainGridStructureAction,support_parent:bool)->Result<GridCoordinateDraft,PatchError>{
-    if support_parent&&!matches!(&action,PlainGridStructureAction::Remove){return Err(PatchError::InvalidTarget);}
+ preview_grid_structure_mode(source,target,expected,action,support_parent,false)
+}
+fn preview_grid_structure_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),action:PlainGridStructureAction,support_parent:bool,storage:bool)->Result<GridCoordinateDraft,PatchError>{
+    if (support_parent||storage)&&!matches!(&action,PlainGridStructureAction::Remove){return Err(PatchError::InvalidTarget);}
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
        target.kind!=GridObjectKind::Full||!plain_furniture_id(target.item_id){
         return Err(PatchError::InvalidTarget);
@@ -735,7 +738,7 @@ fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32
     let old:serde_json::Value=serde_json::from_str(&source[object_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     let obj=old.as_object().ok_or(PatchError::InvalidTarget)?;
     let id=target.object_id.parse::<u32>().map_err(|_|PatchError::InvalidTarget)?;
-    let state_ok=if support_parent{obj.len()==6&&old.get("State").and_then(|v|v.as_object()).is_some_and(|s|s.len()==1&&s.get("SubGrid").and_then(|v|v.get("GridID")).and_then(|v|v.as_u64()).is_some_and(|n|n>0))}else{obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null())};
+    let state_ok=if storage{let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;obj.len()==6&&storage_pose(&root,&old)}else if support_parent{obj.len()==6&&old.get("State").and_then(|v|v.as_object()).is_some_and(|s|s.len()==1&&s.get("SubGrid").and_then(|v|v.get("GridID")).and_then(|v|v.as_u64()).is_some_and(|n|n>0))}else{obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null())};
     if id==0||!state_ok||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        old.get("ID").and_then(|v|v.as_u64())!=Some(id as u64)||
        old.get("ItemID").and_then(|v|v.as_u64())!=Some(target.item_id){
@@ -747,7 +750,7 @@ fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32
     }
     let original_orientation=old.get("Orientation").and_then(|v|v.as_str()).ok_or(PatchError::OrientationMismatch)?;
     if !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&original_orientation)||
-        !support_parent&&target.item_id/100_000==400&&matches!(&action,PlainGridStructureAction::Remove)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&original_orientation)){return Err(PatchError::OrientationMismatch);}
+        !support_parent&&!storage&&target.item_id/100_000==400&&matches!(&action,PlainGridStructureAction::Remove)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&original_orientation)){return Err(PatchError::OrientationMismatch);}
     let map_range=span(&parent)?;
     let objects:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&source[map_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     if objects.len()>100_000{return Err(PatchError::InvalidTarget);}
@@ -1853,6 +1856,146 @@ fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
  locator.capture.insert(path.clone(),None);locator.walk_complete()?;
  let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
  let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?;
+ insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
+}
+// A storage root may share a container with another native object. A
+// coordinate-only edit never reallocates, copies, or mutates that container.
+pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
+ let Some(state)=obj.get("State").and_then(serde_json::Value::as_object).filter(|s|s.len()==1)else{return false;};
+ let Some(s)=state.get("Storage").and_then(serde_json::Value::as_object)else{return false;};
+ if s.keys().any(|k|!matches!(k.as_str(),"ContainerInventoryID"|"DefaultContainerInventoryData"|"UnlockKeyItemID"|"UnlockLocId"|"DesignID"))||
+    s.get("DefaultContainerInventoryData").and_then(serde_json::Value::as_str).is_none_or(str::is_empty)||
+    s.get("UnlockKeyItemID").is_some_and(|v|v.as_u64().is_none())||
+    s.get("UnlockLocId").is_some_and(|v|v.as_str().is_none())||
+    s.get("DesignID").is_some_and(|v|!v.is_null()){return false;}
+ let Some(id)=s.get("ContainerInventoryID").and_then(serde_json::Value::as_u64).filter(|n|*n>0&&*n<=u32::MAX as u64)else{return false;};
+ let c=&root["Player"]["ContainerInventories"][id.to_string()];
+ c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
+ c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
+}
+/// Initialize an empty storage using a source-authorized native template.
+pub fn preview_initial_storage(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str,expected_stock:u32,template:&str,capacity:u32,room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::{Value,json};
+ let bad=PatchError::InvalidTarget;
+ if item/100_000!=400||template!="Chest_48Slot"||capacity!=48||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ if room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}validate_local_grid_destination_mode(source,d,item,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,item,xy,orientation)?;}
+ let root:Value=serde_json::from_str(source).map_err(|_|bad)?;
+ let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<8192).ok_or(bad)?;
+ let fresh=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(bad)?;
+ if containers.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*k||n>=fresh||v["ID"].as_u64()!=Some(u64::from(n))))||player_house_create::container_ref(&root,fresh,false){return Err(bad);}
+ let row=json!({"ID":fresh,"Size":capacity,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":item,"ExtraSize":0});
+ let state=json!({"Storage":{"ContainerInventoryID":fresh,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
+ let amount=preview_default_furniture_stock(source,item,expected_stock,-1)?;
+ let intermediate=&amount.patched_json;
+ let mut locator=JsonLocator::new(intermediate,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mp=vec![k("Player"),k("ContainerInventories")];let cp=vec![k("Player"),k("NextContainerInventoryID")];
+ locator.capture.insert(mp.clone(),None);locator.capture.insert(cp.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&mp).and_then(|r|r.clone()).ok_or(bad)?;
+ let cr=locator.capture.get(&cp).and_then(|r|r.clone()).ok_or(bad)?;
+ if intermediate[cr.clone()].parse::<u32>().ok()!=Some(fresh){return Err(bad);}
+ let mut changes=[(mr.end-1..mr.end-1,format!("{}\"{}\":{}",if containers.is_empty(){""}else{","},fresh,row)),(cr,(fresh+1).to_string())];
+ changes.sort_unstable_by_key(|(r,_)|r.start);let mut candidate=String::new();let mut last=0;
+ for (r,v) in changes{if r.start<last{return Err(bad);}candidate.push_str(&intermediate[last..r.start]);candidate.push_str(&v);last=r.end;}
+ candidate.push_str(&intermediate[last..]);validate_json_without_edit(&candidate)?;
+ insert_grid_record(&candidate,d,item,xy,orientation,Some(&state.to_string()))
+}
+/// Empty, unlocked storage with a known container record may be returned
+/// to furniture stock. Nonempty and unknown storage are never discarded.
+pub fn storage_pickup_eligible(root:&serde_json::Value,obj:&serde_json::Value)->bool{
+ if !storage_pose(root,obj){return false;}
+ let s=&obj["State"]["Storage"];
+ if s.get("UnlockKeyItemID").and_then(serde_json::Value::as_u64).unwrap_or(0)!=0||s.get("UnlockLocId").and_then(serde_json::Value::as_str).is_some_and(|v|!v.is_empty()){return false;}
+ let Some(id)=s["ContainerInventoryID"].as_u64()else{return false;};
+ let c=&root["Player"]["ContainerInventories"][id.to_string()];
+ c["Inventory"].as_array().is_some_and(|a|a.is_empty())&&c.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))
+}
+pub fn preview_empty_storage_pickup(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::Value;
+ let bad=PatchError::InvalidTarget;
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ if !storage_pickup_eligible(&root,obj){return Err(bad);}
+ let container=obj["State"]["Storage"]["ContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+ let mut draft=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,false,true)?;
+ let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
+ // Never delete a referenced container, even if its surviving reference
+ // belongs to an unknown native state. Only remove an unreferenced empty row.
+ if !player_house_create::container_ref(&after,container,false){
+  let mut locator=JsonLocator::new(&draft.patched_json,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+  locator.amount_path=vec![Segment::Index(usize::MAX)];
+  let parent=vec![k("Player"),k("ContainerInventories")];locator.capture.insert(parent.clone(),None);locator.walk_complete()?;
+  let mr=locator.capture.get(&parent).and_then(|v|v.clone()).ok_or(bad)?;
+  locator.pos=mr.start;locator.expect(b'{')?;let mut prev=None;let key=container.to_string();
+  let range=loop{
+   locator.space();let start=locator.pos;let current=locator.string()?;locator.expect(b':')?;
+   let mut path=parent.clone();path.push(k(&current));locator.value(&mut path)?;let end=locator.pos;locator.space();
+   if current==key{break if locator.bytes.get(locator.pos)==Some(&b','){start..locator.pos+1}else if let Some(comma)=prev{comma..end}else{start..end};}
+   if locator.bytes.get(locator.pos)!=Some(&b','){return Err(bad);}prev=Some(locator.pos);locator.pos+=1;
+  };
+  drop(locator);draft.patched_json.replace_range(range,"");validate_json_without_edit(&draft.patched_json)?;
+ }
+ let amount=preview_default_furniture_stock(&draft.patched_json,target.item_id,expected_stock,1)?;
+ draft.patched_json=amount.patched_json;Ok(draft)
+}
+/// Create an independent owned container using a proven placed storage
+/// record. Do not invent container defaults or copy stateful inventory items.
+pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::{Value,json};
+ let bad=PatchError::InvalidTarget;
+ if target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ let room=d.layout_path.is_empty()&&d.data_path.starts_with("GridData/Rooms/Room");
+ if room{if target.grid_id!=d.grid_id{return Err(bad);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ if obj["ID"].as_u64()!=target.object_id.parse::<u64>().ok()||obj["ItemID"].as_u64()!=Some(target.item_id)||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1))||
+    obj.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||!storage_pose(&root,obj){return Err(bad);}
+ let mut state=obj["State"].clone();let st=&mut state["Storage"];
+ if st.get("UnlockKeyItemID").and_then(Value::as_u64).unwrap_or(0)!=0||st.get("UnlockLocId").and_then(Value::as_str).is_some_and(|s|!s.is_empty()){return Err(bad);}
+ let old=st["ContainerInventoryID"].as_u64().ok_or(bad)?.to_string();
+ let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<8192).ok_or(bad)?;
+ let fresh=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(bad)?;
+ if containers.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*k||n>=fresh||v["ID"].as_u64()!=Some(u64::from(n))))||player_house_create::container_ref(&root,fresh,false){return Err(bad);}
+ let mut row=containers.get(&old).ok_or(bad)?.clone();
+ if row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize"))){return Err(bad);}
+ if copy_contents{
+  if row["Inventory"].as_array().is_none_or(|a|a.len()>8192||a.iter().any(|v|v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State")))||v["ItemID"].as_u64().is_none()||v["Amount"].as_u64().is_none()||v.get("State").is_some_and(|s|!s.is_null()))){return Err(bad);}
+ }else{row["Inventory"]=json!([]);}
+ row["ID"]=json!(fresh);st["ContainerInventoryID"]=json!(fresh);
+ let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,-1)?;
+ let intermediate=&amount.patched_json;
+ let mut locator=JsonLocator::new(intermediate,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mp=vec![k("Player"),k("ContainerInventories")];let cp=vec![k("Player"),k("NextContainerInventoryID")];
+ locator.capture.insert(mp.clone(),None);locator.capture.insert(cp.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&mp).and_then(|r|r.clone()).ok_or(bad)?;
+ let cr=locator.capture.get(&cp).and_then(|r|r.clone()).ok_or(bad)?;
+ if intermediate[cr.clone()].parse::<u32>().ok()!=Some(fresh){return Err(bad);}
+ let mut changes=[(mr.end-1..mr.end-1,format!(",\"{}\":{}",fresh,row)),(cr,(fresh+1).to_string())];
+ changes.sort_unstable_by_key(|(r,_)|r.start);let mut candidate=String::new();let mut last=0;
+ for (r,v) in changes{if r.start<last{return Err(bad);}candidate.push_str(&intermediate[last..r.start]);candidate.push_str(&v);last=r.end;}
+ candidate.push_str(&intermediate[last..]);validate_json_without_edit(&candidate)?;
+ insert_grid_record(&candidate,d,target.item_id,xy,orientation,Some(&state.to_string()))
+}
+/// Move a storage root only. Preserve the original lexical State and the
+/// entire Player container map, including any intentional native aliases.
+/// The codec resolves exclusive source/destination room or outdoor identities.
+pub fn preview_storage_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,to_room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+ if to_room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let from=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
+ let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
+ let layout=from["GridDefaultLayoutPath"].as_str().unwrap_or("");
+ if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||!(data.starts_with("GridData/Rooms/Room")&&data.ends_with("-GridData.json")&&!data.contains("..")||house_exterior_world(layout,data).is_some()){return Err(PatchError::InvalidTarget);}
+ let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
+ let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+ locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+ let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let removed=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,false,true)?;
  insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
 }
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
