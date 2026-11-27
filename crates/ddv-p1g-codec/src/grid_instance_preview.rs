@@ -1338,7 +1338,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(CodecError::Json)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(CodecError::Json)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(CodecError::Json);
-        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
+        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.get("includeSupport").is_none()&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(CodecError::Json)?;
         selections.push((ordinal,item,(int("expectedX")?,int("expectedY")?),"full".to_owned(),Some(orientation.to_owned())));
     }
     let support_flags:Vec<_>=rows.iter().map(|r|r.get("includeSupport").and_then(Value::as_bool)==Some(true)).collect();
@@ -1364,6 +1364,14 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
       checked_support_scene(target.item_id,&scene)?;
       support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut child_ids,&mut tree_count,0,limit)?;
       if grid_identity_dependencies(profile,target)?.historical>0{return Err(CodecError::Json);}
+    }
+    let mut checked_diagonal_grids=HashSet::new();
+    for (target,selection) in targets.iter().zip(&selections){
+        if selection.4.as_deref().is_some_and(|s|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s))&&checked_diagonal_grids.insert(target.grid_id.clone()){
+            let grid=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
+            if grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(1){return Err(CodecError::Json);}
+            player_house_grid_scope(&root,&target.grid_id)?;
+        }
     }
     if support_flags.iter().any(|v|*v)&&tree_count>limit||targets.iter().any(|t|child_ids.contains(&t.grid_id)){return Err(CodecError::Bounds);}
     if scope.is_some_and(|id|targets.iter().any(|t|t.grid_id!=id)){return Err(CodecError::Json);}
@@ -1657,6 +1665,10 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let orientation=row["orientation"].as_str().ok_or(bad)?;
+            if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
+                if row.get("scene").is_some()||d.tessellation!=1||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation){return Err(bad);}
+                player_house_grid_scope(&root,&d.grid_id)?;
+            }
             let tree=if let Some(scene)=row.get("scene"){
                 let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
                 if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
@@ -1720,7 +1732,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
-        let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||free&&limit<=ddv_save_patch::MAX_GRID_MIXED_EDITS&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
+        let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
         if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
         if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
