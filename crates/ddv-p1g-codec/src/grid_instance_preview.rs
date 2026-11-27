@@ -840,7 +840,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let (x,y)=(int(transfer,"x")?,int(transfer,"y")?);
   if x<0||y<0||x as u32>=sx*factor||y as u32>=sy*factor||cells[((y as u32/factor)*sx+x as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+  let next=u64::from(ddv_save_patch::support_grid_next_object_id(g).map_err(|_|bad)?);if next>=u32::MAX as u64{return Err(bad);}
   let source_refs=grid_identity_dependencies_for_ids(profile,&gid,&[key.clone()])?;
   let dest_refs=grid_identity_dependencies_for_ids(profile,&to,&[next.to_string()])?;
   if source_refs.blocking()>0||dest_refs.blocking()>0||dest_refs.historical>0{return Err(bad);}
@@ -863,7 +863,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
    let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
    let cells=entry[4].as_array().filter(|a|a.len()==(sx*sy) as usize).ok_or(bad)?;
-   let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0).ok_or(bad)?;
+   let next=u64::from(ddv_save_patch::support_grid_next_object_id(g).map_err(|_|bad)?);
    let ids=(0..rows.len() as u64).map(|n|next.checked_add(n).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
    let refs=grid_identity_dependencies_for_ids(profile,&gid,&ids)?;
    if refs.blocking()>0||refs.historical>0{return Err(bad);}
@@ -916,7 +916,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let (x,y)=(int(stock,"x")?,int(stock,"y")?);
   if x<0||y<0||x as u32>=sx*factor||y as u32>=sy*factor||cells[((y as u32/factor)*sx+x as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  let next=g.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+  let next=u64::from(ddv_save_patch::support_grid_next_object_id(g).map_err(|_|bad)?);if next>=u32::MAX as u64{return Err(bad);}
   let refs=grid_identity_dependencies_for_ids(profile,&gid,&[next.to_string()])?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid,layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
@@ -3558,6 +3558,18 @@ mod terrain_session_tests{
         plan["stock"][1]["expectedStock"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
         plan["stock"][1]["expectedStock"]=Value::from(1);plan["stock"][1]["x"]=Value::from(0);assert!(support_child_candidate(&raw,&plan).is_err());
         plan["stock"][1]["x"]=Value::from(2);plan["stock"][1]["y"]=Value::from(2);assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["stock"][1]["y"]=Value::from(0);
+        empty["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"]=Value::from(0);
+        let d=support_child_candidate(&serde_json::to_vec(&empty).unwrap(),&plan).unwrap();
+        let j:Value=serde_json::from_str(&d.patched_json).unwrap();
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["ID"],1);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["Objects"]["2"]["ID"],2);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["8"]["NextGridObjectID"],3);
+        let mut stale=empty.clone();stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":1}]);
+        assert!(support_child_candidate(&serde_json::to_vec(&stale).unwrap(),&plan).is_err());
+        let mut malformed=empty.clone();
+        malformed["World"]["GridCollection"]["Grids"]["8"]["Objects"]["0"]=serde_json::json!({"ID":0,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"});
+        assert!(support_child_candidate(&serde_json::to_vec(&malformed).unwrap(),&plan).is_err());
 
     }
     #[test]
