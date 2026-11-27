@@ -20,6 +20,7 @@
  import type {TerrainRaster,TerrainScopeReceipt} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],sessions:readonly TerrainScopeReceipt[],omitted=0,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
+ export let freePlacement=false;
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let key='',input:HTMLInputElement,epoch=0,reading=false,error=false,shapeRequest=0,stockWorker:Worker|null=null,writeWorker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  let source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',incoming:DesignPlacement[]|null=null,defs:Map<number,DesignItemGeometry>|null=null,stock:Map<number,number>|null=null,subscribed:Worker|null=null;
@@ -28,9 +29,11 @@
  $: if(!available.some(g=>g.key===key))key=available[0]?.key??'';
  $: grid=available.find(g=>g.key===key);
  $: snapshot=grid?biomeFurnitureSnapshot(grid,objects,omitted):null;
- $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,objects,omitted,incoming,defs,stock):null;
+ $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,objects,omitted,incoming,defs,stock,false,undefined,false,freePlacement):null;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
  $: busy=reading||!!shapeRequest||!!stockWorker||!!writeWorker;
+ let lastFree=false;
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  function cancel(){epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
