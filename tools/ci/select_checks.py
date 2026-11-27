@@ -92,6 +92,15 @@ def isolated_unit_files(paths: list[str], root: Path) -> list[str]:
             return []
     return sorted(set(paths))
 
+def publication_checks(paths: list[str], *, full: bool = False) -> bool:
+    return full or not paths or any(
+        p in (".github/workflows/publish.yml", ".github/workflows/collection.yml",
+              "scripts/build-collection-images.py", "browser/photo-mode-smoke.mjs")
+        or p.startswith(("tools/ci/", ".github/actions/", "tools/photo-mode/",
+                         "src/lib/photo-mode/", "static/photo-mode-preview/"))
+        for p in paths
+    )
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="")
@@ -108,11 +117,7 @@ def main() -> None:
             print("Unable to determine changed files; run full checks.")
     result = classify(paths, allow_offline=not args.merge_group)
     # Exercise changes to the publication code before they reach main.
-    result["pages"] = args.full or not paths or any(
-        p == ".github/workflows/publish.yml" or p == ".github/workflows/collection.yml"
-        or p.startswith("tools/ci/") or p.startswith(".github/actions/") or p == "scripts/build-collection-images.py"
-        for p in paths
-    )
+    result["pages"] = publication_checks(paths, full=args.full)
     result.update(source_checks(paths, full=args.full))
     unit_files = isolated_unit_files(paths, Path.cwd()) if not args.full else []
     result["unit_full"] = not unit_files
