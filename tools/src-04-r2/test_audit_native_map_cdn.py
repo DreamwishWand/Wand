@@ -40,6 +40,22 @@ class NativeCdnAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertTrue(verify(doc,Path(d),lambda s,b:raw)['cdnVerified'])
 
+    def test_resume_skips_verified_and_rejects_wrong_receipt(self):
+        doc,raw=self.fixture()
+        sha=next(iter(doc['images']))
+        previous={'privateOnly':True,'worldPlacementVerified':False,
+                  'verified':{sha:{'bytes':len(raw),'width':2,'height':2}}}
+        receipt={'canonicalMetadataVerified':True,'bucket':'dreamwishwand-media',
+                 'gameVersion':'1.26.2','objects':{'images/'+sha+'.webp':len(raw)}}
+        with tempfile.TemporaryDirectory() as d:
+            r=verify(doc,Path(d),lambda s,b:self.fail('Already verified'),prior=previous,publication=receipt)
+            self.assertTrue(r['cdnVerified'])
+            self.assertEqual(r['resumedVerified'],1)
+            self.assertEqual(r['downloadBytes'],0)
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                verify(doc,Path(d),prior=previous,publication={**receipt,'objects':{}})
+
     def test_identifying_user_agent(self):
         with patch('audit_native_map_cdn.build_opener') as opener:
             opener.return_value.open.side_effect=OSError('test')
