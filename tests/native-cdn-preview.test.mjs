@@ -22,7 +22,8 @@ test('changed, oversized, truncated and non-WebP bodies are rejected before deco
  const c=new AbortController();c.abort();await assert.rejects(parseNativeCdnPreview(doc,async()=>{throw Error('unexpected network')}).source(layer,c.signal));
 });
 test('a CDN manifest can be opened alone without local PNGs',async()=>{
- const file=new File([JSON.stringify(doc)],'manifest.json');const pack=await openNativePreviewPack([file]);assert.equal(pack.maps[0].id,'MapVillage04');
+ const file=new File([JSON.stringify(doc)],'manifest (1).JSON');const pack=await openNativePreviewPack([file]);assert.equal(pack.maps[0].id,'MapVillage04');
+ await assert.rejects(openNativePreviewPack([file,new File([JSON.stringify(doc)],'copy.json')]));
  await assert.rejects(openNativePreviewPack([file,new File([bytes],'extra.png')]));
 });
 
