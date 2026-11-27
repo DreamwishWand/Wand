@@ -3878,6 +3878,24 @@ mod terrain_session_tests{
         assert!(check(&offgrid,20400001).is_err());
     }
     #[test]
+    fn free_outdoor_cut_crosses_native_grids_and_keeps_same_grid_ids(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let mut entries=catalog["entries"].as_array().unwrap().iter().filter(|e|e["scope"]=="Village04").flat_map(|e|e["grids"].as_array().unwrap()).filter(|g|g["factor"]==1&&g["sizeX"].as_u64().unwrap_or(0)>5&&g["sizeY"].as_u64().unwrap_or(0)>5);
+        let a=entries.next().unwrap();let b=entries.find(|g|g["gridDataPath"]!=a["gridDataPath"]).unwrap();
+        let witness=|g:&Value|serde_json::json!({"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]});
+        let grid=|id:u64,g:&Value,objects:Value|serde_json::json!({"ID":id,"GridDefaultLayoutPath":g["layoutId"],"GridDataPath":g["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":5,"Objects":objects});
+        let source=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":123},"World":{"GridCollection":{"Grids":{"10":grid(10,a,serde_json::json!({"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}})),"20":grid(20,b,serde_json::json!({"1":{"ID":1,"ItemID":40000002,"X":4,"Y":4,"Orientation":"GridOrientation_Down"}}))}}}});
+        let raw=serde_json::to_vec(&source).unwrap();
+        let (scan,_)=scan_grid_instances(&raw).unwrap();
+        let ord=|id:&str|scan.private_targets.iter().position(|(t,_)|t.grid_id=="10"&&t.object_id==id).unwrap()+1;
+        let mut plan=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ord("1"),"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_DownLeft","destination":witness(b),"x":4,"y":4,"orientation":"GridOrientation_DownLeft"},{"localOrdinal":ord("2"),"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":witness(a),"x":3,"y":3,"orientation":"GridOrientation_Left"}]});
+        let result:Value=serde_json::from_str(&group_cut_candidate(&raw,&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["Player"],source["Player"]);let g=&result["World"]["GridCollection"]["Grids"];
+        assert!(g["10"]["Objects"].get("1").is_none());assert_eq!(g["10"]["Objects"]["2"]["X"],3);assert_eq!(g["10"]["NextGridObjectID"],5);
+        assert_eq!(g["20"]["Objects"]["1"],source["World"]["GridCollection"]["Grids"]["20"]["Objects"]["1"]);assert_eq!(g["20"]["Objects"]["5"]["Orientation"],"GridOrientation_DownLeft");
+        plan["rows"][0]["destination"]["sizeX"]=Value::from(b["sizeX"].as_u64().unwrap()+1);assert!(group_cut_candidate(&raw,&plan.to_string()).is_err());
+    }
+    #[test]
     fn free_room_cut_to_native_world_keeps_overlap_and_inventory(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000002,"X":4,"Y":5,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
         let original:Value=serde_json::from_slice(raw).unwrap();
