@@ -22,14 +22,14 @@ def decode_pose(r):
     require(all(map(math.isfinite,offset+rotation)),'invalid attachment transform')
     require(r.count(4)==0,'attachment overrides not decoded')
     triggers=[[r.string() for _ in range(r.count(4))] for _ in range(3)]
-    body,tool=r.unpack('ii');refs={}
+    body,tool=r.unpack('ii');refs={};types={}
     for role in ROLES:
         guid,sub,typ=r.string(),r.string(),r.string()
         require(not guid or re.fullmatch('[0-9a-f]{32}',guid),'invalid clip GUID')
-        require((not guid and not sub and not typ) or (guid and not sub and typ.startswith('UnityEngine.AnimationClip, UnityEngine.AnimationModule,')),'unsupported asset reference')
-        refs[role]=guid or None
+        require((not guid and not sub and not typ) or (guid and not sub and (not typ or typ.startswith('UnityEngine.AnimationClip, UnityEngine.AnimationModule,'))),'unsupported asset reference')
+        refs[role]=guid or None;types[role]=typ or None
     require(r.pos==len(r.data),'unparsed PetPhotoPose fields')
-    return dict(attachmentPoint=attachment,attachedOffset=offset,attachedRotation=rotation,attachedResetTriggers=triggers[0],attachedSetTriggers=triggers[1],detachedResetTriggers=triggers[2],bodyNumber=body,toolToEquip=tool,clipGuids=refs)
+    return dict(attachmentPoint=attachment,attachedOffset=offset,attachedRotation=rotation,attachedResetTriggers=triggers[0],attachedSetTriggers=triggers[1],detachedResetTriggers=triggers[2],bodyNumber=body,toolToEquip=tool,clipGuids=refs,clipReferenceTypes=types)
 
 def extract(path,identity,targets):
     raw=path.read_bytes();version,files=unityfs(raw);require(version=='6000.0.62f1','unsupported bundle');out={};sha=digest(raw)
