@@ -9,6 +9,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {characterHouseExterior} from './character-house-exteriors.ts';
+ import {readLocalHouseTemplates,houseSourceWords,newHouseWords} from './player-house-source.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,buildingSourceEligible,buildingDuplicate,buildingPickup,buildingPlacementSources,initialBuildingEligible,initialBuildingPlacement,type StockCandidate} from './save-furniture-placement.ts';
  import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
@@ -25,7 +26,17 @@
  let landscapeMode=false,buildingMode=false,catalogMode=false,catalogBuildings=false;
  let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
- let detached=new Set<number>(),houseState:'idle'|'loading'|'ready'|'error'='idle',ownHouses:Worker|null=null;
+ let detached=new Set<number>(),newHouseIds=new Set<number>(),localHouseSources=new Map<number,string>(),houseImportState:'idle'|'loading'|'ready'|'error'='idle',houseImportEpoch=0;
+ $: availableInitial=new Set([...detached,...[...newHouseIds].filter(id=>localHouseSources.has(id))]);
+ $: houseImportText=houseSourceWords[locale];
+ async function importHouseTemplates(event:Event){
+  const input=event.currentTarget as HTMLInputElement,files=[...(input.files??[])];input.value='';
+  if(!files.length||!testExport||!freePlacement||!buildingMode)return;
+  cancel();const epoch=++houseImportEpoch;houseImportState='loading';
+  try{const sources=await readLocalHouseTemplates(files);if(epoch!==houseImportEpoch)return;localHouseSources=new Map([...localHouseSources,...sources]);houseImportState='ready';}
+  catch{if(epoch===houseImportEpoch)houseImportState='error';}
+ }
+ let houseState:'idle'|'loading'|'ready'|'error'='idle',ownHouses:Worker|null=null;
  let ownStock:Worker|null=null,ownPreview:Worker|null=null,seenFile:File|null=null,subscribed:Worker|null=null,catalogRequest=0,catalogLocale:WandLanguage|null=null;
  let shapeRequests=new Map<number,{factor:1|2;key:string}>(),definitions=new Map<number,DesignItemGeometry>(),itemId=0,source:MainlandSavedObject|null=null,orientation:EightWay='GridOrientation_Down';
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
@@ -45,6 +56,7 @@
  const characterWords={ja:['家の外観を複製','キャラクターの所属・進行は維持。入口と再起動後の動作は未検証です。','余分な外観を撤去'],en:['Duplicate house exterior','Character presence and progress stay unchanged. Entrances and reload behavior are unverified.','Remove redundant exterior'],fr:['Dupliquer la maison','Présence et progression conservées. Entrées et rechargement non vérifiés.','Retirer le doublon'],it:['Duplica esterno','Presenza e progressi conservati. Entrate e ricaricamento non verificati.','Rimuovi duplicato'],de:['Hausfassade duplizieren','Anwesenheit und Fortschritt bleiben erhalten. Eingänge und Neuladen ungeprüft.','Doppelte Fassade entfernen'],'es-ES':['Duplicar exterior','Presencia y progreso sin cambios. Entradas y recarga sin verificar.','Retirar duplicado'],'zh-CN':['复制房屋外观','角色所属和进度保持不变。入口及重新加载行为尚未验证。','移除多余外观'],'pt-BR':['Duplicar exterior','Presença e progresso preservados. Entradas e recarga não verificadas.','Remover duplicata']} as const;
  $: houseToolId=Number((candidate?.plan.itemId??source?.object.itemId??chosen?.object.itemId)??0);
  $: hw=Math.floor(houseToolId/100000)===205?houseWords[locale]:characterHouseExterior(houseToolId)?characterWords[locale]:buildingWords[locale];
+ $: newHouseCandidate=!!candidate&&candidate.plan.action==='place'&&!detached.has(Number(candidate.plan.itemId))&&newHouseIds.has(Number(candidate.plan.itemId))&&localHouseSources.has(Number(candidate.plan.itemId));
  $: houseCandidate=!!candidate&&[200,201,202,203,205].includes(Math.floor(Number(candidate.plan.itemId)/100000));
  $: canRemoveHouse=!!buildingPickup(chosen,objects);
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
@@ -58,17 +70,19 @@
  $: if(!open||blocked||!canStart)cancel();
  $: normalized=query.normalize('NFKC').toLocaleLowerCase().trim();
  $: buildingSources=buildingPlacementSources(grids,objects);
- $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g,detached))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
+ $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g,availableInitial))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
  $: visible=items.slice(0,limit);
  $: if(open)loadArtwork(visible);
- $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,detached):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
- function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;ownHouses?.terminate();ownHouses=null;detached=new Set();houseState='idle';counts=null;stockState='idle';seenFile=next;}
+ $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,availableInitial):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
+ function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;ownHouses?.terminate();ownHouses=null;detached=new Set();newHouseIds=new Set();houseState='idle';counts=null;stockState='idle';seenFile=next;}
  function loadDetached(f:File){
   houseState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownHouses=own;
   const finish=(d:any)=>{own.terminate();if(ownHouses!==own||file!==f)return;ownHouses=null;const r=d?.result;
    if(d?.kind==='detached-houses'&&r?.contract==='wand.db05.detached-player-houses@1'&&r.writerAuthorized===false&&Array.isArray(r.itemIds)&&r.itemIds.length<=128&&r.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===205)){
-    detached=new Set<number>(r.itemIds);houseState='ready';
-   }else{detached=new Set();houseState='error';}
+    detached=new Set<number>(r.itemIds);
+    newHouseIds=new Set<number>(Array.isArray(r.newItemIds)&&r.newItemIds.length<=137?r.newItemIds.filter((id:unknown)=>typeof id==='number'&&Number.isSafeInteger(id)&&Math.floor(id/100000)===205):[]);
+    houseState='ready';
+   }else{detached=new Set();newHouseIds=new Set();houseState='error';}
   };
   own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-detached-houses',file:f});
  }
@@ -97,9 +111,9 @@
  }
  function beginBuilding(id:number){
   const existing=buildingSources.get(id);if(existing){beginHouse(existing);return;}
-  if(!testExport||!freePlacement||!buildingMode||blocked||!canStart||!open||!file||!worker||!grids.some(g=>initialBuildingEligible(id,g,detached)))return;
+  if(!testExport||!freePlacement||!buildingMode||blocked||!canStart||!open||!file||!worker||!grids.some(g=>initialBuildingEligible(id,g,availableInitial)))return;
   cancel();onBegin();itemId=id;orientation='GridOrientation_Down';placing=true;
-  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor)||!initialBuildingEligible(id,g,detached))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement:true,allowBuildings:true});}shapeRequests=new Map(shapeRequests);
+  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor)||!initialBuildingEligible(id,g,availableInitial))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement:true,allowBuildings:true});}shapeRequests=new Map(shapeRequests);
  }
  function beginHouse(p:MainlandSavedObject|null=chosen){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file||!buildingSourceEligible(p))return;
@@ -114,7 +128,7 @@
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
  export function pick(p:{x:number;y:number}){if(!placing||blocked||!canStart||shapeRequests.size||status==='working')return;
-  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,detached):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
+  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,availableInitial):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
   clearCopy();candidate=q;point=p;status='idle';stockChange=null;
  }
  $: rotationAllowed=definitions.size>0&&(freePlacement||[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional'));
@@ -127,7 +141,7 @@
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&!house&&(status!=='valid'||!stockChange)))return;
   const q=candidate,f=file;
   const command=house?'group-paste-export':landscape?'landscape-export':exporting?'furniture-stock-export':'furniture-stock-preview';
-  const plan=house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,...(q.plan.replacementOrientation?{replacementOrientation:q.plan.replacementOrientation}:{})}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):landscape&&freePlacement&&q.plan.action!=='remove'?{...q.plan,freePlacement:true}:q.plan;
+  const plan=house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation,...(!detached.has(Number(q.plan.itemId))&&newHouseIds.has(Number(q.plan.itemId))&&localHouseSources.has(Number(q.plan.itemId))?{nativeHouseTemplate:localHouseSources.get(Number(q.plan.itemId))}:{})}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,...(q.plan.replacementOrientation?{replacementOrientation:q.plan.replacementOrientation}:{})}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):landscape&&freePlacement&&q.plan.action!=='remove'?{...q.plan,freePlacement:true}:q.plan;
   ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
   const finish=(data:unknown)=>{
@@ -147,7 +161,7 @@
  }
  $: duplicateEligible=stockSourceEligible(chosen,freePlacement)&&(freePlacement||!nativeMoveBlocked(chosen))&&(counts?.get(Number(chosen.object.itemId))??0)>0;
  function nativeMoveBlocked(p:MainlandSavedObject){return p.object.editRestrictions?.move==='denied'||p.object.editRestrictions?.move==='conditional';}
- onDestroy(()=>{cancel();ownStock?.terminate();ownHouses?.terminate();subscribed?.removeEventListener('message',receive);});
+ onDestroy(()=>{houseImportEpoch++;localHouseSources.clear();cancel();ownStock?.terminate();ownHouses?.terminate();subscribed?.removeEventListener('message',receive);});
 </script>
 {#if open}
  <aside class="save-furniture-palette" aria-label={w[0]}>
@@ -164,10 +178,10 @@
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
    {#if status==='working'}<small role="status">{w[9]}</small>{:else if status==='valid'}<small class="stock-preview-result" role="status">{w[10]} {#if stockChange}{w[2]} {stockChange.before} → {stockChange.after}{/if}</small>{:else if status==='error'}<small role="alert">{w[11]}</small>{/if}
-   {#if testExport&&status==='valid'&&candidate&&(landscapeCandidate||houseCandidate)&&copyUrl}<small class="test-warning">{tw[1]} · {houseCandidate?hw[1]:lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
+   {#if testExport&&status==='valid'&&candidate&&(landscapeCandidate||houseCandidate)&&copyUrl}<small class="test-warning">{tw[1]} · {newHouseCandidate?newHouseWords[locale]:houseCandidate?hw[1]:lw[3]}</small><button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}
    {#if testExport&&status==='valid'&&candidate&&stockChange}<small class="test-warning">{tw[1]}</small><button type="button" on:click={()=>run(true)}>{tw[0]}</button>{#if copyUrl}<button type="button" on:click={applyCopy}>{cw[0]}</button><a class="stock-copy" href={copyUrl} download={copyName}>{tw[2]}</a>{/if}{/if}
    {#if testExport}<div class="palette-actions"><button type="button" aria-pressed={!landscapeMode&&!buildingMode} on:click={()=>setPaletteMode('furniture')}>{w[0]}</button><button type="button" aria-pressed={landscapeMode} on:click={()=>setPaletteMode('landscape')}>{lw[0]}</button>{#if freePlacement}<button type="button" aria-pressed={buildingMode} on:click={()=>setPaletteMode('building')}>{buildingTab[locale][0]}</button>{/if}</div>{/if}
-   {#if buildingMode}<small>{buildingTab[locale][1]}</small>{/if}
+   {#if buildingMode}<small>{buildingTab[locale][1]}</small>{#if testExport&&freePlacement}<label class="palette-actions">{houseImportText[0]} <input type="file" multiple accept=".json" disabled={houseImportState==='loading'||placing} on:change={importHouseTemplates}/></label>{#if houseImportState==='error'}<small role="alert">{houseImportText[1]}</small>{:else if houseImportState==='ready'}<small role="status">{houseImportText[2]} · {localHouseSources.size}</small>{/if}{/if}{/if}
    {#if landscapeMode}<small>{lw[3]}</small>{/if}
    <input type="search" aria-label={w[1]} placeholder={w[1]} bind:value={query} on:input={()=>limit=80}/>
    {#if (!landscapeMode&&!buildingMode&&stockState==='loading')||catalogState==='loading'}<small role="status">{w[9]}</small>{:else if (!landscapeMode&&!buildingMode&&stockState==='error')||catalogState==='error'}<small role="alert">{w[11]}</small>{:else}

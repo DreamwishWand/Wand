@@ -61,7 +61,7 @@ def stage(p,build):
     return doc
 
 
-def run(game,out,reuse,node):
+def run(game,out,reuse,node,ledger=None):
     from inspect_native_map_layout import extract
     from inspect_native_map_texture_refs import inspect as inspect_textures
     from build_native_map_geometry import build as geometry
@@ -120,7 +120,7 @@ def run(game,out,reuse,node):
         pending.replace(plan_path)
     plan=json.loads(plan_path.read_bytes())
     print('Checking and reusing original WebPs...',flush=True)
-    result=encode(plan,reg,p['hires'],p['lowres'],out,[*reuse,lock_root])
+    result=encode(plan,reg,p['hires'],p['lowres'],out,[*reuse,lock_root],ledger)
     print(json.dumps({k:v for k,v in result.items() if k!='images'},indent=2),flush=True)
     return result
 
@@ -131,8 +131,9 @@ def main():
     a.add_argument('--out',type=Path,required=True)
     a.add_argument('--reuse-dir',type=Path,action='append',default=[])
     a.add_argument('--node',default='node')
+    a.add_argument('--ledger',type=Path)
     p=a.parse_args()
-    run(p.game,p.out,p.reuse_dir,p.node)
+    run(p.game,p.out,p.reuse_dir,p.node,json.loads(p.ledger.read_bytes()) if p.ledger else None)
 
 
 if __name__=='__main__':main()
