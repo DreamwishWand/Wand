@@ -1001,7 +1001,7 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
 
 /// Remove only an exterior when another exact exterior in the same world
 /// retains the same interior binding. Never delete the last exterior here.
-pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,verified_grids:&HashSet<String>)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     validate_json_without_edit(source)?;
@@ -1012,6 +1012,7 @@ pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expe
     let scope=grids.get(&target.grid_id).and_then(|g|g.get("GridDefaultLayoutPath")).and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
     let mut surviving=false;
     for (gid,g) in grids{
+        if !verified_grids.contains(gid){continue;}
         if g.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope){continue;}
         let Some(objects)=g.get("Objects").and_then(Value::as_object) else{continue;};
         for (oid,o) in objects{
