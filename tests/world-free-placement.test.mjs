@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {worldMoveEligible,worldRotateEligible,draftSavedMapTransform} from '../src/lib/world/saved-map-transform.ts';
 import {mainlandFreeHits} from '../src/lib/world/mainland-world-coordinates.ts';
-import {stockSourceEligible,landscapeSourceEligible,buildingSourceEligible,buildingDuplicate,buildingPickup} from '../src/lib/world/save-furniture-placement.ts';
+import {stockSourceEligible,landscapeSourceEligible,buildingSourceEligible,buildingDuplicate,buildingPickup,buildingPlacementSources} from '../src/lib/world/save-furniture-placement.ts';
 const o={localOrdinal:1,localGridOrdinal:1,itemId:'40000001',x:1,y:1,orientation:'GridOrientation_Down',orientationCode:8,layer:'furniture',shapeKey:'40000001:8',editRestrictions:{select:'denied',move:'denied',rotate:'denied',remove:'denied'}};
 test('game flags are overridable without overriding support and native network invariants',()=>{
  assert.equal(worldMoveEligible(o),false);assert.equal(worldMoveEligible(o,true),true);assert.equal(worldRotateEligible(o,true),true);
@@ -80,6 +80,10 @@ test('free player house move uses the destination Grid even without ordinary ter
   const transfer=mainlandTransferCandidate(building,[g,h],rasters,emptyWorldTimeline(),x,y,true);
   assert.ok(transfer);assert.equal(transfer.plan.itemId,itemId);assert.equal(transfer.area,h.key);
   assert.equal(buildingSourceEligible(building),true);
+  const second={...building,object:{...building.object,localOrdinal:2}};
+  assert.equal(buildingPlacementSources([g,h],[second,building]).get(Number(itemId)),building);
+  assert.equal(buildingPlacementSources([h],[building]).size,0);
+  assert.equal(buildingPlacementSources([g,h],[{...building,object:{...building.object,subgrid:{}}}]).size,0);
   assert.equal(buildingDuplicate([g,h],rasters,building,x,y)?.plan.action,'duplicate');
   assert.equal(buildingPickup(building,[])?.plan.action,'remove');
   assert.equal(buildingDuplicate([g,h],rasters,{...building,object:{...building.object,subgrid:{}}},x,y),null);
