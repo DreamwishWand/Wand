@@ -5,6 +5,7 @@
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
   import type {SourceObjectMap} from '$lib/world/source-object-map.ts';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
+  import WorldMapPartsPreview from '$lib/world/WorldMapPartsPreview.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
   import {emptyWorldTimeline} from '$lib/world/saved-map-batch.ts';
@@ -1331,6 +1332,7 @@
     <p>元のゲームの初期配置レコードを、グリッド内のX/Y座標として確認する読み取り専用ページです。ワールド全体の配置座標、占有セル、移動可否は判定しません。</p>
   </header>
 
+  <WorldMapPartsPreview/>
   <NativeGraphExplorer onOpenSourceGrid={navigateToOriginalTerrain} />
   {#if terrainLinkNotice}
     <p class="note" role="status">{terrainLinkNotice}</p>
