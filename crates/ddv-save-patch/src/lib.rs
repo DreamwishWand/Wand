@@ -849,6 +849,23 @@ fn outdoor_world_path(scope:&str,path:&str)->bool{
         _=>false
     }
 }
+// A FULL grid can omit its default layout path. A blank path is accepted
+// only for a recognized outdoor data path; the codec checks the exact catalog
+// witness. Never mutate the serialized path or infer an indoor identity.
+fn saved_outdoor_scope<'a>(layout:&'a str,data:&str)->Option<&'a str>{
+    if !layout.is_empty(){return full_grid_scope(layout);}
+    ["Village04","VillageExpansion01","VillageExpansion02","VillageExpansion03","VillageExpansion04","VillageWinnieDLC"].into_iter().find(|s|outdoor_world_path(s,data))
+}
+fn saved_layout_matches(layout:Option<&str>,expected:&str,data:&str)->bool{
+    if layout==Some(expected){return true;}
+    if layout!=Some(""){return false;}
+    if full_grid_scope(expected).is_some_and(|scope|outdoor_world_path(scope,data)){return true;}
+    let Some((family,leaf))=expected.strip_prefix("SceneLayouts/FloatingIslands/").and_then(|p|p.split_once('/'))else{return false;};
+    let Some(name)=family.strip_prefix("FloatingIsland_")else{return false;};
+    if !["Atlantean","Beach","Dark","Desert","FairyTales","Forest","Jungle","Library","Meadow","Mythology","Savannah","Snow","Urban","Wetlands"].contains(&name)||leaf!=format!("{family}Layout.json"){return false;}
+    let folder=if name=="Desert"{"FloatingIlsnad_Desert"}else{family};
+    data.starts_with(&format!("GridData/FloatingIslands/{folder}/{family}"))&&data.ends_with(".json")&&!data.contains("..")&&!data.contains('\\')
+}
 fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
        target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
@@ -869,7 +886,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     let to=grids.get(&destination.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from_layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::MissingTarget)?;
     let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
-    let from_scope=full_grid_scope(from_layout).ok_or(PatchError::InvalidTarget)?;
+    let from_scope=saved_outdoor_scope(from_layout,from.get("GridDataPath").and_then(|v|v.as_str()).unwrap_or("")).ok_or(PatchError::InvalidTarget)?;
     let same_world=from_scope==to_scope;
     // Landscape is an identity-preserving logical move, not an inventory
     // pickup or grant. Limit it to verified outdoor source path families
@@ -888,11 +905,11 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
        !destination.data_path.starts_with("GridData/")||
        !destination.data_path.ends_with(".json")||destination.data_path.contains("..")||destination.data_path.contains('\\')||
        (from_layout==destination.layout_path&&from.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str()))||
-       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(|v|v.as_str()),&destination.layout_path,&destination.data_path)||
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
        to.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(destination.tessellation as u64)||
-       grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(destination.layout_path.as_str())&&
+       grids.values().filter(|g|saved_layout_matches(g.get("GridDefaultLayoutPath").and_then(|v|v.as_str()),&destination.layout_path,&destination.data_path)&&
           g.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str())).count()!=1||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&target.grid_id)||g.contains_key(&destination.grid_id))){
         return Err(PatchError::AmbiguousTarget);
@@ -946,7 +963,7 @@ pub fn preview_checked_building_initial(source:&str,d:&PlainGridDestination,item
     let grid=grids.get(&d.grid_id).ok_or(bad)?;
     let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
     if !outdoor_world_path(scope,&d.data_path)||grid["ID"].as_u64()!=d.grid_id.parse::<u64>().ok()||
-       grid["GridDefaultLayoutPath"].as_str()!=Some(d.layout_path.as_str())||grid["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
+       !saved_layout_matches(grid["GridDefaultLayoutPath"].as_str(),&d.layout_path,&d.data_path)||grid["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
        grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
     insert_grid_record(source,d,item_id,xy,orientation,Some(&state))
@@ -988,7 +1005,7 @@ pub fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCo
     if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
     let c=world.get("GridCollection").ok_or(bad)?;
     let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
-    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
     if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
        !grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s))||
        c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
@@ -1027,10 +1044,10 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
     let from=grids.get(&target.grid_id).ok_or(bad)?;
     let to=grids.get(&d.grid_id).ok_or(bad)?;
     let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    if from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope)||
+    if from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or("")))!=Some(scope)||
        from.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
        !outdoor_world_path(scope,&d.data_path)||to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
-       to.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
+       !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)||
        to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
        to.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
        c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
@@ -1101,12 +1118,12 @@ fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expe
     let from=grids.get(&target.grid_id).ok_or(bad)?;
     let to=grids.get(&d.grid_id).ok_or(bad)?;
     let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    let from_scope=from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    let from_scope=from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
     if (from_scope!=scope)!=world_change||world_change&&target.grid_id==d.grid_id||
        !from.get("GridDataPath").and_then(Value::as_str).is_some_and(|p|outdoor_world_path(from_scope,p))||!outdoor_world_path(scope,&d.data_path)||
        from.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
        to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
-       to.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
+       !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)||
        to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
        [from,to].iter().any(|g|g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)))||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&d.grid_id))){return Err(bad);}
@@ -1136,7 +1153,7 @@ pub fn preview_checked_building_remove(source:&str,target:&GridCoordinateTarget,
     let c=root.get("World").and_then(|w|w.get("GridCollection")).ok_or(bad)?;
     if c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
     let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
-    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
     if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s)){return Err(bad);}
     let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
     if o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
@@ -1159,11 +1176,11 @@ pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expe
     let world=root.get("World").ok_or(bad)?;
     let state=checked_player_house_state(world,target,expected,orientation)?;
     let grids=world.get("GridCollection").and_then(|c|c.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
-    let scope=grids.get(&target.grid_id).and_then(|g|g.get("GridDefaultLayoutPath")).and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    let scope=grids.get(&target.grid_id).and_then(|g|saved_outdoor_scope(g["GridDefaultLayoutPath"].as_str()?,g["GridDataPath"].as_str()?)).ok_or(bad)?;
     let mut surviving=false;
     for (gid,g) in grids{
         if !verified_grids.contains(gid){continue;}
-        if g.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope)!=Some(scope){continue;}
+        if g.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,g["GridDataPath"].as_str().unwrap_or("")))!=Some(scope){continue;}
         let Some(objects)=g.get("Objects").and_then(Value::as_object) else{continue;};
         for (oid,o) in objects{
             if gid==&target.grid_id&&oid==&target.object_id||o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id){continue;}
@@ -1198,14 +1215,14 @@ pub fn preview_landscape_duplicate_with_mode(source:&str,target:&GridCoordinateT
     let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
     let to=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
-    let scope=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).and_then(full_grid_scope).ok_or(PatchError::InvalidTarget)?;
+    let scope=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or(""))).ok_or(PatchError::InvalidTarget)?;
     if full_grid_scope(&destination.layout_path)!=Some(scope)||
        !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|p|outdoor_world_path(scope,p))||
        !outdoor_world_path(scope,&destination.data_path)||
        from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
        to.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
        to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
-       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(|v|v.as_str()),&destination.layout_path,&destination.data_path)||
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&destination.grid_id)))||
@@ -1236,7 +1253,7 @@ pub fn preview_landscape_place_with_mode(source:&str,d:&PlainGridDestination,ite
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grid=collection.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
  if grid.get("ID").and_then(|v|v.as_u64())!=d.grid_id.parse::<u64>().ok()||
-    grid.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(d.layout_path.as_str())||
+    !saved_layout_matches(grid.get("GridDefaultLayoutPath").and_then(|v|v.as_str()),&d.layout_path,&d.data_path)||
     grid.get("GridDataPath").and_then(|v|v.as_str())!=Some(d.data_path.as_str())||
     grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
     collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id)))||
@@ -1276,7 +1293,7 @@ pub fn preview_road_mutation(source:&str,d:&PlainGridDestination,item_id:u64,cel
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
- let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ let matches=|g:&Value|saved_layout_matches(g.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
  if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||
     grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
     grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
@@ -1413,7 +1430,7 @@ pub fn preview_isolated_fence_with_posts(source:&str,d:&PlainGridDestination,bas
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
- let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ let matches=|g:&Value|saved_layout_matches(g.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
  if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
     grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
     collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
@@ -1557,7 +1574,7 @@ fn validate_plain_grid_destination(source:&str,destination:&PlainGridDestination
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
     let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let grid=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
-    let matches_path=|v:&serde_json::Value|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(destination.layout_path.as_str())&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str());
+    let matches_path=|v:&serde_json::Value|saved_layout_matches(v.get("GridDefaultLayoutPath").and_then(|v|v.as_str()),&destination.layout_path,&destination.data_path)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str());
     if !matches_path(grid)||grids.values().filter(|v|matches_path(v)).count()!=1||
        grid.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
        grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation))||
@@ -1621,7 +1638,7 @@ pub fn preview_outdoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarg
  let g=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
  let layout=g.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
  let data=g.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
- if !full_grid_scope(layout).is_some_and(|scope|outdoor_world_path(scope,data))||
+ if !saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))||
     g.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
     grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
      return Err(PatchError::InvalidTarget);
@@ -1671,7 +1688,7 @@ fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
   if !data.starts_with("GridData/Rooms/Room")||!data.ends_with(".json")||data.contains(".."){return Err(PatchError::InvalidTarget);}
  }else{
   let layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
-  if !full_grid_scope(layout).is_some_and(|scope|outdoor_world_path(scope,data))||grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&g.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{return Err(PatchError::InvalidTarget);}
+  if !saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))||grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&g.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{return Err(PatchError::InvalidTarget);}
  }
  if !to_room&&grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::AmbiguousTarget);}
  let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
@@ -2643,7 +2660,7 @@ pub fn preview_area_network_replacement(source:&str,d:&PlainGridDestination,befo
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
- let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ let matches=|g:&Value|saved_layout_matches(g.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
  if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
  let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let next=grid.get("NextGridObjectID").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(PatchError::InvalidTarget)?;

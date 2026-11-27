@@ -7,7 +7,7 @@ use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
 use serde_json::{Value,Map};
 use std::collections::{HashMap,HashSet};
 
-const MAX_GRIDS:usize=2048;
+const MAX_GRIDS:usize=8192;
 const MAX_SCANNED_OBJECTS:usize=100_000;
 const MAX_ROWS:usize=20_000;
 const MAX_REMOVALS:usize=100_000;
@@ -364,21 +364,49 @@ pub(super) fn resolve_grid_mixed_targets(
 }
 
 /// Resolve the original outdoor Grid from the current source catalog.
-pub(super) fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+// Full schema-643 grids can store an empty default layout path. Recover
+// only a unique original outdoor catalog row from the literal data path.
+fn outdoor_catalog_identity(grid:&Value)->Result<(String,String,u64,u64,u64),CodecError>{
     let bad=CodecError::Json;
-    let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
-    let grid=grids.get(gid).ok_or(bad)?;
     let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
     let data=grid["GridDataPath"].as_str().ok_or(bad)?;
     let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
-    let scope=layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?;
-    if grids.values().filter(|g|g["GridDefaultLayoutPath"].as_str()==Some(layout)&&g["GridDataPath"].as_str()==Some(data)).count()!=1{return Err(bad);}
-    let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
-    let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
-    let mut rows=entry["grids"].as_array().ok_or(bad)?.iter().filter(|g|g["layoutId"].as_str()==Some(layout)&&g["gridDataPath"].as_str()==Some(data)&&g["factor"].as_u64()==Some(factor));
-    let row=rows.next().ok_or(bad)?;
-    if rows.next().is_some(){return Err(bad);}
-    Ok((row["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor,row["sizeY"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor))
+    if !data.starts_with("GridData/Villages/")&&!data.starts_with("GridData/FloatingIslands/"){return Err(bad);}
+    static CATALOG:std::sync::OnceLock<Value>=std::sync::OnceLock::new();
+    let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap_or(Value::Null));
+    let mut found=None;
+    for e in catalog["entries"].as_array().ok_or(bad)?{
+        let scope=e["scope"].as_str().ok_or(bad)?;
+        if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"|"FloatingIslands"){continue;}
+        for g in e["grids"].as_array().ok_or(bad)?{
+            if g["gridDataPath"].as_str()!=Some(data){continue;}
+            let native_layout=g["layoutId"].as_str().ok_or(bad)?;
+            // The authoring template is not evidence of a playable saved island.
+            if layout.is_empty()&&native_layout.starts_with("SceneLayouts/FloatingIslands/FloatingIsland_TEMPLATE/"){continue;}
+            if !layout.is_empty()&&layout!=native_layout{continue;}
+            if g["factor"].as_u64()!=Some(factor){continue;}
+            let sx=g["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?;
+            let sy=g["sizeY"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?;
+            if found.is_some(){return Err(bad);}
+            found=Some((scope.to_owned(),native_layout.to_owned(),factor,sx,sy));
+        }
+    }
+    found.ok_or(bad)
+}
+fn outdoor_identity(root:&Value,gid:&str)->Result<(String,String,u64,u64,u64),CodecError>{
+    let bad=CodecError::Json;
+    let c=&root["World"]["GridCollection"];
+    let grids=c["Grids"].as_object().ok_or(bad)?;
+    let grid=grids.get(gid).ok_or(bad)?;
+    let data=grid["GridDataPath"].as_str().ok_or(bad)?;
+    if grids.values().filter(|g|g["GridDataPath"].as_str()==Some(data)).count()!=1||
+       grid["ID"].as_u64()!=key_id(gid)||
+       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(gid))){return Err(bad);}
+    outdoor_catalog_identity(grid)
+}
+pub(super) fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+    let (_,_,factor,sx,sy)=outdoor_identity(root,gid)?;
+    Ok((sx*factor,sy*factor))
 }
 
 /// Only ordinary leaf furniture, on a proven factor-one outdoor Grid.
@@ -563,13 +591,18 @@ pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Resu
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(CodecError::Json)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
-    let mut candidates=grids.iter().filter(|(_,v)|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&v.get("GridDataPath").and_then(Value::as_str)==Some(data));
+    let mut candidates=grids.iter().filter(|(_,v)|v["GridDataPath"].as_str()==Some(data)&&(v["GridDefaultLayoutPath"].as_str()==Some(layout)||v["GridDefaultLayoutPath"].as_str()==Some("")));
+    
     let (id,grid)=candidates.next().ok_or(CodecError::Json)?;
     if candidates.next().is_some()||valid_grid(id,grid).is_none()||
        grid.get("ID").and_then(Value::as_u64)!=key_id(id)||
        grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(id))){
        return Err(CodecError::Json);
+    }
+    if grid["GridDefaultLayoutPath"].as_str()==Some(""){
+        let (_,native_layout,native_factor,native_x,native_y)=outdoor_identity(&root,id)?;
+        if native_layout!=layout||native_factor!=u64::from(factor)||native_x!=u64::from(sx)||native_y!=u64::from(sy){return Err(CodecError::Json);}
     }
     // A monotonic counter can still point to an address referenced outside
     // this Objects map, for example by an old collection/event record.
@@ -728,7 +761,7 @@ pub(super) fn resolve_outdoor_support_cut_target(profile:&[u8],ordinal:usize,ite
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
  let g=c.get("Grids").and_then(|v|v.get(&t.grid_id)).ok_or(bad)?;
- if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/"))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
+ if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/")&&(v!=""||outdoor_identity(&root,&t.grid_id).is_err()))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
  subgrid_tree(c,&t.grid_id,&t.object_id)?;
  let refs=grid_identity_dependencies(profile,t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
  Ok(t.clone())
@@ -1114,6 +1147,18 @@ fn saved_db04_source_projection(
         .and_then(Value::as_object);
     let mut out=Vec::with_capacity(scan.private_targets.len());
     let mut bindings=Vec::new();
+    // Resolve the empty-layout form once per full grid, rather than for
+    // every placed object. Do not alter the saved record or expose raw IDs.
+    let mut recovered=HashMap::<String,String>::new();
+    if terrain_session{
+        if let Some(grids)=collection.and_then(|c|c.get("Grids")).and_then(Value::as_object){
+            for (id,g) in grids{
+                if g["GridDefaultLayoutPath"].as_str()==Some(""){
+                    if let Ok((_,layout,_,_,_))=outdoor_identity(&root,id){recovered.insert(id.clone(),layout);}
+                }
+            }
+        }
+    }
     for (i,(target,xy)) in scan.private_targets.iter().enumerate(){
         let scope=match target.kind{
             GridObjectKind::Full=>"Grids",
@@ -1124,6 +1169,7 @@ fn saved_db04_source_projection(
             .and_then(Value::as_object);
         let layout=grid.and_then(|g|g.get("GridDefaultLayoutPath"))
             .and_then(Value::as_str);
+        let layout=if target.kind==GridObjectKind::Full&&layout==Some(""){recovered.get(&target.grid_id).map(String::as_str)}else{layout};
         let data=grid.and_then(|g|g.get("GridDataPath"))
             .and_then(Value::as_str);
         let diff_id=grid.and_then(|g|g.get("DefaultLayoutGridID"))
@@ -1230,12 +1276,13 @@ fn saved_db04_source_projection(
         if let Some(grids)=collection.and_then(|c|c.get("Grids")).and_then(Value::as_object){
             for (i,(key,grid)) in grids.iter().enumerate(){
                 let Some(objects)=grid.get("Objects").and_then(Value::as_object) else{continue;};
-                let layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str);
+                let raw_layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str);
+                let layout=if raw_layout==Some(""){recovered.get(key).map(String::as_str)}else{raw_layout};
                 let data=grid.get("GridDataPath").and_then(Value::as_str);
                 let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64);
                 if grid.get("ID").and_then(Value::as_u64)!=key_id(key)||
                    collection.and_then(|c|c.get("DiffGrids")).is_some_and(|d|d.as_object().is_none_or(|m|m.contains_key(key)))||
-                   grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout&&g.get("GridDataPath").and_then(Value::as_str)==data).count()!=1{continue;}
+                   grids.values().filter(|g|g.get("GridDataPath").and_then(Value::as_str)==data&&(raw_layout==Some("")||g.get("GridDefaultLayoutPath").and_then(Value::as_str)==raw_layout)).count()!=1{continue;}
                 let matches=sources.iter().enumerate().filter(|(_,r)|layout==Some(r.layout.as_str())&&data==Some(r.data.as_str())).collect::<Vec<_>>();
                 if matches.len()!=1{continue;}
                 let (source_index,source)=matches[0];
@@ -1303,7 +1350,8 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
     if refs.blocking()>0||refs.historical>0{return Err(bad);}
     let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
     let layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
-    let scope=layout.strip_prefix("SceneLayouts/").and_then(|s|s.split_once('/')).map(|(s,_)|s).ok_or(bad)?;
+    let recovered;
+    let scope=if layout.is_empty(){recovered=player_house_grid_scope(&root,&target.grid_id)?;recovered.as_str()}else{layout.strip_prefix("SceneLayouts/").and_then(|s|s.split_once('/')).map(|(s,_)|s).ok_or(bad)?};
     if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|s.starts_with("GridData/Villages/")&&s.ends_with(".json")&&!s.contains("..")){return Err(bad);}
     let json=std::str::from_utf8(profile).map_err(|_|bad)?;
     let draft=match o.get("action").and_then(Value::as_str){
@@ -1572,18 +1620,9 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
 }
 /// An explicit exterior-only operation, not a generic Building placement.
 pub(super) fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,CodecError>{
-    let bad=CodecError::Json;
-    let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
-    let grid=grids.get(gid).ok_or(bad)?;
-    let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
-    let data=grid["GridDataPath"].as_str().ok_or(bad)?;
-    let scope=layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?;
-    let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
-    let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
-    let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64).ok_or(bad)?;
-    if entry["grids"].as_array().ok_or(bad)?.iter().filter(|g|g["layoutId"].as_str()==Some(layout)&&g["gridDataPath"].as_str()==Some(data)&&g["factor"].as_u64()==Some(factor)).count()!=1||
-       grids.values().filter(|g|g["GridDefaultLayoutPath"].as_str()==Some(layout)&&g["GridDataPath"].as_str()==Some(data)).count()!=1{return Err(bad);}
-    Ok(scope.to_owned())
+    let scope=outdoor_identity(root,gid)?.0;
+    if scope=="FloatingIslands"{return Err(CodecError::Json);}
+    Ok(scope)
 }
 fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
@@ -2033,7 +2072,7 @@ fn player_house_layout_candidate(profile:&[u8],rows:&[Value])->Result<String,Cod
   remove.extend(actual);
  }
  if verified.len()!=count||scope.is_none()||sources.len()!=wanted.len()||sources.keys().any(|k|!wanted.contains(k))||add.len()+remove.len()>128||add.is_empty()&&remove.is_empty(){return Err(bad);}
- if grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
+ if grids.iter().any(|(k,g)|(g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()||g["GridDefaultLayoutPath"].as_str()==Some("")&&outdoor_catalog_identity(g).ok().is_some_and(|v|Some(v.0.as_str())==scope.as_deref()))&&!verified.contains(k)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  for (witness,(item,x,y,dir),factor) in add{
   let (source,old)=sources.get(&(item,factor)).ok_or(bad)?;
@@ -2145,7 +2184,7 @@ fn building_layout_candidate_scoped(profile:&[u8],rows:&[Value],whole_world:bool
   }
  }
  if (whole_world&&verified.len()!=count)||scope.is_none()||edits.is_empty()&&clones.is_empty()&&removals.is_empty()||edits.len()+clones.len()+removals.len()>256{return Err(bad);}
- if whole_world&&grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
+ if whole_world&&grids.iter().any(|(k,g)|(g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()||g["GridDefaultLayoutPath"].as_str()==Some("")&&outdoor_catalog_identity(g).ok().is_some_and(|v|Some(v.0.as_str())==scope.as_deref()))&&!verified.contains(k)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  for ((target,old),destination,new) in clones{
   let mut copy=ddv_save_patch::preview_checked_building_duplicate_oriented(&working,&target,(old.1,old.2),&destination,(new.1,new.2),DIR[old.3],DIR[new.3]).map_err(|_|CodecError::Patch)?;
@@ -2207,7 +2246,12 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  if grids.len()!=expected_grids||!houses.is_empty()&&houses.len()!=rows.len()||!buildings.is_empty()&&buildings.len()!=rows.len(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
- if full.iter().filter(|(_,g)|{let layout=g.get("GridDefaultLayoutPath").and_then(Value::as_str);if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}}).any(|(key,_)|!grids.contains(key)){return Err(bad);}
+ if full.iter().filter(|(_,g)|{
+     let raw=g.get("GridDefaultLayoutPath").and_then(Value::as_str);
+     let recovered=if raw==Some(""){outdoor_catalog_identity(g).ok()}else{None};
+     let layout=recovered.as_ref().map(|v|v.1.as_str()).or(raw);
+     if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}
+ }).any(|(key,_)|!grids.contains(key)){return Err(bad);}
  if remove.is_empty()&&add.is_empty()&&networks.is_empty()&&landscapes.is_empty()&&houses.is_empty()&&buildings.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
@@ -2307,14 +2351,16 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let mut same_trees=Vec::new();
     for (((target,selection),(key,xy,orientation)),factor) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
-        let layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+        let raw_layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+        let recovered;
+        let layout=if raw_layout.is_empty(){recovered=outdoor_identity(&root,&target.grid_id)?.1;recovered.as_str()}else{raw_layout};
         let data=source.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
         let d=destinations.get(key).ok_or(bad)?;
         let scope=|s:&str|s.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).map(str::to_owned);
         if scope(layout).is_none()||scope(&d.layout_path).is_none()||!data.starts_with("GridData/")||
            source.get("ID").and_then(Value::as_u64)!=key_id(&target.grid_id)||
            collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)))||
-           grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&g.get("GridDataPath").and_then(Value::as_str)==Some(data)).count()!=1{return Err(bad);}
+           grids.values().filter(|g|g.get("GridDataPath").and_then(Value::as_str)==Some(data)&&(raw_layout.is_empty()||g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout))).count()!=1{return Err(bad);}
         let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
@@ -3034,6 +3080,65 @@ mod terrain_session_tests{
         let r=grid_identity_dependencies(profile,&target).unwrap();
         assert_eq!((r.active,r.historical,r.navigation,r.related,r.unknown),(1,1,1,1,1));assert_eq!(r.blocking(),4);
     }
+    #[test]
+    fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entries=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="FloatingIslands").unwrap()["grids"].as_array().unwrap();
+        let (mut playable,mut templates)=(0,0);
+        for g in entries{
+            let raw=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"","GridDataPath":g["gridDataPath"],"TessellationFactor":g["factor"],"NextGridObjectID":5,"Objects":{}}}}}});
+            let witness=serde_json::json!({"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]});
+            if g["layoutId"].as_str().unwrap().starts_with("SceneLayouts/FloatingIslands/FloatingIsland_TEMPLATE/"){
+                templates+=1;
+                assert!(resolve_plain_grid_destination(raw.to_string().as_bytes(),&witness).is_err());
+                continue;
+            }
+            playable+=1;
+            let d=resolve_plain_grid_destination(raw.to_string().as_bytes(),&witness).unwrap();
+            assert_eq!(d.grid_id,"42");
+            assert!(player_house_grid_scope(&raw,"42").is_err());
+            let copy=ddv_save_patch::preview_plain_grid_place(&raw.to_string(),&d,40005160,(1,1),"GridOrientation_Down").unwrap();
+            let v:Value=serde_json::from_str(&copy.patched_json).unwrap();
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["GridDefaultLayoutPath"],"");
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40005160);
+            let mut wrong=witness.clone();wrong["sizeX"]=(g["sizeX"].as_u64().unwrap()+1).into();
+            assert!(resolve_plain_grid_destination(raw.to_string().as_bytes(),&wrong).is_err());
+        }
+        assert_eq!((playable,templates),(28,4));
+    }
+
+    #[test]
+    fn native_blank_full_layout_and_large_grid_collection_are_supported(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let mut full=Map::new();
+        full.insert("42".into(),serde_json::json!({"ID":42,"GridDefaultLayoutPath":"","GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":20300002,"X":2,"Y":3,"Orientation":"GridOrientation_Down","State":{"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":170200005}}}}}));
+        for i in 100..2600{full.insert(i.to_string(),serde_json::json!({"ID":i,"GridDefaultLayoutPath":"","GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{}}));}
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":full,"DiffGrids":{}}}});
+        let raw=root.to_string();
+        let (scan,_)=scan_grid_instances(raw.as_bytes()).unwrap();
+        assert!(!scan.sampled);assert_eq!(scan.full,2501);assert_eq!(scan.invalid,0);
+        let witness=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+        let d=resolve_plain_grid_destination(raw.as_bytes(),&witness).unwrap();
+        assert_eq!(d.grid_id,"42");
+        assert_eq!(building_transform_grid_size(&root,"42").unwrap(),(196,100));
+        let source=serde_json::json!({"contract":"wand.db05.db04-object-source-witness@1","gridRefs":[{"layoutId":layout,"gridDataPath":data,"nativeGridId":0,"nativeSizeX":196,"nativeSizeY":100,"tessellationFactor":1}]});
+        let projected:Value=serde_json::from_str(&saved_db04_terrain_session_json(raw.as_bytes(),&source.to_string()).unwrap()).unwrap();
+        assert_eq!(projected["bindings"].as_array().unwrap().len(),1);
+        assert_eq!(projected["gridBindings"].as_array().unwrap().len(),1);
+        let t=resolve_grid_mixed_targets(raw.as_bytes(),&[(1,20300002,(2,3),"full".into(),Some("GridOrientation_Down".into()))]).unwrap().pop().unwrap();
+        let copy=ddv_save_patch::preview_checked_building_duplicate(&raw,&t,(2,3),&d,(4,5),"GridOrientation_Down").unwrap();
+        let out:Value=serde_json::from_str(&copy.patched_json).unwrap();
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["GridDefaultLayoutPath"],"");
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],20300002);
+        let mut wrong=witness.clone();wrong["sizeX"]=195.into();assert!(resolve_plain_grid_destination(raw.as_bytes(),&wrong).is_err());
+        wrong=witness.clone();wrong["layoutId"]="SceneLayouts/Village04/Other.json".into();assert!(resolve_plain_grid_destination(raw.as_bytes(),&wrong).is_err());
+        let other=root["World"]["GridCollection"]["Grids"]["42"].clone();
+        root["World"]["GridCollection"]["Grids"]["43"]=other;
+        root["World"]["GridCollection"]["Grids"]["43"]["ID"]=43.into();
+        assert!(resolve_plain_grid_destination(root.to_string().as_bytes(),&witness).is_err());
+    }
+
     #[test]
     fn transfer_destination_resolves_empty_full_grid_and_rejects_ambiguity(){
         let save=br#"{"World":{"GridCollection":{"Grids":{"20":{"ID":20,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","NextGridObjectID":3,"Objects":{}}},"DiffGrids":{}}}}"#;

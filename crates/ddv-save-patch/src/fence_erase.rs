@@ -39,7 +39,7 @@ pub fn preview_fence_mutation_mode(source:&str,d:&PlainGridDestination,base:u32,
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=collection.get("Grids").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
  let grid=grids.get(&d.grid_id).ok_or(PatchError::MissingTarget)?;
- let matches=|g:&Value|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
+ let matches=|g:&Value|super::saved_layout_matches(g.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)&&g.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
  if !matches(grid)||grids.values().filter(|g|matches(g)).count()!=1||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
  grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|o|o.contains_key(&d.grid_id))){return Err(PatchError::AmbiguousTarget);}
  let map=grid.get("Objects").and_then(Value::as_object).ok_or(PatchError::MissingTarget)?;
