@@ -69,10 +69,11 @@ if __name__=='__main__':
     p.add_argument('--euler-correction',type=Path,help='Local copy of corrected native rotation clips')
     p.add_argument('--mermaid',type=Path,help='Local copy of mermaid geometry and motion diagnostics')
     p.add_argument('--max-alternate',type=Path,help='Local copy of the second native Max pose')
+    p.add_argument('--limbo-geometry',type=Path,help='Local copy of the limbo companion geometry diagnostic overlay')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -103,3 +104,5 @@ if __name__=='__main__':
         apply_mermaid(a.mermaid.read_bytes() if a.mermaid else download_mermaid(), a.dest)
         from prepare_max_alternate import download_max, apply_max
         apply_max(a.max_alternate.read_bytes() if a.max_alternate else download_max(), a.dest)
+        from prepare_limbo_geometry import download_limbo, apply_limbo
+        apply_limbo(a.limbo_geometry.read_bytes() if a.limbo_geometry else download_limbo(), a.dest)

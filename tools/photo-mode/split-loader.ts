@@ -21,7 +21,7 @@ type SceneNode={name:string;children?:number[];mesh?:number;skin?:number;extras?
 type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number}[]};
 type SceneMaterial={pbrMetallicRoughness:{baseColorFactor:number[];baseColorTexture?:{index:number}}};
 type SceneAnimation=Animation & {extras:Animation['extras']&{companionItemId?:number;companionClipSha256?:string;propItemId?:number;propClipSha256?:string}};
-type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean;propActorDiagnostic?:boolean;attachedPropDiagnostic?:boolean}}};
+type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean;propActorDiagnostic?:boolean;attachedPropDiagnostic?:boolean;limboGeometryDiagnostic?:boolean}}};
 function checkedIndex(n:number,size:number){check(Number.isSafeInteger(n)&&n>=0&&n<size,'Actor index out of range');return n}
 function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,otherBin:Uint8Array){
   const bo=(bin.length+3)&~3,vo=doc.bufferViews.length,ao=doc.accessors.length;
@@ -47,14 +47,15 @@ async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:
   check(p.asset.extras.privateOnly===true&&p.asset.extras.fullPoseVerified===false&&p.animations.length===1&&p.animations[0].extras.sourceSha256===playerSourceSha256&&p.animations[0].extras.companionItemId===undefined&&p.animations[0].extras.propItemId===undefined,'Invalid player scene');
   check(a.asset.extras.privateOnly===true&&a.asset.extras.fullPoseVerified===false&&(kind==='companion'?a.asset.extras.companionActorDiagnostic===true:a.asset.extras.propActorDiagnostic===true)&&a.animations.length===1&&a.animations[0].extras.sourceSha256===entry.sourceSha256&&a.animations[0].extras.fullPoseVerified===false,'Invalid companion scene');
   check(p.nodes[checkedIndex(anchor.node,p.nodes.length)].name===anchor.path&&a.scenes[a.scene]?.nodes.length===1&&a.scenes[a.scene].nodes[0]===0&&a.nodes.length>0&&a.nodes.every(n=>n.extras?.actorId===kind),'Invalid actor anchor or root');
-  check(a.meshes.length>0&&a.skins.length>0&&a.materials.length>0&&a.images?.length&&a.textures?.length,'Missing companion geometry or texture');
+  const geometry=kind==='companion'&&a.asset.extras.limboGeometryDiagnostic===true;
+  check(a.meshes.length>0&&a.skins.length>0&&a.materials.length>0&&(geometry?!a.images?.length&&!a.textures?.length:a.images?.length&&a.textures?.length),'Missing companion geometry or texture');
   const no=p.nodes.length,mo=p.meshes.length,so=p.skins.length,ma=p.materials.length;
   const pi=p.images??(p.images=[]),pt=p.textures??(p.textures=[]),io=pi.length,to=pt.length;
   const {bin,accessor,view}=appendBuffer(p,pb,a,ab);
   const node=(i:number)=>checkedIndex(i,a.nodes.length)+no;
   for(const im of a.images??[]){check(im.mimeType==='image/png','Unsupported companion texture');pi.push({...im,bufferView:view(im.bufferView)})}
   for(const tx of a.textures??[])pt.push({...tx,source:checkedIndex(tx.source,a.images?.length??0)+io});
-  p.materials.push(...a.materials.map(m=>{const q=m.pbrMetallicRoughness,t=q.baseColorTexture;check(t,'Missing source albedo');return {...m,pbrMetallicRoughness:{...q,baseColorTexture:{...t,index:checkedIndex(t.index,a.textures?.length??0)+to}}}}));
+  p.materials.push(...a.materials.map(m=>{const q=m.pbrMetallicRoughness,t=q.baseColorTexture;if(geometry){check(!t&&q.baseColorFactor.length===4&&q.baseColorFactor.every(v=>Number.isFinite(v)&&v>=0&&v<=1),'Invalid diagnostic color');return m}check(t,'Missing source albedo');return {...m,pbrMetallicRoughness:{...q,baseColorTexture:{...t,index:checkedIndex(t.index,a.textures?.length??0)+to}}}}));
   p.meshes.push(...a.meshes.map(m=>({...m,primitives:m.primitives.map(q=>({...q,attributes:Object.fromEntries(Object.entries(q.attributes).map(([k,v])=>[k,accessor(v)])),indices:accessor(q.indices),material:checkedIndex(q.material,a.materials.length)+ma}))})));
   p.skins.push(...a.skins.map(s=>({...s,joints:s.joints.map(node),inverseBindMatrices:accessor(s.inverseBindMatrices),...(s.skeleton===undefined?{}:{skeleton:node(s.skeleton)})})));
   p.nodes.push(...a.nodes.map((n,i)=>({...n,...(n.children?{children:n.children.map(c=>{check(c>i,'Non-topological actor hierarchy');return node(c)})}:{}),...(n.mesh===undefined?{}:{mesh:checkedIndex(n.mesh,a.meshes.length)+mo}),...(n.skin===undefined?{}:{skin:checkedIndex(n.skin,a.skins.length)+so})})));
