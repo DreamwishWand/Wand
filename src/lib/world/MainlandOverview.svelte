@@ -7,7 +7,7 @@
  import {islandSaveGrids,islandSaveWords,worldDecorationScope} from './island-save-preset.ts';
  import BiomeNetworkPreset from './BiomeNetworkPreset.svelte';
  import {networkPresetWords} from './biome-network-preset.ts';
- import {buildNetworkMap,networkMapColor,visibleNetworkEdges,type NetworkMapReceipt} from './network-map-display.ts';
+ import {connectedNetworkWords,buildNetworkMap,networkMapColor,visibleNetworkEdges,type NetworkMapReceipt} from './network-map-display.ts';
  import BiomeFurniturePreset from './BiomeFurniturePreset.svelte';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import SubgridInspector from './SubgridInspector.svelte';
@@ -458,8 +458,9 @@ $: cutWords=groupCutWords[locale];
  function follow(e:PointerEvent){if(updateCaptureDrag(e))return;if(roadPointer===e.pointerId){const p=pointerPoint(e);if(p)sampleRoadStroke(p);e.preventDefault();return;}if(range?.pointer===e.pointerId){const p=pointerPoint(e);if(p&&(range.moved||Math.hypot(e.clientX-range.clientX,e.clientY-range.clientY)>=5)){if(!range.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{}}range={...range,end:p,moved:true};e.preventDefault();}return;}if(updateObjectDrag(e))return;const next=gesture.move(e,svg,extent,camera);if(next){camera=next;return;}if(supportPlacing){supportInspector?.hoverParent(pointerPoint(e));return;}if(pasteActive){pasteTools?.hover(pointerPoint(e));return;}if(furniturePlacing){furnitureTools?.hover(pointerPoint(e));return;}if(moving){const m=svg.getScreenCTM();if(m){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());hover={x:p.x,y:p.y};}}}
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: chosen=allObjects.find(p=>p.object.localOrdinal===selected)??null;
- $: adjacentIds=chosen&&(chosen.object.layer==='ground'||chosen.object.layer==='fence')?savedAdjacentNetwork(chosen,projection.objects):[];
- $: adjacentWords=adjacentNetworkWords[locale];
+ $: verifiedAdjacent=chosen?nativeNetwork.components.get(chosen.object.localOrdinal):undefined;
+ $: adjacentIds=verifiedAdjacent?[...verifiedAdjacent]:chosen&&(chosen.object.layer==='ground'||chosen.object.layer==='fence')&&!nativeNetwork.parts.has(chosen.object.localOrdinal)?savedAdjacentNetwork(chosen,projection.objects):[];
+ $: adjacentWords=verifiedAdjacent&&chosen?.object.layer==='fence'?connectedNetworkWords[locale]:adjacentNetworkWords[locale];
  $: adjacentSelectable=adjacentIds.length>1&&adjacentIds.every(id=>allObjects.some(p=>p.object.localOrdinal===id&&layerSelectable(layerState,p.object)));
  $: networkGroup=group.some(p=>p.object.layer==='ground'||p.object.layer==='fence');
 
