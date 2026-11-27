@@ -7,6 +7,7 @@
  import {islandSaveGrids,islandSaveWords,worldDecorationScope} from './island-save-preset.ts';
  import BiomeNetworkPreset from './BiomeNetworkPreset.svelte';
  import {networkPresetWords} from './biome-network-preset.ts';
+ import {buildNetworkMap,networkMapColor,visibleNetworkEdges,type NetworkMapReceipt} from './network-map-display.ts';
  import BiomeFurniturePreset from './BiomeFurniturePreset.svelte';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import SubgridInspector from './SubgridInspector.svelte';
@@ -116,6 +117,20 @@
  $: projection=saveMode&&bound?projectMainlandSaved(bound,sessions,saveMaps,currentWorldEdits(timeline)):{objects:[],omitted:0};
  $: allObjects=projection.objects.filter(p=>layerVisible(layerState,p.object));
  $: visibleObjects=visibleMainlandSaved(allObjects,viewport);
+ let networkReadWorker:Worker|null=null,networkReadFile:File|null=null,networkReadKey='',networkReceipts:NetworkMapReceipt[]=[];
+ function readMapNetworks(f:File|null,grids:readonly MainlandGrid[]|null,enabled:boolean){
+  const key=grids?.map(g=>g.key).join('|')??'';
+  if(!enabled||!f||!grids?.length){networkReadWorker?.terminate();networkReadWorker=null;networkReadFile=null;networkReadKey='';networkReceipts=[];return;}
+  if(f===networkReadFile&&key===networkReadKey)return;
+  networkReadWorker?.terminate();networkReceipts=[];networkReadFile=f;networkReadKey=key;
+  const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});networkReadWorker=own;
+  const done=(d:unknown)=>{own.terminate();if(networkReadWorker!==own)return;networkReadWorker=null;if(d&&typeof d==='object'&&'kind' in d&&d.kind==='map-networks'&&'receipts' in d&&Array.isArray(d.receipts))networkReceipts=d.receipts;};
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);
+  own.postMessage({command:'inspect-map-networks',file:f,plan:grids.map(g=>({key:g.key,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}}))});
+ }
+ $: readMapNetworks($localSaveSession.file,bound,saveMode&&furnitureReady&&!furnitureBlocked);
+ $: nativeNetwork=buildNetworkMap(bound??[],projection.objects,networkReceipts);
+ $: networkEdges=layerVisible(layerState,{layer:'fence'})?visibleNetworkEdges(nativeNetwork.edges,viewport):[];
  let mapWidth=0,mapHeight=0,selected:number|null=null,query='',searchOpen=false,limit=60,layersOpen=false,showGrid=true;
  let moving=false,hover:{x:number;y:number}|null=null;
  let saveRevision=-1;
@@ -517,7 +532,7 @@ $: cutWords=groupCutWords[locale];
   const hits=mainlandTerrainHits(bound,rasters,p.x,p.y);
   overlaps=hits.length>1?hits:[];if(hits.length===1)onChoose(hits[0].key);
  }
- onDestroy(()=>{closeSupport();closeRoad();clearTransfer();nameEpoch++;subscribed?.removeEventListener('message',receive);});
+ onDestroy(()=>{networkReadWorker?.terminate();closeSupport();closeRoad();clearTransfer();nameEpoch++;subscribed?.removeEventListener('message',receive);});
 </script>
 <svelte:window on:keydown={keys} on:keyup={e=>{if(e.code==='Space')spacePan=false;}} on:blur={()=>{spacePan=false;objectDrag=null;range=null;if(captureDrag){captureRegion=captureDrag.region;captureDrag=null;}if(roadPointer!==null)resetRoad();}}/>
 <section class="mainland-overview" bind:this={root} aria-label={title||words[0]}>
@@ -535,14 +550,18 @@ $: cutWords=groupCutWords[locale];
    {/each}
    {#if showGrid}{#each bound??[] as g (g.key)}{#if images.has(g.key)}<WorldGridLines bounds={g.bounds} view={viewport} pixels={cellPixels} minorStep={1/g.factor}/>{/if}{/each}{/if}
    {#each visibleObjects as p (p.object.localOrdinal)}
+    {@const networkPart=nativeNetwork.parts.get(p.object.localOrdinal)}
     <g class="mainland-save-object" transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} data-area={p.area} data-support={p.object.subgrid?.status}>
-     {#if p.shape}<path d={p.shape.path} fill={MAP_LAYER_COLORS[p.object.layer]} fill-opacity={selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)?.9:.65} stroke={selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)?'#fff':MAP_LAYER_COLORS[p.object.layer]} vector-effect="non-scaling-stroke" stroke-width="1"/>
+     {#if p.shape}<path d={p.shape.path} fill={networkPart?networkMapColor(networkPart.style,networkPart.kind):MAP_LAYER_COLORS[p.object.layer]} fill-opacity={selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)?.9:networkPart?.kind==='fence'?.24:.65} stroke={selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)?'#fff':MAP_LAYER_COLORS[p.object.layer]} vector-effect="non-scaling-stroke" stroke-width="1"/>
+      {#if networkPart?.kind==='road'&&networkPart.diagonal&&cellPixels>=5}<path d={'M0 '+p.shape.height+'L'+p.shape.width+' 0'} stroke="#e8e6d9" stroke-opacity=".65" stroke-width="1" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
+      {#if networkPart?.kind==='fence'&&Number(p.object.itemId)===networkPart.style}<circle cx={p.factor/2} cy={p.factor/2} r={p.factor*.19} fill={networkMapColor(networkPart.style,'fence')} stroke="#504b43" stroke-width=".5" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
       {#if showWorldArtwork(p.object,p.shape,cellPixels/p.factor)&&artwork.has(Number(p.object.itemId))}<WorldObjectArtwork href={artwork.get(Number(p.object.itemId))!} width={p.shape.width} height={p.shape.height} flipY/>{/if}
      {:else}<rect width="1" height="1" fill="none" stroke="#e4d2a5" vector-effect="non-scaling-stroke"/>{/if}
      {#if p.shape&&p.object.orientationCode!==null&&cellPixels/p.factor>=8&&p.object.layer!=='ground'&&p.object.layer!=='fence'&&(selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal))}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(p.object.orientationCode)+')'} fill="#fff" stroke="#27313a" stroke-width=".04" pointer-events="none"/>{/if}
      {#if p.object.subgrid}<circle cx={(p.shape?.width??1)/2} cy={(p.shape?.height??1)/2} r={Math.min(1.5,4*p.factor/Math.max(1,cellPixels))} fill="#d6a6ef" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
     </g>
    {/each}
+   {#each networkEdges as edge (edge.key)}<path d={'M'+edge.x1+' '+edge.y1+'L'+edge.x2+' '+edge.y2} stroke="#39382f" stroke-width=".42" stroke-linecap="round" fill="none" pointer-events="none"/><path d={'M'+edge.x1+' '+edge.y1+'L'+edge.x2+' '+edge.y2} stroke={networkMapColor(edge.base,'fence')} stroke-width=".25" stroke-linecap="round" fill="none" pointer-events="none"/>{/each}
    {#each visibleObjects.filter(p=>selected===p.object.localOrdinal||groupSet.has(p.object.localOrdinal)) as p (p.object.localOrdinal)}{#if p.shape}<path class="mainland-selection-outline" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="none" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{:else}<rect x={p.x} y={p.y-1/p.factor} width={1/p.factor} height={1/p.factor} fill="none" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}
    {#if biomeOpen}{#each biomeRemoved as p (p.object.localOrdinal)}{#if p.shape}<path class="biome-preset-remove" d={p.shape.path} transform={'translate('+p.x+' '+p.y+') scale('+1/p.factor+' '+(-1/p.factor)+')'} fill="#ef5350" fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}{#each biomeGhosts.filter(g=>g.x+g.shape.width/g.factor>=viewport.x&&g.x<=viewport.x+viewport.w&&g.y>=viewport.y&&g.y-g.shape.height/g.factor<=viewport.y+viewport.h) as g}<path class="biome-preset-add" d={g.shape.path} transform={'translate('+g.x+' '+g.y+') scale('+1/g.factor+' '+(-1/g.factor)+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{#if Math.min(g.shape.width,g.shape.height)*cellPixels/g.factor>=14&&artwork.has(Number(g.plan.itemId))}<g transform={'translate('+g.x+' '+g.y+') scale('+1/g.factor+' '+(-1/g.factor)+')'}><WorldObjectArtwork href={artwork.get(Number(g.plan.itemId))!} width={g.shape.width} height={g.shape.height} opacity={.65} flipY/></g>{/if}{/each}{/if}
    {#if backupRegion&&biomeOpen}<rect x={backupRegion.x} y={backupRegion.y} width={backupRegion.w} height={backupRegion.h} fill="#73cfc5" fill-opacity=".13" stroke="#72e7cb" stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
