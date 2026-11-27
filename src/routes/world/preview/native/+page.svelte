@@ -4,7 +4,7 @@
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
- let maps:LocalNativeMap[]=[],map:LocalNativeMap|null=null,source:ImageSource|null=null,selected='',locked=false;
+ let maps:readonly LocalNativeMap[]=[],map:LocalNativeMap|null=null,source:ImageSource|null=null,selected='',locked=false;
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
  let points:{x:number;y:number}[]=[];
