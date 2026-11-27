@@ -3,7 +3,7 @@ import {landscapeRows,reviewLandscape,landscapePoseKey,landscapeObjectPose,type 
 import {parseSupportScene,supportSceneRootCounts} from './support-scene.ts';
 import {parseWholeArea} from './whole-area-preset.ts';
 import {serializeBiomeNetwork,parseBiomeNetwork,networkKey,reviewBiomeNetwork,type NetworkPose} from './biome-network-preset.ts';
-import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,worldOrientationCode} from './saved-map-transform.ts';
 import {stockFootprintFeedback,type StockCandidate} from './save-furniture-placement.ts';
 import {parseReplayStep} from './checkpoint-journal.ts';
 import type {MainlandGrid} from './mainland-world-coordinates.ts';
@@ -28,13 +28,13 @@ export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false,
  let supports:Map<number,ReturnType<typeof parseSupportScene>>|undefined;
  if(Object.prototype.hasOwnProperty.call(doc,'supports')){
   if(!Array.isArray(doc.supports)||doc.supports.length>furniture.length)throw Error('SUPPORT_CONTEXT');supports=new Map();
-  for(const row of doc.supports){if(!row||Object.keys(row).length!==2||!Number.isSafeInteger(row.placementId)||supports.has(row.placementId))throw Error('SUPPORT_CONTEXT');const p=furniture.find(p=>p.id===row.placementId),scene=parseSupportScene(JSON.stringify(row.scene));if(!p||p.itemId!==scene.ownerItemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)throw Error('SUPPORT_OWNER');supports.set(row.placementId,scene);}
+  for(const row of doc.supports){if(!row||Object.keys(row).length!==2||!Number.isSafeInteger(row.placementId)||supports.has(row.placementId))throw Error('SUPPORT_CONTEXT');const p=furniture.find(p=>p.id===row.placementId),scene=parseSupportScene(JSON.stringify(row.scene));if(!p||!Number.isInteger(p.orientation)||p.itemId!==scene.ownerItemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)throw Error('SUPPORT_OWNER');supports.set(row.placementId,scene);}
  }
  return {furniture,network,supports,...(doc.landscape!==undefined?{landscape:landscapeRows(doc.landscape,grid)}:{})};
 }
 function ghostObject(g:StockCandidate,ordinal:number):MainlandSavedObject{
  if(g.plan.action!=='place')throw Error('GHOST_POSE');
- return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:CARDINAL_ORIENTATIONS.indexOf(g.plan.orientation as typeof CARDINAL_ORIENTATIONS[number])*4,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
+ return {area:g.area,x:g.x,y:g.y,factor:g.factor,shape:g.shape,object:{localOrdinal:ordinal,localGridOrdinal:1,itemId:g.plan.itemId,x:g.plan.x,y:g.plan.y,orientation:g.plan.orientation,orientationCode:worldOrientationCode(g.plan.orientation),shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}};
 }
 export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,before:readonly NetworkPose[],incoming:{furniture:readonly DesignPlacement[];network:readonly NetworkPose[];supports?:SupportAreaTrees;landscape?:readonly LandscapePose[]},defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,currentSupports?:SupportAreaTrees,world=false,currentLandscape?:readonly LandscapePose[]){
  if(incoming.supports&&!currentSupports||incoming.landscape!==undefined&&!currentLandscape)return null;
