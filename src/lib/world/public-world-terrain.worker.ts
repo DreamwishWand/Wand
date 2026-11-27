@@ -394,7 +394,7 @@ scope.onmessage=async({data})=>{
       const localized=new Map(names),items:DesignCatalogItem[]=[],buildingCache=data.allowBuildings===true?createSourceGeometryCache(publicShapeSource(grid,definitions),grid.factor):null;
       for(const [key,d] of definitions){
         const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
-        const building=data.allowBuildings===true&&buildingDesignEligible(itemId,d);
+        const building=data.allowBuildings===true&&buildingDesignEligible(itemId,d,data.freePlacement===true);
         if(!building&&(d.nativeType!=='Furniture'||!footprint||data.freePlacement!==true&&nativeActionBlocked(sourceEditRestrictions(d),'select')))continue;
         const layer=sourceMapLayer(building?'Building':'Furniture',itemId,footprint?.acceptedFloorTypesFlag??null);
         if(!building&&(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d)))continue;
