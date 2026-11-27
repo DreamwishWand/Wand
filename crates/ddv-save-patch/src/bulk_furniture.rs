@@ -84,7 +84,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   if p.free_placement&&(row.tree.is_some()||!full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path))){return Err(BAD);}
   if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
-   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!anchors.insert((d.grid_id.clone(),x,y))&&!p.free_placement{return Err(BAD);}
+   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!p.free_placement&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
   let grid=grids.get(&d.grid_id).ok_or(BAD)?;
   let matches=|v:&Value|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(d.layout_path.as_str())&&v.get("GridDataPath").and_then(Value::as_str)==Some(d.data_path.as_str());
   if !matches(grid)||grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
