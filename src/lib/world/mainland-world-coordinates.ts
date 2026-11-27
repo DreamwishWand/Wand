@@ -84,3 +84,11 @@ export function mainlandTerrainHits(grids:readonly MainlandGrid[],rasters:Readon
   return lx>=0&&ly>=0&&lx<g.sizeX&&ly<g.sizeY&&r.nativeFloorValues[ly*g.sizeX+lx]!==0;
  });
 }
+
+/** Nonstandard placement still needs an unambiguous native Grid. Prefer a
+ * verified terrain owner; only fall back to a unique source rectangle. */
+export function mainlandFreeHits(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,x:number,y:number){
+ const hits=mainlandTerrainHits(grids,rasters,x,y);if(hits.length)return hits;
+ if(!Number.isFinite(x)||!Number.isFinite(y))return [];
+ return grids.filter(g=>{const r=rasters.get(g.key);if(!r||r.sizeX!==g.sizeX||r.sizeY!==g.sizeY||r.nativeFloorValues.length!==g.sizeX*g.sizeY)return false;const lx=Math.floor((x-2*g.origin.position[0])*g.factor),ly=Math.floor((-y-2*g.origin.position[2])*g.factor);return lx>=0&&ly>=0&&lx<g.sizeX*g.factor&&ly<g.sizeY*g.factor;});
+}
