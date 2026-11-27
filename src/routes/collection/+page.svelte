@@ -674,6 +674,7 @@
   }
   function updateItemAddress(id:number|null,mode:'push'|'replace'):void{
     const url=new URL(window.location.href);
+    if(id===null||url.searchParams.get('item')!==String(id))url.searchParams.delete('pose');
     if(id===null)url.searchParams.delete('item');
     else url.searchParams.set('item',String(id));
     if(url.href===window.location.href)return;
