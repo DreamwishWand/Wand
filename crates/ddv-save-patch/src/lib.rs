@@ -833,6 +833,10 @@ pub fn preview_plain_grid_transfer(
 pub fn preview_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false)
 }
+/// Transfer a validated support parent between source-backed outdoor worlds.
+pub fn preview_support_parent_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,true)
+}
 /// Only for ordinary, state-free furniture in a source-backed outdoor world.
 /// The codec must prove the exact old/new identities and reject references.
 /// The older same-scope and support-parent APIs remain unchanged.
@@ -898,7 +902,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)){
         return Err(PatchError::InvalidTarget);
     }
-    if !same_world&&(!allow_world_change||support_parent||target.item_id/100_000!=400||
+    if !same_world&&(!allow_world_change||target.item_id/100_000!=400||
        !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|path|outdoor_world_path(from_scope,path))||
        !outdoor_world_path(to_scope,&destination.data_path)){return Err(PatchError::InvalidTarget);}
     if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||

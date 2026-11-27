@@ -87,13 +87,14 @@ test('room cut clipboard has a room-local witness and follows the same File to o
  assert.equal(plan[0].x,8);assert.equal(plan[0].expectedX,3);
 });
 
-test('support hierarchy is eligible for cut only and remains in its source world and lattice',()=>{
+test('support hierarchy cut follows verified outdoor worlds and retains its source lattice',()=>{
  const a=saved(2,4,-3),p={...a,object:{...a.object,subgrid:{status:'resolved_full',objectCount:2},surfaceCapable:true}};
  assert.equal(captureFurnitureGroup([p]),null);
  const rows=captureCutWitness([p,saved(3,6,-3)]);assert.equal(rows[0].supportFactor,1);
  const file=new File(['original'],'profile.json'),cut={file,scope:'Village04',rows};
  assert.equal(cutClipboardMatches(cut,file,'Village04',[p,saved(3,6,-3)]),true);
- assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',[]),false);
+ assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',[]),true);
+ assert.equal(cutClipboardMatches(cut,file,'FloatingIslands',[]),false);
  const candidate=groupPasteCandidate(captureFurnitureGroup([p,saved(3,6,-3)],true),[grid],rasters,defs,new Map([[item,2]]),[],0,8.1,-2.1);
  assert.equal(groupCutPlan(rows,candidate)[0].supportFactor,1);
  assert.equal(groupCutPlan(rows,{...candidate,rows:[{...candidate.rows[0],destination:{...candidate.rows[0].destination,factor:2}},candidate.rows[1]]}),null);
