@@ -1,6 +1,7 @@
 <script lang="ts">
  import {type ImageSource} from '$lib/media/native-map-renderer.ts';
- import {openLocalNativePreview,nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
+ import {openNativePreviewPack} from '$lib/media/native-cdn-preview.ts';
+ import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
@@ -17,7 +18,7 @@
   const input=event.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';
   const revision=++ticket;error='';
   try{
-   const {maps:next,source:provider}=await openLocalNativePreview(files);
+   const {maps:next,source:provider}=await openNativePreviewPack(files);
    if(revision!==ticket)return;
    maps=next;source=provider;selected=next[0].id;camera=defaultMapCamera();points=[];status='drawing';
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
@@ -70,7 +71,7 @@
   </div>
   <p role="status">{status==='drawing'?'描画中…':status==='error'?'描画エラー':'描画済み'}。クリックで半ワールド単位の検証マーカーを表示します。</p>
  {:else}
-  <p>ローカル検証ZIPを展開し、manifest.json と全画像を同時に選択してください。</p>
+  <p>ローカル検証ZIPを展開し、manifest.json と全画像を選択してください。CDN照合済みの場合は manifest.json のみ選択します。</p>
  {/if}
  <p>原本座標の検証用。画像は端末内のみで処理します。正式な座標校正・セーブ編集ではありません。</p>
 </div>
