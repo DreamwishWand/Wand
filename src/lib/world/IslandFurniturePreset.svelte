@@ -156,7 +156,7 @@
     rasters.set(g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:d.nativeFloorValues});
     const ids=[...new Set([...(incoming.get(g.key)??[]),...(combined?.get(g.key)?.network??[]),...(current?.get(g.key)?.furniture??[]),...(current?.get(g.key)?.network??[]),...(combined?.get(g.key)?.landscape??[]),...(current?.get(g.key)?.landscape??[])].map(p=>p.itemId))],defs=new Map<number,DesignItemGeometry>();
     for(let i=0;i<ids.length;i+=128){
-     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch});
+     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch,eightWay:world&&[...(incoming.get(g.key)??[]),...(current?.get(g.key)?.furniture??[])].some(p=>!Number.isInteger(p.orientation))});
      if(!Array.isArray(r.result)||r.result.length!==batch.length||r.result.some((x:DesignItemGeometry)=>!batch.includes(x.itemId)))throw Error('shape');
      for(const def of r.result as DesignItemGeometry[])defs.set(def.itemId,def);
     }
