@@ -17,7 +17,7 @@ scope.onmessage=async({data})=>{
   wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
-  if(exporting){const copy=readExperimentalCopy(wasm.prepare_grid_transfer_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));scope.postMessage({kind:'transfer-copy',...copy},[copy.bytes.buffer]);return;}
+  if(exporting){const copy=readExperimentalCopy(wasm.prepare_grid_transfer_experimental_copy(JSON.stringify(data.plan),true),n=>wasm!.take_copy_chunk(n));scope.postMessage({kind:'transfer-copy',replay:{command:'transfer-export',plan:data.plan},...copy},[copy.bytes.buffer]);return;}
   const r=JSON.parse(transfer?wasm.preview_plain_grid_transfer(JSON.stringify(data.plan)):wasm.preview_plain_grid_structure(JSON.stringify(data.plan)));
   if(r?.contract!==(transfer?'wand.db05.grid-transfer-preview@1':'wand.db05.grid-structure-preview@1')||r.changed!==true||r.lexicalBytesPreserved!==true||
      r.structureValidated!==true||r.exportAuthorized!==false||r.runtimeReferencesVerified!==false)throw Error('receipt');
