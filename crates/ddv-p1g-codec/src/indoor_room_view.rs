@@ -261,10 +261,28 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
    let place=s["place"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
    roots=roots.checked_add(pickup.len()+place.len()).ok_or(CodecError::Bounds)?;if roots>4096{return Err(CodecError::Bounds);}
    if !pickup.is_empty(){
-    let mut plan=json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":pickup});if s.get("freePlacement").and_then(Value::as_bool)==Some(true){plan["freePlacement"]=Value::Bool(true);}
-    let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
-    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
-    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+    let free=s.get("freePlacement").and_then(Value::as_bool)==Some(true);
+    let mut batches=Vec::<(bool,Vec<Value>)>::new();
+    if free{
+     if face["kind"]!="floor"{return Err(bad);}
+     let mut indices=std::collections::HashSet::new();
+     for p in pickup{let i=p["index"].as_u64().ok_or(bad)?;if !indices.insert(i){return Err(bad);}}
+     let loose=pickup.iter().filter(|p|p.get("includeSupport").is_none()).cloned().collect::<Vec<_>>();
+     let removed=loose.iter().map(|p|p["index"].as_u64().ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+     let mut strict=Vec::new();
+     for p in pickup.iter().filter(|p|p.get("includeSupport").is_some()){
+      let i=p["index"].as_u64().ok_or(bad)?;let mut p=p.clone();
+      p["index"]=json!(i-removed.iter().filter(|n|**n<i).count() as u64);strict.push(p);
+     }
+     batches.push((true,loose));batches.push((false,strict));
+    }else{batches.push((false,pickup.clone()));}
+    for (free,batch) in batches{
+     if batch.is_empty(){continue;}
+     let mut plan=json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":batch});if free{plan["freePlacement"]=Value::Bool(true);}
+     let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
+     if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+     working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+    }
    }
   }
  }
@@ -328,10 +346,20 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
    total=total.checked_add(count).ok_or(CodecError::Bounds)?;if total>256{return Err(CodecError::Bounds);}
   }
   if !places.is_empty(){
-   let mut plan=json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":places});if o.get("freePlacement").and_then(Value::as_bool)==Some(true){plan["freePlacement"]=Value::Bool(true);}
-   let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
-   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
-   working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+   let free=o.get("freePlacement").and_then(Value::as_bool)==Some(true);
+   let mut batches=Vec::<(bool,Vec<Value>)>::new();
+   if free{
+    if face["kind"]!="floor"{return Err(bad);}
+    batches.push((false,places.iter().filter(|p|p.get("scene").is_some()).cloned().collect()));
+    batches.push((true,places.iter().filter(|p|p.get("scene").is_none()).cloned().collect()));
+   }else{batches.push((false,places.clone()));}
+   for (free,batch) in batches{
+    if batch.is_empty(){continue;}
+    let mut plan=json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":batch});if free{plan["freePlacement"]=Value::Bool(true);}
+    let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
+    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
+    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
+   }
   }
   if !o["finish"].is_null(){
    let f=o["finish"].as_object().filter(|v|v.len()==2&&v.contains_key("itemId")&&v.contains_key("expected")).ok_or(bad)?;
