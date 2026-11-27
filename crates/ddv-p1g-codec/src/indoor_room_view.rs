@@ -731,7 +731,14 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   edits.push(GridMixedEdit{target,expected,position:(xy!=expected).then_some(xy),orientation:(old!=orientation).then(||(old,orientation.to_owned()))});
  }
  if free{
-  if edits.len()>1{let first=edits[0].position.ok_or(bad)?;let delta=(i64::from(first.0)-i64::from(edits[0].expected.0),i64::from(first.1)-i64::from(edits[0].expected.1));if edits.iter().any(|e|e.orientation.is_some()||e.position.is_none_or(|xy|(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))!=delta)){return Err(bad);}}
+  if edits.len()>1{
+   let rotation=|e:&GridMixedEdit|->Option<usize>{let (a,b)=e.orientation.as_ref()?;let names=ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS;let before=names.iter().position(|v|*v==a.as_str())?;let after=names.iter().position(|v|*v==b.as_str())?;Some((after+8-before)%8)};
+   if let Some(turn)=rotation(&edits[0]){
+    if !matches!(turn,2|6)||edits.iter().any(|e|rotation(e)!=Some(turn)||!within_room(e.expected)){return Err(bad);}
+   }else{
+    let first=edits[0].position.ok_or(bad)?;let delta=(i64::from(first.0)-i64::from(edits[0].expected.0),i64::from(first.1)-i64::from(edits[0].expected.1));if edits.iter().any(|e|e.orientation.is_some()||e.position.is_none_or(|xy|(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))!=delta)){return Err(bad);}
+   }
+  }
   return ddv_save_patch::preview_existing_grid_mixed_batch(json,&edits).map_err(|_|CodecError::Patch);
  }
  if edits.len()>1{
