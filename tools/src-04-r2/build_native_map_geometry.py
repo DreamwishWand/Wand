@@ -28,6 +28,29 @@ def geometry(corners):
     return [a,b,c,d,x,y]
 
 
+def blocker_area_types(world,cab):
+    nodes=world['renderNodes']
+    by_go={n['gameObject']:n['rectTransform'] for n in nodes}
+    by_rect={n['rectTransform']:n for n in nodes}
+    check(len(by_go)==len(by_rect)==len(nodes),'Duplicate native node')
+    direct={}
+    for node in nodes:
+        for c in node['components']:
+            if c['type']!='Mdl.Ui.MapVillageArea' or not c['enabled']:continue
+            for p in c['blockers']:
+                check(p is not None and p['cab'].lower()==cab.lower() and p['pathID'] in by_go,'Unresolved area blocker')
+                direct.setdefault(by_go[p['pathID']],set()).add(c['areaType'])
+    result={}
+    for node in nodes:
+        pid=node['rectTransform'];areas=set();visited=set()
+        while pid!='0':
+            check(pid in by_rect and pid not in visited,'Invalid blocker ancestry')
+            visited.add(pid);areas.update(direct.get(pid,()))
+            pid=by_rect[pid]['parent']
+        result[node['rectTransform']]=sorted(areas)
+    return result
+
+
 def build(graph,hires,lowres):
     check(graph['renderGraphSchema']=='wand.src04.native-map-render-graph@1','Wrong graph')
     check(hires['samplingMetadataVerified'],'Native sampling not verified')
@@ -38,6 +61,7 @@ def build(graph,hires,lowres):
     maps=[]
     for world in graph['worlds']:
         layers=[];corners=[]
+        blocker_areas=blocker_area_types(world,graph['prefabCab'])
         for node in world['renderNodes']:
             if node['role'] not in ROLES:continue
             kind=ROLES[node['role']]
@@ -46,7 +70,7 @@ def build(graph,hires,lowres):
             check(node['activeInPrefab'] and g['enabled'],'Inactive background requires explicit handling')
             m=geometry(node['rootLocalCorners']);a,b,c,d,x,y=m
             corners.extend([(x,y),(x+a,y+b),(x+c,y+d),(x+a+c,y+b+d)])
-            row={'kind':kind,'node':node['rectTransform'],'rootLocalQuad':m,'rgba':g['rgba']}
+            row={'kind':kind,'node':node['rectTransform'],'rootLocalQuad':m,'rgba':g['rgba'],'blockerAreaTypes':blocker_areas[node['rectTransform']]}
             check(len(g['rgba'])==4 and all(0<=v<=1 for v in g['rgba']),'Invalid color')
             if kind=='fill':
                 check(g['asset'] is None and g['material'] is None and g['imageType']==0 and not g['preserveAspect'],'Unsupported fill')
