@@ -1707,11 +1707,39 @@ fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<S
     Ok(draft.patched_json)
 }
 
+/// Source-pinned experimental initial placement. No arbitrary State is accepted
+/// from a preset, and existing native instances must use the clone path instead.
+fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+    let bad=CodecError::Json;
+    let o=plan.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=templates["saveVersion"].as_u64()||templates["saveVersion"].as_u64()!=Some(643){return Err(bad);}
+    let item=o["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s)).ok_or(bad)?;
+    let witness=&o["destination"];let (scope,_)=world_grid_scope(witness)?;
+    if !templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){return Err(bad);}
+    let d=resolve_plain_grid_destination(profile,witness)?;
+    if player_house_grid_scope(&root,&d.grid_id)?!=scope||building_transform_grid_size(&root,&d.grid_id)?!=(u64::from(d.size.0)*u64::from(d.tessellation),u64::from(d.size.1)*u64::from(d.tessellation)){return Err(bad);}
+    let collection=&root["World"]["GridCollection"];
+    // Refuse unknown or diff representations rather than creating a second
+    // identity for a native instance that is already present.
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0||scan.private_targets.iter().any(|(t,_)|t.item_id==item){return Err(bad);}
+    if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.values().any(|g|g["GridDefaultLayoutPath"].as_str().and_then(|p|p.split('/').nth(1))==Some(scope.as_str())))){return Err(bad);}
+    let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+    let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    let level=templates["template"]["upgradeLevel"].as_u64().ok_or(bad)?;
+    let skin=templates["template"]["skinItemId"].as_u64().ok_or(bad)?;
+    let draft=ddv_save_patch::preview_checked_building_initial(std::str::from_utf8(profile).map_err(|_|bad)?,&d,item,(int("x")?,int("y")?),orientation,level,skin).map_err(|_|CodecError::Patch)?;
+    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+    Ok(draft.patched_json)
+}
+
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
-        if o.len()==1{if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
+        if o.len()==1{if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
@@ -2543,6 +2571,29 @@ mod tests{
         assert!(building_layout_candidate_scoped(different.to_string().as_bytes(),&[remove],false).is_err());
         let mut standard=add;standard.as_object_mut().unwrap().remove("freePlacement");
         assert!(building_layout_candidate_scoped(raw.to_string().as_bytes(),&[standard],false).is_err());
+    }
+    #[test]
+    fn initial_well_requires_pinned_scope_template_and_absent_native_instance(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}});
+        let plan=serde_json::json!({"buildingInitial":{"itemId":"20300002","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100},"x":9,"y":10,"orientation":"GridOrientation_Down"}});
+        let output=group_paste_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+        let v:Value=serde_json::from_str(&output).unwrap();
+        let grid=&v["World"]["GridCollection"]["Grids"]["42"];
+        assert_eq!(grid["NextGridObjectID"],6);
+        assert_eq!(grid["Objects"]["5"]["ItemID"],20300002);
+        assert_eq!(grid["Objects"]["5"]["State"],serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":170200005}}));
+        assert_eq!(v["Player"],raw["Player"]);
+        assert!(group_paste_candidate(output.as_bytes(),&plan.to_string()).is_err());
+        for id in ["20300029","20300009","20500001"]{
+            let mut p=plan.clone();p["buildingInitial"]["itemId"]=id.into();
+            assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
+        }
+        let mut p=plan.clone();p["buildingInitial"]["State"]=Value::Null;
+        assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
+        p=plan.clone();p["buildingInitial"]["x"]=196.into();
+        assert!(group_paste_candidate(raw.to_string().as_bytes(),&p.to_string()).is_err());
     }
     #[test]
     fn world_building_layout_preserves_native_state_and_identity(){
