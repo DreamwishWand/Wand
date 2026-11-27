@@ -146,6 +146,28 @@ scope.onmessage=async({data})=>{
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
     }
+    if(data.command==='native-scene-geometry'){
+      if(!release||typeof data.raw!=='string'||data.raw.length>2_000_000)throw Error('native scene');
+      let scene:ReturnType<typeof parseSceneAnyFactor>|ReturnType<typeof parseMixedScene>;
+      try{scene=parseSceneAnyFactor(data.raw);}catch{scene=parseMixedScene(data.raw);}
+      const definitions=await loadGeometry(),cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:definitions},scene.factor);
+      let valid=true;
+      for(const p of scene.items){
+        const g=cache.resolve(p.itemId,p.orientation*4);
+        if(!g.shapeKey||g.layer!=='furniture'||nativeActionBlocked(g.editRestrictions,'select')||nativeActionBlocked(g.editRestrictions,'move')||nativeActionBlocked(g.editRestrictions,'remove')){valid=false;break;}
+      }
+      if(valid){
+        const roots=scene.items.map(p=>({itemId:p.itemId,support:'support' in p?p.support as import('./support-scene.ts').SupportScene|null:null}));
+        // Reuse exact current item->support binding, terrain and child geometry.
+        if(scene.schema==='wand.preset.mixed-scene@1')valid=(await validateSupportRoots(roots)).valid;
+        else{
+          supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
+          const paths=await supportPaths;
+          valid=roots.every(p=>!(paths.get(p.itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath);
+        }
+      }
+      scope.postMessage({kind:'native-scene-geometry',requestId:id,valid});return;
+    }
     if(data.command==='support-scene-geometry'||data.command==='mixed-scene-geometry'||data.command==='area-scene-geometry'){
       if(!release)throw Error('source');
       const mixed=data.command==='mixed-scene-geometry'?parseMixedScene(JSON.stringify(data.scene)):null;
