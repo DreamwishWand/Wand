@@ -32,3 +32,22 @@ test('resolved native bindings reuse canonical assets without fallback',()=>{
   assert.equal(resolveShopArtwork(origin,{...data,nativeGroupWidth:undefined}),null);
   assert.equal(resolveShopArtwork(origin,{...data,layout:'Single_Mega_11'}),null);
 });
+
+test('shop composition follows shared Item 256px and dedicated Shop 512px limits',()=>{
+  const item={kind:'item',thumbnail:{sha256:'c'.repeat(64),width:256,height:128},
+    original:{sha256:'d'.repeat(64),width:1024,height:512},fill:'contain'};
+  const base={publicationVerified:true,renderingVerified:true,nativeGroupWidth:1240,
+    layout:'Light_Mega_11',bindings:{MegaBundleImage1:item,MegaBundleImage2:a}};
+  const list=resolveShopArtwork(origin,base);
+  assert.equal(list.slots[0].image.url,origin+'/images/'+'c'.repeat(64)+'.webp');
+  assert.equal(list.slots[1].image.url,origin+'/images/'+'a'.repeat(64)+'.webp');
+  assert.equal(resolveShopArtwork(origin,base,true).slots[0].image.url,origin+'/images/'+'d'.repeat(64)+'.webp');
+  for(const [kind,asset,edge] of [['item',item,257],['shop',a,513]]){
+    const oversized={...asset,kind,thumbnail:{...asset.thumbnail,width:edge}};
+    assert.equal(resolveShopArtwork(origin,{...base,bindings:{...base.bindings,MegaBundleImage1:oversized}}),null);
+  }
+  const small={...item,original:item.thumbnail};
+  assert.equal(resolveShopArtwork(origin,{...base,bindings:{...base.bindings,MegaBundleImage1:small}},true).slots[0].image.url,list.slots[0].image.url);
+  const portrait={...item,thumbnail:{...item.thumbnail,width:128,height:257}};
+  assert.equal(resolveShopArtwork(origin,{...base,bindings:{...base.bindings,MegaBundleImage1:portrait}}),null);
+});

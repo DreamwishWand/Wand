@@ -26,7 +26,7 @@ const good=(i:ShopImage|undefined)=>!!i&&sha.test(i.sha256)&&
   Number.isSafeInteger(i.width)&&Number.isSafeInteger(i.height)&&i.width>0&&i.height>0&&i.width<=16384&&i.height<=16384;
 function layer(origin:string,a:ShopArtworkAsset|undefined,detail:boolean){
   if(!a||!good(a.thumbnail)||!good(a.original)||(a.kind!=='item'&&a.kind!=='shop')||
-    Math.max(a.thumbnail.width,a.thumbnail.height)>(a.kind==='item'?128:512)||
+    Math.max(a.thumbnail.width,a.thumbnail.height)>(a.kind==='item'?256:512)||
     a.thumbnail.width>a.original.width||a.thumbnail.height>a.original.height||
     (a.thumbnail.sha256===a.original.sha256&&(a.thumbnail.width!==a.original.width||a.thumbnail.height!==a.original.height))||
     (a.fill!=='contain'&&a.fill!=='cover'))return null;
