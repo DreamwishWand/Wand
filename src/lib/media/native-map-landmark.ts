@@ -7,9 +7,10 @@ export function nativeLandmarkMeasurement(map:LocalNativeMap,p:NativeLandmark){
  if(px<0||py<0||px>map.width||py>map.height)throw Error('Landmark outside map');
  const candidateWorldXZ=[p.x/2,-p.y/2] as const;
  if(!p.worldXZ)return {editorTicks:[p.x,p.y],canvasPixels:[px,py],candidateWorldXZ};
- if(!p.worldXZ.every(Number.isFinite)||p.worldXZ.length!==2||!p.reference?.trim())throw Error('Independent source reference required');
+ if(!p.worldXZ.every(Number.isFinite)||p.worldXZ.length!==2||!p.reference?.trim()||p.reference.length>200)throw Error('Independent source reference required');
  const expected=[2*a*p.worldXZ[0]+e,-2*d*p.worldXZ[1]+f] as const;
  const dx=px-expected[0],dy=py-expected[1];
+ if(![...expected,dx,dy,dx/a,dy/d,Math.hypot(dx/a,dy/d)].every(Number.isFinite))throw Error('Invalid reference coordinate');
  return {editorTicks:[p.x,p.y],canvasPixels:[px,py],candidateWorldXZ,reference:p.reference.trim(),observedWorldXZ:p.worldXZ,expectedCanvasPixels:expected,residualPixels:[dx,dy],residualHalfWorldTicks:[dx/a,dy/d],distanceHalfWorldTicks:Math.hypot(dx/a,dy/d)};
 }
 export async function nativeLandmarkReport(map:LocalNativeMap,locked:boolean,points:readonly NativeLandmark[]){
