@@ -11,7 +11,10 @@ const attached=Object.entries(index.items).find(([,row])=>row.male?.companionInc
 const expansion='120000009';
 assert.ok(index.items[expansion]?.male?.kind==='player'&&index.items[expansion]?.female?.kind==='player','new companion scene');
 const multi='120000227';
-assert.equal(Object.keys(index.variants).length,4);
+assert.equal(Object.keys(index.variants).length,5);
+const maxDog='120000152';
+assert.equal(index.variants[maxDog].length,1);
+assert.ok(index.variants[maxDog][0].male.companionIncluded===false&&index.variants[maxDog][0].female.companionIncluded===true,'native body-specific Max alternate');
 assert.equal(index.variants[multi].length,1);
 assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
 const expandedActor='120000238';
@@ -36,7 +39,7 @@ assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
 const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027','70200028','70200029'];
 assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
-const ids=[...new Set([mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const ids=[...new Set([maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,26);
 assert.equal(Object.keys(index.items).length,263);
@@ -89,12 +92,18 @@ try{
       await page.waitForTimeout(100);
       assert.equal(await seek.inputValue(),paused,'pause holds playback position');
     }
-    if(id===multi){
+    if(id===multi||id===maxDog){
       const variants=detail.locator('.pose-variants button');
       assert.equal(await variants.count(),2);
       await variants.nth(1).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await variants.nth(1).getAttribute('aria-pressed'),'true');
+      if(id===maxDog){
+        await body.nth(0).click();
+        await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+        assert.equal(await body.nth(0).getAttribute('aria-pressed'),'true');
+        assert.equal(await preview.locator('input[type=checkbox]').count(),0);
+      }
       await body.nth(1).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(1).getAttribute('aria-pressed'),'true');
