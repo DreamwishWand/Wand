@@ -1683,7 +1683,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   layout_id=Some(layout);world_mode=Some(world);expected_grids=expected;
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
-  if let Some(l)=landscape{if !world||l.get("destination")!=Some(witness){return Err(bad);}landscape_poses(&l["before"],&d)?;landscape_poses(&l["after"],&d)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
+  if let Some(l)=landscape{if l.get("destination")!=Some(witness){return Err(bad);}landscape_destination(profile,witness)?;landscape_poses(&l["before"],&d)?;landscape_poses(&l["after"],&d)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
   if let Some(network)=network{
    let n=network.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
    if n.get("destination")!=Some(witness){return Err(bad);}
@@ -2789,11 +2789,24 @@ fn landscape_observed(profile:&[u8],d:&ddv_save_patch::PlainGridDestination)->Re
  }
  Ok(rows)
 }
+/// Exact original Grid identity, including the factor. Floating island
+/// templates and unknown layouts are excluded; no cross-grid offset exists.
+fn landscape_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
+ let bad=CodecError::Json;
+ let layout=witness["layoutId"].as_str().ok_or(bad)?;
+ let scope=if island_scope(witness).is_ok(){"FloatingIslands"}else{layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?};
+ let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
+ let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
+ let grids=entry["grids"].as_array().ok_or(bad)?;
+ if grids.iter().filter(|g|["layoutId","gridDataPath","sizeX","sizeY","factor"].iter().all(|k|g[*k]==witness[*k])).count()!=1{return Err(bad);}
+ resolve_plain_grid_destination(profile,witness)
+}
 pub(super) fn inspect_area_landscape(profile:&[u8],witness:&str)->Result<String,CodecError>{
  let bad=CodecError::Json;let v:Value=serde_json::from_str(witness).map_err(|_|bad)?;
- if island_scope(&v).is_ok(){return Ok("[]".into());}
- let d=area_network_destination(profile,&v)?;
- let mut rows:Vec<_>=landscape_observed(profile,&d)?.into_iter().filter_map(|(p,ids)|(ids.len()==1).then_some(p)).collect();
+ let d=landscape_destination(profile,&v)?;
+ let observed=landscape_observed(profile,&d)?;let mut anchors=HashMap::<(i32,i32),usize>::new();
+ for (p,ids) in &observed{*anchors.entry((p.1,p.2)).or_default()+=ids.len();}
+ let mut rows:Vec<_>=observed.into_iter().filter_map(|(p,ids)|(ids.len()==1&&anchors.get(&(p.1,p.2))==Some(&1)).then_some(p)).collect();
  rows.sort_unstable();if rows.len()>2048{return Err(CodecError::Bounds);}
  serde_json::to_string(&rows.into_iter().map(|(item,x,y,o)|serde_json::json!({"itemId":item,"x":x,"y":y,"orientation":o})).collect::<Vec<_>>()).map_err(|_|bad)
 }
@@ -2802,8 +2815,8 @@ fn landscape_area_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError
  use ddv_save_patch::{preview_plain_grid_structure,PlainGridStructureAction,preview_landscape_place};
  let bad=CodecError::Json;
  let p=plan.as_object().filter(|p|p.len()==3&&p.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
- let witness=p.get("destination").ok_or(bad)?;if island_scope(witness).is_ok(){return Err(bad);}
- let d=area_network_destination(profile,witness)?;
+ let witness=p.get("destination").ok_or(bad)?;
+ let d=landscape_destination(profile,witness)?;
  let before=landscape_poses(p.get("before").ok_or(bad)?,&d)?;let after=landscape_poses(p.get("after").ok_or(bad)?,&d)?;
  let actual=landscape_observed(profile,&d)?;
  if before.iter().any(|r|actual.get(r).is_none_or(|v|v.len()!=1)){return Err(bad);}
@@ -2919,6 +2932,22 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod biome_decoration_tests{
  use super::*;
+ #[test]
+ fn floating_landscape_uses_exact_source_grid_and_preserves_other_island_planes(){
+  let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
+  let data="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
+  let water="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanWaterGrid-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":7},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40200001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":layout,"GridDataPath":water,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40200001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":130,"sizeY":130});
+  let bytes=serde_json::to_vec(&raw).unwrap();let before:Value=serde_json::from_str(&inspect_area_landscape(&bytes,&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(before.as_array().unwrap().len(),1);
+  let mut plan=serde_json::json!({"destination":dest,"before":before,"after":[{"itemId":40200001,"x":2,"y":3,"orientation":2}]});
+  let result:Value=serde_json::from_str(&landscape_area_candidate(&bytes,&plan).unwrap()).unwrap();
+  assert_eq!(result["Player"],raw["Player"]);assert_eq!(result["World"]["GridCollection"]["Grids"]["43"],raw["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["X"],2);
+  plan["destination"]["sizeX"]=131.into();assert!(landscape_area_candidate(&bytes,&plan).is_err());
+  plan["destination"]["sizeX"]=130.into();plan["destination"]["factor"]=2.into();assert!(landscape_area_candidate(&bytes,&plan).is_err());
+ }
  #[test]
  fn combined_replacement_keeps_stock_and_native_retained_rows_and_rejects_stale_network(){
   let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";

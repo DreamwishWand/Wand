@@ -65,20 +65,24 @@
    own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'read-furniture-stock',file:f});
   });
  }
- function readNetwork(f:File,g:MainlandGrid):Promise<{rows:NetworkPose[];landscape:LandscapePose[]|undefined}>{
+ function readNetworks(f:File,scope:readonly MainlandGrid[]):Promise<{networks:Map<string,NetworkPose[]>;landscapes:Map<string,LandscapePose[]>}>{
   return new Promise((resolve,reject)=>{
    const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});
    const cleanup=()=>{clearTimeout(timer);own.terminate();cancelRequests.delete(cancel);};
    const cancel=()=>{cleanup();reject(Error('network'));};
-   const timer=setTimeout(cancel,30000);cancelRequests.add(cancel);
-   own.onmessage=e=>{cleanup();try{if(e.data?.kind!=='area-network')throw Error('network');resolve({rows:networkRows(e.data.rows,g),landscape:world?verifiedLandscape(g,snapshot?.objects.get(g.key)??[],e.data.landscape):undefined});}catch(e){reject(e);}};
-   own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'inspect-area-network',file:f,includeLandscape:world,plan:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}});
+   const timer=setTimeout(cancel,120000);cancelRequests.add(cancel);
+   own.onmessage=e=>{cleanup();try{
+    const data=e.data;if(data?.kind!=='map-networks'||!Array.isArray(data.receipts)||data.receipts.length!==scope.length)throw Error('network batch');
+    const networks=new Map<string,NetworkPose[]>(),landscapes=new Map<string,LandscapePose[]>();
+    for(const g of scope){const rows=data.receipts.filter((p:{key?:string})=>p?.key===g.key);if(rows.length!==1)throw Error('network identity');const p=rows[0];networks.set(g.key,networkRows(p.rows,g));landscapes.set(g.key,verifiedLandscape(g,snapshot?.objects.get(g.key)??[],p.landscape));}
+    resolve({networks,landscapes});
+   }catch(e){reject(e);}};
+   own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'inspect-map-networks',file:f,includeLandscape:true,plan:scope.map(g=>({key:g.key,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}}))});
   });
  }
  async function loadNetworks(f:File,ss:readonly TerrainScopeReceipt[],token:number){
   if(networkSnapshot)return;
-  const next=new Map<string,NetworkPose[]>(),land=new Map<string,LandscapePose[]>();
-  for(const g of grids){const rows=await readNetwork(f,g);if(epoch!==token||file!==f||sessions!==ss)throw Error('cancel');next.set(g.key,rows.rows);if(rows.landscape!==undefined)land.set(g.key,rows.landscape);}
+  const {networks:next,landscapes:land}=await readNetworks(f,grids);
   if(epoch!==token||file!==f||sessions!==ss||!snapshot)throw Error('cancel');
   const capture=captureIslandDecoration(grids,snapshot,next,undefined,world,land);if(!capture)throw Error('network');
   networkSnapshot=capture;networks=next;landscapes=land;

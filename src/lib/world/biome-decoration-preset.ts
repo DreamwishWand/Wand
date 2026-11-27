@@ -16,14 +16,14 @@ export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly Mainla
  const existing=objects.filter(p=>p.area===grid.key&&['ground','fence'].includes(p.object.layer));
  if(existing.length!==networks.length||networks.some(p=>existing.filter(o=>Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]).length!==1))return null;
  try{
-  const text=JSON.stringify({schema:world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks)),...(supports?{supports:furniture.supports}:{}),...(!island&&landscape!==undefined?{landscape:landscapeRows(landscape,grid)}:{})});
+  const text=JSON.stringify({schema:world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1',gameVersion:'1.26.2',furniture:JSON.parse(furniture.text),network:JSON.parse(serializeBiomeNetwork(grid,networks)),...(supports?{supports:furniture.supports}:{}),...(landscape!==undefined?{landscape:landscapeRows(landscape,grid)}:{})});
   parseBiomeDecoration(text,grid,island,world);return {text,furnitureCount:furniture.editable.length,networkCount:networks.length,landscapeCount:landscape?.length??0,protectedCount:furniture.protectedObjects.length-networks.length-(landscape?.length??0)};
  }catch{return null;}
 }
 export function parseBiomeDecoration(text:string,grid:MainlandGrid,island=false,world=false){
  if(text.length>BIOME_DECORATION_FILE_LIMIT)throw Error('DECORATION_LIMIT');
  const doc=JSON.parse(text);
- if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).some(k=>!['schema','gameVersion','furniture','network','supports','landscape'].includes(k))||island&&doc.landscape!==undefined||doc.schema!==(world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
+ if(!doc||typeof doc!=='object'||Array.isArray(doc)||Object.keys(doc).some(k=>!['schema','gameVersion','furniture','network','supports','landscape'].includes(k))||doc.schema!==(world?'wand.preset.world-grid-decoration@1':island?'wand.preset.island-grid-decoration@1':'wand.preset.biome-decoration@1')||doc.gameVersion!=='1.26.2')throw Error('DECORATION_CONTEXT');
  const furniture=parseWholeArea(JSON.stringify(doc.furniture),grid,world?'world-grid':island?'floating-island':'biome'),network=parseBiomeNetwork(JSON.stringify(doc.network),grid);
  let supports:Map<number,ReturnType<typeof parseSupportScene>>|undefined;
  if(Object.prototype.hasOwnProperty.call(doc,'supports')){
