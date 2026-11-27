@@ -3368,6 +3368,32 @@ mod terrain_session_tests{
     }
 
     #[test]
+    fn cross_world_building_move_and_duplicate_preserve_native_state(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let dest=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion01").unwrap()["grids"].as_array().unwrap().iter().find(|g|g["factor"]==1&&g["gridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Villages/VillageExpansion01/"))).unwrap();
+        let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":0}});
+        assert!(cross_world_building_state(20300001,Some(&state)));
+        assert!(cross_world_building_state(20000001,None));
+        assert!(!cross_world_building_state(20500001,None));
+        assert!(!cross_world_building_state(20000001,Some(&serde_json::json!({"HouseData":{"Built":true}}))));
+        let original=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":100},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":20300001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":state}}},"11":{"ID":11,"GridDefaultLayoutPath":dest["layoutId"],"GridDataPath":dest["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":7,"Objects":{}}}}}});
+        let raw=original.to_string();
+        let t=resolve_grid_mixed_targets(raw.as_bytes(),&[(1,20300001,(1,2),"full".to_owned(),Some("GridOrientation_Down".to_owned()))]).unwrap().pop().unwrap();
+        let d=resolve_plain_grid_destination(raw.as_bytes(),&serde_json::json!({"layoutId":dest["layoutId"],"gridDataPath":dest["gridDataPath"],"factor":1,"sizeX":dest["sizeX"],"sizeY":dest["sizeY"]})).unwrap();
+        assert!(ddv_save_patch::preview_checked_building_transfer(&raw,&t,(1,2),&d,(3,4),"GridOrientation_Down").is_err());
+        for duplicate in [true,false]{
+            let draft=ddv_save_patch::preview_checked_building_world_change(&raw,&t,(1,2),&d,(3,4),"GridOrientation_Down",duplicate).unwrap();
+            let v:Value=serde_json::from_str(&draft.patched_json).unwrap();
+            let grids=&v["World"]["GridCollection"]["Grids"];
+            assert_eq!(grids["10"]["Objects"].get("1").is_some(),duplicate);
+            assert_eq!(grids["11"]["Objects"]["7"]["State"],state);
+            assert_eq!(grids["11"]["NextGridObjectID"],8);
+            assert_eq!(v["Player"],original["Player"]);
+        }
+        assert!(ddv_save_patch::preview_checked_building_world_change(&raw,&t,(1,2),&d,(-1,4),"GridOrientation_Down",true).is_err());
+    }
+
+    #[test]
     fn checked_building_transfer_retains_state_and_allocates_destination_identity(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":20100001,"X":8,"Y":9,"Orientation":"GridOrientation_Down","State":{"StallData":{"UpgradeState":{"Level":1},"ShopData":{"Marker":1e2},"CurrentSkinItemID":0}}}}},"11":{"ID":11,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
         let target=resolve_grid_mixed_targets(raw,&[(1,20100001,(8,9),"full".to_owned(),Some("GridOrientation_Down".to_owned()))]).unwrap().pop().unwrap();
