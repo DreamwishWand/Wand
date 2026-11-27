@@ -117,3 +117,6 @@ if __name__=='__main__':
 
         from prepare_actor_lucky import download_lucky, apply_lucky
         apply_lucky(a.actor_lucky.read_bytes() if a.actor_lucky else download_lucky(), a.dest)
+
+        from prepare_skunk_native_loops import apply_skunk_native_loops
+        apply_skunk_native_loops(a.dest)

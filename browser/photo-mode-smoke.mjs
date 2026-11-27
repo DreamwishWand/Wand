@@ -6,7 +6,7 @@ import {chromium} from 'playwright';
 const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
 assert.equal(index.schema,'wand.photo-mode.pages-test@2');
 const byKind=kind=>Object.entries(index.items).find(([,row])=>row.male?.kind===kind&&row.female?.kind===kind)?.[0];
-const companionOnly=Object.entries(index.items).find(([,row])=>row.male?.kind==='player'&&row.male?.companionIncluded===false)?.[0];
+
 const lucky='120000167';
 assert.ok(['male','female'].every(b=>index.items[lucky][b].companionIncluded===true&&index.items[lucky][b].actor.sourceSha256==='35797750ff523b5dc2aeee26438d5338d218e18e3945574cc042e54fd6870766'),'optimized Avatar actor');
 const attached=Object.entries(index.items).find(([,row])=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true)?.[0];
@@ -16,20 +16,23 @@ const multi='120000227';
 assert.equal(Object.keys(index.variants).length,5);
 const maxDog='120000152';
 assert.equal(index.variants[maxDog].length,1);
-assert.ok(index.variants[maxDog][0].male.companionIncluded===false&&index.variants[maxDog][0].female.companionIncluded===true,'native body-specific Max alternate');
+const maxAlt=index.variants[maxDog][0];
+assert.ok(maxAlt.male.companionIncluded===true&&maxAlt.female.companionIncluded===true,'native body-specific Max alternate');
+assert.deepEqual(maxAlt.male.actor,maxAlt.female.actor);assert.ok(maxAlt.male.actorRoot&&!maxAlt.female.actorRoot);
 assert.equal(index.variants[multi].length,1);
 assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
 const expandedActor='120000238';
 assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.items[expandedActor]?.female?.companionIncluded===true,'new actor scene');
 const bindActor='120000005';
 assert.ok(index.items[bindActor]?.male?.companionIncluded===true&&index.items[bindActor]?.female?.companionIncluded===true,'native-bind actor scene');
-assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,4);
+assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,5);
 const curveActor='120000264';
 assert.ok(index.items[curveActor]?.male?.companionIncluded===true&&index.items[curveActor]?.female?.companionIncluded===true,'quality-flag actor scene');
 const rigidActor='120000147',partialActor='120000177';
+const skunks=['120000177','120000179','120000180','120000181','120000192','120000201'];
 assert.ok(index.items[rigidActor]?.male?.companionIncluded===true&&index.items[rigidActor]?.female?.companionIncluded===true,'rigid actor');
-assert.ok(index.items[partialActor]?.male?.companionIncluded===false&&index.items[partialActor]?.female?.companionIncluded===true,'body-specific actor');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,6);
+for(const id of skunks){const row=index.items[id];assert.equal(row.male.companionIncluded,true);assert.equal(row.female.companionIncluded,true);assert.deepEqual(row.male.actor,row.female.actor);assert.ok(row.male.nativeLoops.player>row.male.nativeLoops.companion);assert.equal(row.female.nativeLoops,undefined);}
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,0);
 const props=['70200018','70200020'];
 assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessoryIncluded===true)),'both prop scenes');
 const materialActor='120000113',secondaryActor='120000109';
@@ -46,13 +49,13 @@ assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagn
 assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
 const residualActors=['120000072','120000145','120000176','120000239','120000251'];
 assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');
-const ids=[...new Set([lucky,'120000197','120000208',residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
-assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
+const ids=[...new Set([lucky,'120000197','120000208',residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+assert.ok(ids.every(Boolean),'both scene kinds must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,0);
 for(const id of ['120000197','120000198']){const rows=[index.items[id],...index.variants[id]];assert.equal(rows.length,2);for(const row of rows)for(const body of ['male','female']){const o=row[body];assert.equal(o.companionIncluded,true);assert.ok(o.nativeLoops.player<o.nativeLoops.companion);}}
 assert.ok(['male','female'].every(b=>index.items['120000208'][b].companionIncluded===true));
 assert.equal(Object.keys(index.items).length,263);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,232);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,238);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
@@ -111,7 +114,7 @@ try{
         await body.nth(0).click();
         await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
         assert.equal(await body.nth(0).getAttribute('aria-pressed'),'true');
-        assert.equal(await preview.locator('input[type=checkbox]').count(),0);
+        assert.equal(await preview.locator('input[type=checkbox]').count(),1);
       }
       await body.nth(1).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});

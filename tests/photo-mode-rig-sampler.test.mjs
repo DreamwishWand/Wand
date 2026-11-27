@@ -23,3 +23,10 @@ test('unequal native clip periods preserve independent absolute timing',()=>{
  assert.equal(rig.sample(5)[0][28],6);assert.equal(rig.sample(1)[0][28],2);
  assert.throws(()=>new RigSampler(nodes,skins,[{...track(0,2),loopDuration:3}]),/Invalid native loop duration/);
 });
+
+test('shorter native companion cycle repeats while longer player motion continues',()=>{
+ const track=(node,period)=>({node,path:'translation',times:new Float32Array([0,period]),values:new Float32Array([0,0,0,period,0,0]),loopDuration:period});
+ const rig=new RigSampler([node(-1),node(0)],[{joints:[0,1],inverseBind:new Float32Array([...identity,...identity])}],[track(0,5),track(1,2)]);
+ assert.equal(rig.duration,5);assert.equal(rig.sample(3)[0][12],3);assert.equal(rig.sample(3)[0][28],4);
+ assert.equal(rig.sample(5)[0][12],5);assert.equal(rig.sample(5)[0][28],6);
+});
