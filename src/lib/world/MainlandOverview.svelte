@@ -202,7 +202,7 @@
  function confirmCaptureRegion(){if(regionBackupMode){if(!captureRegion||!validCaptureRegion(captureRegion,extent))return;const r=captureRegion;if(!regionBackupReady||!furnitureReady||furnitureBlocked)return;openBiome(false,!independent);if(biomeOpen)backupRegion=r;return;}if(!capturePlan?.valid||!captureRegion||!validCaptureRegion(captureRegion,extent)||!furnitureReady||furnitureBlocked)return;const items=capturePlan.items;closeCaptureRegion();pasteTools?.saveScene(items);}
 $: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
- $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection);
+ $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection,freePlacement);
  $: canCopyFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection,false,freePlacement);
  function beginPaste(){closeBiome();closeCaptureRegion();resetEditSymmetry();closeSupport();closeRoad();closeFurniture();clearGroup();stopMove();selected=null;preciseOpen=false;searchOpen=false;layersOpen=false;multiMode=false;}
  $: furnitureWords=stockToolWords[locale]??stockToolWords.en;

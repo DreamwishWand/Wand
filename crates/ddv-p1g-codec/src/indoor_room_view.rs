@@ -589,7 +589,8 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let from=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
-  if (!free||room_source.is_none())&&from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
+  if free&&room_source.is_none(){let (scope,_,f,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&target.grid_id)?;if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f||!(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||f==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old)){return Err(bad);}}
+  if !free&&from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if (if free{!within_room(xy)||!allowed_orientation(orientation)}else{!on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy)})||target.grid_id==gid||!seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}

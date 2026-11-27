@@ -21,7 +21,7 @@ const expandedActor='120000238';
 assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.items[expandedActor]?.female?.companionIncluded===true,'new actor scene');
 const bindActor='120000005';
 assert.ok(index.items[bindActor]?.male?.companionIncluded===true&&index.items[bindActor]?.female?.companionIncluded===true,'native-bind actor scene');
-assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,2);
+assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,4);
 const curveActor='120000264';
 assert.ok(index.items[curveActor]?.male?.companionIncluded===true&&index.items[curveActor]?.female?.companionIncluded===true,'quality-flag actor scene');
 const rigidActor='120000147',partialActor='120000177';
@@ -33,7 +33,7 @@ assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessor
 const materialActor='120000113',secondaryActor='120000109';
 assert.ok(index.items[materialActor]?.male?.companionIncluded===true&&index.items[materialActor]?.female?.companionIncluded===true,'external texture actor');
 assert.ok(index.items[secondaryActor]?.male?.secondaryPassOmitted===true&&index.items[secondaryActor]?.female?.secondaryPassOmitted===true,'base pass actor');
-assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitted===true&&row.female?.secondaryPassOmitted===true).length,11);
+assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitted===true&&row.female?.secondaryPassOmitted===true).length,14);
 const eulerSquirrel='120000005',eulerPair='120000001';
 assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index.items[eulerPair]?.male?.eulerRotationCorrected===true,'Euler rotation corrections');
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
@@ -46,9 +46,11 @@ const residualActors=['120000072','120000145','120000176','120000239','120000251
 assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');
 const ids=[...new Set([residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,4);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,1);
+for(const id of ['120000197','120000198']){const rows=[index.items[id],...index.variants[id]];assert.equal(rows.length,2);for(const row of rows)for(const body of ['male','female']){const o=row[body];assert.equal(o.companionIncluded,true);assert.ok(o.nativeLoops.player<o.nativeLoops.companion);}}
+assert.ok(['male','female'].every(b=>index.items['120000208'][b].companionIncluded===true));
 assert.equal(Object.keys(index.items).length,263);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,228);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,231);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
