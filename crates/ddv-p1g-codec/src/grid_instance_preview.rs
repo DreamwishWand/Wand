@@ -1259,7 +1259,8 @@ fn saved_db04_source_projection(
                         "savedFactor":factor,
                         "sourceLocalCoordinateMappingVerified":aligned,
                         "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id),
-                        "storage":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o))
+                        "storage":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o)),
+                        "storageEmpty":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|ddv_save_patch::storage_pickup_eligible(&root,o))
                     }));
                 }
             }
@@ -2042,6 +2043,24 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     Ok(draft.patched_json)
 }
 
+fn storage_pickup_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+ let bad=CodecError::Json;
+ let o=plan.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(bad)?;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let ordinal=o["localOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+ let item=o["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+ let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+ let old=(int("expectedX")?,int("expectedY")?);
+ let ori=o["expectedOrientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+ let target=resolve_grid_orientation_target(profile,ordinal,item,old,"full",ori)?;
+ let from=house_exterior_identity(&root,&target.grid_id)?;
+ if old.0<0||old.1<0||old.0 as u64>=from.3*from.2||old.1 as u64>=from.4*from.2{return Err(bad);}
+ let refs=grid_identity_dependencies(profile,&target)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+ let amount=root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64().and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
+ let draft=ddv_save_patch::preview_empty_storage_pickup(std::str::from_utf8(profile).map_err(|_|bad)?,&target,old,amount).map_err(|_|CodecError::Patch)?;
+ Ok(draft.patched_json)
+}
 fn storage_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let o=plan.as_object().filter(|o|o.len()==11&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"copyContents"|"freePlacement"))).ok_or(bad)?;
@@ -2071,7 +2090,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
-        if o.len()==1{if let Some(p)=o.get("storageDuplicate"){return storage_duplicate_candidate(profile,p);}if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
+        if o.len()==1{if let Some(p)=o.get("storagePickup"){return storage_pickup_candidate(profile,p);}if let Some(p)=o.get("storageDuplicate"){return storage_duplicate_candidate(profile,p);}if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         if rows.iter().any(|r|r.get("scene").is_some()){

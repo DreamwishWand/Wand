@@ -43,7 +43,7 @@ export function projectTerrainSession(value:unknown,scopes:readonly {key:string;
       (row.x<0||row.y<0||row.x>=w.nativeSizeX*factor||row.y>=w.nativeSizeY*factor))outside[i]++;
     // A complete per-scope projection, no silent 1200-row truncation.
     points[i].push({localOrdinal:b.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
-      x:row.x,y:row.y,orientation:row.orientation as string|null,subgrid:parseSavedSubgridSummary(b.subgrid),...(b.storage===true?{storage:true as const}:{})});
+      x:row.x,y:row.y,orientation:row.orientation as string|null,subgrid:parseSavedSubgridSummary(b.subgrid),...(b.storage===true?{storage:true as const}:{}),...(b.storage===true&&b.storageEmpty===true?{storageEmpty:true as const}:{})});
   }
   const complete=new Map<number,number>(),nativeOrdinals=new Set<number>();
   if(value.gridBindings!==undefined){

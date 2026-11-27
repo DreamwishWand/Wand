@@ -42,6 +42,7 @@ export interface SavedNumericPoint {
   readonly orientation:string|null;
   readonly subgrid?:SavedSubgridSummary|null;
   readonly storage?:true;
+  readonly storageEmpty?:true;
 }
 export interface SavedGridSourceCandidates {
   readonly contract:typeof DB04_SAVED_SOURCE_CANDIDATE_CONTRACT;
