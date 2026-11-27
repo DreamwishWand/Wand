@@ -73,3 +73,14 @@ export const roomCaptureWords={
  'zh-CN':['将房间保存为设计','存在未验证的地形、家具、支撑面或饰面。','正在检查…'],
  'pt-BR':['Salvar cômodo como projeto','Terreno, móveis, apoios ou acabamentos não verificados.','Verificando…']
 } as const;
+
+export const protectedRoomWords={
+ ja:'固定オブジェクトは装飾ファイルに含めず、復元時も保持します。',
+ en:'Protected objects are excluded from decoration files and retained during restore.',
+ fr:'Les objets protégés sont exclus des fichiers et conservés lors de la restauration.',
+ it:'Gli oggetti protetti sono esclusi dai file e conservati durante il ripristino.',
+ de:'Geschützte Objekte werden nicht exportiert und beim Wiederherstellen beibehalten.',
+ 'es-ES':'Los objetos protegidos no se exportan y se conservan al restaurar.',
+ 'zh-CN':'受保护的物体不包含在装饰文件中，恢复时保持原状。',
+ 'pt-BR':'Objetos protegidos não são exportados e permanecem durante a restauração.'
+} as const;
