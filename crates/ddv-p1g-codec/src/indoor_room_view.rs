@@ -517,7 +517,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let factor=face.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
  let terrain=face.get("terrain");
  let free=p.get("freePlacement").and_then(Value::as_bool)==Some(true);
- if free&&(surface!=1||!p.contains_key("edits")&&!p.contains_key("align")&&!p.contains_key("place")&&!p.contains_key("pickup")||terrain.and_then(|v|v.get("sourcePath")).and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Rooms/Room")||grid.get("GridDataPath").and_then(Value::as_str)!=Some(v))){return Err(bad);}
+ if free&&(surface!=1||!p.contains_key("edits")&&!p.contains_key("align")&&!p.contains_key("paired")&&!p.contains_key("pairedRotate")&&!p.contains_key("place")&&!p.contains_key("pickup")||terrain.and_then(|v|v.get("sourcePath")).and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Rooms/Room")||grid.get("GridDataPath").and_then(Value::as_str)!=Some(v))){return Err(bad);}
  let allowed_orientation=|v:&str|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&v)||free&&factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&v);
  let within_room=|(x,y):(i32,i32)|->bool{terrain.is_some_and(|t|t.get("sizeX").and_then(Value::as_u64).zip(t.get("sizeY").and_then(Value::as_u64)).is_some_and(|(sx,sy)|x>=0&&y>=0&&(x as u64)<sx*u64::from(factor)&&(y as u64)<sy*u64::from(factor)))};
  let on_terrain=|(x,y):(i32,i32)|->bool{
@@ -720,7 +720,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let (target,expected,old)=resolve(row)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if !allowed_orientation(orientation){return Err(bad);}
-  if mode.is_some()&&(!on_terrain(expected)||!on_terrain(xy)||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
+  if mode.is_some()&&(!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
   if alignment&&(old!=orientation||!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if free{if !within_room(xy)||xy==expected&&old==orientation{return Err(bad);}}
   else if rows.len()==1{
@@ -730,7 +730,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   }else if xy==expected&&old==orientation{return Err(bad);}
   edits.push(GridMixedEdit{target,expected,position:(xy!=expected).then_some(xy),orientation:(old!=orientation).then(||(old,orientation.to_owned()))});
  }
- if free{
+ if free&&mode.is_none(){
   if alignment{
    if !edits.iter().all(|e|e.position.is_some_and(|xy|xy.0==e.expected.0))&&!edits.iter().all(|e|e.position.is_some_and(|xy|xy.1==e.expected.1)){return Err(bad);}
   }else if edits.len()>1{
@@ -752,13 +752,13 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let delta=|e:&GridMixedEdit|{let xy=e.position.unwrap_or(e.expected);(i64::from(xy.0)-i64::from(e.expected.0),i64::from(xy.1)-i64::from(e.expected.1))};
    let reflect=|(x,y):(i64,i64)|{(if mode=="horizontal"{x}else{-x},if mode=="vertical"{y}else{-y})};
    let first=delta(&edits[0]);let other=reflect(first);
-   let turn=|e:&GridMixedEdit|->Option<usize>{let (a,b)=e.orientation.as_ref()?;let names=ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS;let before=names.iter().position(|v|*v==a.as_str())?;let after=names.iter().position(|v|*v==b.as_str())?;Some((after+4-before)%4)};
-   let expected_turn=|n:usize|if mode=="point"{n}else{(4-n)%4};
+   let turn=|e:&GridMixedEdit|->Option<usize>{let (a,b)=e.orientation.as_ref()?;let names=&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS;let before=names.iter().position(|v|*v==a.as_str())?;let after=names.iter().position(|v|*v==b.as_str())?;Some((after+8-before)%8)};
+   let expected_turn=|n:usize|if mode=="point"{n}else{(8-n)%8};
    let first_turn=turn(&edits[0]);
-   if paired_rotate&&first_turn.is_none_or(|n|!matches!(n,1|3)){return Err(bad);}
+   if paired_rotate&&first_turn.is_none_or(|n|!matches!(n,2|6)){return Err(bad);}
    let mut matched=vec![false;edits.len()];
    for (i,e) in edits.iter().enumerate(){let xy=e.position.unwrap_or(e.expected);
-    if (!paired_rotate&&delta(e)!=first&&delta(e)!=other)||paired_rotate&&turn(e).is_none_or(|n|Some(n)!=first_turn&&Some(expected_turn(n))!=first_turn)||!anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1)){return Err(bad);}
+    if (!paired_rotate&&delta(e)!=first&&delta(e)!=other)||paired_rotate&&turn(e).is_none_or(|n|Some(n)!=first_turn&&Some(expected_turn(n))!=first_turn)||!free&&(!anchors.insert(xy)||objects.iter().any(|(k,v)|!selected.contains(k.as_str())&&coord(v,"X").ok()==Some(xy.0)&&coord(v,"Y").ok()==Some(xy.1))){return Err(bad);}
     if matched[i]{continue;}
     let j=(i+1..edits.len()).find(|j|!matched[*j]&&edits[*j].target.item_id==e.target.item_id&&if paired_rotate{turn(e).is_some_and(|n|turn(&edits[*j])==Some(expected_turn(n)))}else{delta(&edits[*j])==reflect(delta(e))}).ok_or(bad)?;
     matched[i]=true;matched[j]=true;
