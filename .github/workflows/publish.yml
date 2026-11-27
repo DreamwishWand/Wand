@@ -71,6 +71,7 @@ jobs:
           output: src/lib/world/wasm/pkg
       - run: npm install --no-audit --no-fund
       - run: python3 scripts/build-collection-images.py
+      - run: python3 tools/photo-mode/prepare_pages_preview.py
       - run: npm run build
         env:
           BASE_PATH: /Wand

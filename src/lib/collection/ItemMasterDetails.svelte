@@ -18,6 +18,7 @@
   import {base} from '$app/paths';
   import {onDestroy} from 'svelte';
   import type {ItemMasterLocale,CompleteItemMasterRecord} from '$lib/items/public-item-master';
+  import PagesPosePreview from '$lib/photo-mode/PagesPosePreview.svelte';
   import LocalPoseDiagnostic from '../../../tools/photo-mode/LocalPoseDiagnostic.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
 
@@ -66,6 +67,9 @@
 </script>
 
 {#if record}
+  {#if base==='/Wand'}
+    {#key itemId}<PagesPosePreview {itemId} {locale}/>{/key}
+  {/if}
   {#if import.meta.env.DEV && (record.sourceClass?.endsWith('AvatarEmotePoseItemData') || record.sourceClass?.endsWith('PetItemData'))}
     {#key itemId}<LocalPoseDiagnostic {itemId} {locale}/>{/key}
   {/if}
