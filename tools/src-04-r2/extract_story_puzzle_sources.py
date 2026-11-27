@@ -79,7 +79,7 @@ def local_image(out, row):
     else:
         with path.open("xb") as handle:
             handle.write(raw)
-    return info
+    return {**info,'sourcePixelSha256':row['sourcePixelSha256']} if row.get('sourcePixelSha256') else info
 
 def thumbnail(out, original, cache, ledger=None):
     from source_image_ledger import thumbnail as published_thumbnail
@@ -136,11 +136,12 @@ def run(parts, aa, root, out, ledger=None):
         try:
             obj = refs["Image"]
             ident = object_identity(obj, bundles)[0]
-            if ident not in memo:
+            cache_key=(ident,'ImageAddress' in roles[guid])
+            if cache_key not in memo:
                 # Verify native RGBA even when reusing an existing source object.
-                m = materialize(obj, bundles, existing, out, True, ledger)
-                memo[ident] = local_image(out, m)
-            value = {"unityAssetId": identity, "original": memo[ident]}
+                m = materialize(obj, bundles, existing, out, True, ledger, 'story-puzzle-thumbnail-cache.json' if cache_key[1] else None)
+                memo[cache_key] = local_image(out, m)
+            value = {"unityAssetId": identity, "original": memo[cache_key]}
             prior = report["assets"].get(guid)
             if prior and prior["original"] != value["original"]:
                 raise ValueError("Conflicting exact catalog image objects")
