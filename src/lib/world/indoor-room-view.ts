@@ -473,14 +473,14 @@ export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indi
  if(!t||face?.kind!=='floor'||!face.terrain||!Number.isSafeInteger(roomOrdinal)||roomOrdinal<1||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
  for(const index of indices){
-  const o=t.objects[index];if(!o||face.positions[index]?.storage||!isEightWay(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!(free?face.positions[index]?.plain===true&&!supportIndices.has(index)&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(t,shapes,index)))return null;
-  rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(supportIndices.has(index)?{supportFactor:t.factor}:{})});
+  const o=t.objects[index];if(!o||!isEightWay(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!(free?(face.positions[index]?.plain===true||face.positions[index]?.storage===true&&isCardinal(o.orientation))&&!supportIndices.has(index)&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(t,shapes,index)))return null;
+  rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(supportIndices.has(index)?{supportFactor:t.factor}:{}),...(face.positions[index]?.storage?{storage:true as const}:{})});
   clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:worldOrientationCode(o.orientation)!/4});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
-export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
+export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'|'storage'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
 /** Check every footprint against the floor and all already staged siblings. */
 export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number,free=false):IndoorTransferRow[]|null{
  const tree=indoorEditableTree(face);
@@ -488,8 +488,8 @@ export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Reco
  const staged={...tree,objects:[...tree.objects]},out:IndoorTransferRow[]=[];
  for(let i=0;i<rows.length;i++){
   const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2];
-  if(String(p.itemId)!==r.itemId||r.supportFactor&&r.supportFactor!==tree.factor||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!(free?!r.supportFactor&&freeRoomPose(face,shapes,p.itemId,px,py,orientation):isCardinal(r.expectedOrientation)&&supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation)))return null;
-  out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.supportFactor?{supportFactor:r.supportFactor}:{}),...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
+  if(String(p.itemId)!==r.itemId||r.supportFactor&&r.supportFactor!==tree.factor||!orientation||r.storage&&!isCardinal(orientation)||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!(free?!r.supportFactor&&freeRoomPose(face,shapes,p.itemId,px,py,orientation):isCardinal(r.expectedOrientation)&&supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation)))return null;
+  out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.supportFactor?{supportFactor:r.supportFactor}:{}),...(r.storage?{storage:true as const}:{}),...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
   staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
  }
  return out;
