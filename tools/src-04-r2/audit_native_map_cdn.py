@@ -104,7 +104,7 @@ def keys(layers):
         if l.get('mask',{}).get('kind')=='alpha':yield from keys([l['mask']['image']])
 
 
-def verify(doc,out,reader=fetch,*,stop_on_connection_error=True,prior=None,publication=None):
+def verify(doc,out,reader=fetch,*,stop_on_connection_error=True,prior=None,publication=None,stop_on_any_error=False):
     check(doc['schema']=='wand.src04.native-cdn-audit-input@1' and doc['privateOnly'] is True and doc['publicationAuthorized'] is False and doc['worldPlacementVerified'] is False and doc['gameVersion']=='1.26.2','Invalid audit input')
     assets=doc['images'];maps=doc['maps'];check(doc.get('sourceIdentityCount',len(assets))==118 and 0<len(assets)<=118 and len(maps)==10,'Unexpected audit coverage')
     check(set(assets)=={s for m in maps for s in keys(m['locked']+m['unlocked'])},'Unknown image reference')
@@ -134,7 +134,7 @@ def verify(doc,out,reader=fetch,*,stop_on_connection_error=True,prior=None,publi
             n=verify_bytes(sha,meta,raw);verified[sha]={'bytes':n,'width':meta['width'],'height':meta['height']}
         except Exception as exc:
             errors[sha]=type(exc).__name__+': '+str(exc)[:160]
-            if stop_on_connection_error and (i==1 or isinstance(exc,(HTTPError,URLError,ConnectionError,TimeoutError))):
+            if stop_on_connection_error and (stop_on_any_error or i==1 or isinstance(exc,(HTTPError,URLError,ConnectionError,TimeoutError))):
                 stopped=errors[sha]
                 print('CDN audit stopped: '+stopped,flush=True)
                 break
@@ -151,11 +151,25 @@ def verify(doc,out,reader=fetch,*,stop_on_connection_error=True,prior=None,publi
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='mode',required=True)
     a=sub.add_parser('prepare');a.add_argument('--plan',type=Path,required=True);a.add_argument('--packs',type=Path,nargs='+',required=True);a.add_argument('--out',type=Path,required=True)
-    b=sub.add_parser('verify');b.add_argument('--input',type=Path,required=True);b.add_argument('--out',type=Path,required=True);b.add_argument('--confirm-read',action='store_true');b.add_argument('--resume',type=Path);b.add_argument('--publication',type=Path)
+    b=sub.add_parser('verify');b.add_argument('--input',type=Path,required=True);b.add_argument('--out',type=Path,required=True);b.add_argument('--confirm-read',action='store_true');b.add_argument('--resume',type=Path);b.add_argument('--publication',type=Path);b.add_argument('--transport',choices=('urllib','curl'),default='urllib')
     args=p.parse_args();out=args.out.resolve();check(not out.exists() and not any((q/'.git').exists() for q in out.parents),'New private output outside Git required')
     if args.mode=='prepare':
         doc=prepare(json.loads(args.plan.read_bytes()),args.packs);out.write_text(json.dumps(doc,separators=(',',':')));print(len(doc['images']),'original pixel witnesses; no network');return
     check(args.confirm_read,'Explicit read confirmation required (118 GETs, at most 500 MB, no writes)')
-    socket.getaddrinfo('media.dreamwishwand.com',443);out.mkdir();r=verify(json.loads(args.input.read_bytes()),out,prior=json.loads(args.resume.read_bytes()) if args.resume else None,publication=json.loads(args.publication.read_bytes()) if args.publication else None);print(len(r['verified']),'verified;',len(r['readyMaps']),'complete maps');raise SystemExit(0 if r['cdnVerified'] else 2)
+    doc=json.loads(args.input.read_bytes())
+    prior=json.loads(args.resume.read_bytes()) if args.resume else None
+    publication=json.loads(args.publication.read_bytes()) if args.publication else None
+    out.mkdir()
+    if args.transport=='curl':
+        from native_cdn_curl import CurlReader
+        check(publication is not None and publication.get('canonicalMetadataVerified') is True and publication.get('bucket')=='dreamwishwand-media' and publication.get('gameVersion')==doc['gameVersion'],'Canonical receipt required for curl')
+        check(set(publication['objects'])=={'images/'+s+'.webp' for s in doc['images']},'Receipt scope mismatch')
+        pending=sorted(set(doc['images'])-set(prior['verified'] if prior else {}))
+        with CurlReader(pending,publication['objects']) as reader:
+            r=verify(doc,out,reader,prior=prior,publication=publication,stop_on_any_error=True)
+    else:
+        r=verify(doc,out,prior=prior,publication=publication)
+    print(len(r['verified']),'verified;',len(r['readyMaps']),'complete maps')
+    raise SystemExit(0 if r['cdnVerified'] else 2)
 
 if __name__=='__main__':main()
