@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {parseLocalNativePreview,nativeEditorExtent,editorViewToNativeCanvas,requiredLocalImages,localNativeImageSource} from '../src/lib/media/native-local-preview.ts';
+import {parseLocalNativePreview,nativeEditorExtent,editorViewToNativeCanvas,requiredLocalImages,localNativeImageSource,openLocalNativePreview,nativeMapForEditor} from '../src/lib/media/native-local-preview.ts';
 const bytes=Uint8Array.from([1,2,3]),sha=createHash('sha256').update(bytes).digest('hex');
 const texture={kind:'texture',unitQuadToCanvas:[16,0,0,16,0,0],rgba:[1,1,1,1],imageSha256:sha,size:[2,2],wrap:[1,1],colorSpace:'sRGB'};
 const doc={schema:'wand.media.native-local-preview@1',gameVersion:'1.26.2',privateOnly:true,publicationAuthorized:false,worldPlacementVerified:false,maps:[{id:'MapVillage04',width:16,height:16,ticksToCanvas:[2,0,0,2,8,4],locked:[texture],unlocked:[texture]}]};
@@ -24,4 +24,16 @@ test('local source rejects missing and modified images before decoding',async()=
   (await good(layer)).close();assert.equal(calls,1);
   const abort=new AbortController();abort.abort();await assert.rejects(good(layer,abort.signal));
  }finally{if(previous)globalThis.createImageBitmap=previous;else delete globalThis.createImageBitmap;}
+});
+
+test('editor pack maps exact world scopes and refuses independent coordinate planes',async()=>{
+ const pack=await openLocalNativePreview([new File([JSON.stringify(doc)],'manifest.json'),new File([bytes],sha+'.png')]);
+ assert.equal(nativeMapForEditor(pack,'Village04',false)?.id,'MapVillage04');
+ assert.equal(nativeMapForEditor(pack,'Village04',true),null);
+ assert.equal(nativeMapForEditor(pack,'VillageExpansion01',false),null);
+ assert.equal(nativeMapForEditor(pack,'toString',false),null);
+ const anisotropic={...pack,maps:[{...pack.maps[0],ticksToCanvas:[2,0,0,3,8,4]}]};
+ assert.equal(nativeMapForEditor(anisotropic,'Village04',false),null);
+ await assert.rejects(openLocalNativePreview([]));
+ await assert.rejects(openLocalNativePreview([new File([JSON.stringify(doc)],'manifest.json')]));
 });
