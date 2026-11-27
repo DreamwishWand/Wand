@@ -1,6 +1,6 @@
 <script lang="ts">
  import {type ImageSource} from '$lib/media/native-map-renderer.ts';
- import {parseLocalNativePreview,localNativeImageSource,nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
+ import {openLocalNativePreview,nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
@@ -17,10 +17,7 @@
   const input=event.currentTarget as HTMLInputElement,files=Array.from(input.files??[]);input.value='';
   const revision=++ticket;error='';
   try{
-   const manifests=files.filter(f=>f.name==='manifest.json');
-   if(manifests.length!==1||manifests[0].size>4*1024*1024)throw Error('manifest.json と画像をまとめて選択してください。');
-   const next=parseLocalNativePreview(JSON.parse(await manifests[0].text()));
-   const provider=localNativeImageSource(files,next);
+   const {maps:next,source:provider}=await openLocalNativePreview(files);
    if(revision!==ticket)return;
    maps=next;source=provider;selected=next[0].id;camera=defaultMapCamera();points=[];status='drawing';
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
