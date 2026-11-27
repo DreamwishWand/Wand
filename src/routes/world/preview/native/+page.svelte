@@ -7,6 +7,7 @@
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
  import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
+ import NativeMapSaveAreas from '$lib/world/NativeMapSaveAreas.svelte';
  import NativeCalibrationOverlay from '$lib/world/NativeCalibrationOverlay.svelte';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
@@ -88,6 +89,7 @@
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
    <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>検証座標を保存</button>
    {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> 区画 {id} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>手動指定・セーブ判定ではありません。個別設定中は座標記録の出力を無効にします。</p></details>{/if}
+   {#if map.areaPlan?.areaTypes.length}<NativeMapSaveAreas mapId={map.id} areaTypes={map.areaPlan.areaTypes} onApply={value=>{overrides=value;points=[];}}/>{/if}
    {#if terrainScope}<label><input type="checkbox" bind:checked={showTerrain}/> 原本地形を重ねる</label>
     {#if showTerrain}<label>地形の濃さ <input type="range" min="0" max="1" step=".05" bind:value={terrainOpacity}/></label>{/if}
    {/if}
