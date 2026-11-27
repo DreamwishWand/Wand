@@ -24,7 +24,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
 export type GroupGeometry=ReadonlyMap<number,ReadonlyMap<number,DesignItemGeometry>>;
-export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:EightWay;destination:StockDestination}
+export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:EightWay;destination:StockDestination;freePlacement?:true}
 export interface GroupPasteCandidate{rows:GroupPasteRow[];ghosts:StockCandidate[]}
 export function groupStockAvailable(clip:readonly DesignClipItem[],counts:ReadonlyMap<number,number>):boolean{
  const used=new Map<number,number>();
@@ -77,16 +77,16 @@ export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:numb
 export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
 /** All poses share map coordinates; each independently resolves its exact
  * source Grid. The bounding rectangle's empty corner need not be on land. */
-export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false):GroupPasteCandidate|null{
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false,allowDiagonal=false):GroupPasteCandidate|null{
  if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
-  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isSafeInteger(p.orientation*2)||p.orientation<0||p.orientation>=4||!free&&!Number.isInteger(p.orientation))return null;
+  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isSafeInteger(p.orientation*2)||p.orientation<0||p.orientation>=4||!free&&!allowDiagonal&&!Number.isInteger(p.orientation))return null;
   const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
   if(free&&(Math.floor(p.itemId/100000)!==400||geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath))return null;
-  const q=stockPlacement(grids,rasters,geo,p.itemId,EIGHT_WAY_ORIENTATIONS[p.orientation*2],x+.001,y-.001,null,free);
+  const q=stockPlacement(grids,rasters,geo,p.itemId,EIGHT_WAY_ORIENTATIONS[p.orientation*2],x+.001,y-.001,null,free,allowDiagonal);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
   anchors.add(key);

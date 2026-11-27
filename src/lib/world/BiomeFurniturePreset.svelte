@@ -20,6 +20,7 @@
  import type {TerrainRaster,TerrainScopeReceipt} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],sessions:readonly TerrainScopeReceipt[],omitted=0,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
+ export let freePlacement=false;
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let key='',input:HTMLInputElement,epoch=0,reading=false,error=false,shapeRequest=0,stockWorker:Worker|null=null,writeWorker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  let source:File|null=null,sourceObjects:readonly MainlandSavedObject[]|null=null,sourceKey='',incoming:DesignPlacement[]|null=null,defs:Map<number,DesignItemGeometry>|null=null,stock:Map<number,number>|null=null,subscribed:Worker|null=null;
@@ -28,9 +29,11 @@
  $: if(!available.some(g=>g.key===key))key=available[0]?.key??'';
  $: grid=available.find(g=>g.key===key);
  $: snapshot=grid?biomeFurnitureSnapshot(grid,objects,omitted):null;
- $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,objects,omitted,incoming,defs,stock):null;
+ $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,objects,omitted,incoming,defs,stock,false,undefined,false,freePlacement):null;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
  $: busy=reading||!!shapeRequest||!!stockWorker||!!writeWorker;
+ let lastFree=false;
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  function cancel(){epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
@@ -44,7 +47,7 @@
    if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,DESIGN_FILE_LIMIT),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
    incoming=rows;
-   if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))]});}else defs=new Map();
+   if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))],eightWay:rows.some(p=>!Number.isInteger(p.orientation))});}else defs=new Map();
    const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
    const done=(d:any)=>{read.terminate();if(stockWorker!==read||source!==activeFile)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
    read.onmessage=e=>done(e.data);read.onerror=()=>done(null);read.onmessageerror=()=>done(null);read.postMessage({command:'read-furniture-stock',file:activeFile});

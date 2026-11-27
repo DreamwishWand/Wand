@@ -41,9 +41,9 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
-export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false):StockCandidate|null{
+export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false,allowDiagonal=false):StockCandidate|null{
  const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
- if(!isEightWay(orientation)||!isCardinal(orientation)&&(!free||landscape)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
+ if(!isEightWay(orientation)||!isCardinal(orientation)&&(!free&&!allowDiagonal||landscape)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
  if(!isCardinal(orientation)&&(g.factor!==1||!bindMainlandGrid(g)||def?.surfaceCapable||def?.supportPath))return null;

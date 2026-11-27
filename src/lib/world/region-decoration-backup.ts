@@ -1,4 +1,4 @@
-import {mainlandExtent,mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandExtent,mainlandMapAnchor,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {mainlandSavedInRect,type MainlandSavedObject} from './mainland-saved-objects.ts';
 import {validCaptureRegion,type CaptureRegion} from './scene-capture-region.ts';
 import {captureIslandDecoration,parseIslandDecoration,WORLD_DECORATION_FILE_LIMIT} from './island-decoration-preset.ts';
@@ -44,7 +44,7 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
  for(const g of grids){
   const all=snapshot.objects.get(g.key),net=networks.get(g.key);if(!all||!net)return null;
   const known=new Set((landscapes?.get(g.key)??[]).map(landscapePoseKey));
-  const relevant=all.filter(p=>stockSourceEligible(p)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p))));
+  const relevant=all.filter(p=>{const ordinary:boolean=stockSourceEligible(p);return ordinary||!!bindMainlandGrid(g)&&p.factor===1&&!p.object.surfaceCapable&&stockSourceEligible(p,true)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p)));});
   if(relevant.some(p=>!p.shape))return null;
   const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
   if(hit.some(p=>!inside(region,p)))return null;

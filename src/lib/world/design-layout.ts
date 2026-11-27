@@ -89,7 +89,7 @@ export function serializeDesign(t:DesignTimeline,grid:DesignGridIdentity):string
 }
 const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const bounded=(n:unknown,min:number,max:number):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=min&&n<=max;
-export function parseDesign(text:string,grid:DesignGridIdentity):DesignPlacement[]{
+export function parseDesign(text:string,grid:DesignGridIdentity,allowDiagonal=false):DesignPlacement[]{
  if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');
  const value:unknown=JSON.parse(text);
  if(!record(value)||value.schema!=='wand.world-design@1'||!record(value.grid)||!Array.isArray(value.placements)||value.placements.length>DESIGN_LIMIT)throw Error('DESIGN_FILE_INVALID');
@@ -98,7 +98,7 @@ export function parseDesign(text:string,grid:DesignGridIdentity):DesignPlacement
  const ids=new Set<number>();
  return value.placements.map(p=>{
   if(!record(p)||!bounded(p.id,1,Number.MAX_SAFE_INTEGER-1)||ids.has(p.id)||!bounded(p.itemId,1,0xffffffff)||
-     !bounded(p.x,0,grid.sizeX*grid.factor-1)||!bounded(p.y,0,grid.sizeY*grid.factor-1)||!bounded(p.orientation,0,3))throw Error('DESIGN_PLACEMENT_INVALID');
+     !bounded(p.x,0,grid.sizeX*grid.factor-1)||!bounded(p.y,0,grid.sizeY*grid.factor-1)||!(bounded(p.orientation,0,3)||allowDiagonal&&grid.factor===1&&Math.floor(p.itemId/100000)===400&&typeof p.orientation==='number'&&Number.isSafeInteger(p.orientation*2)&&p.orientation>=0&&p.orientation<4))throw Error('DESIGN_PLACEMENT_INVALID');
   const attachment=readDesignAttachment(p,p.itemId,grid.layoutId==='DesignRooms/local-only.json'&&(grid.gridDataPath.startsWith('GridData/Rooms/')||grid.key.startsWith('room-design:support:')));
   ids.add(p.id);return {id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation,...(attachment?{attachment}:{})};
  });

@@ -45,7 +45,7 @@ export function parseIslandDecoration(text:string,grids:readonly MainlandGrid[],
  }
  return out;
 }
-export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
+export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false){
  if(!grids.length||world&&!worldDecorationScope(grids)||incoming.size!==grids.length||before.size!==grids.length)return null;
  const plan:Review['plan'][]=[],reviews=new Map<string,Review>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0,changed=false;
@@ -53,7 +53,7 @@ export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:Rea
   const objects=snapshot.objects.get(g.key),old=before.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!old||!next||!geometry)return null;
   if(world&&(!supports||!next.supports))return null;
-  const q=reviewBiomeDecoration(g,world?grids:[g],rasters,objects,0,old,next,geometry,stock,!world,supports,world,landscapes?.get(g.key));if(!q)return null;
+  const q=reviewBiomeDecoration(g,world?grids:[g],rasters,objects,0,old,next,geometry,stock,!world,supports,world,landscapes?.get(g.key),free);if(!q)return null;
   plan.push(q.plan);reviews.set(g.key,q);changed||=q.changed;
   changes+=q.furniture.changeCount;
   if(changes>BIOME_CHANGE_LIMIT)return null;
@@ -62,12 +62,14 @@ export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:Rea
  }
  if(world){
   const removed=new Set([...reviews.values()].flatMap(q=>q.removed.map(p=>p.object.localOrdinal))),ghosts=[...reviews.values()].flatMap(q=>q.ghosts),final=[...snapshot.objects.values()].flat().filter(p=>!removed.has(p.object.localOrdinal));
+  const freeGhosts=new Set([...reviews.values()].flatMap(q=>q.furniture.ghosts.filter((_,i)=>q.furniture.plan.add[i].freePlacement)));
   for(const [i,g] of ghosts.entries()){
+   if(freeGhosts.has(g))continue;
    if(g.plan.action!=='place')return null;
    for(const run of g.shape.runs)for(let x=0;x<run.width;x++){const hits=mainlandTerrainHits(grids,rasters,g.x+(run.x+x+.5)/g.factor,g.y-(run.y+.5)/g.factor);if(hits.length!==1||hits[0].key!==g.area)return null;}
    if(Math.floor(Number(g.plan.itemId)/100000)===401)continue;
    const others:MainlandSavedObject[]=final.filter(p=>p.area!==g.area);
-   for(const [j,h] of ghosts.entries())if(i!==j&&h.area!==g.area&&h.plan.action==='place'&&Math.floor(Number(h.plan.itemId)/100000)!==401)others.push({area:h.area,x:h.x,y:h.y,factor:h.factor,shape:h.shape,object:{localOrdinal:1_000_000+j,localGridOrdinal:1,itemId:h.plan.itemId,x:h.plan.x,y:h.plan.y,orientation:h.plan.orientation,orientationCode:null,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}});
+   for(const [j,h] of ghosts.entries())if(i!==j&&!freeGhosts.has(h)&&h.area!==g.area&&h.plan.action==='place'&&Math.floor(Number(h.plan.itemId)/100000)!==401)others.push({area:h.area,x:h.x,y:h.y,factor:h.factor,shape:h.shape,object:{localOrdinal:1_000_000+j,localGridOrdinal:1,itemId:h.plan.itemId,x:h.plan.x,y:h.plan.y,orientation:h.plan.orientation,orientationCode:null,shapeKey:null,name:null,layer:'furniture',surfaceCapable:false}});
    const feedback=stockFootprintFeedback(g,others);if(feedback.overlaps||feedback.unknown)return null;
   }
  }

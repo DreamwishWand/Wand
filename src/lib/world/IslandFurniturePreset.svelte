@@ -28,6 +28,7 @@
  import type {TerrainRaster,TerrainScopeReceipt} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],activeKey:string,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
+ export let freePlacement=false;
  export let world=false,region:CaptureRegion|null=null;
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let snapshot:ReturnType<typeof islandSaveSnapshot>=null,review:ReturnType<typeof islandSaveReplacement>=null;
@@ -43,6 +44,8 @@
  $: stockRows=decorationReview&&includeNetworks?restoreStockRows([...decorationReview.reviews.values()].map(r=>r.furniture),decorationReview.missing):review&&!includeNetworks?restoreStockRows([...review.reviews.values()],review.missing):[];
  $: ghosts=world?[...(result?.reviews.values()??[])].flatMap(r=>r.ghosts):result?.reviews.get(activeKey)?.ghosts??[];$: removed=world?[...(result?.reviews.values()??[])].flatMap(r=>r.removed):result?.reviews.get(activeKey)?.removed??[];
  $: busy=reading||!!writeWorker;
+ let lastFree=false;
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;if(source)onClose();}
  $: if(source&&(file!==source||sessions!==sourceSessions||blocked))onClose();
  function request(own:Worker,key:string,kind:string,params:Record<string,unknown>):Promise<any>{
   return new Promise((resolve,reject)=>{
@@ -156,7 +159,7 @@
     rasters.set(g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:d.nativeFloorValues});
     const ids=[...new Set([...(incoming.get(g.key)??[]),...(combined?.get(g.key)?.network??[]),...(current?.get(g.key)?.furniture??[]),...(current?.get(g.key)?.network??[]),...(combined?.get(g.key)?.landscape??[]),...(current?.get(g.key)?.landscape??[])].map(p=>p.itemId))],defs=new Map<number,DesignItemGeometry>();
     for(let i=0;i<ids.length;i+=128){
-     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch});
+     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch,eightWay:world&&[...(incoming.get(g.key)??[]),...(current?.get(g.key)?.furniture??[])].some(p=>!Number.isInteger(p.orientation))});
      if(!Array.isArray(r.result)||r.result.length!==batch.length||r.result.some((x:DesignItemGeometry)=>!batch.includes(x.itemId)))throw Error('shape');
      for(const def of r.result as DesignItemGeometry[])defs.set(def.itemId,def);
     }
@@ -173,7 +176,7 @@
    const stock=await readStock(f);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
    if(regionDoc){if(!trees||!current||!combined)throw Error('region');combined=mergeRegionDecoration(regionDoc.region,grids,snapshot,networks,trees,current,combined,definitions,world,landscapes);if(!combined)throw Error('region boundary');}
-   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees,world,landscapes);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock);if(!review)throw Error('plan');}
+   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees,world,landscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock);if(!review)throw Error('plan');}
    // Do not change the confirmed rectangle or mode on a rejected import.
    if(regionDoc)region=regionDoc.region;
    includeNetworks=full;includeSupport=!!trees;
