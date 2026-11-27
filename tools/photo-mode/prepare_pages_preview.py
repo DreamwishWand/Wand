@@ -57,13 +57,16 @@ if __name__=='__main__':
     p.add_argument('--source',type=Path,help='Explicit legacy two-scene transfer fixture')
     p.add_argument('--archive',type=Path,help='Local copy of pinned diagnostic release')
     p.add_argument('--companion-delta',type=Path,help='Local copy of the pinned companion delta')
+    p.add_argument('--actor-delta',type=Path,help='Local copy of the pinned companion actor delta')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
         project(a.archive.read_bytes() if a.archive else download(), a.dest)
         from prepare_companion_delta import download_delta, apply_delta
         apply_delta(a.companion_delta.read_bytes() if a.companion_delta else download_delta(), a.dest)
+        from prepare_actor_delta import download_actors, apply_actors
+        apply_actors(a.actor_delta.read_bytes() if a.actor_delta else download_actors(), a.dest)
