@@ -1655,7 +1655,7 @@ fn building_clone_state(item:u64,state:Option<&Value>)->bool{
         },
         202=>m.get("GardenData").and_then(Value::as_object).is_some_and(|h|h.len()==1&&h.get("Slots").and_then(Value::as_array).is_some_and(|a|a.len()<=128&&a.iter().all(|slot|slot.as_object().is_some_and(|s|
             s.len()==3&&s.get("PlantedSeedItemID").is_some_and(int)&&s.get("LastActivity").is_some_and(timestamp)&&
-            s.get("Harvest").and_then(Value::as_object).is_some_and(|harvest|harvest.len()==4&&harvest.get("EndOfGrowth").is_some_and(timestamp)&&harvest.get("EndOfLife").is_some_and(|v|v.is_null()||timestamp(v))&&harvest.get("NumberOfProductionLeft").is_some_and(int)&&harvest.get("SaplingGridObjectID").and_then(Value::as_i64)==Some(0))))),
+            s.get("Harvest").and_then(Value::as_object).is_some_and(|harvest|harvest.len()==4&&harvest.get("EndOfGrowth").is_some_and(timestamp)&&harvest.get("EndOfLife").is_some_and(|v|v.is_null()||timestamp(v))&&harvest.get("NumberOfProductionLeft").is_some_and(int)&&harvest.get("SaplingGridObjectID").and_then(Value::as_i64)==Some(0)))))),
         _=>false
     }
 }
