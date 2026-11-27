@@ -33,7 +33,7 @@ const skunks=['120000177','120000179','120000180','120000181','120000192','12000
 assert.ok(index.items[rigidActor]?.male?.companionIncluded===true&&index.items[rigidActor]?.female?.companionIncluded===true,'rigid actor');
 for(const id of skunks){const row=index.items[id];assert.equal(row.male.companionIncluded,true);assert.equal(row.female.companionIncluded,true);assert.deepEqual(row.male.actor,row.female.actor);assert.ok(row.male.nativeLoops.player>row.male.nativeLoops.companion);assert.equal(row.female.nativeLoops,undefined);}
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,0);
-const props=['70200018','70200020'];
+const props=['70200018','70200020','70200029'];
 assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessoryIncluded===true)),'both prop scenes');
 const materialActor='120000113',secondaryActor='120000109';
 assert.ok(index.items[materialActor]?.male?.companionIncluded===true&&index.items[materialActor]?.female?.companionIncluded===true,'external texture actor');

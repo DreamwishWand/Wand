@@ -73,10 +73,11 @@ if __name__=='__main__':
     p.add_argument('--actor-residual',type=Path,help='Local copy of source-textured residual companion overlay')
     p.add_argument('--actor-final',type=Path,help='Local copy of final three companion actors')
     p.add_argument('--actor-lucky',type=Path,help='Local copy of optimized Avatar companion overlay')
+    p.add_argument('--ariel-prop',type=Path,help='Local copy of the original Ariel rock accessory overlay')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -120,3 +121,6 @@ if __name__=='__main__':
 
         from prepare_skunk_native_loops import apply_skunk_native_loops
         apply_skunk_native_loops(a.dest)
+
+        from prepare_ariel_prop import download_ariel,apply_ariel
+        apply_ariel(a.ariel_prop.read_bytes() if a.ariel_prop else download_ariel(),a.dest)
