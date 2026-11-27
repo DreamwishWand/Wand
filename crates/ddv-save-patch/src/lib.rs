@@ -942,6 +942,47 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+/// Duplicate an existing PlayerHouse exterior while retaining its shared
+/// interior binding. The codec resolves the source and allocator dependencies.
+pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||target.grid_id!=d.grid_id||
+       !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+       xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
+       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let world=root.get("World").ok_or(bad)?;
+    let c=world.get("GridCollection").ok_or(bad)?;
+    let grid=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(bad)?;
+    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
+    if !outdoor_world_path(scope,&d.data_path)||grid.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
+       grid.get("GridDefaultLayoutPath").and_then(Value::as_str)!=Some(d.layout_path.as_str())||
+       grid.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
+       grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
+    let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
+    if o.len()!=6||o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+       o.get("ID").and_then(Value::as_u64)!=target.object_id.parse::<u64>().ok()||
+       o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id)||
+       o.get("X").and_then(Value::as_i64)!=Some(i64::from(expected.0))||o.get("Y").and_then(Value::as_i64)!=Some(i64::from(expected.1))||
+       o.get("Orientation").and_then(Value::as_str)!=Some(orientation){return Err(bad);}
+    let state=o.get("State").and_then(Value::as_object).filter(|s|s.len()==1).ok_or(bad)?;
+    let house=state.get("HouseData").and_then(Value::as_object).ok_or(bad)?;
+    if house.keys().any(|k|!matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))||
+       house.get("Built").and_then(Value::as_bool)!=Some(true)||
+       house.get("UpgradeState").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.keys().all(|k|k=="Level")&&m.get("Level").and_then(Value::as_u64).is_some())){return Err(bad);}
+    let idx=house.get("PlayerHouseIndex").and_then(Value::as_u64).and_then(|v|usize::try_from(v).ok()).ok_or(bad)?;
+    let interiors=world.get("PlayerHouses").and_then(Value::as_array).ok_or(bad)?;
+    let interior=interiors.get(idx).ok_or(bad)?;
+    if interior.get("HouseItemID").and_then(Value::as_u64)!=Some(target.item_id)||
+       interiors.iter().filter(|h|h.get("HouseItemID").and_then(Value::as_u64)==Some(target.item_id)).count()!=1||
+       !interior.get("Floors").and_then(Value::as_array).is_some_and(|a|!a.is_empty()){return Err(bad);}
+    let state_json=serde_json::to_string(state).map_err(|_|bad)?;
+    insert_grid_record(source,d,target.item_id,xy,orientation,Some(&state_json))
+}
+
 /// State-free landscape only, using an observed source record and a resolved outdoor
 /// destination. No inventory, ownership or collection mutation.
 pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
