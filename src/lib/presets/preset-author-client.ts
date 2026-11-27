@@ -5,12 +5,13 @@ import type {SessionPreset} from './preset-session-format.ts';
  * Never retains credentials, creates its own login, or transmits a Save. */
 export interface PresetAuthorTransport{origin:string;accessToken:()=>Promise<string>;fetcher?:typeof fetch}
 const id=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-async function call(t:PresetAuthorTransport,payload:object){
+async function request(t:PresetAuthorTransport,payload:object,endpoint='wand-presets-publish-v2'){
  const u=new URL(t.origin);if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw Error('PRESET_ENDPOINT');
  const token=await t.accessToken();if(!token)throw Error('PRESET_AUTH_REQUIRED');
- const r=await (t.fetcher??fetch)(u.origin+'/functions/v1/wand-presets-publish-v2',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'omit',redirect:'error',cache:'no-store'});
- if(!r.ok)throw Error('PRESET_AUTHOR_REQUEST');return r.json();
+ const r=await (t.fetcher??fetch)(u.origin+'/functions/v1/'+endpoint,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'omit',redirect:'error',cache:'no-store'});
+ if(!r.ok)throw Error('PRESET_AUTHOR_REQUEST');return r;
 }
+async function call(t:PresetAuthorTransport,payload:object){return (await request(t,payload)).json();}
 export async function authorContext(t:PresetAuthorTransport){
  const data=await call(t,{action:'author-context'});if(data?.contract!=='wand.preset-author-context@2'||!Array.isArray(data.profiles)||!Array.isArray(data.media)||!Array.isArray(data.works))throw Error('PRESET_AUTHOR_CONTEXT');return data;
 }
@@ -38,4 +39,39 @@ export async function retirePreset(t:PresetAuthorTransport,action:'unpublish'|'d
  if(!id.test(presetArtifactId)||!id.test(idempotencyKey))throw Error('PRESET_LIFECYCLE');
  const result=await call(t,{action,presetArtifactId,idempotencyKey});
  if(result?.contract!=='wand.preset-lifecycle@2')throw Error('PRESET_LIFECYCLE_RESPONSE');return result.publication;
+}
+
+export type AuthorImage={media_id:string;mime_type:string;width:number;height:number;created_at:string};
+export async function loadAuthorImage(t:PresetAuthorTransport,mediaId:string):Promise<Blob>{
+ if(!id.test(mediaId))throw Error('MEDIA_ID');
+ const metadata=await (await request(t,{action:'read',mediaId},'community-media')).json(),m=metadata?.media;
+ if(m?.mediaId!==mediaId||!['image/jpeg','image/png','image/webp'].includes(m.mimeType)||!Number.isSafeInteger(m.byteSize)||m.byteSize<1||m.byteSize>20971520||!(/^[0-9a-fA-F]{64}$/).test(m.checksumSha256))throw Error('MEDIA_RECEIPT');
+ let response:Response;
+ if(m.transport==='authenticated_edge_binary_post')response=await request(t,{action:'galleryReadBytes',mediaId},'community-media');
+ else{
+  const url=new URL(m.signedUrl);
+  if(url.origin!==new URL(t.origin).origin||url.username||url.password||!url.pathname.startsWith('/storage/v1/object/sign/')||!url.searchParams.has('token'))throw Error('MEDIA_URL');
+  response=await(t.fetcher??fetch)(url.href,{credentials:'omit',redirect:'error',cache:'no-store'});
+ }
+ if(!response.ok||!response.body)throw Error('MEDIA_DOWNLOAD');
+ const reader=response.body.getReader(),bytes=new Uint8Array(m.byteSize);let n=0;
+ try{for(;;){const {done,value}=await reader.read();if(done)break;if(n+value.length>bytes.length){await reader.cancel();throw Error('MEDIA_SIZE');}bytes.set(value,n);n+=value.length;}}
+ finally{reader.releaseLock();}
+ if(n!==bytes.length)throw Error('MEDIA_SIZE');
+ const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
+ if(digest!==m.checksumSha256.toLowerCase())throw Error('MEDIA_CHECKSUM');
+ return new Blob([bytes],{type:m.mimeType});
+}
+export async function uploadAuthorImage(t:PresetAuthorTransport,file:File,ownWorkConfirmed:boolean){
+ if(!ownWorkConfirmed||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size<1||file.size>20971520)throw Error('MEDIA_INVALID');
+ const p=await (await request(t,{action:'galleryPrepare',mimeType:file.type,byteSize:file.size},'community-media')).json();
+ if(p?.ok!==true||typeof p.storageKey!=='string'||typeof p.signedUpload?.signedUrl!=='string')throw Error('MEDIA_PREPARE');
+ const url=new URL(p.signedUpload.signedUrl);
+ if(url.origin!==new URL(t.origin).origin||url.username||url.password||!url.pathname.startsWith('/storage/v1/object/upload/sign/')||!url.searchParams.has('token'))throw Error('MEDIA_UPLOAD_URL');
+ const form=new FormData();form.append('cacheControl','0');form.append('',file);
+ const response=await(t.fetcher??fetch)(url.href,{method:'PUT',headers:{'x-upsert':'false'},body:form,credentials:'omit',redirect:'error'});
+ if(!response.ok)throw Error('MEDIA_UPLOAD');
+ const result=await(await request(t,{action:'galleryFinalize',storageKey:p.storageKey},'community-media')).json();
+ if(result?.ok!==true||!id.test(result.data?.mediaId??''))throw Error('MEDIA_FINALIZE');
+ return result.data.mediaId as string;
 }

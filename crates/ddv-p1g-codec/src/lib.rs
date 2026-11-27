@@ -18,6 +18,7 @@ mod grid_instance_preview;
 mod indoor_room_view;
 #[cfg(feature="wasm")]
 mod native_preset_backup;
+mod native_preset_scene;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -447,6 +448,14 @@ mod browser_amount_preview {
     };
     use wasm_bindgen::prelude::*;
 
+    #[wasm_bindgen]
+    pub fn inspect_native_preset_backup(backup:&str)->Result<String,JsValue>{
+        native_preset_backup::inspect_backup(backup).map_err(|_|fail("DB05_NATIVE_DETAIL_UNAVAILABLE"))
+    }
+    #[wasm_bindgen]
+    pub fn convert_native_decoration_to_scene(backup:&str)->Result<String,JsValue>{
+        native_preset_scene::convert(backup).map_err(|_|fail("DB05_NATIVE_SCENE_UNSUPPORTED"))
+    }
     const MAX_WORKER_CIPHERTEXT:usize=32*1024*1024;
     const CHUNK:usize=1024*1024;
     fn fail(code:&'static str)->JsValue{JsValue::from_str(code)}
@@ -1448,6 +1457,30 @@ mod browser_amount_preview {
             if !self.ready||self.closed{return Err(fail("DB05_PRESET_NOT_OPEN"));}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
             native_preset_backup::export(source,ordinal as usize).map_err(|_|fail("DB05_PRESET_UNAVAILABLE"))
+        }
+        pub fn rehearse_tom_restore(&self,backup:&str)->Result<String,JsValue>{
+            let invalid=||fail("DB05_TOM_REHEARSAL_REJECTED");
+            if !self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let mut patched=native_preset_backup::tom_restore_rehearsal(original,backup).map_err(|_|invalid())?;
+            let result=(||->Result<String,JsValue>{
+                validate_profile(patched.as_bytes()).map_err(|_|invalid())?;
+                if matches!(self.kind,InputKind::EncryptedP1g){
+                    let opened=self.p1g.as_ref().ok_or_else(invalid)?;
+                    let mut archive=rezip_profile(&opened.original_zip,&opened.layout,patched.as_bytes()).map_err(|_|invalid())?;
+                    let encrypted=ecb_encrypt(&archive);archive.zeroize();
+                    let mut encrypted=encrypted.map_err(|_|invalid())?;
+                    let verified=OpenedP1g::open(&encrypted).is_ok_and(|r|r.profile==patched.as_bytes());
+                    encrypted.zeroize();if !verified{return Err(invalid());}
+                }
+                Ok(serde_json::json!({"contract":"wand.native-preset-rehearsal@1","kind":"tom","freshAllocation":true,"reopenVerified":true,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false}).to_string())
+            })();
+            patched.zeroize();result
+        }
+        pub fn review_native_preset_restore(&self,backup:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_PRESET_NOT_OPEN"));}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_PRESET_NOT_OPEN"))?.profile.as_slice()};
+            native_preset_backup::review(source,backup).map_err(|_|fail("DB05_PRESET_REVIEW_REJECTED"))
         }
         pub fn list_furniture_catalog_stock(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_FURNITURE_STOCK_NOT_OPEN"));}

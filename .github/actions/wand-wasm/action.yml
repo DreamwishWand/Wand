@@ -56,7 +56,12 @@ runs:
         rm -rf -- "$OUTPUT"
         args=()
         if [ -n "$FEATURES" ]; then args+=(--features "$FEATURES"); fi
-        wasm-pack build "$CRATE" --release --target web --out-dir "$GITHUB_WORKSPACE/$OUTPUT" "${args[@]}" -- --locked
+        lock_before="$(sha256sum "$CRATE/Cargo.lock")"
+        wasm-pack build "$CRATE" --release --target web --out-dir "$GITHUB_WORKSPACE/$OUTPUT" "${args[@]}"
+        if [ "$lock_before" != "$(sha256sum "$CRATE/Cargo.lock")" ]; then
+          echo "Cargo dependency resolution changed during compilation; refuse mismatched cache."
+          exit 1
+        fi
     - name: Record generated package integrity
       if: steps.fingerprint.outputs.cacheable == 'true' && steps.validate.outputs.verified != 'true'
       shell: bash
