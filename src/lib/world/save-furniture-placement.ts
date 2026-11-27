@@ -1,4 +1,4 @@
-import initialTemplates from './building-initial-templates.json';
+import initialTemplates from './building-initial-templates.json' with { type: 'json' };
 /** Original terrain and ordinary furniture only. A candidate never authorizes Save writes. */
 import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
