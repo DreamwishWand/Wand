@@ -1658,7 +1658,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
         if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
         let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
-        let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();
+        let mut checked_world_grids=HashSet::new();let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();
         for row in rows{
             let witness=&row["destination"];let d=destinations.get(&witness.to_string()).ok_or(bad)?;
             let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
@@ -1666,10 +1666,10 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let orientation=row["orientation"].as_str().ok_or(bad)?;
             let free_placement=row.get("freePlacement").and_then(Value::as_bool)==Some(true);
-            if free_placement{player_house_grid_scope(&root,&d.grid_id)?;}
+            if free_placement&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
                 if row.get("scene").is_some()||d.tessellation!=1||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation){return Err(bad);}
-                player_house_grid_scope(&root,&d.grid_id)?;
+                if checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
             }
             let tree=if let Some(scene)=row.get("scene"){
                 let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
@@ -1725,19 +1725,19 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
-    let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
+    let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
         let d=destinations.get(&key).ok_or(bad)?;
         let row_free=free||o.get("freePlacement").and_then(Value::as_bool)==Some(true);
-        if row_free&&limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{player_house_grid_scope(&root,&d.grid_id)?;}
+        if row_free&&limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
-        if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
+        if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
         if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!row_free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
         let objects=grid.get("Objects").and_then(Value::as_object).ok_or(bad)?;
