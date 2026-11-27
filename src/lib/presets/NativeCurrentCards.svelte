@@ -30,7 +30,7 @@
   try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'}),all=await db.getBrowseNames(language);if(token===epoch)names=new Map(all.filter(([id])=>wanted.has(id)));}catch{}
  }
  const pending=new Set<number>();
- async function pictures(input:readonly NativeCardRow[]){for(const row of input)for(const id of [row.baseItemId,...(row.visual?.motifIds??[]),...(row.visual?.textureIds??[])]){if(id===null||images.has(id)||pending.has(id))continue;pending.add(id);void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});}
+ async function pictures(input:readonly NativeCardRow[]){for(const row of input)for(const id of [row.baseItemId,...(row.visual?.motifIds??[]),...(row.visual?.textureIds??[])]){if(id===null||images.has(id)||pending.has(id))continue;pending.add(id);void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});}}
 </script>
 <div class="native-cards">
  {#if rows.length}<input type="search" aria-label={p[2]} placeholder={p[2]} bind:value={query} on:input={()=>limit=60}/>{/if}
