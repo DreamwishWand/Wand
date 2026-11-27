@@ -845,6 +845,19 @@ pub fn preview_support_parent_world_transfer(source:&str,target:&GridCoordinateT
 pub fn preview_plain_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,true)
 }
+/// Relocate an exact plain outdoor leaf without inventory mutation. The
+/// codec proves original source/destination catalog identity and references.
+pub fn preview_free_outdoor_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
+ validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let from=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
+ let layout=from["GridDefaultLayoutPath"].as_str().ok_or(PatchError::InvalidTarget)?;
+ let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
+ if house_exterior_world(layout,data).is_none()||from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok(){return Err(PatchError::InvalidTarget);}
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
 fn outdoor_world_path(scope:&str,path:&str)->bool{
     if path.contains("..")||path.contains('\\')||!path.ends_with(".json"){return false;}
     match scope{
@@ -1766,7 +1779,7 @@ fn outdoor_to_indoor_transfer_mode(source:&str,target:&GridCoordinateTarget,expe
  let g=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
  let layout=g.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
  let data=g.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
- if !saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))||
+ if !(if free{house_exterior_world(layout,data).is_some()}else{saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))})||
     g.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
     grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
      return Err(PatchError::InvalidTarget);

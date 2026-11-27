@@ -46,11 +46,11 @@
  $: if($worldFurnitureCut&&$worldFurnitureCut.file!==file){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);copied=false;}
  $: remainingObjects=cutRows?objects.filter(p=>!cutRows?.some(r=>r.localOrdinal===p.object.localOrdinal&&r.area===p.area)):objects;$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: selection=captureFurnitureGroup(items,false,freePlacement);
- $: freeGroup=freePlacement&&(!cutRows||cutRows.every(r=>!!r.roomSource&&!r.supportFactor))&&!areaScene&&(!scene||scene.items.every(p=>Math.floor(p.itemId/100000)===400));
+ $: freeGroup=freePlacement&&(!cutRows||cutRows.every(r=>!r.supportFactor))&&!areaScene&&(!scene||scene.items.every(p=>Math.floor(p.itemId/100000)===400));
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  $: if(active&&(source!==file||blocked))cancel();
  $: required=areaScene?areaSceneCounts(areaScene.items):supportScene?mixedSceneCounts(supportScene.items):sceneItemCounts(clip);
- $: geometryReady=active&&(!supportScene&&!areaScene||supportValid)&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!activeCut||cutClipboardMatches(activeCut,file,scope,objects));
+ $: geometryReady=active&&(!supportScene&&!areaScene||supportValid)&&!pending.size&&clip.length>0&&clip.every(p=>defs.has(p.itemId))&&(!activeCut||cutClipboardMatches(activeCut,file,scope,objects,freePlacement));
  $: baseReady=geometryReady&&!!counts&&(supportScene||areaScene?[...required].every(([id,n])=>(counts!.get(id)??0)>=n):groupStockAvailable(clip,counts));
  $: anchorPoint=point&&(scene||supportScene||areaScene)?groupSceneOrigin(clip,defs,grids,rasters,point,sceneAnchor,freeGroup):point;
  $: preview=geometryReady?(areaScene?anchorPoint?areaSceneCandidate(areaScene,grids,rasters,defs,remainingObjects,omitted,anchorPoint.x,anchorPoint.y,axis):null:supportScene?anchorPoint?mixedScenePlacement(clip,supportScene,anchorPoint,axis,grids,rasters,defs,remainingObjects,omitted,freeGroup):null:previewGroup(clip,anchorPoint,axis,mirrorOnly,grids,rasters,defs,remainingObjects,omitted,required,counts,baseReady,!!scene,freeGroup)):null;
@@ -136,18 +136,18 @@
   }catch{if(epoch===sceneEpoch)sceneError=gs[2];}finally{if(epoch===sceneEpoch)sceneReading=false;}
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
- export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
+ export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null){
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?selection:$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
-  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!!r.roomSource&&!r.supportFactor)||!!supportDoc||!!areaDoc))return false;
-  if(cut&&!cutClipboardMatches(cut,file,scope,objects)){error=true;return false;}
+  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!r.supportFactor)||!!supportDoc||!!areaDoc))return false;
+  if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
   const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!areaScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
-  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&(!cutRows||cutRows.every(r=>!!r.roomSource&&!r.supportFactor))&&!areaDoc&&(!sceneDoc||sceneDoc.items.every(p=>Math.floor(p.itemId/100000)===400));
+  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&(!cutRows||cutRows.every(r=>!r.supportFactor))&&!areaDoc&&(!sceneDoc||sceneDoc.items.every(p=>Math.floor(p.itemId/100000)===400));
   for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId,freePlacement:free});}
   pending=new Map(pending);for(const id of (areaDoc?[...new Set([...ids,...areaSceneCounts(areaDoc.items).keys()])]:supportDoc?[...mixedSceneCounts(supportDoc.items).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;
@@ -177,7 +177,7 @@
  export function validate(){
   if(!active||!allowed||blocked||!ready||!file||source!==file||!candidate||writing||copy)return;
   const f=file,q=candidate,plan=cutRows?groupCutPlan(cutRows,q,freeGroup):q.rows;
-  if(!plan||!counts||!cutRows&&!areaScene&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||activeCut&&!cutClipboardMatches(activeCut,file,scope,objects)){error=true;return;}
+  if(!plan||!counts||!cutRows&&!areaScene&&![...sceneItemCounts(q.rows.map(p=>({itemId:Number(p.itemId),dx:0,dy:0,orientation:0})))].every(([id,n])=>(counts!.get(id)??0)>=n)||activeCut&&!cutClipboardMatches(activeCut,file,scope,objects,freePlacement)){error=true;return;}
   if(supportScene&&(!supportValid||!('supportRows' in q)||![...mixedPlacementCounts(q as MixedScenePlacement)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
   if(areaScene&&(!supportValid||!('areaRows' in q)||![...areaPlacementCounts(q as AreaSceneCandidate)].every(([id,n])=>(counts!.get(id)??0)>=n)))return;
   const output=areaScene?(q as AreaSceneCandidate).areaRows:supportScene?(q as MixedScenePlacement).supportRows:plan;
@@ -185,7 +185,7 @@
   const done=(d:any)=>{own.terminate();if(writing!==own||file!==f||candidate!==q){d?.bytes?.fill(0);return;}writing=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:cutRows?'group-cut-export':'group-paste-export',file:f,plan:freeGroup?{freePlacement:true,rows:output}:output,allowExperimentalCopy:true});
  }
- function apply(){if(!allowed||blocked||!copy||!file||source!==file)return;if(activeCut&&!cutClipboardMatches(activeCut,file,scope,objects)){error=true;return;}if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}if(cutRows){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}cancel();}
+ function apply(){if(!allowed||blocked||!copy||!file||source!==file)return;if(activeCut&&!cutClipboardMatches(activeCut,file,scope,objects,freePlacement)){error=true;return;}if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}if(cutRows){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}cancel();}
  export function cancel(){captureWorker?.terminate();captureWorker=null;read?.terminate();writing?.terminate();read=null;writing=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;active=false;source=null;clip=[];cutRows=null;activeCut=null;mirrorOnly=null;symmetry=null;symmetryOpen=false;symmetryPicking=false;scene=null;areaScene=null;supportScene=null;supportRequest=0;supportValid=false;sceneAnchor='corner';sceneEpoch++;sceneReading=false;sceneError='';defs=new Map();pending=new Map();counts=null;point=null;candidate=null;error=false;}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
 </script>

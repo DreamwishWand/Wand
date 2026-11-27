@@ -27,3 +27,19 @@ export function nativeFrameCovers(frame:NativeFramePlan,view:View,w:number,h:num
  return near(frame.w/v.width,w/view.width)&&near(frame.h/v.height,h/view.height)&&
   v.x<=view.x&&v.y<=view.y&&v.x+v.width>=view.x+view.width&&v.y+v.height>=view.y+view.height;
 }
+
+/** Fit backing pixels within both axis and area caps, even after integer rounding. */
+export function nativeFrameSize(view:View,w:number,h:number):{w:number;h:number}|null{
+ const scale=Math.min(w/view.width,h/view.height,4096/view.width,4096/view.height,Math.sqrt(4_194_304/(view.width*view.height)));
+ if(!Number.isFinite(scale)||scale<=0)return null;
+ let pw=Math.max(1,Math.round(view.width*scale)),ph=Math.max(1,Math.round(view.height*scale));
+ pw=Math.min(4096,pw);ph=Math.min(4096,ph);
+ if(pw*ph>4_194_304){
+  if(pw>=ph)pw=Math.floor(4_194_304/ph);else ph=Math.floor(4_194_304/pw);
+ }
+ return {w:pw,h:ph};
+}
+export type NativeFrameIdentity={layers:readonly unknown[];source:unknown;key:string};
+export function nativeFrameCanSatisfy(frame:NativeFramePlan&NativeFrameIdentity,request:NativeFramePlan&NativeFrameIdentity):boolean{
+ return frame.layers===request.layers&&frame.source===request.source&&frame.key===request.key&&nativeFrameCovers(frame,request.view,request.w,request.h);
+}

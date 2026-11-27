@@ -2,7 +2,7 @@
  import {onMount} from 'svelte';
  import NativeMapLoading from './NativeMapLoading.svelte';
  import type {WandLanguage} from '../ui/preferences';
- import {nativeFrameRect,nativeFramePlan,nativeFrameCovers,type NativeFramePlan} from '../media/native-frame-rect.ts';
+ import {nativeFrameRect,nativeFramePlan,nativeFrameCovers,nativeFrameSize,nativeFrameCanSatisfy,type NativeFramePlan} from '../media/native-frame-rect.ts';
  import {NativeMapRenderer,type Layer,type View,type ImageSource,type NativeMapProgress} from '../media/native-map-renderer.ts';
  export let layers:readonly Layer[];
  export let view:View;
@@ -24,7 +24,8 @@
  $: clipRect=nativeFrameRect(view,view,hostWidth,hostHeight);
  $: rect=drawnView?nativeFrameRect(view,drawnView,hostWidth,hostHeight):null;
  let revision=0,busy=false;
- let pending:{id:number;layers:readonly Layer[];view:View;source:ImageSource;key:string;w:number;h:number}|null=null;
+ type Job={id:number;layers:readonly Layer[];view:View;source:ImageSource;key:string;w:number;h:number};
+ let pending:Job|null=null,activeJob:Job|null=null;
  let active:AbortController|null=null,currentKey='';
  let currentSource:ImageSource|undefined;
  let requested:{layers:readonly Layer[];view:View;source:ImageSource;key:string;w:number;h:number}|null=null;
@@ -43,16 +44,19 @@
  });
  $: if(ready&&renderer)queue(layers,view,source,activeKey,pixelWidth,pixelHeight);
  function queue(ls:readonly Layer[],v:View,src:ImageSource,key:string,w:number,h:number){
-  const fit=Math.min(w/v.width,h/v.height);
-  const scale=Math.min(fit,4096/v.width,4096/v.height,Math.sqrt(4_194_304/(v.width*v.height)));
-  if(!Number.isFinite(scale)||scale<=0)return;
+  const size=nativeFrameSize(v,w,h);if(!size)return;
   const changed=key!==currentKey||src!==currentSource;
   if(changed){currentKey=key;currentSource=src;active?.abort();drawnView=null;completeFrame=false;completedPlan=null;completedLayers=null;canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height);}
-  const next={layers:ls,view:v,source:src,key,w:Math.max(1,Math.round(v.width*scale)),h:Math.max(1,Math.round(v.height*scale))};
+  const next={layers:ls,view:v,source:src,key,...size};
   if(requested&&requested.layers===ls&&requested.source===src&&requested.key===key&&requested.w===next.w&&requested.h===next.h&&requested.view.x===v.x&&requested.view.y===v.y&&requested.view.width===v.width&&requested.view.height===v.height&&!error)return;
   requested=next;
   if(!changed&&!error&&completeFrame&&completedLayers===ls&&completedPlan&&nativeFrameCovers(completedPlan,v,next.w,next.h)){
    ++revision;pending=null;active?.abort();loading=false;reportProgress(null);onStatus('ready');return;
+  }
+  // The active frame may already contain the newly requested pan position.
+  // Do not queue a duplicate, or discard a still-useful in-flight render.
+  if(!changed&&activeJob&&active&&!active.signal.aborted&&nativeFrameCanSatisfy(activeJob,next)){
+   pending=null;loading=true;onStatus('drawing');return;
   }
   const plan=nativeFramePlan(v,next.w,next.h);
   pending={id:++revision,...next,...plan};
@@ -69,13 +73,14 @@
   try{
    while(pending&&!closed){
     const job=pending;pending=null;
-    const r=renderer,buffer=stage,controller=new AbortController();active=controller;
+    const r=renderer,buffer=stage,controller=new AbortController();active=controller;activeJob=job;
+    const wanted=()=>!closed&&!controller.signal.aborted&&!!requested&&(job.id===revision||nativeFrameCanSatisfy(job,requested));
     if(!r||!buffer)break;
     try{
      if(buffer.width!==job.w)buffer.width=job.w;if(buffer.height!==job.h)buffer.height=job.h;
      let lastPreview=-Infinity;
      await r.render(job.layers,job.view,job.source,controller.signal,p=>{
-      if(closed||controller.signal.aborted||job.id!==revision)return;
+      if(!wanted())return;
       reportProgress(p);
       // Only expose ordered prefixes during initial loading. Keep a completed
       // frame intact during pan/zoom; never report a partial prefix as ready.
@@ -83,11 +88,11 @@
        present(buffer,job.view,job.w,job.h);lastPreview=performance.now();
       }
      });
-     if(closed||controller.signal.aborted||job.id!==revision)continue;
+     if(!wanted())continue;
      present(buffer,job.view,job.w,job.h);completeFrame=true;completedPlan={view:job.view,w:job.w,h:job.h};completedLayers=job.layers;loading=false;onStatus('ready');
     }catch(e){
-     if(!closed&&!controller.signal.aborted&&job.id===revision){loading=false;if(!completeFrame)drawnView=null;error=e instanceof Error?e.message:'Rendering failed';onStatus('error');}
-    }finally{if(active===controller)active=null;}
+     if(wanted()){loading=false;if(!completeFrame)drawnView=null;error=e instanceof Error?e.message:'Rendering failed';onStatus('error');}
+    }finally{if(active===controller){active=null;activeJob=null;}}
    }
   }finally{busy=false;}
  }

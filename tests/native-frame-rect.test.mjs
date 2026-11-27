@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeFrameRect,nativeFramePlan,nativeFrameCovers} from '../src/lib/media/native-frame-rect.ts';
+import {nativeFrameRect,nativeFramePlan,nativeFrameCovers,nativeFrameCanSatisfy,nativeFrameSize} from '../src/lib/media/native-frame-rect.ts';
 const full={x:0,y:0,width:4926,height:4988};
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
 test('full native map fits landscape viewport without stretching or clipping',()=>{
@@ -45,5 +45,28 @@ test('guard band never reduces requested resolution or exceeds backing buffer ca
   assert.ok(p.w>=w&&p.h>=h&&p.w<=4096&&p.h<=4096&&p.w*p.h<=4194304);
   near(p.w/p.view.width,w/v.width);near(p.h/p.view.height,h/v.height);
   assert.equal(nativeFrameCovers(p,v,w,h),true);
+ }
+});
+
+test('in-flight frame can satisfy a later same-density pan but not another map or layer state',()=>{
+ const layers=[],source=()=>{},view={x:0,y:0,width:1000,height:800};
+ const identity={layers,source,key:'valley:unlocked'};
+ const request={...identity,view,w:1000,h:800};
+ const frame={...identity,...nativeFramePlan(view,1000,800)};
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,view:{...view,x:120,y:80}}),true);
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,view:{...view,x:126}}),false);
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,key:'valley:locked'}),false);
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,layers:[]}),false);
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,source:()=>{}}),false);
+ assert.equal(nativeFrameCanSatisfy(frame,{...request,view:{...view,width:500,height:400}}),false);
+});
+test('rounded framebuffer size remains inside axis and area limits',()=>{
+ for(const width of [1,17,503,1000,1999,2047,2048,2049,4096,8192]){
+  for(const height of [1,73,499,999,2047,2049,4096,8000]){
+   const v={x:0,y:0,width,height},size=nativeFrameSize(v,9000,9000);
+   assert.ok(size.w>=1&&size.h>=1&&size.w<=4096&&size.h<=4096&&size.w*size.h<=4194304);
+   const p=nativeFramePlan(v,size.w,size.h);
+   assert.ok(p.w*p.h<=4194304&&p.w<=4096&&p.h<=4096);
+  }
  }
 });
