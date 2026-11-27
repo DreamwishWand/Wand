@@ -1838,6 +1838,82 @@ pub(super) fn island_furniture_candidate(profile:&[u8],plan:&str)->Result<String
 pub(super) fn island_decoration_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
  island_area_candidate(profile,plan,true)
 }
+type HouseLayoutPose=(u64,i32,i32,usize);
+fn house_layout_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination)->Result<Vec<HouseLayoutPose>,CodecError>{
+ let bad=CodecError::Json;
+ let rows=v.as_array().filter(|a|a.len()<=128).ok_or(bad)?;
+ rows.iter().map(|p|{
+  let o=p.as_object().filter(|o|o.len()==4&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
+  let item=o["itemId"].as_u64().filter(|n|*n/100_000==205).ok_or(bad)?;
+  let coord=|key:&str,size:u32|o[key].as_u64().filter(|n|*n<u64::from(size)*u64::from(d.tessellation)).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+  Ok((item,coord("x",d.size.0)?,coord("y",d.size.1)?,o["orientation"].as_u64().filter(|n|*n<4).ok_or(bad)? as usize))
+ }).collect()
+}
+/// Exact full-world exterior replacement. Retain matching records, clone
+/// from checked existing interiors before removing any redundant exterior.
+fn player_house_layout_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
+ use ddv_save_patch::{GridMixedEdit,OBSERVED_CARDINAL_ORIENTATIONS as DIR};
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let world=&root["World"];let grids=world["GridCollection"]["Grids"].as_object().ok_or(bad)?;
+ let mut scope=None::<String>;let mut count=0;let mut verified=HashSet::new();
+ let mut sources=HashMap::<(u64,u32),(GridCoordinateTarget,HouseLayoutPose)>::new();
+ let mut states=HashMap::<u64,serde_json::Map<String,Value>>::new();
+ let mut wanted=HashSet::new();let mut remove=Vec::<(GridCoordinateTarget,HouseLayoutPose)>::new();let mut add=Vec::<(Value,HouseLayoutPose,u32)>::new();
+ for row in rows{
+  let o=row.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+  let witness=&o["destination"];let (name,n)=world_grid_scope(witness)?;
+  if scope.as_ref().is_some_and(|s|s!=&name){return Err(bad);}scope=Some(name.clone());count=n;
+  let d=resolve_plain_grid_destination(profile,witness)?;
+  if player_house_grid_scope(&root,&d.grid_id)?!=name||!verified.insert(d.grid_id.clone()){return Err(bad);}
+  let mut before=house_layout_poses(&o["before"],&d)?;let after=house_layout_poses(&o["after"],&d)?;
+  let mut actual=Vec::<(GridCoordinateTarget,HouseLayoutPose)>::new();
+  for (oid,v) in grids[&d.grid_id]["Objects"].as_object().ok_or(bad)?{
+   let item=v["ItemID"].as_u64().ok_or(bad)?;if item/100_000!=205{continue;}
+   let (x,y)=observed_coordinates(v).ok_or(bad)?;
+   let direction=v["Orientation"].as_str().and_then(|s|DIR.iter().position(|n|*n==s)).ok_or(bad)?;
+   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:oid.clone(),item_id:item};
+   let state=ddv_save_patch::checked_player_house_state(world,&target,(x,y),DIR[direction]).map_err(|_|bad)?;
+   if states.get(&item).is_some_and(|s|s!=state){return Err(bad);}states.entry(item).or_insert_with(||state.clone());
+   let p=(item,x,y,direction);sources.entry((item,d.tessellation)).or_insert_with(||(target.clone(),p));actual.push((target,p));
+  }
+  let mut observed=actual.iter().map(|(_,p)|*p).collect::<Vec<_>>();before.sort_unstable();observed.sort_unstable();if observed!=before{return Err(bad);}
+  for p in after{
+   wanted.insert((p.0,d.tessellation));
+   if let Some(i)=actual.iter().position(|(_,q)|q==&p){actual.remove(i);}else{add.push((witness.clone(),p,d.tessellation));}
+  }
+  remove.extend(actual);
+ }
+ if verified.len()!=count||scope.is_none()||sources.len()!=wanted.len()||sources.keys().any(|k|!wanted.contains(k))||add.len()+remove.len()>128||add.is_empty()&&remove.is_empty(){return Err(bad);}
+ if grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
+ let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ for (witness,(item,x,y,dir),factor) in add{
+  let (source,old)=sources.get(&(item,factor)).ok_or(bad)?;
+  let refs=grid_identity_dependencies(working.as_bytes(),source)?;
+  if refs.active>0||refs.related>0||refs.unknown>0{return Err(bad);}
+  let d=resolve_plain_grid_destination(working.as_bytes(),&witness)?;
+  let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+  let fresh=current["World"]["GridCollection"]["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
+  let mut copy=ddv_save_patch::preview_player_house_duplicate(&working,source,(old.1,old.2),&d,(x,y),DIR[old.3]).map_err(|_|CodecError::Patch)?;
+  if dir!=old.3{
+   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:fresh,item_id:item};
+   let edit=GridMixedEdit{target,expected:(x,y),position:None,orientation:Some((DIR[old.3].to_owned(),DIR[dir].to_owned()))};
+   let rotated=ddv_save_patch::preview_existing_grid_mixed_batch(&copy.patched_json,&[edit]).map_err(|_|CodecError::Patch)?;
+   copy.patched_json.zeroize();copy=rotated;
+  }
+  working.zeroize();*working=std::mem::take(&mut copy.patched_json);
+ }
+ for (target,p) in remove{
+  if grid_identity_dependencies(working.as_bytes(),&target)?.blocking()>0{return Err(bad);}
+  let mut copy=ddv_save_patch::preview_player_house_remove(&working,&target,(p.1,p.2),DIR[p.3],&verified).map_err(|_|CodecError::Patch)?;
+  working.zeroize();*working=std::mem::take(&mut copy.patched_json);
+ }
+ let after:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+ if after["World"]["PlayerHouses"]!=root["World"]["PlayerHouses"]||after["Player"]!=root["Player"]{return Err(bad);}
+ Ok(std::mem::take(&mut *working))
+}
 fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String,CodecError>{
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
@@ -1847,9 +1923,9 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
  let mut layout_id=None::<String>;let mut world_mode=None::<bool>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
- let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();let mut landscapes=Vec::new();
+ let mut remove=Vec::new();let mut add=Vec::new();let mut networks=Vec::new();let mut landscapes=Vec::new();let mut houses=Vec::new();
  for row in rows{
-  let (row,network,landscape)=if decoration{let m=row.as_object().filter(|m|m.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"))).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?),m.get("landscape"))}else{(row,None,None)};
+  let (row,network,landscape,house)=if decoration{let m=row.as_object().filter(|m|m.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"|"houses"))).ok_or(bad)?;(m.get("furniture").ok_or(bad)?,Some(m.get("network").ok_or(bad)?),m.get("landscape"),m.get("houses"))}else{(row,None,None,None)};
   let o=row.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
   let witness=o.get("destination").ok_or(bad)?;
   let (layout,expected,world)=match island_scope(witness){Ok((s,n))=>(s,n,false),Err(_) if decoration=>{let (s,n)=world_grid_scope(witness)?;(s,n,true)},Err(e)=>return Err(e)};
@@ -1857,6 +1933,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   layout_id=Some(layout);world_mode=Some(world);expected_grids=expected;
   let d=resolve_plain_grid_destination(profile,witness)?;
   if !grids.insert(d.grid_id.clone()){return Err(bad);}
+  if let Some(h)=house{if !world||h.get("destination")!=Some(witness){return Err(bad);}house_layout_poses(&h["before"],&d)?;house_layout_poses(&h["after"],&d)?;houses.push(h.clone());}
   if let Some(l)=landscape{if l.get("destination")!=Some(witness){return Err(bad);}landscape_destination(profile,witness)?;landscape_poses(&l["before"],&d)?;landscape_poses(&l["after"],&d)?;if l["before"]!=l["after"]{landscapes.push(l.clone());}}
   if let Some(network)=network{
    let n=network.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
@@ -1878,11 +1955,11 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
    if a.get("destination")!=Some(witness){return Err(bad);}add.push(a.clone());
   }
  }
- if grids.len()!=expected_grids{return Err(bad);}
+ if grids.len()!=expected_grids||!houses.is_empty()&&houses.len()!=rows.len(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
  if full.iter().filter(|(_,g)|{let layout=g.get("GridDefaultLayoutPath").and_then(Value::as_str);if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}}).any(|(key,_)|!grids.contains(key)){return Err(bad);}
- if remove.is_empty()&&add.is_empty()&&networks.is_empty()&&landscapes.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
+ if remove.is_empty()&&add.is_empty()&&networks.is_empty()&&landscapes.is_empty()&&houses.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
@@ -1898,6 +1975,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
   let r=if decoration&&add.iter().any(|r|r.get("scene").is_some()){mixed_scene_bounded(working.as_bytes(),&Value::Array(add.clone()),MAX_AREA_FURNITURE_CHANGES)}else{plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(&add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)}?;
   working.zeroize();*working=r;
  }
+ if !houses.is_empty(){let next=player_house_layout_candidate(working.as_bytes(),&houses)?;working.zeroize();*working=next;}
  Ok(std::mem::take(&mut *working))
 }
 
