@@ -4,6 +4,8 @@ import argparse
 import copy
 import io
 import json
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from PIL import Image
@@ -103,11 +105,16 @@ def encode_one(source, png, meta, root, reusable=None):
     n = verify_bytes(sha, meta, raw)
     target = root/'images'/(sha+'.webp')
     # Independent source identities can resolve to the same encoded object. Never overwrite it.
+    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.tmp', delete=False) as f:
+        temp = Path(f.name)
+        f.write(raw)
     try:
-        with target.open('xb') as f:
-            f.write(raw)
-    except FileExistsError:
-        check(target.read_bytes() == raw, 'Existing encoded file differs')
+        try:
+            os.link(temp, target)
+        except FileExistsError:
+            check(target.read_bytes() == raw, 'Existing encoded file differs')
+    finally:
+        temp.unlink(missing_ok=True)
     row = {'sourceSha256':source,'sha256':sha,'bytes':n,'witness':meta,'reusedLocal':reused}
     write_json(receipt, row)
     return row
