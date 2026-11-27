@@ -20,24 +20,24 @@ type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientatio
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
-export function captureCutWitness(items:readonly MainlandSavedObject[]):CutWitness[]|null{
- if(!captureFurnitureGroup(items,true)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
- return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as Cardinal,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{})}));
+export function captureCutWitness(items:readonly MainlandSavedObject[],free=false):CutWitness[]|null{
+ if(!captureFurnitureGroup(items,true,free)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
+ return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{})}));
 }
-export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[]):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&cutEligible(p,!!r.supportFactor)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move')));
+export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[],free=false):boolean{
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],false,true):cutEligible(p,!!r.supportFactor)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust
  * re-resolves every source pose against the unchanged file before writing. */
-export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[]):boolean{
+export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[],free=false):boolean{
  if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
  if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
  if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope){
   const outdoor=['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'];
   if(!outdoor.includes(cut.scope)||!outdoor.includes(scope))return false;
  }
- if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects);
+ if(cut.scope===scope)return cutWitnessMatches(cut.rows,objects,free);
  return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));
 }
 /** Compare exact occupied cells after normalization to half-map-unit cells.
@@ -77,7 +77,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
  return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
- if(cut.length!==candidate.rows.length||free&&cut.some(r=>!r.roomSource||r.supportFactor)||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
+ if(cut.length!==candidate.rows.length||free&&cut.some(r=>r.supportFactor)||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
 }
