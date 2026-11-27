@@ -284,16 +284,25 @@ pub fn preview_room_resize_mode(source:&str,t:RoomFinishTarget,expected:&str,rep
 }
 /// The observed native upper-floor initial layout is one 3x3 center room,
 /// four walls, and the elevator on wall 2. This path appends only to the
-/// ordinary primary house, with the native 20-floor cap for this first route.
+/// ordinary primary house. The native 20-floor cap is retained by default;
+/// explicitly requested experimental copies may use the editor's 128 bound.
 pub fn primary_floor_count(root:&Value,house_index:usize,house_item_id:u32)->Option<usize>{
- if root["GameInfo"]["Version"].as_u64()!=Some(643)||house_item_id!=20500000{return None;}
+ if root["GameInfo"]["Version"].as_u64()!=Some(643)||house_item_id!=20500000||house_index!=0{return None;}
  let house=root["World"]["PlayerHouses"].as_array()?.get(house_index)?;
  if house["HouseItemID"].as_u64()!=Some(20500000)||house["InitialRoomGridLayoutPath"].as_str()!=Some(""){return None;}
  let floors=house["Floors"].as_array()?;
- if floors.is_empty()||floors.len()>=20||floors.iter().any(|f|f["Rooms"].as_object().is_none_or(|r|!r.contains_key("0")||r.len()>4||r.keys().any(|k|!matches!(k.as_str(),"0"|"1"|"2"|"3")))){return None;}
+ if floors.is_empty()||floors.len()>=128||floors.iter().any(|f|f["Rooms"].as_object().is_none_or(|r|!r.contains_key("0")||r.len()>4||r.keys().any(|k|!matches!(k.as_str(),"0"|"1"|"2"|"3")))){return None;}
  Some(floors.len())
 }
 pub fn preview_append_primary_floor(source:&str,house_index:usize,house_item_id:u32,expected_count:usize)->Result<GridCoordinateDraft,PatchError>{
+ preview_append_primary_floors(source,house_index,house_item_id,expected_count,1,false)
+}
+pub fn preview_append_primary_floors(source:&str,house_index:usize,house_item_id:u32,expected_count:usize,count:usize,extended:bool)->Result<GridCoordinateDraft,PatchError>{
+ // AddPlayerHouseFloor.ApplyThis 0x467830F rejects house indices >0;
+ // the elevator list loops over the saved floor count at 0x6902CD3..0x6902CDA.
+ // Above-native-limit copies are explicitly experimental, not runtime proven.
+ let target=expected_count.checked_add(count).filter(|n|*n<=128).ok_or(BAD)?;
+ if count==0||extended!=(target>20){return Err(BAD);}
  use crate::support_clone::{checked_grid_allocator,grid_capacity,reserved_ref};
  validate_json_without_edit(source)?;
  let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
@@ -301,16 +310,21 @@ pub fn preview_append_primary_floor(source:&str,house_index:usize,house_item_id:
  let shape=shapes()?.iter().find(|s|s.name=="3x3").filter(|s|available(s)).ok_or(BAD)?;
  let collection=root["World"]["GridCollection"].as_object().ok_or(BAD)?;
  let fresh=checked_grid_allocator(collection)?;
- let next=fresh.checked_add(5).ok_or(BAD)?;
- if !grid_capacity(collection["Grids"].as_object().ok_or(BAD)?,collection.get("DiffGrids").and_then(Value::as_object),5)||
+ let grid_count=count.checked_mul(5).ok_or(BAD)?;
+ let next=fresh.checked_add(u32::try_from(grid_count).map_err(|_|BAD)?).ok_or(BAD)?;
+ if !grid_capacity(collection["Grids"].as_object().ok_or(BAD)?,collection.get("DiffGrids").and_then(Value::as_object),grid_count)||
     reserved_ref(&root,&(fresh..next).collect(),false){return Err(BAD);}
- let mut members=serde_json::Map::new();
+ let mut members=serde_json::Map::new();let mut new_floors=Vec::new();
+ for fi in 0..count{
+ let start=fresh+5*fi as u32;
  for (i,path) in shape.paths.iter().enumerate(){
-  let id=fresh+i as u32;
+  let id=start+i as u32;
   let objects=if i==3{json!({"0":{"ID":0,"ItemID":40300002,"X":2,"Y":0,"Orientation":"GridOrientation_Down","State":null}})}else{json!({})};
   members.insert(id.to_string(),json!({"ID":id,"GridDataPath":path,"GridDefaultLayoutPath":"","TessellationFactor":2,"Objects":objects,"NextGridObjectID":if i==3{1}else{0}}));
  }
- let floor=json!({"Rooms":{"0":{"Name":"","FloorGridID":fresh,"WallGridIDs":{"0":fresh+1,"1":fresh+2,"2":fresh+3,"3":fresh+4},"RoomPrefabAddress":shape.prefab,"Flooring":160100000,"Wallpapers":{"0":160000000,"1":160000000,"2":160000000,"3":160000000},"WallpaperOffsetById":{},"Ceiling":160100136}},"BoughtRooms":{"0":{"GridDataPaths":[shape.paths[0]]}}});
+ let floor=json!({"Rooms":{"0":{"Name":"","FloorGridID":start,"WallGridIDs":{"0":start+1,"1":start+2,"2":start+3,"3":start+4},"RoomPrefabAddress":shape.prefab,"Flooring":160100000,"Wallpapers":{"0":160000000,"1":160000000,"2":160000000,"3":160000000},"WallpaperOffsetById":{},"Ceiling":160100136}},"BoughtRooms":{"0":{"GridDataPaths":[shape.paths[0]]}}});
+ new_floors.push(floor);
+ }
  let gp=vec![k("World"),k("GridCollection"),k("Grids")];
  let cp=vec![k("World"),k("GridCollection"),k("NextGridID")];
  let fp=vec![k("World"),k("PlayerHouses"),Segment::Index(house_index),k("Floors")];
@@ -323,14 +337,14 @@ pub fn preview_append_primary_floor(source:&str,house_index:usize,house_item_id:
  if source[cr.clone()].parse::<u32>().ok()!=Some(fresh){return Err(BAD);}
  let old_grids=collection["Grids"].as_object().ok_or(BAD)?;
  let grid_text=members.iter().map(|(k,v)|format!("{}:{}",serde_json::to_string(k).expect("string"),v)).collect::<Vec<_>>().join(",");
- let mut patches=[(gr.end-1..gr.end-1,format!("{}{}",if old_grids.is_empty(){""}else{","},grid_text)),(cr,next.to_string()),(fr.end-1..fr.end-1,format!(",{}",floor))];
+ let mut patches=[(gr.end-1..gr.end-1,format!("{}{}",if old_grids.is_empty(){""}else{","},grid_text)),(cr,next.to_string()),(fr.end-1..fr.end-1,format!(",{}",new_floors.iter().map(Value::to_string).collect::<Vec<_>>().join(",")))];
  patches.sort_unstable_by_key(|(r,_)|r.start);
  let mut result=String::new();let mut last=0;
  for (range,value) in patches{if range.start<last{return Err(BAD);}result.push_str(&source[last..range.start]);result.push_str(&value);last=range.end;}
  result.push_str(&source[last..]);
  root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?.extend(members);
  root["World"]["GridCollection"]["NextGridID"]=json!(next);
- root["World"]["PlayerHouses"][house_index]["Floors"].as_array_mut().ok_or(BAD)?.push(floor);
+ root["World"]["PlayerHouses"][house_index]["Floors"].as_array_mut().ok_or(BAD)?.extend(new_floors);
  if result.len()>MAX_PROFILE_BYTES||serde_json::from_str::<Value>(&result).map_err(|_|BAD)?!=root{return Err(BAD);}
  Ok(GridCoordinateDraft{patched_json:result,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
@@ -762,5 +776,21 @@ mod tests{
   assert!(preview_remove_primary_room_recover(&v.to_string(),t,true,2).is_err());
   v["World"]["GridCollection"]["Grids"]["95"]["Objects"]["1"]["State"]=json!({"Unknown":true});
   assert!(preview_remove_primary_room_recover(&v.to_string(),t,true,1).is_err());
+ }
+ #[test]fn append_multiple_floors_and_require_opt_in_above_native_max(){
+  let raw=json!({"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500000,"InitialRoomGridLayoutPath":"","Floors":[{"Rooms":{"0":{"Name":"Original","FloorGridID":10}}}]}],"GridCollection":{"NextGridID":30,"Grids":{"10":{"ID":10,"Unknown":7}}}},"Player":{"Currency":123}});
+  let first=preview_append_primary_floors(&raw.to_string(),0,20500000,1,19,false).unwrap().patched_json;
+  let v:Value=serde_json::from_str(&first).unwrap();
+  assert_eq!(v["World"]["PlayerHouses"][0]["Floors"].as_array().unwrap().len(),20);
+  assert_eq!(v["World"]["GridCollection"]["NextGridID"],125);
+  assert!(preview_append_primary_floor(&first,0,20500000,20).is_err());
+  let d=preview_append_primary_floors(&first,0,20500000,20,2,true).unwrap();
+  let v:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(v["World"]["PlayerHouses"][0]["Floors"].as_array().unwrap().len(),22);
+  assert_eq!(v["World"]["PlayerHouses"][0]["Floors"][21]["Rooms"]["0"]["FloorGridID"],130);
+  assert_eq!(v["World"]["GridCollection"]["NextGridID"],135);
+  assert_eq!(v["Player"],raw["Player"]);
+  assert!(preview_append_primary_floors(&first,0,20500000,20,109,true).is_err());
+  assert!(preview_append_primary_floors(&first,0,20500000,20,0,true).is_err());
  }
 }
