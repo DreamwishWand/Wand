@@ -1457,10 +1457,36 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  }
  Ok(std::mem::take(&mut *working))
 }
+/// An explicit exterior-only operation, not a generic Building placement.
+fn player_house_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+    let bad=CodecError::Json;
+    let o=plan.as_object().filter(|o|o.len()==8&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation"|"destination"|"x"|"y"))).ok_or(bad)?;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+    let item=o.get("itemId").ok_or(bad)?.as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==205)).ok_or(bad)?;
+    let ordinal=o.get("localOrdinal").ok_or(bad)?.as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+    let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+    let expected=(int("expectedX")?,int("expectedY")?);
+    let orientation=o.get("orientation").ok_or(bad)?.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    let witness=o.get("destination").ok_or(bad)?;
+    world_grid_scope(witness)?;
+    let dest=resolve_plain_grid_destination(profile,witness)?;
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0||scan.subgrid_parents.contains(&ordinal){return Err(bad);}
+    let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+    if target.kind!=GridObjectKind::Full||target.item_id!=item||target.grid_id!=dest.grid_id||*xy!=Some(expected){return Err(bad);}
+    let refs=grid_identity_dependencies(profile,target)?;
+    if refs.active>0||refs.related>0||refs.unknown>0{return Err(bad);}
+    let draft=ddv_save_patch::preview_player_house_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,target,expected,&dest,(int("x")?,int("y")?),orientation).map_err(|_|CodecError::Patch)?;
+    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+    Ok(draft.patched_json)
+}
+
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
+        if o.len()==1&&o.contains_key("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,o.get("playerHouseDuplicate").ok_or(CodecError::Json)?);}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
@@ -2074,6 +2100,24 @@ mod tests{
         stale["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"]=Value::from(2);
         stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":4}]);
         assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn player_house_exterior_duplicate_keeps_existing_interior_and_allocates_id(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{"Rooms":{"0":{"FloorGridID":90}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":20500001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":{"Level":1}}}}}},"90":{"ID":90,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","NextGridObjectID":1,"Objects":{}}}}}}"#;
+        let mut plan=serde_json::json!({"playerHouseDuplicate":{"localOrdinal":1,"itemId":"20500001","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down","destination":{"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":1,"sizeX":400,"sizeY":350},"x":10,"y":12}});
+        let original:Value=serde_json::from_slice(raw).unwrap();
+        let result=group_paste_candidate(raw,&plan.to_string()).unwrap();
+        let patched:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(original["World"]["PlayerHouses"],patched["World"]["PlayerHouses"]);
+        assert_eq!(original["World"]["GridCollection"]["Grids"]["90"],patched["World"]["GridCollection"]["Grids"]["90"]);
+        assert_eq!(patched["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(patched["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
+        assert!(result.contains("\"Marker\":1e2"));
+        let mut stale=original.clone();stale["World"]["PlayerHouses"][0]["HouseItemID"]=Value::from(20500002);
+        assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+        plan["playerHouseDuplicate"]["x"]=Value::from(400);
+        assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
     }
 
     fn project(input:&[u8])->Value{

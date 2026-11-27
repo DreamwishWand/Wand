@@ -34,3 +34,20 @@ test('free alignment permits restricted furniture but not structural dependencie
  assert.equal(alignmentTargets(map,[a,{...b,subgrid:{}}],'left',true),null);
  assert.equal(alignmentTargets(map,[a,{...b,itemId:'40100068',layer:'ground'}],'left',true),null);
 });
+
+import {playerHouseSourceEligible,playerHouseDuplicate} from '../src/lib/world/save-furniture-placement.ts';
+import {bindMainlandGrid} from '../src/lib/world/mainland-world-coordinates.ts';
+test('player house exterior duplication targets only the exact original native grid',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
+ assert.ok(g);
+ const r={sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)};
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}]};
+ const p={area:g.key,factor:g.factor,x:g.bounds.x+1,y:g.bounds.y+g.bounds.h-1,shape,object:{...o,itemId:'20500001',nativeType:'Building',layer:'other'}};
+ assert.equal(playerHouseSourceEligible(p),true);
+ const rasters=new Map([[g.key,r]]),x=g.bounds.x+5.1,y=g.bounds.y+g.bounds.h-6.1;
+ const q=playerHouseDuplicate([g],rasters,p,x,y);
+ assert.ok(q);assert.deepEqual([q.plan.x,q.plan.y],[5,6]);assert.equal(q.plan.itemId,'20500001');
+ assert.equal(playerHouseDuplicate([g],rasters,{...p,area:'Other'},x,y),null);
+ assert.equal(playerHouseDuplicate([g],rasters,{...p,object:{...p.object,subgrid:{}}},x,y),null);
+ assert.equal(playerHouseSourceEligible({...p,object:{...p.object,itemId:'20000001'}}),false);
+});

@@ -18,6 +18,19 @@ export function landscapePlacementEligible(g:DesignItemGeometry,free=false){retu
 export function landscapeSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
  return !!p?.shape&&landscapeId(Number(p.object.itemId))&&p.object.layer==='landscape'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&(free||p.object.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(p.object.editRestrictions,'select'));
 }
+export function playerHouseSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
+ return !!p?.shape&&p.object.nativeType==='Building'&&Math.floor(Number(p.object.itemId)/100000)===205&&!p.object.subgrid&&isCardinal(p.object.orientation);
+}
+/** Exterior-only, exact same Grid. The Rust writer verifies the native
+ * HouseData and matching existing interior before generating a copy. */
+export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
+ if(!playerHouseSourceEligible(p)||!p.shape)return null;
+ const hits=mainlandFreeHits(grids,rasters,wx,wy);
+ if(hits.length!==1||hits[0].key!==p.area||hits[0].factor!==p.factor||!bindMainlandGrid(hits[0]))return null;
+ const g=hits[0],x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
+ if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
+ return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape:p.shape,destination:witness(g),plan:{action:'duplicate',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x,y}};
+}
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
 export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidate|null{
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
