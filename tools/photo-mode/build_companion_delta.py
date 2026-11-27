@@ -12,8 +12,9 @@ import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"db-01-items"))
 from build_full_native_fields import frames, fields
 from prepare_release_preview import RELEASE_SHA, BODY_TYPES
+from prepare_companion_delta import DELTA_SHA
 
-def generate(base,itemlist,script,pets,avatars,clips,out,work):
+def generate(base,itemlist,script,pets,avatars,clips,out,work,previous=None):
     require(digest(base.read_bytes())==RELEASE_SHA,"wrong base release")
     targets={}
     for _,raw in frames(itemlist.read_bytes()):
@@ -31,9 +32,16 @@ def generate(base,itemlist,script,pets,avatars,clips,out,work):
     with zipfile.ZipFile(base) as archive:
         files={PurePosixPath(x.filename).name:x for x in archive.infolist() if not x.is_dir()}
         m=json.loads(archive.read(files["local-preview.json"]))
+        prior_items={}
+        if previous:
+            require(digest(previous.read_bytes())==DELTA_SHA,"wrong previous delta")
+            with zipfile.ZipFile(previous) as prev:
+                pm=json.loads(prev.read("companion-player-delta.json"))
+                require(pm["models"]==m["models"] and pm["baseReleaseSha256"]==RELEASE_SHA,"previous base mismatch")
+                prior_items=pm["items"]
         items={};requested={s:set() for s in BODY_TYPES};assets={};converted={}
         for item,guid in targets.items():
-            if item in m["items"] or guid not in prefabs:continue
+            if item in m["items"] or item in prior_items or guid not in prefabs:continue
             poses=[c["pose"] for c in prefabs[guid]["poseComponents"] if c["enabled"] and c["pose"]
                    and all(c["pose"]["clipGuids"].get(s) for s in BODY_TYPES)]
             if len(poses)!=1:continue
@@ -67,6 +75,8 @@ def generate(base,itemlist,script,pets,avatars,clips,out,work):
     report={"schema":"wand.photo-mode.companion-player-delta@1","gameVersion":m["gameVersion"],
             "baseReleaseSha256":RELEASE_SHA,"models":m["models"],
             "items":{i:{b:converted[b][g] for b,g in row.items()} for i,row in items.items()}}
+    if previous:
+        report.update(schema="wand.photo-mode.companion-player-expansion@1",baseCompanionDeltaSha256=DELTA_SHA)
     with zipfile.ZipFile(out,"x",compression=zipfile.ZIP_DEFLATED,compresslevel=6) as archive:
         archive.writestr("companion-player-delta.json",json.dumps(report,separators=(",",":")))
         for name,raw in sorted(assets.items()):archive.writestr(name,raw)
@@ -76,9 +86,10 @@ if __name__=="__main__":
     p=argparse.ArgumentParser(description=__doc__)
     for k in ("base","itemlist","script","male-avatar","female-avatar","male-clips","female-clips","out","work"):
         p.add_argument("--"+k,type=Path,required=True)
+    p.add_argument("--previous-delta",type=Path)
     p.add_argument("--pet",type=Path,action="append",required=True)
     a=p.parse_args();out=a.out.resolve();work=a.work.resolve()
     require(not any((x/".git").exists() for q in (out,work) for x in (q,*q.parents)),"private work directory required")
     work.mkdir(parents=True,exist_ok=True)
     generate(a.base,a.itemlist,a.script,a.pet,{"male":a.male_avatar,"female":a.female_avatar},
-             {"male":a.male_clips,"female":a.female_clips},out,work)
+             {"male":a.male_clips,"female":a.female_clips},out,work,a.previous_delta)
