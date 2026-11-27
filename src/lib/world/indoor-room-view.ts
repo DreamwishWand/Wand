@@ -462,7 +462,7 @@ export function rotateIndoorCut(clip:readonly DesignClipItem[],factor:1|2|null,s
  if(!factor)return null;
  const defs=new Map<number,Map<number,DesignItemGeometry>>();
  for(const p of clip){
-  const g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].flatMap(code=>{const key=p.itemId+':'+code;return shapes[key]?[[key,shapes[key]]]:[];}))};
+  const g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries((factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).flatMap(code=>{const key=p.itemId+':'+code;return shapes[key]?[[key,shapes[key]]]:[];}))};
   defs.set(p.itemId,new Map([[factor,g]]));
  }
  return rotateFurnitureGroup(clip,defs,delta);
