@@ -140,7 +140,8 @@ def collect_release(root,version,source_sha=None,overlay_sha=None):
     check(result[0]==overlay_sha,"Future overlay manifest changed")
     return result
 
-def resume(root,out,*,version="1.26.2",source_sha=None,overlay_sha=None):
+def resume(root,out,*,version="1.26.2",source_sha=None,overlay_sha=None,published=None):
+    published=published or {}
     """Reconstruct publication inputs from the completed index and pinned originals.
     No image decoding or encoding. Pending uploads are SHA-checked before PUT.
     """
@@ -159,8 +160,10 @@ def resume(root,out,*,version="1.26.2",source_sha=None,overlay_sha=None):
         if kind!="original":
             continue
         m=meta(sha,size,w,h)
-        p=ensure_inside(root,rel)
-        check(p.stat().st_size==size,"Original size changed")
+        p=(root/rel).resolve()
+        check(p.is_relative_to(root.resolve()),'Unsafe original path')
+        if p.is_file():check(p.stat().st_size==size,'Original size changed')
+        else:check(published.get(key(sha))==size,'Missing original without CDN ledger')
         check(sha not in originals or originals[sha]==m,"Conflicting original metadata")
         originals[sha]=m
         paths.setdefault(key(sha),p)
@@ -179,7 +182,9 @@ def resume(root,out,*,version="1.26.2",source_sha=None,overlay_sha=None):
             check(objects[k]==t,"Conflicting image metadata")
         else:
             p=(out/k).resolve()
-            check(p.is_relative_to(out.resolve()) and p.is_file() and p.stat().st_size==t["bytes"],"Missing or changed thumbnail: "+k)
+            check(p.is_relative_to(out.resolve()),'Unsafe thumbnail path')
+            if p.is_file():check(p.stat().st_size==t['bytes'],'Thumbnail size changed')
+            else:check(published.get(k)==t['bytes'],'Missing thumbnail without CDN ledger: '+k)
             objects[k]=t
             paths[k]=p
     items={}
@@ -236,11 +241,11 @@ def pending_breakdown(pending,original_keys,public):
             "legacyNameSizeMatches":len(legacy),
             "legacyNameSizeMatchBytes":sum(v["bytes"] for v in legacy.values())}
 
-def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None,review_over_budget=False,prior_receipt=None):
+def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connection=None,review_over_budget=False,prior_receipt=None,published=None):
     from botocore.exceptions import ClientError
     s3,canonical,pages,public=connection if connection is not None else connect_and_census()
     # Existing trusted receipt is optional; reuse only when current LIST size agrees.
-    trusted={}
+    trusted={k:v for k,v in (published or {}).items() if k in objects and v==objects[k]['bytes'] and canonical.get(k)==v}
     receipt_paths=[root.parent/"src04-flat-inventory.json",root/"src04-flat-inventory.json",out/"item-256-publication-receipt.json"]
     if prior_receipt is not None:
         check(prior_receipt.is_file(),"Missing prior publication receipt")
@@ -267,6 +272,7 @@ def publish_delta(root,out,objects,paths,summary,max_uploads,max_bytes,connectio
                 needs_head[k]=v
         else:
             pending[k]=v
+    check(all(paths[k].is_file() for k in pending),'Missing local bytes for R2 objects requiring upload; recover before any writes')
     new_bytes=sum(v["bytes"] for v in pending.values())
     ix=json.loads((out/"item-256-index-candidate.json").read_bytes())
     original_keys={key(pair[0]) for pair in ix["items"].values()}
@@ -333,7 +339,10 @@ def main():
     p.add_argument("--source-items-sha",help="Source SHA-256 from reviewed build report")
     p.add_argument("--overlay-sha",help="Private overlay SHA-256 from reviewed build report")
     p.add_argument("--prior-receipt",type=Path,help="Prior verified public Item image receipt")
+    p.add_argument('--cdn-ledger',type=Path)
     a=p.parse_args()
+    from item_cdn_ledger import ledger_objects
+    published=ledger_objects(json.loads(a.cdn_ledger.read_bytes())) if a.cdn_ledger else {}
     check(a.version=="1.26.2" or (a.resume and not a.review_over_budget),"Future release uses completed 256px build and explicit bounded upload")
     check(a.version!="1.26.2" or not (a.source_items_sha or a.overlay_sha),"Baseline source pins are fixed")
     check(a.max_new_uploads>=0 and a.max_new_bytes>=0,"Invalid publication budget")
@@ -342,9 +351,9 @@ def main():
     out=root/"item-thumbnails-256"
     out.mkdir(exist_ok=True)
     connection=connect_and_census() if a.r2 else None
-    objects,paths,summary=resume(root,out,version=a.version,source_sha=a.source_items_sha,overlay_sha=a.overlay_sha) if a.resume else prepare(root,out)
+    objects,paths,summary=resume(root,out,version=a.version,source_sha=a.source_items_sha,overlay_sha=a.overlay_sha,published=published) if a.resume else prepare(root,out)
     if a.r2:
-        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection,a.review_over_budget,prior_receipt=a.prior_receipt)
+        publish_delta(root,out,objects,paths,summary,a.max_new_uploads,a.max_new_bytes,connection,a.review_over_budget,prior_receipt=a.prior_receipt,published=published)
 
 if __name__=="__main__":
     main()
