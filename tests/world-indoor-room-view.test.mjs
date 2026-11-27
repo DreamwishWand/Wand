@@ -357,3 +357,14 @@ test('free room alignment and spacing retain diagonal orientations and permit st
  assert.equal(indoorAlign(full,shapes,allowed,[0,3],'left',true),null);
  assert.equal(indoorAlign(full,shapes,allowed,[0,1],'left'),null);
 });
+
+test('free symmetry duplicate accepts native diagonal mirror and overlap but rejects missing footprint and state',async()=>{
+ const {indoorSymmetricDuplicate}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000002,x:4,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:10':shape,'40000001:6':shape,'40000001:2':shape},allowed=new Set([40000001]),stock=new Map([[40000001,2]]);
+ assert.deepEqual(indoorSymmetricDuplicate(full,shapes,allowed,stock,[0],{mode:'vertical',x2:6,y2:0},new Map(),true),[{itemId:40000001,x:4,y:1,orientation:'GridOrientation_DownRight',expectedStock:2}]);
+ assert.deepEqual(indoorSymmetricDuplicate(full,shapes,allowed,stock,[0],{mode:'point',x2:6,y2:6},new Map(),true),[{itemId:40000001,x:4,y:4,orientation:'GridOrientation_UpRight',expectedStock:2}]);
+ assert.equal(indoorSymmetricDuplicate(full,{'40000001:10':shape},allowed,stock,[0],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
+ assert.equal(indoorSymmetricDuplicate(full,shapes,allowed,stock,[1],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
+});
