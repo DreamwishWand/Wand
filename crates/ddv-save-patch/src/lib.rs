@@ -1779,7 +1779,7 @@ fn outdoor_to_indoor_transfer_mode(source:&str,target:&GridCoordinateTarget,expe
  let g=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
  let layout=g.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
  let data=g.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
- if !saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))||
+ if !(if free{house_exterior_world(layout,data).is_some()}else{saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))})||
     g.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
     grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
      return Err(PatchError::InvalidTarget);
