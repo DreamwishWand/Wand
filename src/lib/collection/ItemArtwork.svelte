@@ -2,12 +2,17 @@
   import { base } from '$app/paths';
   import { gameImageHref } from './game-images';
   import {itemMedia} from '$lib/media/item-media.ts';
-  import {onDestroy} from 'svelte';
+  import {onMount,onDestroy} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   export let itemId:number;
   export let alt:string='';
   export let large:boolean=false;
   export let sourcePath:string|null=null;
+  /** Current-release-only callers must not substitute a historical icon. */
+  export let allowHistoricalFallback=true;
+  let host:HTMLSpanElement;
+  let active=false;
+  let observer:IntersectionObserver|null=null;
   let failed=false;
   let currentMedia:string|null=null;
   let resolving=true;
@@ -21,16 +26,24 @@
     }catch{/* retained historical fallback if the published lookup is unavailable */}
     finally{if(ticket===request)resolving=false;}
   }
-  $: void resolveMedia(itemId,large);
-  onDestroy(()=>{ticket++;});
-  $: fallbackHref=gameImageHref(base,itemId,sourcePath ?? '');
+  $: if(active)void resolveMedia(itemId,large);
+  onMount(()=>{
+    if(typeof IntersectionObserver!=='function'){active=true;return;}
+    observer=new IntersectionObserver(entries=>{
+      if(!entries.some(entry=>entry.isIntersecting))return;
+      active=true;observer?.disconnect();observer=null;
+    },{rootMargin:'160px'});
+    observer.observe(host);
+  });
+  onDestroy(()=>{ticket++;observer?.disconnect();});
+  $: fallbackHref=allowHistoricalFallback?gameImageHref(base,itemId,sourcePath ?? ''):null;
   // Do not request legacy thumbnails while the shared CDN lookup is in flight.
   $: href=resolving?null:(currentMedia??fallbackHref);
   $: if (href) failed=false;
 </script>
-<span class="artwork" class:large>
+<span bind:this={host} class="artwork" class:large data-media-state={!active?'deferred':resolving?'loading':href&&!failed?'available':'unavailable'}>
   {#if href && !failed}
-    <img src={href} alt={alt} loading="lazy" decoding="async" on:error={()=>{if(currentMedia&&fallbackHref&&currentMedia!==fallbackHref)currentMedia=null;else failed=true;}} />
+    <img src={href} alt={alt} loading="lazy" decoding="async" referrerpolicy="no-referrer" on:error={()=>{if(currentMedia&&fallbackHref&&currentMedia!==fallbackHref)currentMedia=null;else failed=true;}} />
   {:else}
     <span class="fallback" aria-hidden="true"><WandIcon name="sparkles" size={large?50:20} strokeWidth={1.45}/></span>
   {/if}
