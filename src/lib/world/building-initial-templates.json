@@ -87,5 +87,63 @@
       "skinItemId": 0,
       "withoutUpgrade": []
     }
+  },
+  "otherBuildings": {
+    "Village04": {
+      "20000036": {
+        "kind": "house",
+        "upgradeLevel": null
+      },
+      "20000037": {
+        "kind": "house",
+        "upgradeLevel": null
+      },
+      "20000051": {
+        "kind": "house",
+        "upgradeLevel": null
+      },
+      "20000072": {
+        "kind": "house",
+        "upgradeLevel": null
+      }
+    },
+    "VillageExpansion01": {
+      "20000011": {
+        "kind": "house",
+        "upgradeLevel": 0
+      },
+      "20000044": {
+        "kind": "house",
+        "upgradeLevel": 0
+      },
+      "20000077": {
+        "kind": "house",
+        "upgradeLevel": null
+      }
+    },
+    "VillageExpansion04": {
+      "20100093": {
+        "kind": "stall",
+        "upgradeLevel": 0
+      },
+      "20100094": {
+        "kind": "stall",
+        "upgradeLevel": 0
+      },
+      "20100095": {
+        "kind": "stall",
+        "upgradeLevel": 0
+      }
+    },
+    "VillageWinnieDLC": {
+      "20000114": {
+        "kind": "house",
+        "upgradeLevel": null
+      },
+      "20000115": {
+        "kind": "house",
+        "upgradeLevel": null
+      }
+    }
   }
 }

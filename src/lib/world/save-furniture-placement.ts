@@ -68,8 +68,9 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 export function initialBuildingEligible(id:number,grid:MainlandGrid):boolean{
- const ids=(initialTemplates.scopes as Record<string,readonly number[]>)[sourceWorldScope(grid)];
- return !!bindMainlandGrid(grid)&&!!ids?.includes(id);
+ const scope=sourceWorldScope(grid),ids=(initialTemplates.scopes as Record<string,readonly number[]>)[scope];
+ const others=(initialTemplates.otherBuildings as Record<string,Record<string,unknown>>)[scope];
+ return !!bindMainlandGrid(grid)&&(!!ids?.includes(id)||!!others&&Object.hasOwn(others,String(id)));
 }
 export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number):StockCandidate|null{
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;

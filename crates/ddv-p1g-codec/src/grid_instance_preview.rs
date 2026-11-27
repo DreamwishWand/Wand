@@ -1717,7 +1717,9 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     if root["GameInfo"]["Version"].as_u64()!=templates["saveVersion"].as_u64()||templates["saveVersion"].as_u64()!=Some(643){return Err(bad);}
     let item=o["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s)).ok_or(bad)?;
     let witness=&o["destination"];let (scope,_)=world_grid_scope(witness)?;
-    if !templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){return Err(bad);}
+    let well=templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item)));
+    let other=templates["otherBuildings"][&scope].get(item.to_string());
+    if !well&&other.is_none(){return Err(bad);}
     let d=resolve_plain_grid_destination(profile,witness)?;
     if player_house_grid_scope(&root,&d.grid_id)?!=scope||building_transform_grid_size(&root,&d.grid_id)?!=(u64::from(d.size.0)*u64::from(d.tessellation),u64::from(d.size.1)*u64::from(d.tessellation)){return Err(bad);}
     let collection=&root["World"]["GridCollection"];
@@ -1728,10 +1730,20 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.values().any(|g|g["GridDefaultLayoutPath"].as_str().and_then(|p|p.split('/').nth(1))==Some(scope.as_str())))){return Err(bad);}
     let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
-    let template=templates["scopeTemplates"].get(&scope).unwrap_or(&templates["template"]);
-    let level=if template.get("withoutUpgrade").and_then(Value::as_array).is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){None}else{Some(template["upgradeLevel"].as_u64().ok_or(bad)?)};
-    let skin=template["skinItemId"].as_u64().ok_or(bad)?;
-    let draft=ddv_save_patch::preview_checked_building_initial(std::str::from_utf8(profile).map_err(|_|bad)?,&d,item,(int("x")?,int("y")?),orientation,level,skin).map_err(|_|CodecError::Patch)?;
+    use ddv_save_patch::InitialBuildingState;
+    let initial=if well{
+        let template=templates["scopeTemplates"].get(&scope).unwrap_or(&templates["template"]);
+        let level=if template.get("withoutUpgrade").and_then(Value::as_array).is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){None}else{Some(template["upgradeLevel"].as_u64().ok_or(bad)?)};
+        InitialBuildingState::Well{level,skin:template["skinItemId"].as_u64().ok_or(bad)?}
+    }else{
+        let t=other.ok_or(bad)?;
+        match t["kind"].as_str(){
+            Some("house") if item/100_000==200=>InitialBuildingState::House{level:match t.get("upgradeLevel"){Some(Value::Null)=>None,Some(v) if v.as_u64()==Some(0)=>Some(0),_=>return Err(bad)}},
+            Some("stall") if item/100_000==201&&t["upgradeLevel"].as_u64()==Some(0)=>InitialBuildingState::UnbuiltStall,
+            _=>return Err(bad),
+        }
+    };
+    let draft=ddv_save_patch::preview_checked_building_initial(std::str::from_utf8(profile).map_err(|_|bad)?,&d,item,(int("x")?,int("y")?),orientation,initial).map_err(|_|CodecError::Patch)?;
     if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
     Ok(draft.patched_json)
 }
@@ -2573,6 +2585,30 @@ mod tests{
         let mut standard=add;standard.as_object_mut().unwrap().remove("freePlacement");
         assert!(building_layout_candidate_scoped(raw.to_string().as_bytes(),&[standard],false).is_err());
     }
+    #[test]
+    fn initial_house_and_stall_templates_preserve_original_state_families(){
+        let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).unwrap();
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let mut count=0;
+        for (scope,items) in templates["otherBuildings"].as_object().unwrap(){
+            let d=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"].as_str()==Some(scope.as_str())).unwrap()["grids"].as_array().unwrap().iter().find(|g|g["gridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Villages/"))).unwrap();
+            for (item,t) in items.as_object().unwrap(){
+                let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":d["layoutId"],"GridDataPath":d["gridDataPath"],"TessellationFactor":d["factor"],"NextGridObjectID":5,"Objects":{}}}}}});
+                let plan=serde_json::json!({"buildingInitial":{"itemId":item,"destination":{"layoutId":d["layoutId"],"gridDataPath":d["gridDataPath"],"factor":d["factor"],"sizeX":d["sizeX"],"sizeY":d["sizeY"]},"x":1,"y":1,"orientation":"GridOrientation_Down"}});
+                let output=group_paste_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+                let v:Value=serde_json::from_str(&output).unwrap();
+                let g=&v["World"]["GridCollection"]["Grids"]["42"];
+                let upgrade=if t["upgradeLevel"].is_null(){Value::Null}else{serde_json::json!({"Level":0})};
+                let expected=if t["kind"]=="house"{serde_json::json!({"HouseData":{"Built":true,"UpgradeState":upgrade,"PlayerHouseIndex":0}})}else{serde_json::json!({"StallData":{"UpgradeState":upgrade,"ShopData":null,"CurrentSkinItemID":0}})};
+                assert_eq!(g["Objects"]["5"]["State"],expected);
+                assert_eq!(g["NextGridObjectID"],6);assert_eq!(v["Player"],raw["Player"]);
+                assert!(group_paste_candidate(output.as_bytes(),&plan.to_string()).is_err());
+                count+=1;
+            }
+        }
+        assert_eq!(count,12);
+    }
+
     #[test]
     fn initial_wells_cover_six_original_worlds_and_distinct_native_states(){
         let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).unwrap();
