@@ -11,9 +11,9 @@
  import {commitWorldCheckpoint} from '../ui/local-save-session';
  import {indoorBackupRooms,serializeIndoorBackup,parseIndoorBackup,buildIndoorRestore,INDOOR_BACKUP_LIMIT,indoorBackupWords,type IndoorBackupScope,type IndoorBackupRoom,type IndoorRestoreInput} from './indoor-decoration-backup.ts';
  import {currentDesign} from './design-layout.ts';
- import {roomDesignValid} from './room-design.ts';
+ import {indoorFreeFloor} from './indoor-room-view.ts';
  import type {RoomApplySurfaceGeometry} from './room-project-apply.ts';
- import {captureRoomTemplate,captureRoomRows,captureRoomSurface,capturedRoomDocument,roomCaptureWords} from './room-project-capture.ts';
+ import {captureRoomTemplate,captureRoomRows,captureRoomSurface,capturedRoomDocument,roomBackupSurfaceValid,roomCaptureWords} from './room-project-capture.ts';
  import {captureSupportScene,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
  import {designAttachments} from './design-support-attachment.ts';
@@ -24,6 +24,7 @@
  import type {DesignItemGeometry} from './design-layout.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File,room:IndoorRoom,witnesses:readonly IndoorSupportWitness[],worker:Worker,locale:WandLanguage,nextRequest:()=>number,blocked=false;
+ export let freePlacement=false;
  export let rooms:readonly IndoorRoom[]=[],stock:ReadonlyMap<number,number>=new Map(),owned:readonly number[]=[];
  let scope:IndoorBackupScope='room',input:HTMLInputElement,review:ReturnType<typeof buildIndoorRestore>=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,writer:Worker|null=null;
  $: bw=indoorBackupWords[locale];
@@ -35,7 +36,8 @@
  $: w=roomCaptureWords[locale];
  $: if(worker!==seen)subscribe(worker);
  $: if(file!==lastFile||room!==lastRoom){lastFile=file;lastRoom=room;reset();}
- let lastFile=file,lastRoom=room;
+ let lastFile=file,lastRoom=room,lastFree=freePlacement;
+ $: if(freePlacement!==lastFree){lastFree=freePlacement;epoch++;busy=false;reset();}
  function subscribe(next:Worker){seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('worker changed'));requests.clear();seen=next;seen.addEventListener('message',receive);}
  function receive(e:MessageEvent){const d=e.data,p=requests.get(d?.requestId);if(!p)return;requests.delete(d.requestId);if(d.kind==='error')p.reject(Error('worker'));else p.resolve(d);}
  function request(own:Worker,data:Record<string,unknown>):Promise<any>{if(!alive||own!==worker)return Promise.reject(Error('worker'));return new Promise((resolve,reject)=>{const id=nextRequest();requests.set(id,{resolve,reject});try{own.postMessage({...data,requestId:id});}catch{requests.delete(id);reject(Error('request'));}});}
@@ -51,7 +53,7 @@
   });
  }
  onDestroy(()=>{alive=false;epoch++;seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('closed'));requests.clear();reader?.terminate();reader=null;rejectRead?.(Error('closed'));rejectRead=null;writer?.terminate();if(copy)URL.revokeObjectURL(copy.url);});
- async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>):Promise<IndoorBackupRoom>{
+ async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>,backup=false):Promise<IndoorBackupRoom>{
   if(!target.surfaces.length||target.surfaces.length>9)throw Error('surfaces');
   const out:RoomProjectSurface[]=[];
    for(const face of target.surfaces){
@@ -60,23 +62,30 @@
     for(let i=0;i<supportParents.length;i+=16){const batch=await readSupports(source,supportParents.slice(i,i+16));if(!valid())throw Error('changed');for(const [id,scene] of batch)scenes.set(id,scene);}
     const rows=captureRoomRows(target,face,template,supportParents,scenes);if(!rows)throw Error('poses');
     const itemIds=[...new Set(rows.map(p=>p.itemId))],defs=new Map<number,DesignItemGeometry>();
-    if(itemIds.length){const d=await request(own,{command:'design-shapes',key:template.grid.key,itemIds,supportAttachments:designAttachments(rows)});if(!valid()||d.kind!=='design-shapes'||d.key!==template.grid.key||!Array.isArray(d.result)||d.result.length!==itemIds.length)throw Error('geometry');for(const g of d.result as DesignItemGeometry[])defs.set(g.itemId,g);}
+    if(itemIds.length){const d=await request(own,{command:'design-shapes',key:template.grid.key,itemIds,roomBackup:backup&&indoorFreeFloor(face),supportAttachments:designAttachments(rows)});if(!valid()||d.kind!=='design-shapes'||d.key!==template.grid.key||!Array.isArray(d.result)||d.result.length!==itemIds.length)throw Error('geometry');for(const g of d.result as DesignItemGeometry[])defs.set(g.itemId,g);}
     if(face.finish&&!finishIds.has(face.kind)){const d=await request(own,{command:'room-finish-catalog',kind:face.kind,locale});if(!valid()||d.kind!=='room-finish-catalog'||d.surface!==face.kind||!Array.isArray(d.items))throw Error('finish');finishIds.set(face.kind,new Set(d.items.map((p:{itemId:number})=>p.itemId)));}
-    const captured=captureRoomSurface(face,template,rows,defs,finishIds.get(face.kind)??new Set());if(!captured)throw Error('validation');out.push(captured);
+    const native=backup&&indoorFreeFloor(face)?await nativeGeometry(face,itemIds,own,valid,defs,true):undefined;
+    const captured=captureRoomSurface(face,template,rows,defs,finishIds.get(face.kind)??new Set(),native);if(!captured)throw Error('validation');out.push(captured);
    }
 
-  if(!capturedRoomDocument(target,out,templates))throw Error('room');
+  if(!capturedRoomDocument(target,out,templates,backup))throw Error('room');
   return {room:target,surfaces:out};
  }
+ async function nativeGeometry(face:IndoorRoom['surfaces'][number],ids:readonly number[],own:Worker,valid:()=>boolean,design:ReadonlyMap<number,DesignItemGeometry>,free=false):Promise<RoomApplySurfaceGeometry>{
+  const items=ids.flatMap(itemId=>(free&&face.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).map(orientationCode=>({itemId,orientationCode})));
+  let shapes={},allowed=new Set<number>(),freeAllowed=new Set<number>();
+  if(items.length){if(items.length>5000)throw Error('native geometry limit');const d=await request(own,{command:'indoor-shapes',factor:face.factor,items});if(!valid()||d.kind!=='indoor-shapes'||!d.shapes||!Array.isArray(d.removable))throw Error('native geometry');shapes=d.shapes;allowed=new Set(d.removable);freeAllowed=new Set(Array.isArray(d.freeEligible)?d.freeEligible:[]);}
+  return {design,shapes,allowed,freeAllowed};
+ }
  async function run(mode:'design'|'backup'|'restore',chosen?:File){
-  if(busy||blocked||mode==='restore'&&!testExport)return;reset();busy=true;const token=++epoch,source=file,target=room,own=worker,selectedScope=scope,group=mode==='design'?[target]:[...targets],baselineRooms=rooms,baselineStock=stock;
-  const valid=()=>alive&&epoch===token&&file===source&&room===target&&worker===own&&rooms===baselineRooms&&stock===baselineStock&&scope===selectedScope&&!blocked;
+  if(busy||blocked||mode==='restore'&&!testExport)return;reset();busy=true;const token=++epoch,source=file,target=room,own=worker,selectedScope=scope,group=mode==='design'?[target]:[...targets],baselineRooms=rooms,baselineStock=stock,selectedFree=freePlacement;
+  const valid=()=>alive&&epoch===token&&file===source&&room===target&&worker===own&&rooms===baselineRooms&&stock===baselineStock&&scope===selectedScope&&freePlacement===selectedFree&&!blocked;
   try{
    if(!group.length)throw Error('scope');
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
    const incomingRaw=mode==='restore'&&chosen?await readPresetText(chosen,INDOOR_BACKUP_LIMIT):null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw)void rememberPreset(chosen,incomingRaw).catch(()=>{});
-   for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds));
+   for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds,mode!=='design'));
    if(!valid())throw Error('changed');
    if(mode==='restore'){
     if(!incoming)throw Error('file');
@@ -85,16 +94,16 @@
      const geometry=new Map<number,RoomApplySurfaceGeometry>(),after=incoming[i].surfaces;
      for(const [j,s] of after.entries()){
       const face=entry.room.surfaces[j],rows=currentDesign(s.timeline),ids=[...new Set(rows.map(p=>p.itemId))],design=new Map<number,DesignItemGeometry>();
-      if(ids.length){const d=await request(own,{command:'design-shapes',key:s.template.grid.key,itemIds:ids,supportAttachments:designAttachments(rows)});if(!valid()||d.kind!=='design-shapes'||d.key!==s.template.grid.key||!Array.isArray(d.result)||d.result.length!==ids.length)throw Error('geometry');for(const g of d.result as DesignItemGeometry[])design.set(g.itemId,g);}
-      if(!roomDesignValid(s.timeline,s.template.grid,s.template.raster,design))throw Error('terrain');
+      if(ids.length){const d=await request(own,{command:'design-shapes',key:s.template.grid.key,itemIds:ids,roomBackup:selectedFree&&indoorFreeFloor(face),supportAttachments:designAttachments(rows)});if(!valid()||d.kind!=='design-shapes'||d.key!==s.template.grid.key||!Array.isArray(d.result)||d.result.length!==ids.length)throw Error('geometry');for(const g of d.result as DesignItemGeometry[])design.set(g.itemId,g);}
+      
       if(s.finish&&!finishIds.get(face.kind)?.has(s.finish)){const d=await request(own,{command:'room-finish-catalog',kind:face.kind,locale});if(!valid()||d.kind!=='room-finish-catalog'||d.surface!==face.kind||!Array.isArray(d.items)||!d.items.some((p:{itemId:number})=>p.itemId===s.finish))throw Error('finish');finishIds.set(face.kind,new Set(d.items.map((p:{itemId:number})=>p.itemId)));}
-      const nativeIds=[...new Set([...ids,...face.positions.map(p=>p.itemId)])],items=nativeIds.flatMap(itemId=>[0,4,8,12].map(orientationCode=>({itemId,orientationCode})));
-      let shapes={},allowed=new Set<number>();if(items.length){if(items.length>5000)throw Error('limit');const d=await request(own,{command:'indoor-shapes',factor:face.factor,items});if(!valid()||d.kind!=='indoor-shapes'||!d.shapes||!Array.isArray(d.removable))throw Error('native geometry');shapes=d.shapes;allowed=new Set(d.removable);}
-      geometry.set(face.ordinal,{design,shapes,allowed});
+      const nativeIds=[...new Set([...ids,...face.positions.map(p=>p.itemId)])],g=await nativeGeometry(face,nativeIds,own,valid,design,selectedFree&&indoorFreeFloor(face));
+      if(!roomBackupSurfaceValid(face,s,g,selectedFree))throw Error('terrain');
+      geometry.set(face.ordinal,g);
      }
      inputs.push({room:entry.room,before:entry.surfaces,after,geometry});
     }
-    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned));if(!review)throw Error('plan');return;
+    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');return;
    }
    const raw=mode==='design'?capturedRoomDocument(target,entries[0].surfaces,templates):serializeIndoorBackup(selectedScope,entries,templates);if(!valid()||!raw)throw Error('document');
    savePresetFile(raw,mode==='design'?'wand-room-design.json':'wand-indoor-'+selectedScope+'-backup.json');
