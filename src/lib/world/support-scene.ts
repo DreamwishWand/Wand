@@ -144,9 +144,11 @@ export function mixedPlacementCounts(q:MixedScenePlacement){
 }
 /** Validate both halves together, preserving each root's independent tree.
  * Existing objects are never assumed to contain matching descendants. */
-export function mixedScenePlacement(clip:readonly DesignClipItem[],doc:MixedScenePreset,point:{x:number;y:number},axis:WorldSymmetryAxis|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number):MixedScenePlacement|null{
+export function mixedScenePlacement(clip:readonly DesignClipItem[],doc:MixedScenePreset,point:{x:number;y:number},axis:WorldSymmetryAxis|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,free=false):MixedScenePlacement|null{
  if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId))return null;
- const base=groupPasteCandidate(clip,grids,rasters,defs,mixedSceneCounts(doc.items),objects,omitted,point.x,point.y);
+ if(free&&(axis||clip.some(p=>!Number.isInteger(p.orientation))))return null;
+ const verifiedSupport=new Set(doc.items.filter(p=>p.support&&doc.items.every(q=>q.itemId!==p.itemId||!!q.support)).map(p=>p.itemId));
+ const base=groupPasteCandidate(clip,grids,rasters,defs,mixedSceneCounts(doc.items),objects,omitted,point.x,point.y,free,verifiedSupport);
  if(!base)return null;
  const sources=base.rows.map((r,i)=>({...r,...(doc.items[i].support?{scene:doc.items[i].support!}:{})}));
  if(!axis)return {...base,supportRows:sources};

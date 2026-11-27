@@ -1891,6 +1891,15 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
         if o.len()==1{if let Some(p)=o.get("buildingInitial"){return building_initial_candidate(profile,p);}if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
+        if rows.iter().any(|r|r.get("scene").is_some()){
+            let mut rows=rows.clone();
+            for row in &mut rows{
+                let o=row.as_object_mut().ok_or(CodecError::Json)?;
+                if o.contains_key("freePlacement"){return Err(CodecError::Json);}
+                o.insert("freePlacement".into(),Value::Bool(true));
+            }
+            return mixed_scene_candidate(profile,&Value::Array(rows));
+        }
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
     }
     if let Some(rows)=value.as_array().filter(|rows|rows.iter().any(|r|r.get("network").is_some())){return area_scene_candidate(profile,rows);}
@@ -1920,7 +1929,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }Ok(())
     }
     for row in rows{
-        let o=row.as_object().filter(|o|o.len()==5+(o.contains_key("scene") as usize)+(o.contains_key("freePlacement") as usize)&&(!o.contains_key("freePlacement")||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&!o.contains_key("scene")&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"|"freePlacement"))).ok_or(bad)?;
+        let o=row.as_object().filter(|o|o.len()==5+(o.contains_key("scene") as usize)+(o.contains_key("freePlacement") as usize)&&(!o.contains_key("freePlacement")||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"|"freePlacement"))).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let xy=(int("x")?,int("y")?);
@@ -4145,6 +4154,27 @@ mod biome_decoration_tests{
 #[cfg(test)]
 mod complete_area_support_tests{
  use super::*;
+ #[test]
+ fn free_support_scene_root_can_overlap_without_changing_child_tree(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":4,"Y":4,"Orientation":"GridOrientation_Down"}}}}}}});
+  let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
+  let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":tree});
+  let rows=serde_json::json!([{"destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100},"itemId":"40005160","x":4,"y":4,"orientation":"GridOrientation_Down","scene":scene}]);
+  let input=raw.to_string();
+  assert!(group_paste_candidate(input.as_bytes(),&rows.to_string()).is_err());
+  let plan=serde_json::json!({"freePlacement":true,"rows":rows});
+  let out:Value=serde_json::from_str(&group_paste_candidate(input.as_bytes(),&plan.to_string()).unwrap()).unwrap();
+  let c=out["World"]["GridCollection"].as_object().unwrap();
+  assert_eq!(subgrid_tree(c,"42","5").unwrap(),tree);
+  assert_eq!(c["Grids"]["42"]["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(c["NextGridID"],101);
+  assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+  let mut invalid=plan.clone();invalid["rows"][0]["scene"]["tree"]["objects"][0]["x"]=999.into();
+  assert!(group_paste_candidate(input.as_bytes(),&invalid.to_string()).is_err());
+ }
  #[test]
  fn biome_support_replacement_restores_tree_and_stock_in_one_candidate(){
   let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
