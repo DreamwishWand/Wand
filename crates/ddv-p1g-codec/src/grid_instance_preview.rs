@@ -2310,6 +2310,32 @@ mod tests{
     }
 
     #[test]
+    fn world_house_layout_restores_multiple_exteriors_and_preserves_interior(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entry=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="Village04").unwrap();
+        let mut grids=serde_json::Map::new();let mut plan=Vec::new();let mut beach=String::new();let mut meadow=String::new();
+        let exterior=serde_json::json!({"ID":1,"ItemID":20500001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":{"Level":1}}}});
+        for (i,g) in entry["grids"].as_array().unwrap().iter().enumerate(){
+            let id=(i+1) as u64;let mut objects=serde_json::Map::new();let mut before=Vec::new();let mut after=Vec::new();
+            if g["key"]=="Beach"{beach=id.to_string();objects.insert("1".to_owned(),exterior.clone());before.push(serde_json::json!({"itemId":20500001,"x":1,"y":2,"orientation":2}));}
+            if g["key"]=="Meadow"{meadow=id.to_string();for _ in 0..3{after.push(serde_json::json!({"itemId":20500001,"x":8,"y":9,"orientation":1}));}}
+            grids.insert(id.to_string(),serde_json::json!({"ID":id,"GridDefaultLayoutPath":g["layoutId"],"GridDataPath":g["gridDataPath"],"TessellationFactor":g["factor"],"NextGridObjectID":2,"Objects":objects}));
+            plan.push(serde_json::json!({"destination":{"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]},"before":before,"after":after}));
+        }
+        assert!(!beach.is_empty()&&!meadow.is_empty());
+        grids.insert("90".into(),serde_json::json!({"ID":90,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","NextGridObjectID":1,"Objects":{}}));
+        let original=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":100},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{"Rooms":{"0":{"FloorGridID":90}}}]}],"GridCollection":{"Grids":grids}}});
+        let raw=original.to_string().replace("\"Marker\":100","\"Marker\":1e2");
+        let result=player_house_layout_candidate(raw.as_bytes(),&plan).unwrap();let patched:Value=serde_json::from_str(&result).unwrap();let gs=&patched["World"]["GridCollection"]["Grids"];
+        assert!(gs[&beach]["Objects"].as_object().unwrap().is_empty());
+        let objects=gs[&meadow]["Objects"].as_object().unwrap();assert_eq!(objects.len(),3);
+        for o in objects.values(){assert_eq!(o["State"],exterior["State"]);assert_eq!(o["Orientation"],"GridOrientation_Right");assert_eq!(o["X"],8);}
+        assert_eq!(patched["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);assert_eq!(gs["90"],original["World"]["GridCollection"]["Grids"]["90"]);assert!(result.contains("1e2"));
+        for row in &mut plan{row["after"]=serde_json::json!([]);}
+        assert!(player_house_layout_candidate(raw.as_bytes(),&plan).is_err());
+    }
+
+    #[test]
     fn player_house_exterior_duplicate_keeps_existing_interior_and_allocates_id(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{"Rooms":{"0":{"FloorGridID":90}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":20500001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":{"Level":1}}}}}},"90":{"ID":90,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","NextGridObjectID":1,"Objects":{}}}}}}"#;
         let mut plan=serde_json::json!({"playerHouseDuplicate":{"localOrdinal":1,"itemId":"20500001","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down","destination":{"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":1,"sizeX":400,"sizeY":350},"x":10,"y":12}});
