@@ -4,6 +4,7 @@ pub mod reference_graph;
 pub mod unified_shape;
 pub mod collection_discovery;
 pub mod memory_flags;
+pub mod avatar_appearance;
 pub use memory_flags::{inspect_memory_flags,probe_collection_read_projections_json,MemoryFlags};
 pub use collection_discovery::{inspect_collection_discovery, probe_collection_discovery_json, CollectionDiscovery};
 pub use unified_shape::{inspect_unified_shape, probe_unified_shape_json, UnifiedShape};

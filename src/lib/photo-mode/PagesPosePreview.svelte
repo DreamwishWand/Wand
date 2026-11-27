@@ -1,6 +1,8 @@
 <script lang="ts">
   import {base} from '$app/paths';
   import {onMount} from 'svelte';
+  import {localSaveSession} from '$lib/ui/local-save-session';
+  import {savedBodyPreference} from './saved-avatar-appearance.ts';
   import PosePreview from './PosePreview.svelte';
   import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPreviewScene,relatedPoseMatches,collectionPoseHref,collectionPoseFromSearch,poseRows,type PreviewIndex} from './pages-preview.ts';
   import {poseCopy} from './preview-copy.ts';
@@ -48,7 +50,7 @@
         </div>
       {/if}
       {#key itemId+':'+poseIndex}
-        <PosePreview {options} {copy}/>
+        <PosePreview {options} {copy} preferredBody={savedBodyPreference($localSaveSession.avatarAppearance)}/>
       {/key}
       {#await names then items}
         {@const found=items.filter(x=>x.name)}

@@ -2,10 +2,11 @@
   import { onDestroy, createEventDispatcher } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
-  import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead,updateCollectionMemoryFlags,isCurrentLocalSaveSelection} from '$lib/ui/local-save-session';
+  import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead,updateCollectionMemoryFlags,updateLocalAvatarAppearance,isCurrentLocalSaveSelection} from '$lib/ui/local-save-session';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.ts';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
+  import {sanitizeSavedAvatarAppearance} from '$lib/photo-mode/saved-avatar-appearance';
   import {sanitizeSavedMemoryFlags} from '$lib/media/saved-memory-flags';
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.ts';
   import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
@@ -225,7 +226,10 @@
           dispatch('gridReferences',grid);
           lastSaveFile=file;
           saveSchema = result.result.saveSchema;
-          if(sessionRevision>0)updateCollectionMemoryFlags(sessionRevision,file,memory);
+          if(sessionRevision>0){updateCollectionMemoryFlags(sessionRevision,file,memory);
+            // Appearance is independent of Collection admission; malformed optional data cannot block other services.
+            try{updateLocalAvatarAppearance(sessionRevision,file,sanitizeSavedAvatarAppearance(result.result.avatarAppearance))}catch{}
+          }
           if (discovery.entries.length||ownership.entries.length)
             dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
           valid=true;
