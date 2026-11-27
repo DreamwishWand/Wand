@@ -10,7 +10,8 @@ from extract_story_puzzle_sources import read_story_rows, target_roles
 from publish_bundle_thumbnails import census, publish, key, info, check, BUCKET
 from publish_memory_sources import split
 
-def prepare(root, parts):
+def prepare(root, parts, ledger=None):
+    from source_image_ledger import verify_local_or_published
     source, rows = read_story_rows(parts)
     report = json.loads((root/"story-puzzle-source-report.json").read_bytes())
     index = json.loads((root/"story-puzzle-index-candidate.json").read_bytes())
@@ -27,9 +28,7 @@ def prepare(root, parts):
         k = key(m["sha256"])
         check(index["images"].get(m["sha256"]) == m, "Image index mismatch")
         if k not in objects:
-            p = (root/k).resolve()
-            check(p.is_relative_to(root) and p.is_file(), "Missing image")
-            check(image_info(p.read_bytes(), m["sha256"]) == m, "Local image mismatch")
+            verify_local_or_published(root,m,ledger)
             objects[k] = m
         return m
     for item,row in rows.items():
@@ -49,10 +48,13 @@ def main():
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--db01",type=Path,action="append",required=True)
     p.add_argument("--r2",action="store_true")
+    p.add_argument('--ledger',type=Path)
     a=p.parse_args()
+    from source_image_ledger import load, require_pending
+    ledger=load(json.loads(a.ledger.read_bytes())) if a.ledger else None
     root=a.root.resolve()
     check(not any((x/".git").exists() for x in [root,*root.parents]),"Private working directory required")
-    objects,index=prepare(root,a.db01)
+    objects,index=prepare(root,a.db01,ledger)
     summary={"uniqueImages":len(objects),"totalBytes":sum(v["bytes"] for v in objects.values()),"publicationVerified":False}
     check(len(objects)<=216 and summary["totalBytes"]<=114359534,"Reviewed Steam 1.26.2 publication limit exceeded")
     if not a.r2:
@@ -66,6 +68,7 @@ def main():
     check("IfNoneMatch" in s3.meta.service_model.operation_model("PutObject").input_shape.members,"Conditional PUT required")
     _,canonical,pages,_=census(s3)
     existing,pending=split(objects,canonical)
+    require_pending(root,pending)
     summary.update(existing=len(existing),newUploads=len(pending),newBytes=sum(v["bytes"] for v in pending.values()),listRequests=pages,classAUpperBound=pages+len(pending),classBUpperBound=len(objects),deleteRequests=0)
     write_json(root/"story-puzzle-publication-plan.json",summary)
     print(json.dumps(summary,indent=2),flush=True)

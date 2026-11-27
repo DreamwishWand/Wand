@@ -228,7 +228,8 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
 def build(base_root, old_scan_path, next_scan_path, next_items_path,
           next_proofs_path, next_game, out, *, base_items_sha=None,
           base_overlay_sha=None, image_builder=None, variant_policy=POLICY,
-          finalize=None):
+          finalize=None, published=None):
+    published=published or {}
     base_root=base_root.resolve()
     next_game=next_game.resolve()
     out=out.resolve()
@@ -277,6 +278,9 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
                 if entry["path"] in audited:
                     continue
                 file=temp.joinpath(*entry["path"].split("/"))
+                if not file.is_file() and published.get('images/'+entry['sha256']+'.webp')==entry['bytes']:
+                    audited.add(entry['path'])
+                    continue
                 require(file.is_file() and
                         file.stat().st_size==entry["bytes"] and
                         file_digest(file)==entry["sha256"] and
@@ -305,6 +309,7 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
           "itemCount":len(new_items["items"]),
           "guidCount":len(images),
           "distinctMediaFiles":len(files),
+          "publishedObjectsReferenced":len({entry['sha256'] for image in images.values() for entry in (image['original'],image['thumbnail']) if published.get('images/'+entry['sha256']+'.webp')==entry['bytes']}),
           "reusedGuidCount":counts["reusedGuid"],
           "decodedGuidCount":counts["decodedGuid"],
           "samePixelReusedCount":counts["samePixelReused"],
@@ -327,6 +332,7 @@ def main(argv=None):
         p.add_argument("--"+name,type=Path,required=True)
     p.add_argument("--base-items-sha",help="Prior SRC-01 items.jsonl SHA-256 pin")
     p.add_argument("--base-overlay-sha",help="Prior SRC-04 private v2 manifest SHA-256 pin")
+    p.add_argument('--cdn-ledger',type=Path)
     args=p.parse_args(argv)
     try:
         # The historical 128px API is retained for old private-staging tests only.
@@ -334,7 +340,7 @@ def main(argv=None):
         report=build_next(args.base_root,args.base_scan,args.target_scan,
                      args.target_items,args.target_proofs,args.target_game,args.out,
                      base_items_sha=args.base_items_sha,
-                     base_overlay_sha=args.base_overlay_sha)
+                     base_overlay_sha=args.base_overlay_sha,cdn_ledger=args.cdn_ledger)
     except (OSError,ValueError,KeyError,TypeError) as error:
         p.exit(2,str(error)+"\n")
     print(json.dumps(report,ensure_ascii=False,indent=2))
