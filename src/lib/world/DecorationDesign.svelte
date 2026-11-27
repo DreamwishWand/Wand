@@ -130,6 +130,8 @@
  $: designNativeMap=nativeDesignEnabled&&worldFrame&&!embedded?nativeMapForEditor(designPack,worldFrame.scope,false):null;
  $: designNativeView=designNativeMap&&worldFrame?editorViewToNativeCanvas(designNativeMap,nativeDesignViewport(worldFrame,displayViewport)):null;
  $: designNativeActive=!!designNativeMap&&designBackground&&designNativeReady===designNativeMap.id&&!designNativeError;
+ $: if(!active||!designNativeMap||!designBackground){designNativeReady='';designNativeLoading=false;}
+ $: if(designNativeReady&&designNativeReady!==designNativeMap?.id)designNativeReady='';
  const designNativeLabels={ja:['原本背景（検証）','素材を選択','背景を表示','未校正・全区画解放表示','背景の読み込みに失敗しました'],en:['Original background (test)','Choose assets','Show background','Uncalibrated · all areas unlocked','Background loading failed'],fr:['Fond original (test)','Choisir les fichiers','Afficher le fond','Non calibré · zones débloquées','Échec du chargement'],it:['Sfondo originale (test)','Scegli file','Mostra sfondo','Non calibrato · aree sbloccate','Caricamento fallito'],de:['Originalkarte (Test)','Dateien auswählen','Hintergrund anzeigen','Nicht kalibriert · alle Gebiete frei','Laden fehlgeschlagen'],'es-ES':['Fondo original (prueba)','Elegir archivos','Mostrar fondo','Sin calibrar · zonas desbloqueadas','Error de carga'],'zh-CN':['原始背景（测试）','选择素材','显示背景','未校准 · 全区解锁','背景加载失败'],'pt-BR':['Fundo original (teste)','Escolher arquivos','Mostrar fundo','Não calibrado · áreas desbloqueadas','Falha no carregamento']} as const;
  $: designNativeWords=designNativeLabels[locale]??designNativeLabels.en;
  async function openDesignNative(e:Event){
