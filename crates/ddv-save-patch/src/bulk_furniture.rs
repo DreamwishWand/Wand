@@ -243,6 +243,29 @@ mod tests{
  use super::*;
  const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Other":1e2,"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"ItemMarker_Favorite"},"40000002":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":null},"3":{"ID":3,"ItemID":40000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"Objects":{}}}}}}"#;
  fn target(id:&str,item_id:u64)->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:id.into(),item_id}}
+ #[test]fn storage_bulk_placement_allocates_once_and_keeps_original_bytes(){
+  let raw=SOURCE.replace("GridData/Test.json","GridData/Villages/Village04-BeachLevel-GridData.json").replace("SceneLayouts/Village04/Test.json","SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json").replace("\"Player\":{","\"Player\":{\"NextContainerInventoryID\":10,\"ContainerInventories\":{\"9\":{\"ID\":9,\"Unknown\":1e2}},").replace("\"40000001\":{\"Amount\":2","\"40001680\":{\"Amount\":2},\"40000001\":{\"Amount\":2");
+  let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json".into(),data_path:"GridData/Villages/Village04-BeachLevel-GridData.json".into(),tessellation:1,size:(16,16)};
+  let rows=[40001680,40000001,40001680].map(|item_id|BulkScenePlace{pose:BulkPlace{destination:&d,item_id,xy:(4,4),orientation:"GridOrientation_Down",free_placement:true},tree:None});
+  let templates=HashMap::from([(40001680,("Chest_48Slot",48))]);
+  let draft=preview_bulk_storage_scene_place(&raw,&rows,&templates).unwrap();
+  let root:Value=serde_json::from_str(&draft.patched_json).unwrap();
+  let g=&root["World"]["GridCollection"]["Grids"]["7"];
+  assert_eq!(g["Objects"]["4"]["State"]["Storage"]["ContainerInventoryID"],10);
+  assert!(g["Objects"]["5"].get("State").is_none());
+  assert_eq!(g["Objects"]["6"]["State"]["Storage"]["ContainerInventoryID"],11);
+  assert_eq!(g["NextGridObjectID"],7);
+  assert_eq!(root["Player"]["NextContainerInventoryID"],12);
+  assert_eq!(root["Player"]["ContainerInventories"]["10"]["Size"],48);
+  assert_eq!(root["Player"]["ContainerInventories"]["11"]["Inventory"],serde_json::json!([]));
+  assert_eq!(root["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],0);
+  assert_eq!(root["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+  assert!(draft.patched_json.contains(r#""9":{"ID":9,"Unknown":1e2}"#));
+  let bad=raw.replace("\"Other\":1e2","\"Other\":{\"ContainerInventoryID\":11}");
+  assert!(preview_bulk_storage_scene_place(&bad,&rows,&templates).is_err());
+  let empty=raw.replace(r#""ContainerInventories":{"9":{"ID":9,"Unknown":1e2}}"#,r#""ContainerInventories":{}"#);
+  assert!(preview_bulk_storage_scene_place(&empty,&rows,&templates).is_ok());
+ }
  #[test]fn free_bulk_restore_preserves_repeated_anchors_and_stock(){
   let source=SOURCE.replace("GridData/Test.json","GridData/Villages/Village04-Test-GridData.json");
   let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Villages/Village04-Test-GridData.json".into(),tessellation:1,size:(16,16)};

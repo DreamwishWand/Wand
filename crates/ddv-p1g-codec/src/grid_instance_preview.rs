@@ -2150,11 +2150,11 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
         if total>limit{return Err(CodecError::Bounds);}
     }
     if free_mode||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
-        use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_scene_place};
+        use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_scene_place,preview_bulk_storage_scene_place};
         let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
         if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
         let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
-        let mut checked_world_grids=HashSet::new();let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();
+        let mut checked_world_grids=HashSet::new();let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();let mut templates=HashMap::new();
         for row in rows{
             let witness=&row["destination"];let d=destinations.get(&witness.to_string()).ok_or(bad)?;
             let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
@@ -2172,13 +2172,21 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
                 if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
                 Some(checked_support_scene(item,scene)?)
             }else{None};
+            if crate::storage_source::is_storage(item){
+                if tree.is_some(){return Err(bad);}
+                let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or(bad)?;
+                let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+                if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
+                templates.insert(item,(template,capacity));
+            }
             let ids=allocated.entry(d.grid_id.clone()).or_default();
             let next=grids.get(&d.grid_id).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
             let id=next.checked_add(ids.len() as u64).filter(|n|*n<u32::MAX as u64).ok_or(bad)?.to_string();ids.push(id);
             places.push(BulkScenePlace{pose:BulkPlace{destination:d,item_id:item,xy:(x,y),orientation,free_placement},tree});
         }
         for (grid,ids) in allocated{for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}}
-        let mut draft=preview_bulk_scene_place(std::str::from_utf8(profile).map_err(|_|bad)?,&places).map_err(|_|CodecError::Patch)?;
+        let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+        let mut draft=if templates.is_empty(){preview_bulk_scene_place(json,&places)}else{preview_bulk_storage_scene_place(json,&places,&templates)}.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
         return Ok(draft.patched_json);
     }
