@@ -25,7 +25,7 @@ export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly Mainla
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:(worldOrientationCode(p.object.orientation)??-4)/4}));
  try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,world?'world-grid':island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
 }
-export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees},world=false){
+export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees},world=false,free=false){
  const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before,world);if(!snapshot)return null;
  if(incoming.some(p=>{const d=defs.get(p.itemId);return !Number.isInteger(p.orientation)&&(island||grid.factor!==1||!bindMainlandGrid(grid)||d?.surfaceCapable||d?.supportPath||supports?.after.has(p.id))||!d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
  const sceneKey=(scene:SupportScene|undefined)=>{
@@ -49,7 +49,18 @@ export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly Mainl
  const missing=[...required].filter(([id,n])=>(capacity.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(capacity.get(itemId)??0)}));
  const geometry:GroupGeometry=new Map([...defs].map(([id,d])=>[id,new Map([[grid.factor,d]])]));
  const positions=added.map(p=>({itemId:p.itemId,...mainlandMapAnchor(grid,p.x,p.y),orientation:p.orientation}));
- const q:GroupPasteCandidate|null=added.length?groupAbsoluteCandidate(positions,grids,rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,false,!island&&grid.factor===1):{rows:[],ghosts:[]};
+ const freeIndices=new Set(added.flatMap((p,i)=>{const d=defs.get(p.itemId);return free&&!island&&d&&!d.surfaceCapable&&!d.supportPath&&!supports?.after.has(p.id)?[i]:[];}));
+ const ordinary=positions.filter((_,i)=>freeIndices.has(i)),strict=positions.filter((_,i)=>!freeIndices.has(i));
+ const loose=ordinary.length?groupAbsoluteCandidate(ordinary,[grid],rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,true,true):{rows:[],ghosts:[]};
+ if(!loose)return null;
+ const fixed=strict.length?groupAbsoluteCandidate(strict,grids,rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,false,!island&&grid.factor===1):{rows:[],ghosts:[]};
+ if(!fixed)return null;
+ let a=0,b=0;
+ const q:GroupPasteCandidate={rows:[],ghosts:[]};
+ for(let i=0;i<positions.length;i++){
+  if(freeIndices.has(i)){q.rows.push({...loose.rows[a],freePlacement:true});q.ghosts.push(loose.ghosts[a++]);}
+  else{q.rows.push(fixed.rows[b]);q.ghosts.push(fixed.ghosts[b++]);}
+ }
  if(!q||q.ghosts.some(p=>p.area!==grid.key))return null;
  const destination:StockDestination={layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY};
  const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!,...(supports?.before.has(p.object.localOrdinal)?{includeSupport:true as const}:{})})).sort((a,b)=>a.localOrdinal-b.localOrdinal);
