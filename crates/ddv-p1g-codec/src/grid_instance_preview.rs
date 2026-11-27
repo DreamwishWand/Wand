@@ -2890,6 +2890,22 @@ mod terrain_session_tests{
         assert!(check(&offgrid,20400001).is_err());
     }
     #[test]
+    fn oblique_leaf_furniture_requires_factor_one_and_preserves_other_bytes(){
+        let raw=br#"{"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":4,"Y":5,"Orientation":"GridOrientation_Down","State":null}}}}}},"Marker":1e2}"#;
+        let targets=resolve_grid_mixed_targets(raw,&[(1,40000001,(4,5),"full".into(),Some("GridOrientation_Down".into()))]).unwrap();
+        let edit=ddv_save_patch::GridMixedEdit{target:targets[0].clone(),expected:(4,5),position:None,orientation:Some(("GridOrientation_Down".into(),"GridOrientation_DownLeft".into()))};
+        let edits=[edit];
+        assert!(validate_oblique_grid_edits(raw,&edits).is_ok());
+        let draft=ddv_save_patch::preview_existing_grid_mixed_batch(std::str::from_utf8(raw).unwrap(),&edits).unwrap();
+        assert_eq!(draft.patched_json,std::str::from_utf8(raw).unwrap().replace("GridOrientation_Down","GridOrientation_DownLeft"));
+        let mut wrong:Value=serde_json::from_slice(raw).unwrap();
+        wrong["World"]["GridCollection"]["Grids"]["10"]["TessellationFactor"]=Value::from(2);
+        assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
+        wrong["World"]["GridCollection"]["Grids"]["10"]["TessellationFactor"]=Value::from(1);
+        wrong["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":90}});
+        assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
+    }
+    #[test]
     fn typed_building_transforms_preserve_state_and_require_original_grid(){
         let raw=br#"{"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":20500001,"X":4,"Y":5,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":{"Level":1}}}},"2":{"ID":2,"ItemID":20000001,"X":6,"Y":7,"Orientation":"GridOrientation_Down","State":{"HouseData":{"Built":true,"UpgradeState":null,"PlayerHouseIndex":-1}}},"3":{"ID":3,"ItemID":20100001,"X":8,"Y":9,"Orientation":"GridOrientation_Down","State":{"StallData":{"UpgradeState":{"Level":1},"ShopData":{"Seed":3,"Slots":[],"Marker":1e2},"CurrentSkinItemID":0}}},"4":{"ID":4,"ItemID":20200001,"X":10,"Y":11,"Orientation":"GridOrientation_Down","State":{"GardenData":{"Slots":[{"PlantedSeedItemID":1}]}}},"5":{"ID":5,"ItemID":20300001,"X":12,"Y":13,"Orientation":"GridOrientation_Down","State":{"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":0}}}}}}}}}"#;
         let items=[20500001,20000001,20100001,20200001,20300001];
