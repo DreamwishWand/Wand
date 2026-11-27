@@ -132,7 +132,7 @@ fn shrink_pickups(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->Option<Vec<(Gr
    if x<nx*factor&&y<ny*factor{continue;}
    let oid=key.parse::<u32>().ok()?;
    let orientation=o["Orientation"].as_str()?;
-   if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||
+   if oid==0||item/100000!=400||!(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||i==0&&factor==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&o.get("State").is_none_or(Value::is_null))||
       o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
    rows.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.to_string(),object_id:key.clone(),item_id:item},(i32::try_from(x).ok()?,i32::try_from(y).ok()?),orientation.to_owned()));
    if rows.len()>2048{return None;}
@@ -529,7 +529,7 @@ fn removal_target(root:&Value,t:RoomFinishTarget,whole_floor:bool,recover:bool)-
     let item=o["ItemID"].as_u64()?;
     let oid=key.parse::<u32>().ok()?;
     let orientation=o["Orientation"].as_str()?;
-    if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
+    if oid==0||item/100000!=400||!(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||i==0&&g["TessellationFactor"].as_u64()==Some(1)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&o.get("State").is_none_or(Value::is_null))||o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
     let x=i32::try_from(o["X"].as_i64()?).ok()?;let y=i32::try_from(o["Y"].as_i64()?).ok()?;
     pickups.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.to_string(),object_id:key.clone(),item_id:item},(x,y),orientation.to_owned()));
     if pickups.len()>2048{return None;}
