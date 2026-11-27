@@ -11,9 +11,9 @@ import {addRestoreQuantity} from './restore-stock-review.ts';
 export type IndoorBackupScope='room'|'floor'|'building';
 export const INDOOR_BACKUP_LIMIT=16_000_000;
 export interface IndoorBackupRoom{room:IndoorRoom;surfaces:RoomProjectSurface[]}
-export interface IndoorBackupEntry{floor:number;room:number;slot?:number;wallPositions:(number|null)[];surfaces:RoomProjectSurface[]}
+export interface IndoorBackupEntry{floor:number;room:number;slot?:number;ceiling?:number;wallPositions:(number|null)[];surfaces:RoomProjectSurface[]}
 export interface IndoorRestoreRow extends RoomApplyRow{pickup:IndoorPickup[];freePlacement?:true}
-export interface IndoorRestorePlan{scope:IndoorBackupScope;rooms:{roomOrdinal:number;surfaces:IndoorRestoreRow[]}[]}
+export interface IndoorRestorePlan{scope:IndoorBackupScope;rooms:{roomOrdinal:number;surfaces:IndoorRestoreRow[];ceiling?:{itemId:number;expected:number}}[]}
 export function indoorBackupRooms(scope:IndoorBackupScope,selected:IndoorRoom,rooms:readonly IndoorRoom[]):IndoorRoom[]{
  return rooms.filter(r=>r.house===selected.house&&(scope==='building'||r.floor===selected.floor&&(scope==='floor'||r.ordinal===selected.ordinal))).sort((a,b)=>a.floor-b.floor||a.ordinal-b.ordinal);
 }
@@ -24,7 +24,7 @@ export function serializeIndoorBackup(scope:IndoorBackupScope,entries:readonly I
  if(!entries.length||entries.length>2048)throw Error('INDOOR_BACKUP_SCOPE');
  const addressesForRooms=addresses(scope,entries.map(e=>e.room));
  if(scope!=='room'&&addressesForRooms.some(r=>r.slot!==undefined)&&addressesForRooms.some(r=>r.slot===undefined))throw Error('INDOOR_BACKUP_ADDRESS');
- const raw=JSON.stringify({schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope,rooms:entries.map((e,i)=>({...addressesForRooms[i],wallPositions:e.room.surfaces.map(s=>s.wallPosition),design:JSON.parse(serializeRoomProject(e.surfaces,e.surfaces[0].id))}))});
+ const raw=JSON.stringify({schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope,rooms:entries.map((e,i)=>({...addressesForRooms[i],...(e.room.ceiling&&roomFinishIdValid(e.room.ceiling,'floor')?{ceiling:e.room.ceiling}:{}),wallPositions:e.room.surfaces.map(s=>s.wallPosition),design:JSON.parse(serializeRoomProject(e.surfaces,e.surfaces[0].id))}))});
  parseIndoorBackup(raw,scope,entries.map(e=>e.room),templates);return raw;
 }
 export function parseIndoorBackup(raw:string,scope:IndoorBackupScope,targets:readonly IndoorRoom[],templates:readonly RoomDesignTemplate[]):IndoorBackupEntry[]{
@@ -34,15 +34,15 @@ export function parseIndoorBackup(raw:string,scope:IndoorBackupScope,targets:rea
  const tagged=v.rooms.some((e:any)=>e&&Object.hasOwn(e,'slot'));
  if(tagged&&(scope==='room'||v.rooms.some((e:any)=>!e||!Number.isSafeInteger(e.slot)||e.slot<0||e.slot>3)))throw Error('INDOOR_BACKUP_ADDRESS');
  return v.rooms.map((e:any,i:number)=>{
-  const t=targets[i],k=keys[i];if(!e||Object.keys(e).length!==(tagged?5:4)||e.floor!==k.floor||e.room!==k.room||tagged&&e.slot!==k.slot||!tagged&&k.slot!==undefined&&k.slot!==k.room-1||!Array.isArray(e.wallPositions)||e.wallPositions.length!==t.surfaces.length||e.wallPositions.some((p:unknown,j:number)=>p!==t.surfaces[j].wallPosition))throw Error('INDOOR_BACKUP_ADDRESS');
+  const t=targets[i],k=keys[i];if(!e||Object.keys(e).length!==(tagged?5:4)+(Object.hasOwn(e,'ceiling')?1:0)||Object.keys(e).some(k=>!['floor','room','slot','ceiling','wallPositions','design'].includes(k))||Object.hasOwn(e,'ceiling')&&(!e.ceiling||!roomFinishIdValid(e.ceiling,'floor'))||e.floor!==k.floor||e.room!==k.room||tagged&&e.slot!==k.slot||!tagged&&k.slot!==undefined&&k.slot!==k.room-1||!Array.isArray(e.wallPositions)||e.wallPositions.length!==t.surfaces.length||e.wallPositions.some((p:unknown,j:number)=>p!==t.surfaces[j].wallPosition))throw Error('INDOOR_BACKUP_ADDRESS');
   const doc=parseRoomProject(JSON.stringify(e.design),templates,true);
   if(doc.surfaces.length!==t.surfaces.length||doc.surfaces.some((s,j)=>s.id!==t.surfaces[j].ordinal||!roomApplyMatches(s,t.surfaces[j])))throw Error('INDOOR_BACKUP_TERRAIN');
-  return {...k,wallPositions:e.wallPositions,surfaces:doc.surfaces};
+  return {...k,...(e.ceiling!==undefined?{ceiling:e.ceiling}:{}),wallPositions:e.wallPositions,surfaces:doc.surfaces};
  });
 }
 const poseKey=(p:DesignPlacement)=>JSON.stringify([p.itemId,p.x,p.y,p.orientation,p.attachment?.scene??null]);
 const need=(p:DesignPlacement)=>p.attachment?supportSceneRootCounts(p.attachment.scene):new Map([[p.itemId,1]]);
-export interface IndoorRestoreInput{room:IndoorRoom;before:readonly RoomProjectSurface[];after:readonly RoomProjectSurface[];geometry:ReadonlyMap<number,RoomApplySurfaceGeometry>}
+export interface IndoorRestoreInput{room:IndoorRoom;before:readonly RoomProjectSurface[];after:readonly RoomProjectSurface[];ceiling?:number;geometry:ReadonlyMap<number,RoomApplySurfaceGeometry>}
 export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly IndoorRestoreInput[],stock:ReadonlyMap<number,number>,owned:ReadonlySet<number>,free=false){
  if(!inputs.length||inputs.length>2048)return null;
  const balances=new Map(stock),plan:IndoorRestorePlan={scope,rooms:[]},work:{face:IndoorSurface;row:IndoorRestoreRow;desired:DesignPlacement[];geometry:RoomApplySurfaceGeometry}[]=[];
@@ -50,7 +50,14 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
  let removed=0,added=0,retained=0,finishes=0;
  for(const input of inputs){
   const {room,before,after,geometry}=input;if(before.length!==room.surfaces.length||after.length!==before.length)return null;
-  const rows:IndoorRestoreRow[]=[];plan.rooms.push({roomOrdinal:room.ordinal,surfaces:rows});
+  const rows:IndoorRestoreRow[]=[];const roomPlan:IndoorRestorePlan['rooms'][number]={roomOrdinal:room.ordinal,surfaces:rows};plan.rooms.push(roomPlan);
+  if(input.ceiling!==undefined){
+   if(!input.ceiling||!roomFinishIdValid(input.ceiling,'floor'))return null;
+   if(input.ceiling!==room.ceiling){
+    if(typeof room.ceiling!=='number'||!owned.has(input.ceiling)||room.surfaces.length!==5||!room.surfaces.slice(1).every((f,j)=>f.wallPosition===j))return null;
+    roomPlan.ceiling={itemId:input.ceiling,expected:room.ceiling};addRestoreQuantity(finishItems,input.ceiling,1);finishes++;
+   }
+  }
   for(const [i,face] of room.surfaces.entries()){
    const b=before[i],a=after[i],g=geometry.get(face.ordinal);
    if(!g||!face.factor||!roomApplyMatches(b,face)||!roomApplyMatches(a,face)||b.id!==face.ordinal||a.id!==face.ordinal||!roomBackupSurfaceValid(face,a,g,free))return null;

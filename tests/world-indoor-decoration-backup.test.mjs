@@ -84,3 +84,18 @@ test('protected native room objects are not exported, returned to stock, or remo
  const unknown={...occupiedFace,positions:[{...fixed,protected:undefined},placed]};
  assert.equal(captureRoomRows(occupied,unknown,floor,[],new Map()),null);
 });
+
+test('ceiling backup is portable, optional and requires owned flooring to restore',()=>{
+ const wall=templates.find(t=>t.kind==='wall'),surfaces=[face,...Array.from({length:4},(_,i)=>({...face,kind:'wall',ordinal:i+2,wallPosition:i,terrain:wall.raster,sourcePath:wall.grid.gridDataPath}))];
+ const before=[newRoomSurface(1,floor),...Array.from({length:4},(_,i)=>newRoomSurface(i+2,wall))];
+ const target={...rooms[0],ceiling:160100136,surfaces},saved={...target,ceiling:160100031};
+ const raw=serializeIndoorBackup('room',[{room:saved,surfaces:before}],templates);
+ const incoming=parseIndoorBackup(raw,'room',[target],templates)[0];assert.equal(incoming.ceiling,160100031);
+ const legacy=JSON.parse(raw);delete legacy.rooms[0].ceiling;assert.equal(parseIndoorBackup(JSON.stringify(legacy),'room',[target],templates)[0].ceiling,undefined);
+ const invalid=JSON.parse(raw);invalid.rooms[0].ceiling=160000000;assert.throws(()=>parseIndoorBackup(JSON.stringify(invalid),'room',[target],templates));
+ const g={design:new Map(),shapes:{},allowed:new Set()},geometry=new Map(surfaces.map(s=>[s.ordinal,g]));
+ const input={room:target,before,after:before,ceiling:incoming.ceiling,geometry};
+ const plan=buildIndoorRestore('room',[input],new Map(),new Set([160100031]));
+ assert.equal(plan?.finishes,1);assert.deepEqual(plan?.plan.rooms[0].ceiling,{itemId:160100031,expected:160100136});assert.equal(plan?.finishItems.get(160100031),1);
+ assert.equal(buildIndoorRestore('room',[input],new Map(),new Set()),null);
+});

@@ -205,6 +205,17 @@ export function indoorFreeMoveGroup(face:IndoorSurface|null,shapes:Readonly<Reco
  const rows=indices.map(i=>{const p=t!.objects[i];return p?indoorFreeTransform(face,shapes,allowed,i,p.x+x-o.x,p.y+y-o.y):null;});
  return rows.some(r=>!r)?null:rows.flatMap(r=>r!);
 }
+/** Group turns use the common quarter-turn footprint transform even when
+ * individual furniture is on a diagonal. Free mode relaxes collision only. */
+export function indoorFreeGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!indoorFreeFloor(face)||indices.length<2||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||(turn!==1&&turn!==-1))return null;
+ const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||face?.positions[indices[j]]?.plain!==true||!allowed.has(o.itemId)||!freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation)))return null;
+ const left=Math.min(...chosen.map(o=>o.x)),top=Math.min(...chosen.map(o=>o.y));
+ const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:worldOrientationCode(o.orientation)!/4}));
+ const rotated=rotateIndoorCut(clip,tree.factor,shapes,turn);if(!rotated)return null;
+ const rows=rotated.map((p,i)=>p.itemId===chosen[i].itemId?indoorFreeTransform(face,shapes,allowed,indices[i],left+p.dx*tree.factor/2,top+p.dy*tree.factor/2,EIGHT_WAY_ORIENTATIONS[p.orientation*2]):null);
+ return rows.some(r=>!r)?null:rows.flatMap(r=>r!);
+}
 export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string,free=false){
  if(free)return indoorFreeTransform(face,shapes,allowed,index,x,y,orientation);
  const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
@@ -247,11 +258,12 @@ export function indoorGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record
  return out;
 }
 export type IndoorAlignMode='left'|'right'|'top'|'bottom'|'centerX'|'centerY'|'spaceX'|'spaceY';
-export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],mode:IndoorAlignMode):SupportChildEdit[]|null{
+export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],mode:IndoorAlignMode,free=false):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face),selected=new Set(indices);
  if(!tree||!face?.terrain||indices.length<2||indices.length>ROOM_CUT_LIMIT||selected.size!==indices.length)return null;
+ if(free&&!indoorFreeFloor(face))return null;
  const horizontal=['left','right','centerX','spaceX'].includes(mode);
- const chosen=indices.map(index=>{const o=tree.objects[index],code=o?CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4:-4,s=o?shapes[o.itemId+':'+code]:null;return o&&s&&s.runs.length&&allowed.has(o.itemId)&&indoorClear(tree,shapes,index)?{index,o,start:horizontal?o.x:o.y,size:horizontal?s.width:s.height}:null;});
+ const chosen=indices.map(index=>{const o=tree.objects[index],code=o?(free?worldOrientationCode(o.orientation):CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4):-4,s=o?shapes[o.itemId+':'+code]:null;return o&&s&&s.runs.length&&allowed.has(o.itemId)&&(free?face.positions[index]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,index))?{index,o,start:horizontal?o.x:o.y,size:horizontal?s.width:s.height}:null;});
  if(chosen.some(p=>!p))return null;
  const rows=chosen.filter(p=>p!==null),lo=Math.min(...rows.map(p=>p.start)),hi=Math.max(...rows.map(p=>p.start+p.size));
  const starts=new Map<number,number>();
@@ -261,79 +273,79 @@ export function indoorAlign(face:IndoorSurface|null,shapes:Readonly<Record<strin
  }else for(const p of rows){const pos=mode==='left'||mode==='top'?lo:mode==='right'||mode==='bottom'?hi-p.size:(lo+hi-p.size)/2;if(!Number.isSafeInteger(pos))return null;starts.set(p.index,pos);}
  const staged={...tree,objects:tree.objects.filter((_,i)=>!selected.has(i))},out:SupportChildEdit[]=[];
  for(const {o,index} of rows){const start=starts.get(index)!,x=horizontal?start:o.x,y=horizontal?o.y:start;
-  if(!supportPlacementFits(staged,shapes,face.terrain,o.itemId,x,y,o.orientation))return null;
-  if(x!==o.x||y!==o.y){const q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,o.orientation);if(!q)return null;out.push({...q[0],index});}
+  if(!(free?freeRoomPose(face,shapes,o.itemId,x,y,o.orientation):supportPlacementFits(staged,shapes,face.terrain,o.itemId,x,y,o.orientation)))return null;
+  if(x!==o.x||y!==o.y){const q=free?indoorFreeTransform(face,shapes,allowed,index,x,y):supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,x,y,o.orientation);if(!q)return null;out.push({...q[0],index});}
   staged.objects.push({...o,x,y});
  }
  return out.length?out:null;
 }
-export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry,supports:ReadonlyMap<number,SupportScene>=new Map()):IndoorPlace[]|null{
- const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
+export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,indices:readonly number[],axis:DesignSymmetry,supports:ReadonlyMap<number,SupportScene>=new Map(),free=false):IndoorPlace[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||free&&(!indoorFreeFloor(face)||supports.size>0))return null;
  const clip:DesignClipItem[]=[],seen=new Set<string>(),scenes:(SupportScene|null)[]=[],sources:(NonNullable<IndoorPlace['supportSource']>|null)[]=[];
- for(const i of indices){const o=tree.objects[i],support=supports.get(i);if(!o||(!support&&face.positions[i]?.plain!==true)||support&&(axis.mode!=='point'||support.ownerItemId!==o.itemId)||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+ for(const i of indices){const o=tree.objects[i],support=supports.get(i);if(!o||(!support&&face.positions[i]?.plain!==true)||support&&(axis.mode!=='point'||support.ownerItemId!==o.itemId)||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i)&&isCardinal(o.orientation)))return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
-  const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},g,axis);if(!p||p.x<0||p.y<0)return null;
-  const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===CARDINAL_ORIENTATIONS[p.orientation]);
+  const p=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:worldOrientationCode(o.orientation)!/4},g,axis,free&&tree.factor===1);if(!p||p.x<0||p.y<0)return null;
+  const same=tree.objects.map((v,index)=>({v,index})).filter(({v})=>v.itemId===p.itemId&&v.x===p.x&&v.y===p.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[p.orientation*2]);
   if(same.length){if(support||same.length!==1||face.positions[same[0].index]?.plain!==true)return null;continue;}
   const k=p.itemId+':'+p.x+':'+p.y+':'+p.orientation;if(seen.has(k))continue;seen.add(k);
   clip.push({itemId:p.itemId,dx:p.x*2/tree.factor,dy:p.y*2/tree.factor,orientation:p.orientation});
   scenes.push(support??null);sources.push(support?{index:i,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation}:null);
  }
  if(!clip.length)return null;
- if(!scenes.some(Boolean))return indoorGroupPlace(face,shapes,allowed,stock,clip,0,0);
+ if(!scenes.some(Boolean))return indoorGroupPlace(face,shapes,allowed,stock,clip,0,0,free);
  const left=Math.min(...clip.map(p=>p.dx)),top=Math.min(...clip.map(p=>p.dy));
  try{const relative=clip.map(p=>({...p,dx:p.dx-left,dy:p.dy-top})),doc=mixedSceneFromClip(relative,scenes,'corner');return indoorMixedPlacement(face,shapes,allowed,stock,relative,doc,'corner',left*tree.factor/2,top*tree.factor/2,sources);}catch{return null;}
 }
 /** Translate exact reflected plain pairs together. No guessed counterpart,
  * no implicit duplication and no change to saved orientations. */
-export function indoorLinkedMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number,axis:DesignSymmetry):SupportChildEdit[]|null{
- const tree=indoorEditableTree(face),origin=tree?.objects[anchor];if(!tree||!face?.terrain||!origin||!indices.includes(anchor)||!indices.length||new Set(indices).size!==indices.length)return null;
+export function indoorLinkedMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number,axis:DesignSymmetry,free=false):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face),origin=tree?.objects[anchor];if(!tree||!face?.terrain||free&&!indoorFreeFloor(face)||!origin||!indices.includes(anchor)||!indices.length||new Set(indices).size!==indices.length)return null;
  const dx=x-origin.x,dy=y-origin.y;if(!dx&&!dy)return null;
  const targets=new Map<number,{x:number;y:number}>();
  function put(i:number,px:number,py:number){const old=targets.get(i);if(old)return old.x===px&&old.y===py;targets.set(i,{x:px,y:py});return true;}
- for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!indoorClear(tree,shapes,i)||!isCardinal(o.orientation))return null;
+ for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i)&&isCardinal(o.orientation)))return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
-  const p={itemId:o.itemId,x:o.x,y:o.y,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)},before=reflectedDesignItem(p,g,axis),after=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,axis);
-  if(!before||!after)return null;const matches=tree.objects.flatMap((v,j)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===CARDINAL_ORIENTATIONS[before.orientation]?[j]:[]);
-  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!indoorClear(tree,shapes,matches[0])||!put(i,o.x+dx,o.y+dy)||!put(matches[0],after.x,after.y))return null;
+  const p={itemId:o.itemId,x:o.x,y:o.y,orientation:worldOrientationCode(o.orientation)!/4},before=reflectedDesignItem(p,g,axis,free&&face.factor===1),after=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,axis,free&&face.factor===1);
+  if(!before||!after)return null;const matches=tree.objects.flatMap((v,j)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[before.orientation*2]?[j]:[]);
+  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,o.x+dx,o.y+dy)||!put(matches[0],after.x,after.y))return null;
  }
  if(targets.size>ROOM_CUT_LIMIT||targets.size%2!==0)return null;
  const staged={...tree,objects:tree.objects.filter((_,i)=>!targets.has(i))},out:SupportChildEdit[]=[];
- for(const [i,p] of targets){const o=tree.objects[i],q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,p.x,p.y,o.orientation);if(!q||!supportPlacementFits(staged,shapes,face.terrain,o.itemId,p.x,p.y,o.orientation))return null;out.push({...q[0],index:i});staged.objects.push({...o,...p});}
+ for(const [i,p] of targets){const o=tree.objects[i],q=free?indoorFreeTransform(face,shapes,allowed,i,p.x,p.y,o.orientation):supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,p.x,p.y,o.orientation);if(!q||!free&&!supportPlacementFits(staged,shapes,face.terrain,o.itemId,p.x,p.y,o.orientation))return null;out.push({...q[0],index:i});staged.objects.push({...o,...p});}
  return out;
 }
 /** Rotate the selected native group and its exact reflected partners. The
  * original anchors are checked before either side is staged. */
-export function indoorLinkedRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1,axis:DesignSymmetry):SupportChildEdit[]|null{
- const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||![-1,1].includes(turn))return null;
- const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||face.positions[indices[j]]?.plain!==true||!isCardinal(o.orientation)||!allowed.has(o.itemId)||!indoorClear(tree,shapes,indices[j])))return null;
+export function indoorLinkedRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1,axis:DesignSymmetry,free=false):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!face?.terrain||free&&!indoorFreeFloor(face)||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||![-1,1].includes(turn))return null;
+ const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||face.positions[indices[j]]?.plain!==true||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,indices[j]))))return null;
  const left=Math.min(...chosen.map(o=>o.x)),top=Math.min(...chosen.map(o=>o.y));
- const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])}));
+ const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:worldOrientationCode(o.orientation)!/4}));
  const rotated=indices.length===1?[{...clip[0],orientation:(clip[0].orientation+turn+4)%4}]:rotateIndoorCut(clip,tree.factor,shapes,turn);if(!rotated)return null;
  const targets=new Map<number,{x:number;y:number;orientation:string}>();
- function put(i:number,p:{x:number;y:number;orientation:number}){const q={x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS[p.orientation]},old=targets.get(i);if(!q.orientation)return false;if(old)return old.x===q.x&&old.y===q.y&&old.orientation===q.orientation;targets.set(i,q);return true;}
+ function put(i:number,p:{x:number;y:number;orientation:number}){const q={x:p.x,y:p.y,orientation:EIGHT_WAY_ORIENTATIONS[p.orientation*2]},old=targets.get(i);if(!q.orientation)return false;if(old)return old.x===q.x&&old.y===q.y&&old.orientation===q.orientation;targets.set(i,q);return true;}
  for(let j=0;j<indices.length;j++){
   const i=indices[j],o=chosen[j],p=rotated[j];if(p.itemId!==o.itemId)return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
-  const before=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:clip[j].orientation},g,axis),next={itemId:o.itemId,x:left+p.dx*tree.factor/2,y:top+p.dy*tree.factor/2,orientation:p.orientation},after=reflectedDesignItem(next,g,axis);
+  const before=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:clip[j].orientation},g,axis,free&&face.factor===1),next={itemId:o.itemId,x:left+p.dx*tree.factor/2,y:top+p.dy*tree.factor/2,orientation:p.orientation},after=reflectedDesignItem(next,g,axis,free&&face.factor===1);
   if(!before||!after)return null;
-  const matches=tree.objects.flatMap((v,k)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===CARDINAL_ORIENTATIONS[before.orientation]?[k]:[]);
-  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!indoorClear(tree,shapes,matches[0])||!put(i,next)||!put(matches[0],after))return null;
+  const matches=tree.objects.flatMap((v,k)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[before.orientation*2]?[k]:[]);
+  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,next)||!put(matches[0],after))return null;
  }
  if(targets.size>ROOM_CUT_LIMIT||targets.size%2!==0)return null;
  const staged={...tree,objects:tree.objects.filter((_,i)=>!targets.has(i))},out:SupportChildEdit[]=[];
- for(const [i,p] of targets){const o=tree.objects[i],q=supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,p.x,p.y,p.orientation);if(!q||!supportPlacementFits(staged,shapes,face.terrain,o.itemId,p.x,p.y,p.orientation))return null;out.push({...q[0],index:i});staged.objects.push({...o,...p});}
+ for(const [i,p] of targets){const o=tree.objects[i],q=free?indoorFreeTransform(face,shapes,allowed,i,p.x,p.y,p.orientation):supportFreeEdit({...tree,objects:[o]},shapes,allowed,face.terrain,0,p.x,p.y,p.orientation);if(!q||!free&&!supportPlacementFits(staged,shapes,face.terrain,o.itemId,p.x,p.y,p.orientation))return null;out.push({...q[0],index:i});staged.objects.push({...o,...p});}
  return out;
 }
 /** Both sides of a new ordinary furniture placement share one stock
  * reservation and one collision/terrain validation. */
-export function indoorLinkedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number,axis:DesignSymmetry):IndoorPlace[]|null{
+export function indoorLinkedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],anchor:ScenePreset['anchor'],x:number,y:number,axis:DesignSymmetry,free=false):IndoorPlace[]|null{
  if(!face?.factor||!clip.length)return null;
- const original=indoorScenePlacement(face,shapes,allowed,stock,clip,anchor,x,y);if(!original)return null;
+ const original=indoorScenePlacement(face,shapes,allowed,stock,clip,anchor,x,y,free);if(!original)return null;
  const poses:DesignClipItem[]=[],seen=new Map<string,string>();
- function add(p:{itemId:number;x:number;y:number;orientation:number}){if(p.x<0||p.y<0)return false;const key=p.x+':'+p.y,value=p.itemId+':'+p.orientation,old=seen.get(key);if(old!==undefined)return old===value;seen.set(key,value);poses.push({itemId:p.itemId,dx:p.x*2/face!.factor!,dy:p.y*2/face!.factor!,orientation:p.orientation});return true;}
- for(const row of original){const p={itemId:row.itemId,x:row.x,y:row.y,orientation:CARDINAL_ORIENTATIONS.indexOf(row.orientation as typeof CARDINAL_ORIENTATIONS[number])},g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};const q=reflectedDesignItem(p,g,axis);if(!q||!add(p)||!add(q))return null;}
- return indoorGroupPlace(face,shapes,allowed,stock,poses,0,0);
+ function add(p:{itemId:number;x:number;y:number;orientation:number}){if(p.x<0||p.y<0)return false;const value=p.itemId+':'+p.orientation,key=p.x+':'+p.y+(free?':'+value:''),old=seen.get(key);if(old!==undefined)return old===value;seen.set(key,value);poses.push({itemId:p.itemId,dx:p.x*2/face!.factor!,dy:p.y*2/face!.factor!,orientation:p.orientation});return true;}
+ for(const row of original){const p={itemId:row.itemId,x:row.x,y:row.y,orientation:worldOrientationCode(row.orientation)!/4},g:DesignItemGeometry={itemId:p.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};const q=reflectedDesignItem(p,g,axis,free&&face.factor===1);if(!q||!add(p)||!add(q))return null;}
+ return indoorGroupPlace(face,shapes,allowed,stock,poses,0,0,free);
 }
 export const indoorLinkedWords={ja:['対称連動移動','軸・中心を指定','連動を解除'],en:['Linked symmetry move','Choose axis or center','Unlink'],fr:['Déplacement symétrique lié','Choisir axe ou centre','Dissocier'],it:['Spostamento simmetrico collegato','Scegli asse o centro','Scollega'],de:['Gekoppelte Symmetriebewegung','Achse oder Mittelpunkt wählen','Entkoppeln'],'es-ES':['Movimiento simétrico vinculado','Elegir eje o centro','Desvincular'],'zh-CN':['对称联动移动','选择轴或中心','解除联动'],'pt-BR':['Movimento simétrico vinculado','Escolher eixo ou centro','Desvincular']} as const;
 export const indoorAlignWords={
@@ -456,27 +468,27 @@ export const indoorTransferWords={
 } as const;
 
 /** Same half-cell offsets as the shared outdoor clipboard, in source index order. */
-export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,removable:ReadonlySet<number>,supportIndices:ReadonlySet<number>=new Set()):{rows:CutWitness[];clip:DesignClipItem[]}|null{
+export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,removable:ReadonlySet<number>,supportIndices:ReadonlySet<number>=new Set(),free=false):{rows:CutWitness[];clip:DesignClipItem[]}|null{
  const t=indoorEditableTree(face);
  if(!t||face?.kind!=='floor'||!face.terrain||!Number.isSafeInteger(roomOrdinal)||roomOrdinal<1||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
  for(const index of indices){
-  const o=t.objects[index];if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!indoorClear(t,shapes,index))return null;
+  const o=t.objects[index];if(!o||!isEightWay(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!(free?face.positions[index]?.plain===true&&!supportIndices.has(index)&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(t,shapes,index)))return null;
   rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(supportIndices.has(index)?{supportFactor:t.factor}:{})});
-  clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+  clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:worldOrientationCode(o.orientation)!/4});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
 export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
 /** Check every footprint against the floor and all already staged siblings. */
-export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number):IndoorTransferRow[]|null{
+export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number,free=false):IndoorTransferRow[]|null{
  const tree=indoorEditableTree(face);
  if(!tree||face?.kind!=='floor'||!face.terrain||!rows.length||rows.length!==clip.length||rows.length>ROOM_CUT_LIMIT||![x,y].every(Number.isSafeInteger))return null;
  const staged={...tree,objects:[...tree.objects]},out:IndoorTransferRow[]=[];
  for(let i=0;i<rows.length;i++){
-  const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];
-  if(String(p.itemId)!==r.itemId||r.supportFactor&&r.supportFactor!==tree.factor||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation))return null;
+  const r=rows[i],p=clip[i],px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2];
+  if(String(p.itemId)!==r.itemId||r.supportFactor&&r.supportFactor!==tree.factor||!orientation||!allowed.has(p.itemId)||!Number.isSafeInteger(px)||!Number.isSafeInteger(py)||!(free?!r.supportFactor&&freeRoomPose(face,shapes,p.itemId,px,py,orientation):isCardinal(r.expectedOrientation)&&supportPlacementFits(staged,shapes,face.terrain,p.itemId,px,py,orientation)))return null;
   out.push({itemId:p.itemId,x:px,y:py,orientation,expectedX:r.expectedX,expectedY:r.expectedY,expectedOrientation:r.expectedOrientation,...(r.supportFactor?{supportFactor:r.supportFactor}:{}),...(r.roomSource?{roomSource:r.roomSource}:{localOrdinal:r.localOrdinal})});
   staged.objects.push({itemId:p.itemId,x:px,y:py,orientation,child:null});
  }

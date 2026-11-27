@@ -12,8 +12,8 @@ export interface SymmetryItem{readonly itemId:number;readonly x:number;readonly 
 function runSignature(shape:SourceObjectShape,flipX:boolean,flipY:boolean){
  return shape.runs.map(r=>[flipY?shape.height-1-r.y:r.y,flipX?shape.width-r.x-r.width:r.x,r.width]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(r=>r.join(':')).join(';');
 }
-export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:DesignSymmetry):SymmetryItem|null{
- if(p.attachment&&(s.mode!=='point'||g.supportPath!==p.attachment.scene.tree.sourcePath||p.itemId!==p.attachment.scene.ownerItemId)||!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
+export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:DesignSymmetry,allowDiagonal=false):SymmetryItem|null{
+ if(p.attachment&&(s.mode!=='point'||g.supportPath!==p.attachment.scene.tree.sourcePath||p.itemId!==p.attachment.scene.ownerItemId)||!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,allowDiagonal?p.orientation*2:p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>=(allowDiagonal?4:3.5)||allowDiagonal&&p.attachment&&!Number.isInteger(p.orientation)||p.itemId!==g.itemId||
   exclusiveAnchorClass(String(p.itemId))||!['furniture','landscape'].includes(g.layer)||nativeActionBlocked(g.editRestrictions,'select'))return null;
  const a=g.shapes[p.itemId+':'+p.orientation*4];if(!a?.runs.length)return null;
  const fx=s.mode!=='horizontal',fy=s.mode!=='vertical';

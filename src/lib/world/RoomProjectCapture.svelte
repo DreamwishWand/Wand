@@ -101,7 +101,11 @@
       if(!roomBackupSurfaceValid(face,s,g,selectedFree))throw Error('terrain');
       geometry.set(face.ordinal,g);
      }
-     inputs.push({room:entry.room,before:entry.surfaces,after,geometry});
+     const ceiling=incoming[i].ceiling;
+     if(ceiling!==undefined&&ceiling!==entry.room.ceiling&&!finishIds.get('floor')?.has(ceiling)){
+      const d=await request(own,{command:'room-finish-catalog',kind:'floor',locale});if(!valid()||d.kind!=='room-finish-catalog'||d.surface!=='floor'||!Array.isArray(d.items)||!d.items.some((p:{itemId:number})=>p.itemId===ceiling))throw Error('ceiling');finishIds.set('floor',new Set(d.items.map((p:{itemId:number})=>p.itemId)));
+     }
+     inputs.push({room:entry.room,before:entry.surfaces,after,geometry,...(ceiling===undefined?{}:{ceiling})});
     }
     if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');return;
    }

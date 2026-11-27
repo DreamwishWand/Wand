@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorCeilingFinishPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorCeilingFinishPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorFreeGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -332,4 +332,63 @@ test('ceiling plan uses existing scalar and only flooring IDs',()=>{
  assert.equal(indoorCeilingFinishPlan(r,160000000),null);
  assert.equal(indoorCeilingFinishPlan(r,160100136),null);
  assert.equal(indoorCeilingFinishPlan({...r,ceiling:null},160100031),null);
+});
+
+test('free room group quarter turns allow overlap and diagonal poses but preserve eligibility and bounds',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,kind:'floor',sourcePath:'GridData/Rooms/Room8x8-GridData.json',factor:1,positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:3,y:1,orientationCode:8,plain:true},{itemId:40000001,x:1,y:3,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'};
+ const shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(code=>['40000001:'+code,shape])),allowed=new Set([40000001]);
+ const result=indoorFreeGroupRotate(full,shapes,allowed,[0,1],1);
+ assert.deepEqual(result?.map(p=>[p.index,p.x,p.y,p.orientation]),[[0,1,1,'GridOrientation_DownRight'],[1,1,3,'GridOrientation_Right']]);
+ assert.equal(indoorFreeGroupRotate(full,shapes,allowed,[0,2],1),null);
+ assert.equal(indoorFreeGroupRotate(full,shapes,allowed,[0,0],1),null);
+ assert.equal(indoorFreeGroupRotate(full,shapes,new Set(),[0,1],1),null);
+ assert.equal(indoorFreeGroupRotate({...full,terrain:{...terrain,sizeY:2}},shapes,allowed,[0,1],1),null);
+});
+
+test('free room alignment and spacing retain diagonal orientations and permit stationary overlap',async()=>{
+ const {indoorAlign}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:2,y:2,orientationCode:8,plain:true},{itemId:40000001,x:7,y:3,orientationCode:8,plain:true},{itemId:40000002,x:4,y:2,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape,'40000001:10':shape},allowed=new Set([40000001]);
+ assert.deepEqual(indoorAlign(full,shapes,allowed,[0,1,2],'spaceX',true)?.map(p=>[p.index,p.x,p.y,p.orientation]),[[1,4,2,'GridOrientation_Down']]);
+ assert.deepEqual(indoorAlign(full,shapes,allowed,[0,1],'left',true)?.map(p=>[p.index,p.x,p.y]),[[1,1,2]]);
+ assert.equal(indoorAlign(full,shapes,allowed,[0,3],'left',true),null);
+ assert.equal(indoorAlign(full,shapes,allowed,[0,1],'left'),null);
+});
+
+test('free symmetry duplicate accepts native diagonal mirror and overlap but rejects missing footprint and state',async()=>{
+ const {indoorSymmetricDuplicate}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000002,x:4,y:1,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:10':shape,'40000001:6':shape,'40000001:2':shape},allowed=new Set([40000001]),stock=new Map([[40000001,2]]);
+ assert.deepEqual(indoorSymmetricDuplicate(full,shapes,allowed,stock,[0],{mode:'vertical',x2:6,y2:0},new Map(),true),[{itemId:40000001,x:4,y:1,orientation:'GridOrientation_DownRight',expectedStock:2}]);
+ assert.deepEqual(indoorSymmetricDuplicate(full,shapes,allowed,stock,[0],{mode:'point',x2:6,y2:6},new Map(),true),[{itemId:40000001,x:4,y:4,orientation:'GridOrientation_UpRight',expectedStock:2}]);
+ assert.equal(indoorSymmetricDuplicate(full,{'40000001:10':shape},allowed,stock,[0],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
+ assert.equal(indoorSymmetricDuplicate(full,shapes,allowed,stock,[1],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
+});
+
+test('free linked symmetry moves and turns diagonal partners over occupied cells',async()=>{
+ const {indoorLinkedMove,indoorLinkedRotate,indoorLinkedPlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:4,y:1,orientationCode:6,plain:true},{itemId:40000002,x:2,y:2,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(code=>['40000001:'+code,shape])),allowed=new Set([40000001]),axis={mode:'vertical',x2:6,y2:0};
+ assert.deepEqual(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis,true)?.map(p=>[p.index,p.x,p.y]),[[0,2,2],[1,3,2]]);
+ assert.equal(indoorLinkedMove({...full,positions:[...full.positions,{...full.positions[1]}]},shapes,allowed,[0],0,2,2,axis,true),null);
+ assert.deepEqual(indoorLinkedRotate(full,shapes,allowed,[0],1,axis,true)?.map(p=>p.orientation),['GridOrientation_UpLeft','GridOrientation_UpRight']);
+ assert.deepEqual(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,2]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true)?.map(p=>[p.x,p.y,p.expectedStock]),[[2,2,2],[3,2,1]]);
+ assert.equal(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,1]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true),null);
+});
+
+test('free indoor cut captures overlapping diagonal records and pastes them without stock',()=>{
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:1,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes={'40000001:8':shape,'40000001:10':shape},allowed=new Set([40000001]);
+ const cut=captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set(),true);
+ assert.deepEqual(cut?.clip.map(p=>p.orientation),[2.5,2]);
+ assert.deepEqual(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,1,1,true)?.map(p=>[p.x,p.y,p.orientation]),[[1,1,'GridOrientation_DownLeft'],[1,1,'GridOrientation_Down']]);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,1,1),null);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,8,1,true),null);
+ assert.equal(captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set([0]),true),null);
 });
