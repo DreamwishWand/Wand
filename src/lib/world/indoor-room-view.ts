@@ -205,6 +205,17 @@ export function indoorFreeMoveGroup(face:IndoorSurface|null,shapes:Readonly<Reco
  const rows=indices.map(i=>{const p=t!.objects[i];return p?indoorFreeTransform(face,shapes,allowed,i,p.x+x-o.x,p.y+y-o.y):null;});
  return rows.some(r=>!r)?null:rows.flatMap(r=>r!);
 }
+/** Group turns use the common quarter-turn footprint transform even when
+ * individual furniture is on a diagonal. Free mode relaxes collision only. */
+export function indoorFreeGroupRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face);if(!tree||!indoorFreeFloor(face)||indices.length<2||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||(turn!==1&&turn!==-1))return null;
+ const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||face?.positions[indices[j]]?.plain!==true||!allowed.has(o.itemId)||!freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation)))return null;
+ const left=Math.min(...chosen.map(o=>o.x)),top=Math.min(...chosen.map(o=>o.y));
+ const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:worldOrientationCode(o.orientation)!/4}));
+ const rotated=rotateIndoorCut(clip,tree.factor,shapes,turn);if(!rotated)return null;
+ const rows=rotated.map((p,i)=>p.itemId===chosen[i].itemId?indoorFreeTransform(face,shapes,allowed,indices[i],left+p.dx*tree.factor/2,top+p.dy*tree.factor/2,EIGHT_WAY_ORIENTATIONS[p.orientation*2]):null);
+ return rows.some(r=>!r)?null:rows.flatMap(r=>r!);
+}
 export function indoorMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string,free=false){
  if(free)return indoorFreeTransform(face,shapes,allowed,index,x,y,orientation);
  const t=indoorEditableTree(face),o=t?.objects[index];return t&&o&&face?.terrain?supportFreeEdit(t,shapes,allowed,face.terrain,index,x,y,orientation??o.orientation):null;
