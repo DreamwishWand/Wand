@@ -22,7 +22,7 @@ def apply_delta(raw, dest):
                                 schema="wand.photo-mode.companion-player-delta@1")
 
 def apply_player_archive(raw, dest, *, sha, size, base_count, item_count, clip_count, pose_count,
-                         schema, previous_sha=None):
+                         schema, previous_sha=None, expansion_sha=None, variant_count=0):
     require(len(raw)==size and digest(raw)==sha, "companion delta integrity mismatch")
     index_path=dest/"index.json"
     public=json.loads(index_path.read_bytes())
@@ -45,12 +45,16 @@ def apply_player_archive(raw, dest, *, sha, size, base_count, item_count, clip_c
         m=json.loads(archive.read(manifest))
         require(m["schema"]==schema
                 and (previous_sha is None or m["baseCompanionDeltaSha256"]==previous_sha)
+                and (expansion_sha is None or m["baseExpansionSha256"]==expansion_sha)
                 and m["baseReleaseSha256"]==RELEASE_SHA and m["gameVersion"]==public["gameVersion"]
                 and m["models"]==models and len(m["items"])==item_count, "delta base or coverage mismatch")
-        assets={};rows={};pairs=set()
-        for item,row in m["items"].items():
-            require(re.fullmatch(r"12[0-9]{7}",item) is not None and item not in public["items"]
-                    and set(row)==set(BODY_TYPES), "invalid new companion ID")
+        assets={};rows={};pairs=set();alternates={}
+        variants=m.get("variants",{})
+        require(isinstance(variants,dict) and set(variants)<=set(m["items"])
+                and len(variants)==variant_count and all(isinstance(v,list) and len(v)==1 for v in variants.values()),
+                "unexpected pose variants")
+        def validate_row(row):
+            require(isinstance(row,dict) and set(row)==set(BODY_TYPES),"invalid body options")
             options={}
             for body in BODY_TYPES:
                 o=row[body];c=o["clip"];e=entry(c);source=o["sourceSha256"];name=e["sha256"]+".wpa"
@@ -73,7 +77,14 @@ def apply_player_archive(raw, dest, *, sha, size, base_count, item_count, clip_c
                                "clip":{**e,"sourceSha256":source,"name":c["name"]},
                                "accessoryIncluded":False,"companionIncluded":False}
             pairs.add(tuple(options[b]["sourceSha256"] for b in BODY_TYPES))
-            rows[item]=options
+            return options
+        for item,row in m["items"].items():
+            require(re.fullmatch(r"12[0-9]{7}",item) is not None and item not in public["items"],"invalid new companion ID")
+            options=validate_row(row);rows[item]=options
+            if item in variants:
+                alt=validate_row(variants[item][0])
+                require(any(alt[b]["sourceSha256"]!=options[b]["sourceSha256"] for b in BODY_TYPES),"duplicate pose variant")
+                alternates[item]=[alt]
         require(len(assets)==clip_count and len(pairs)==pose_count and set(files)=={"companion-player-delta.json",*assets}, "delta asset coverage")
         for name,data in assets.items():
             path=dest/name
@@ -82,5 +93,6 @@ def apply_player_archive(raw, dest, *, sha, size, base_count, item_count, clip_c
         for name,data in assets.items():
             (dest/name).write_bytes(data)
         public["items"].update(rows)
+        if alternates:public.setdefault("variants",{}).update(alternates)
         index_path.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
         print("Companion player-only additions:",len(rows),"items;",len(pairs),"shared poses;",len(assets),"clips;",sum(map(len,assets.values())),"bytes; total",len(public["items"]),"items")

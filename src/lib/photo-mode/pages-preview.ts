@@ -6,7 +6,8 @@ export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
 export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry;accessoryIncluded:false}&({companionIncluded?:false;actor?:never;anchor?:never}|{companionIncluded:true;actor:ActorEntry;anchor:ActorAnchor});
 export type PreviewOption=PairOption|PlayerOption;
-export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,Partial<Record<BodyType,PreviewOption>>>};
+export type PoseRow=Partial<Record<BodyType,PreviewOption>>;
+export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
 function validEntry(e:BlobEntry){return e&&/^[a-f0-9]{64}$/.test(e.sha256)&&Number.isSafeInteger(e.bytes)&&e.bytes>0&&e.bytes<=64*1024*1024}
 let request:Promise<PreviewIndex|null>|undefined;
@@ -18,7 +19,18 @@ export function loadPagesPoseIndex(base:string){
     check((m.schema==='wand.photo-mode.pages-test@1'||m.schema==='wand.photo-mode.pages-test@2')&&m.publicationAuthorized===true&&m.testOnly===true&&m.fullPoseVerified===false,'Invalid approved test manifest');
     check(bodyTypes.every(b=>validEntry(m.bodyIcons[b])),'Invalid body icons');
     if(m.schema==='wand.photo-mode.pages-test@2')check(m.models&&bodyTypes.every(b=>validEntry(m.models![b])),'Invalid models');
-    for(const [id,options] of Object.entries(m.items)){check(/^[1-9][0-9]{0,14}$/.test(id)&&Number.isSafeInteger(Number(id)),'Invalid item');for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&o.accessoryIncluded===false&&(o.companionIncluded===undefined||o.companionIncluded===false||o.companionIncluded===true&&validEntry(o.actor)&&/^[a-f0-9]{64}$/.test(o.actor.sourceSha256)&&Number.isSafeInteger(o.anchor.node)&&o.anchor.node>=0&&typeof o.anchor.path==='string'),'Invalid player scene')}}}
+    function validateRow(options:PoseRow){for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&o.accessoryIncluded===false&&(o.companionIncluded===undefined||o.companionIncluded===false||o.companionIncluded===true&&validEntry(o.actor)&&/^[a-f0-9]{64}$/.test(o.actor.sourceSha256)&&Number.isSafeInteger(o.anchor.node)&&o.anchor.node>=0&&typeof o.anchor.path==='string'),'Invalid player scene')}}}
+    for(const [id,options] of Object.entries(m.items)){
+      check(/^[1-9][0-9]{0,14}$/.test(id)&&Number.isSafeInteger(Number(id)),'Invalid item');validateRow(options);
+    }
+    for(const [id,variants] of Object.entries(m.variants??{})){
+      check(m.items[id]&&Array.isArray(variants)&&variants.length>0&&variants.length<=8,'Invalid pose variants');
+      const seen=new Set([bodyTypes.map(b=>m.items[id][b]?.sourceSha256).join(':')]);
+      for(const row of variants){
+        validateRow(row);check(bodyTypes.every(b=>row[b]),'Incomplete alternate pose');
+        const k=bodyTypes.map(b=>row[b]?.sourceSha256).join(':');check(!seen.has(k),'Duplicate alternate pose');seen.add(k);
+      }
+    }
     return m;
   })();void request.catch(()=>{request=undefined})}
   return request;
@@ -58,9 +70,13 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
   }catch(e){for(const im of images.values())im.close();throw e}
 }
 
+export function poseRows(index:Pick<PreviewIndex,'items'|'variants'>,itemId:number):PoseRow[]{
+  const id=String(itemId),first=index.items[id];
+  return first?[first,...(index.variants?.[id]??[])]:[];
+}
 /** Only exact original player-clip hashes for both body types establish a shared pose. */
-export function relatedPoseItems(index:Pick<PreviewIndex,'items'>,itemId:number):number[]{
-  const target=index.items[String(itemId)];
+export function relatedPoseItems(index:Pick<PreviewIndex,'items'|'variants'>,itemId:number,poseIndex=0):number[]{
+  const target=poseRows(index,itemId)[poseIndex];
   if(!target||!bodyTypes.every(b=>target[b]))return [];
-  return Object.entries(index.items).filter(([id,row])=>Number(id)!==itemId&&bodyTypes.every(b=>row[b]&&row[b]!.sourceSha256===target[b]!.sourceSha256)).map(([id])=>Number(id)).sort((a,b)=>a-b);
+  return Object.keys(index.items).map(Number).filter(id=>id!==itemId&&poseRows(index,id).some(row=>bodyTypes.every(b=>row[b]&&row[b]!.sourceSha256===target[b]!.sourceSha256))).sort((a,b)=>a-b);
 }
