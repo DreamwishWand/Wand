@@ -916,6 +916,13 @@ try {
   await star.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   const starErrors = [];
   const inactiveMediaRequests = [];
+  const sharedRewardRequests=[];
+  // Deterministic CDN failure: a verified public release is requested lazily;
+  // no unverified historical substitute or legacy dedicated index is allowed.
+  await star.route('https://media.dreamwishwand.com/**',async route=>{
+    sharedRewardRequests.push(route.request().url());
+    await route.abort();
+  });
   star.on('pageerror',e=>starErrors.push(String(e)));
   star.on('request',r=>{if(/starpath-media-[a-f0-9]+|\/media\/steam-v1\.26\.2\//.test(r.url()))inactiveMediaRequests.push(r.url());});
   await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
@@ -995,7 +1002,7 @@ try {
   assert.equal(await star.locator('.reward-provenance').evaluate(el=>el.open),false,
     'source technical caveats should not consume card space by default');
   await star.locator('.reward-provenance summary').click();
-  assert.match(await star.locator('.reward-provenance').innerText(),/SRC-04の正式公開後/);
+  assert.match(await star.locator('.reward-provenance').innerText(),/共通アイテム画像/);
   assert.equal(await star.locator('.reward-source').first().evaluate(el=>el.open),false,
     'raw item IDs should stay collapsed');
   assert.match(await star.locator('.reward-entry').first().innerText(),/×1/);
@@ -1004,7 +1011,11 @@ try {
     'reward price must show the actual source token currency');
   await star.locator('.reward-source summary').first().click();
   assert.match(await star.locator('.reward-source').first().innerText(),/120000253/);
-  assert.equal(await star.locator('.reward-entry img').count(),0,'non-public SRC04 must not render images');
+  await star.locator('.reward-entry .reward-art').first().scrollIntoViewIfNeeded();
+  await star.waitForFunction(()=>document.querySelector('.reward-entry .reward-art .artwork')?.getAttribute('data-media-state')==='unavailable');
+  assert.ok(sharedRewardRequests.some(url=>/\/index\/items\/steam-1\.26\.2\/[a-f0-9]{64}\/manifest\.json$/.test(url)),
+    'visible reward requests the common pinned Item image release');
+  assert.equal(await star.locator('.reward-entry img').count(),0,'failed CDN lookup cannot display a historical substitute');
   assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
   assert.match(await star.locator('.week').first().innerText(),/サル（大尉）/);
   assert.match(await star.locator('.week').first().innerText(),/ムーンストーン/);

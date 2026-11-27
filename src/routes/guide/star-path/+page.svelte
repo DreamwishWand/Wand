@@ -14,7 +14,7 @@
   import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
   import {loadStarpathNativeRevisionEvidence,STARPATH_NATIVE_REVISION_FILE,
     type StarpathNativeRevisionEvidence} from '$lib/guide/starpath-native-revision.ts';
-  import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.ts';
+  import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.ts';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.ts';
@@ -24,7 +24,7 @@
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote,
     type PublicStarpathGoals} from '$lib/guide/public-starpath-goals.ts';
 
-  let catalog:any=null, publicMedia:any=null, goalWarning='', error='', loading=true;
+  let catalog:any=null, goalWarning='', error='', loading=true;
   let goalAmounts:PublicStarpathGoals|null=null;
   let rewardExtras:StarpathRewardExtras|null=null;
   let weeklyLocales:StarpathLocalizedPart|null=null;
@@ -162,7 +162,6 @@
         loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
         loadStarpathRewardExtras(`${base}/guide/public/starpath-reward-extras-2026-11-22.json`,catalog)
       ]);
-      publicMedia=await loadStarpathMedia(`${base}/`,catalog);
       try{
         goalAmounts=await loadPublicStarpathGoals(`${base}/guide/public/starpath-goals-2026-11-22.json`,catalog);
       }catch(e){goalWarning=e instanceof Error?e.message:String(e);goalAmounts=null;}
@@ -327,12 +326,7 @@
                   {#each visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r (r.occurrenceId)}
                     <li id={'starpath-reward-'+r.occurrenceId} class="reward-entry" class:premium={r.premium} class:permalink-focused={highlightedRewardId===r.occurrenceId}>
                       <div class="reward-art">
-                        {#if starpathMediaThumbnail(publicMedia,r.itemId)}
-                          <img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''}
-                            alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
-                        {:else}
-                          <WandIcon name="collection" size={27}/>
-                        {/if}
+                        <ItemArtwork itemId={Number(r.itemId)} allowHistoricalFallback={false}/>
                       </div>
                       <div class="reward-info">
                         <strong class="reward-name">{starpathRewardDisplayName(r.itemId,locale,rewardExtras)||'名称未確認'}</strong>
@@ -366,7 +360,7 @@
         </div>
         <details class="reward-provenance">
           <summary>報酬データについて</summary>
-          <p>52種類はSteam v1.26.2の原本から名称を照合しています。8種類のモチーフには公式の個別表示名がありません。{publicMedia?'画像は公開済み・検証済みのものだけを表示しています。':'画像はSRC-04の正式公開後に追加されます。'}</p>
+          <p>52種類はSteam v1.26.2の原本から名称を照合しています。8種類のモチーフには公式の個別表示名がありません。画像は公開済みの共通アイテム画像を使用し、未確認の画像は表示しません。</p>
         </details>
         {#if visibleRewards(rewardRows,rewardQuery,rewardTier,locale,rewardExtras).length===0}
           <p role="status">一致する報酬はありません。</p>
@@ -434,7 +428,6 @@
   .reward-grid .reward-entry.premium{border-color:#745c8e}
   .reward-grid .reward-entry.permalink-focused{border-color:#bd92eb;box-shadow:inset 0 0 0 1px #8e65ba}
   .reward-art{display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;color:#9b80b8;background:#30243e;border-radius:9px;overflow:hidden}
-  .reward-thumb{display:block;width:58px;height:58px;object-fit:contain}
   .reward-info{min-width:0;flex:1;display:grid;align-content:start;gap:7px}
   .reward-name{font-size:13px;line-height:1.45;color:#f4eafa;overflow-wrap:anywhere}
   .reward-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:#c2b1d0}
