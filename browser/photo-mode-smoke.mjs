@@ -44,6 +44,7 @@ assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
 const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027','70200028','70200029'];
 assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
+const mermaidTextures=new Set();for(const id of mermaids)for(const b of ['male','female']){const slots=index.items[id][b].baseMaterials;assert.equal(slots.length,4);for(const s of slots)mermaidTextures.add(s.texture.sha256)}assert.equal(mermaidTextures.size,6);
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
 const limboRows=Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true);
