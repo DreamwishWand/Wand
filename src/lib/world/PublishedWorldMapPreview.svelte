@@ -3,16 +3,22 @@
   import {loadWorldMapRelease,type PublishedMapRelease} from '../media/world-map-release.ts';
   import {defaultMapCamera,mapViewportBounds,mapCameraViewBox,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
   import WorldMapPartLayer from './WorldMapPartLayer.svelte';
+  import OceanMapLayer from './OceanMapLayer.svelte';
+  import {loadOceanComposition,type OceanComposition} from '../media/ocean-composition.ts';
+  import type {PublishedWorldMap} from '../media/public-world-map-parts.ts';
   import MapCameraControls from './MapCameraControls.svelte';
   export let gameVersion='1.26.2';
   let release:PublishedMapRelease|null=null;
   let selected='',loading=true,error='';
   let imageFailed=false;
+  let ocean:OceanComposition|null=null;
+  let oceanRevision=0;
   let svg:SVGSVGElement;
   let camera=defaultMapCamera();
   const maxZoom=64,gesture=createMapPanGesture();
   $: map=release?.maps.find(m=>m.id===selected)??null;
-  $: extent={x:0,y:0,w:map?.width??1,h:map?.height??1};
+  $: void updateOcean(map);
+  $: extent={x:0,y:0,w:ocean?.width??map?.width??1,h:ocean?.height??map?.height??1};
   $: viewport=mapViewportBounds(camera,extent);
   $: viewBox=mapCameraViewBox(camera,extent);
   onMount(()=>{
@@ -25,9 +31,18 @@
       .finally(()=>{if(alive)loading=false;});
     return ()=>{alive=false;};
   });
+  async function updateOcean(next:PublishedWorldMap|null){
+    const ticket=++oceanRevision;
+    ocean=null;
+    if(!next||next.id!=='MapVillageExpansion4')return;
+    try{
+      const value=await loadOceanComposition(next);
+      if(ticket===oceanRevision){ocean=value;if(value)camera=defaultMapCamera();}
+    }catch{if(ticket===oceanRevision)error='海の公開索引を読み込めません。';}
+  }
   function select(event:Event){
     selected=(event.currentTarget as HTMLSelectElement).value;
-    camera=defaultMapCamera();imageFailed=false;
+    camera=defaultMapCamera();imageFailed=false;error='';
   }
 </script>
 {#if loading}
@@ -41,7 +56,7 @@
         <option value={m.id}>{m.worldCandidate==='underwater'?m.id:m.worldCandidate}</option>
       {/each}
     </select>
-    {#if map.oceanMissing}<p>海の特殊描画は未対応</p>
+    {#if map.oceanMissing&&!ocean}<p>海の特殊描画は未対応</p>
     {:else if map.visualReviewRequired}<p>原本表示の確認待ち</p>{/if}
   </div>
   {#if imageFailed}<p role="alert">一部の原寸画像を取得できません。</p>{/if}
@@ -53,7 +68,8 @@
         on:pointermove={e=>{const next=gesture.move(e,svg,extent,camera);if(next)camera=next;}}
         on:pointerup={e=>gesture.end(e)} on:pointercancel={e=>gesture.end(e)} on:pointerleave={()=>gesture.leave()}>
         <svg bind:this={svg} viewBox={viewBox} aria-label="ワールドマップ">
-          <WorldMapPartLayer parts={map.parts} {viewport} onImageError={()=>imageFailed=true}/>
+          {#if ocean}<OceanMapLayer composition={ocean} {viewport} onImageError={()=>imageFailed=true}/>
+          {:else}<WorldMapPartLayer parts={map.parts} {viewport} onImageError={()=>imageFailed=true}/>{/if}
         </svg>
       </div>
       <MapCameraControls zoom={camera.zoom} {maxZoom}
