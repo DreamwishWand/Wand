@@ -761,7 +761,23 @@ mod browser_amount_preview {
                 "expectedX":r["expectedX"],"expectedY":r["expectedY"]
             });
             let (ordinal,item_id,kind,expected,position,orientation)=
-                if x.is_some()&&before.is_some(){
+                if before.zip(after).is_some_and(|(a,b)|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&a)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&b)){
+                    let (a,b)=(before.ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?,after.ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?);
+                    if a==b||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&a)||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&b){return Err(fail("DB05_ORIENTATION_NOT_CONFIRMED"));}
+                    let mut part=shared;
+                    part["expectedOrientation"]="GridOrientation_Up".into();
+                    part["replacementOrientation"]="GridOrientation_Right".into();
+                    let p=parse_grid_orientation_plan(&part.to_string())?;
+                    if p.kind!="full"||p.item_id/100_000!=400{return Err(fail("DB05_ORIENTATION_NOT_CONFIRMED"));}
+                    let position=if x.is_some(){
+                        let mut coords=part;
+                        let m=coords.as_object_mut().ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?;
+                        m.remove("expectedOrientation");m.remove("replacementOrientation");
+                        coords["replacementX"]=r["replacementX"].clone();coords["replacementY"]=r["replacementY"].clone();
+                        Some(parse_grid_coordinate_plan(&coords.to_string())?.replacement)
+                    }else{None};
+                    (p.ordinal,p.item_id,p.kind,p.expected,position,Some((a.to_owned(),b.to_owned())))
+                }else if x.is_some()&&before.is_some(){
                     let parsed=parse_grid_transform_plan(
                         &serde_json::to_string(row)
                             .map_err(|_|fail("DB05_GRID_MIXED_ROW_INVALID"))?
@@ -1984,6 +2000,8 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            grid_instance_preview::validate_oblique_grid_edits(original,&edits)
+                .map_err(|_|fail("DB05_GRID_OBLIQUE_UNSUPPORTED"))?;
             let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
             grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
                 .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
@@ -2055,6 +2073,8 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            grid_instance_preview::validate_oblique_grid_edits(original,&edits)
+                .map_err(|_|fail("DB05_GRID_OBLIQUE_UNSUPPORTED"))?;
             let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
             grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
                 .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
