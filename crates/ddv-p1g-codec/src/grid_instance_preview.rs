@@ -1638,14 +1638,14 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }Ok(())
     }
     for row in rows{
-        let o=row.as_object().filter(|o|o.len()==(if o.contains_key("scene"){6}else{5})&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"))).ok_or(bad)?;
+        let o=row.as_object().filter(|o|o.len()==5+usize::from(o.contains_key("scene"))+usize::from(o.contains_key("freePlacement"))&&(!o.contains_key("freePlacement")||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&!o.contains_key("scene")&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"|"freePlacement"))).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let xy=(int("x")?,int("y")?);
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
         let d=destinations.get(&key).ok_or(bad)?;
-        if !anchors.insert((d.grid_id.clone(),xy)){return Err(bad);}
+        if !anchors.insert((d.grid_id.clone(),xy))&&o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(bad);}
         total+=1;
         if let Some(scene)=o.get("scene"){
             let mut subtree=1;descendants(checked_support_scene(item,scene)?,&mut subtree,0)?;
@@ -1665,6 +1665,8 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let x=row["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let orientation=row["orientation"].as_str().ok_or(bad)?;
+            let free_placement=row.get("freePlacement").and_then(Value::as_bool)==Some(true);
+            if free_placement{player_house_grid_scope(&root,&d.grid_id)?;}
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
                 if row.get("scene").is_some()||d.tessellation!=1||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation){return Err(bad);}
                 player_house_grid_scope(&root,&d.grid_id)?;
@@ -1677,7 +1679,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
             let ids=allocated.entry(d.grid_id.clone()).or_default();
             let next=grids.get(&d.grid_id).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
             let id=next.checked_add(ids.len() as u64).filter(|n|*n<u32::MAX as u64).ok_or(bad)?.to_string();ids.push(id);
-            places.push(BulkScenePlace{pose:BulkPlace{destination:d,item_id:item,xy:(x,y),orientation},tree});
+            places.push(BulkScenePlace{pose:BulkPlace{destination:d,item_id:item,xy:(x,y),orientation,free_placement},tree});
         }
         for (grid,ids) in allocated{for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}}
         let mut draft=preview_bulk_scene_place(std::str::from_utf8(profile).map_err(|_|bad)?,&places).map_err(|_|CodecError::Patch)?;
@@ -1725,25 +1727,27 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
     for row in rows{
-        let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
         let d=destinations.get(&key).ok_or(bad)?;
+        let row_free=free||o.get("freePlacement").and_then(Value::as_bool)==Some(true);
+        if row_free&&limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{player_house_grid_scope(&root,&d.grid_id)?;}
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
         if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
-        if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
+        if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!anchors.insert((d.grid_id.clone(),x,y))&&!row_free{return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
         let objects=grid.get("Objects").and_then(Value::as_object).ok_or(bad)?;
         // Ground paths may remain under furniture. Do not silently stack new
         // ordinary furniture on another non-ground anchor.
-        if !free&&objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(bad);}
+        if !row_free&&objects.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(x))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(y))){return Err(bad);}
         *count_by_grid.entry(d.grid_id.clone()).or_default()+=1;
         let stock=inventory.get(&item.to_string()).and_then(|v|v.get("Amount")).and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
         let c=counts.entry(item).or_insert((stock,0));c.1+=1;if c.1>c.0{return Err(bad);}
-        poses.push((key,item,(x,y),orientation.to_owned()));
+        poses.push((key,item,(x,y),orientation.to_owned(),row_free));
     }
     for (grid,count) in count_by_grid{
         let next=grids.get(&grid).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?;
@@ -1752,13 +1756,13 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     }
     if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         use ddv_save_patch::bulk_furniture::{BulkPlace,preview_bulk_furniture};
-        let places=poses.iter().map(|(key,item,xy,orientation)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation})).collect::<Result<Vec<_>,CodecError>>()?;
+        let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
         let mut draft=preview_bulk_furniture(std::str::from_utf8(profile).map_err(|_|bad)?,&[],&places).map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         return Ok(draft.patched_json);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
-    for (key,item,xy,orientation) in poses{
+    for (key,item,xy,orientation,_) in poses{
         let amount=&mut counts.get_mut(&item).ok_or(bad)?.0;
         let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:destinations.get(&key).ok_or(bad)?,item_id:item,xy,orientation:&orientation}).map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
