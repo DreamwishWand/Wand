@@ -2550,9 +2550,11 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
-    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let free=value.is_object();
+    let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
+    let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
     if rows.iter().any(|r|r.get("roomSource").is_some()){
-        if rows.len()>32{return Err(bad);}
+        if rows.len()>32||free&&rows.iter().any(|r|r.get("supportFactor").is_some()){return Err(bad);}
         // All source indices refer to one unchanged room; remove highest first
         // so the remaining indices cannot shift. Reject mixed/duplicate witnesses.
         let mut sorted=Vec::new();let mut room=None;let mut seen=HashSet::new();
@@ -2566,11 +2568,12 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         sorted.sort_by_key(|(index,_)|std::cmp::Reverse(*index));
         let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
         for (_,row) in sorted{
-            let next=crate::indoor_room_view::room_to_outdoor_candidate(working.as_bytes(),row)?;
+            let next=crate::indoor_room_view::room_to_outdoor_candidate_mode(working.as_bytes(),row,free)?;
             working.zeroize();*working=next;
         }
         return Ok(std::mem::take(&mut *working));
     }
+    if free{return Err(bad);}
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
@@ -3863,6 +3866,22 @@ mod terrain_session_tests{
         assert!(check(&state,20000001).is_err());
         let mut offgrid=source.clone();offgrid["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["ItemID"]=20400001.into();
         assert!(check(&offgrid,20400001).is_err());
+    }
+    #[test]
+    fn free_room_cut_to_native_world_keeps_overlap_and_inventory(){
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000002,"X":4,"Y":5,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+        let original:Value=serde_json::from_slice(raw).unwrap();
+        let (_,layout,factor,sx,sy)=outdoor_identity(&original,"10").unwrap();
+        let dest=serde_json::json!({"layoutId":layout,"gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":factor,"sizeX":sx,"sizeY":sy});
+        let mut plan=serde_json::json!({"freePlacement":true,"rows":[{"roomSource":{"roomOrdinal":1,"index":0},"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_DownLeft","destination":dest.clone(),"x":4,"y":5,"orientation":"GridOrientation_DownLeft"},{"roomSource":{"roomOrdinal":1,"index":1},"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":dest,"x":4,"y":5,"orientation":"GridOrientation_Down"}]});
+        let result=group_cut_candidate(raw,&plan.to_string()).unwrap();let after:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(after["Player"],original["Player"]);assert!(result.contains("1e2"));
+        let g=&after["World"]["GridCollection"]["Grids"];
+        assert!(g["43"]["Objects"].as_object().unwrap().is_empty());assert_eq!(g["10"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]);
+        assert_eq!(g["10"]["Objects"]["3"]["Orientation"],"GridOrientation_DownLeft");assert_eq!(g["10"]["Objects"]["2"]["Orientation"],"GridOrientation_Down");assert_eq!(g["10"]["NextGridObjectID"],4);
+        assert!(group_cut_candidate(raw,&plan["rows"].to_string()).is_err());
+        plan["rows"][0]["destination"]["sizeX"]=Value::from(sx+1);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+        plan["rows"][0]["destination"]["sizeX"]=Value::from(sx);plan["rows"][0]["x"]=Value::from(999999);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
     }
     #[test]
     fn oblique_leaf_furniture_requires_factor_one_and_preserves_other_bytes(){

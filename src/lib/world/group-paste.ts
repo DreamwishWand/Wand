@@ -76,8 +76,8 @@ export function symmetricWorldCandidate(original:readonly WorldGroupPose[],axis:
 export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPose[]{
  return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
-export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
- if(cut.length!==candidate.rows.length||cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))return null;
+export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
+ if(cut.length!==candidate.rows.length||free&&cut.some(r=>!r.roomSource||r.supportFactor)||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
 }
