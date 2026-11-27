@@ -49,3 +49,20 @@ test('source change, oversized textures and aborted upload release resources',as
  const c=new AbortController();await assert.rejects(r.render([texture],view,async l=>{c.abort();return source(l);},c.signal));
  assert.equal(closed,4);assert.equal(r.cacheStats.estimatedBytes,0);assert.equal(stats.uploads,3);r.dispose();
 });
+test('mask uses independent texture and keeps main texture leased through draw',async()=>{
+ const {canvas,stats}=fakeContext(),r=new NativeMapRenderer(canvas,16);let closed=0;
+ const source=async l=>({width:l.size[0],height:l.size[1],close(){closed++;}});
+ const masked={...texture,mask:{kind:'alpha',overlayToMaskUv:[.5,0,0,.5,.25,.25],image:next}};
+ await r.render([masked],view,source);assert.equal(stats.uploads,2);assert.equal(stats.deleted,1);assert.equal(stats.draws,1);assert.deepEqual(r.cacheStats,{textures:1,estimatedBytes:16});
+ await r.render([masked],view,source);assert.equal(stats.uploads,3);assert.equal(stats.deleted,2);assert.equal(closed,3);
+ await r.render([{...fill,mask:{kind:'rect',overlayToMaskUv:[2,0,0,2,-.5,-.5]}}],view,source);assert.equal(stats.uploads,3);
+ r.dispose();assert.equal(stats.created,stats.deleted);
+});
+test('invalid mask and aborted second texture do not draw or leak',async()=>{
+ const {canvas,stats}=fakeContext(),r=new NativeMapRenderer(canvas,0);const c=new AbortController();let closed=0;
+ const masked={...texture,mask:{kind:'alpha',overlayToMaskUv:[1,0,0,1,0,0],image:next}};
+ assert.throws(()=>validateLayer({...sdf,mask:masked.mask}));
+ assert.throws(()=>validateLayer({...masked,mask:{...masked.mask,image:sdf}}));
+ await assert.rejects(r.render([masked],view,async l=>{if(l===next)c.abort();return {width:2,height:2,close(){closed++;}};},c.signal));
+ assert.equal(closed,2);assert.equal(stats.created,stats.deleted);assert.equal(stats.draws,0);r.dispose();
+});

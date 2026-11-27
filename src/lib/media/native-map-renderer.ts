@@ -1,8 +1,9 @@
 export type Affine=readonly [number,number,number,number,number,number];
 export type Color=readonly [number,number,number,number];
-export type Layer={kind:'fill'|'texture'|'sdf';unitQuadToCanvas:Affine;rgba:Color;imageSha256?:string;size?:readonly [number,number];wrap?:readonly [number,number];colorSpace?:'Linear'|'sRGB'};
+export type Layer={kind:'fill'|'texture'|'sdf';unitQuadToCanvas:Affine;rgba:Color;imageSha256?:string;size?:readonly [number,number];wrap?:readonly [number,number];colorSpace?:'Linear'|'sRGB';mask?:MaskSpec};
 export type View={x:number;y:number;width:number;height:number};
 export type ImageLayer=Layer&{kind:'texture'|'sdf';imageSha256:string;size:readonly [number,number];wrap:readonly [number,number]};
+export type MaskSpec={kind:'rect';overlayToMaskUv:Affine}|{kind:'alpha';overlayToMaskUv:Affine;image:ImageLayer};
 export type ImageSource=(layer:ImageLayer,signal?:AbortSignal)=>Promise<ImageBitmap>;
 const vertex=`#version 300 es
 precision highp float;
@@ -19,14 +20,26 @@ in vec2 uv;
 uniform sampler2D tex;
 uniform int kind;
 uniform vec4 tint;
+uniform sampler2D maskTex;
+uniform int maskKind;
+uniform vec2 maskA,maskB,maskC;
 out vec4 color;
 void main(){
- if(kind==0){color=tint;return;}
- vec4 t=texture(tex,uv);
- if(kind==1){color=t*tint;return;}
- float d=t.r+0.05;
- float w=max(0.75*fwidth(d),0.0001)+0.10;
- color=vec4(tint.rgb,tint.a*smoothstep(0.5-w,0.5+w,d));
+ if(kind==0){color=tint;}
+ else {
+  vec4 t=texture(tex,uv);
+  if(kind==1){color=t*tint;}
+  else {
+   float d=t.r+0.05;
+   float w=max(0.75*fwidth(d),0.0001)+0.10;
+   color=vec4(tint.rgb,tint.a*smoothstep(0.5-w,0.5+w,d));
+  }
+ }
+ if(maskKind!=0){
+  vec2 m=maskA*uv.x+maskB*uv.y+maskC;
+  float inside=float(all(greaterThanEqual(m,vec2(0)))&&all(lessThanEqual(m,vec2(1))));
+  color.a*=inside*(maskKind==2?texture(maskTex,m).a:1.0);
+ }
 }`;
 function check(ok:unknown,message:string):asserts ok{if(!ok)throw new Error(message);}
 export function intersects(m:Affine,v:View):boolean{
@@ -38,6 +51,14 @@ export function validateLayer(l:Layer):asserts l is Layer{
  const m=l.unitQuadToCanvas;
  check(Array.isArray(m)&&m.length===6&&m.every(Number.isFinite)&&Math.abs(m[0]*m[3]-m[1]*m[2])>1e-8,'Invalid native quad');
  check(Array.isArray(l.rgba)&&l.rgba.length===4&&l.rgba.every(n=>Number.isFinite(n)&&n>=0&&n<=1),'Invalid tint');
+ if(l.mask){
+  const m=l.mask;
+  check((m.kind==='rect'||m.kind==='alpha')&&l.kind!=='sdf','Unsupported native mask');
+  check(Array.isArray(m.overlayToMaskUv)&&m.overlayToMaskUv.length===6&&m.overlayToMaskUv.every(Number.isFinite),'Invalid mask UV');
+  if(m.kind==='alpha'){
+   check(m.image.kind==='texture'&&!m.image.mask,'Invalid mask image');validateLayer(m.image);
+  }
+ }
  if(l.kind==='fill')return;
  check(l.kind==='texture'||l.kind==='sdf','Unknown layer');
  check(typeof l.imageSha256==='string'&&/^[a-f0-9]{64}$/.test(l.imageSha256),'Invalid image reference');
@@ -67,7 +88,7 @@ export class NativeMapRenderer{
   try{fs=compile(g.FRAGMENT_SHADER,fragment);p=g.createProgram();check(p,'Program allocation');g.attachShader(p,vs);g.attachShader(p,fs);g.linkProgram(p);check(g.getProgramParameter(p,g.LINK_STATUS),g.getProgramInfoLog(p)??'Program link');this.program=p;}
   catch(e){if(p)g.deleteProgram(p);throw e;}finally{g.deleteShader(vs);if(fs)g.deleteShader(fs);}
   const vao=g.createVertexArray();check(vao,'Vertex array allocation');this.vao=vao;
-  for(const n of ['a','b','c','origin','span','kind','tint','tex']){const loc=g.getUniformLocation(this.program,n);check(loc,'Missing uniform '+n);this.uniforms[n]=loc;}
+  for(const n of ['a','b','c','origin','span','kind','tint','tex','maskTex','maskKind','maskA','maskB','maskC']){const loc=g.getUniformLocation(this.program,n);check(loc,'Missing uniform '+n);this.uniforms[n]=loc;}
  }
  async render(layers:readonly Layer[],view:View,source:ImageSource,signal?:AbortSignal):Promise<{drawn:number;skipped:number}>{
   check(!this.busy&&!this.disposed,'Renderer unavailable');check([view.x,view.y,view.width,view.height].every(Number.isFinite)&&view.width>0&&view.height>0,'Invalid viewport');
@@ -77,39 +98,43 @@ export class NativeMapRenderer{
    signal?.throwIfAborted();check(!g.isContextLost(),'Context lost');g.viewport(0,0,g.drawingBufferWidth,g.drawingBufferHeight);g.useProgram(this.program);g.bindVertexArray(this.vao);
    g.disable(g.DEPTH_TEST);g.disable(g.CULL_FACE);g.disable(g.SCISSOR_TEST);g.disable(g.STENCIL_TEST);g.disable(g.DITHER);g.colorMask(true,true,true,true);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);
    g.enable(g.BLEND);g.blendEquation(g.FUNC_ADD);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);
-   g.uniform2f(u.origin,view.x,view.y);g.uniform2f(u.span,view.width,view.height);g.uniform1i(u.tex,0);
+   g.uniform2f(u.origin,view.x,view.y);g.uniform2f(u.span,view.width,view.height);g.uniform1i(u.tex,0);g.uniform1i(u.maskTex,1);
    for(const l of layers){
     signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');if(!intersects(l.unitQuadToCanvas,view)){skipped++;continue;}
     const [a,b,c,d,x,y]=l.unitQuadToCanvas;g.uniform2f(u.a,a,b);g.uniform2f(u.b,c,d);g.uniform2f(u.c,x,y);g.uniform4f(u.tint,...l.rgba);g.uniform1i(u.kind,l.kind==='fill'?0:l.kind==='texture'?1:2);
-    let transient:WebGLTexture|null=null;
+    const held=new Set<WebGLTexture>(),temporary=new Set<WebGLTexture>();
     try{
-     if(l.kind!=='fill'){
-      const row=l as ImageLayer;
-      const key=[row.imageSha256,...row.size,...row.wrap,row.colorSpace].join(':');
-      const cached=this.textures.get(key);
-      if(cached){this.textures.delete(key);this.textures.set(key,cached);g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,cached.texture);}
-      else{
-       const bytes=row.size[0]*row.size[1]*4;
-       const bitmap=await source(row,signal);
-       try{signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');check(bitmap.width===row.size[0]&&bitmap.height===row.size[1],'Texture dimensions mismatch');check(Math.max(bitmap.width,bitmap.height)<=g.getParameter(g.MAX_TEXTURE_SIZE),'Texture exceeds GPU limit');
-        // Evict before allocating. Oversize originals are drawn once and released.
-        this.evictTo(Math.max(0,this.textureBudgetBytes-bytes));
-        transient=g.createTexture();check(transient,'Texture allocation');g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,transient);g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,false);
-        g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,row.wrap[0]===0?g.REPEAT:g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,row.wrap[1]===0?g.REPEAT:g.CLAMP_TO_EDGE);
-        g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,bitmap);
-        check(g.getError()===g.NO_ERROR,'WebGL upload failed');
-        if(bytes<=this.textureBudgetBytes){this.textures.set(key,{texture:transient,bytes});this.residentBytes+=bytes;transient=null;}
-       }finally{bitmap.close();}
-      }
-     }
+     const main=l.kind==='fill'?null:await this.acquireTexture(l as ImageLayer,source,held,temporary,signal);
+     const mask=l.mask?.kind==='alpha'?await this.acquireTexture(l.mask.image,source,held,temporary,signal):null;
+     signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');
+     g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,main);
+     g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,mask);
+     g.uniform1i(u.maskKind,l.mask?.kind==='alpha'?2:l.mask?1:0);
+     if(l.mask){const [a,b,c,d,x,y]=l.mask.overlayToMaskUv;g.uniform2f(u.maskA,a,b);g.uniform2f(u.maskB,c,d);g.uniform2f(u.maskC,x,y);}
      g.drawArrays(g.TRIANGLE_STRIP,0,4);check(g.getError()===g.NO_ERROR,'WebGL draw failed');drawn++;
-    }finally{if(transient)g.deleteTexture(transient);}
+    }finally{for(const t of temporary)g.deleteTexture(t);}
    }
    g.flush();return {drawn,skipped};
   }finally{this.busy=false;}
  }
- private evictTo(limit:number){
-  for(const [key,entry] of this.textures){if(this.residentBytes<=limit)break;this.gl.deleteTexture(entry.texture);this.textures.delete(key);this.residentBytes-=entry.bytes;}
+ private async acquireTexture(row:ImageLayer,source:ImageSource,held:Set<WebGLTexture>,temporary:Set<WebGLTexture>,signal?:AbortSignal){
+  const g=this.gl,key=[row.imageSha256,...row.size,...row.wrap,row.colorSpace].join(':');
+  const cached=this.textures.get(key);
+  if(cached){this.textures.delete(key);this.textures.set(key,cached);held.add(cached.texture);return cached.texture;}
+  const bytes=row.size[0]*row.size[1]*4,bitmap=await source(row,signal);
+  try{
+   signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');check(bitmap.width===row.size[0]&&bitmap.height===row.size[1],'Texture dimensions mismatch');check(Math.max(bitmap.width,bitmap.height)<=g.getParameter(g.MAX_TEXTURE_SIZE),'Texture exceeds GPU limit');
+   this.evictTo(Math.max(0,this.textureBudgetBytes-bytes),held);
+   const t=g.createTexture();check(t,'Texture allocation');temporary.add(t);held.add(t);
+   g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,t);g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,false);
+   g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,row.wrap[0]===0?g.REPEAT:g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,row.wrap[1]===0?g.REPEAT:g.CLAMP_TO_EDGE);
+   g.texImage2D(g.TEXTURE_2D,0,g.RGBA8,g.RGBA,g.UNSIGNED_BYTE,bitmap);check(g.getError()===g.NO_ERROR,'WebGL upload failed');
+   if(this.residentBytes+bytes<=this.textureBudgetBytes){this.textures.set(key,{texture:t,bytes});this.residentBytes+=bytes;temporary.delete(t);}
+   return t;
+  }finally{bitmap.close();}
+ }
+ private evictTo(limit:number,held:ReadonlySet<WebGLTexture>=new Set()){
+  for(const [key,entry] of this.textures){if(this.residentBytes<=limit)break;if(held.has(entry.texture))continue;this.gl.deleteTexture(entry.texture);this.textures.delete(key);this.residentBytes-=entry.bytes;}
  }
  private clearTextures(){this.evictTo(0);}
  get cacheStats(){return {textures:this.textures.size,estimatedBytes:this.residentBytes};}
