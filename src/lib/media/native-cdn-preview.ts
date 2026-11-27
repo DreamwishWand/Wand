@@ -1,4 +1,4 @@
-import {parseLocalNativePreview,requiredLocalImages,openLocalNativePreview,type LocalNativePreviewPack} from './native-local-preview.ts';
+import {parseLocalNativePreview,requiredLocalImages,openLocalNativePreview,readNativeManifest,type LocalNativePreviewPack} from './native-local-preview.ts';
 import {publicImageUrl} from './public-image-key.ts';
 import type {ImageSource} from './native-map-renderer.ts';
 const LIMIT=80*1024*1024;
@@ -84,11 +84,9 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cac
  return {maps,source};
 }
 export async function openNativePreviewPack(files:readonly File[]):Promise<LocalNativePreviewPack>{
- const manifests=files.filter(f=>f.name==='manifest.json'||f.name==='area-manifest.json');
- check(manifests.length===1&&manifests[0].size<=4*1024*1024,'Select one manifest.json');
- const doc:unknown=JSON.parse(await manifests[0].text());
+ const doc=await readNativeManifest(files);
  if(record(doc)&&(doc.schema==='wand.media.native-cdn-preview@1'||doc.schema==='wand.media.native-cdn-area-preview@1'||doc.schema==='wand.media.native-r2-preview@1')){
   check(files.length===1,'Select CDN manifest only');return parseNativeCdnPreview(doc);
  }
- return openLocalNativePreview(files);
+ return openLocalNativePreview(files,doc);
 }
