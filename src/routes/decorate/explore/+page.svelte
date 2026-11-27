@@ -8,6 +8,8 @@
   import type {ItemMasterTagLabel} from '$lib/items/public-item-master';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
+  import {goto} from '$app/navigation';
+  import {catalogHandoff,catalogPlacementCandidate,worldIncoming,worldIncomingWords} from '$lib/world/world-incoming.ts';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
   import {captureCatalogAnchor,restoreCatalogAnchor} from '$lib/explore/viewport-anchor';
@@ -42,6 +44,14 @@
   const byId=$derived(new Map(items.map(i=>[i.itemId,i])));
   const active=$derived(boards.boards.find(b=>b.id===boards.active)??null);
   const activeIds=$derived(new Set(active?.entries.map(e=>e.itemId)??[]));
+  const boardCandidates=$derived((active?.entries??[]).map(e=>byId.get(e.itemId)).filter((i):i is ExploreItem=>!!i&&catalogPlacementCandidate(i)));
+  const selectedCandidates=$derived(selectedIds.map(id=>byId.get(id)).filter((i):i is ExploreItem=>!!i&&catalogPlacementCandidate(i)));
+  const incomingWords=$derived(worldIncomingWords[locale]);
+  function sendCandidates(candidates:readonly ExploreItem[]){
+   const handoff=catalogHandoff(candidates.filter(catalogPlacementCandidate).map(i=>({itemId:i.itemId,name:nameOf(i)})));
+   if(!handoff)return;
+   worldIncoming.set(handoff);void goto(base+'/world/');
+  }
   const favoriteIds=$derived(new Set(boards.favorites));
   const universeNames=$derived(new Map([...sourceUniverses.map(u=>[String(u.tagId),{label:u.names[locale]??u.names.en??u.key,sort:u.names[locale]??u.names.en??u.key}] as const),...COLLECTION_UNIVERSE_TAG_NAMES.map(u=>[String(u.id),{label:u.names[locale],sort:locale==='ja'?u.jaReading:u.names[locale]}] as const)]));
   function universeName(key:string){return key==='none'?t('ユニバースなし','No universe'):key==='unknown'?t('ユニバース未確認','Universe unconfirmed'):universeNames.get(key)?.label??t('ユニバース未確認','Universe unconfirmed');}
@@ -172,7 +182,7 @@
     <button class="icon-button" aria-label={label('owned')} title={ownershipAvailable?label('owned'):label('noOwnership')} aria-pressed={ownedOnly} disabled={!ownershipAvailable} onclick={()=>{ownedOnly=!ownedOnly;resetBrowse();}}><WandIcon name="owned" size={20}/></button>
     <button class="icon-button" aria-label={label('favorites')} title={label('favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
     <button class="icon-button" aria-label={label('boards')} title={active?.name??label('boards')} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={()=>boardsOpen=!boardsOpen}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
-    {#if selectionMode}<button class="icon-button" aria-label={t('選択を追加','Add selected')} disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}><WandIcon name="plus" size={16}/>{selectedIds.length}</button><button class="icon-button" aria-label={label('close')} onclick={toggleSelection}><WandIcon name="close" size={16}/></button>{/if}
+    {#if selectionMode}<button class="icon-button" aria-label={t('選択を追加','Add selected')} disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}><WandIcon name="plus" size={16}/>{selectedIds.length}</button>{#if selectedCandidates.length}<button class="icon-button" aria-label={incomingWords[1]} title={incomingWords[1]} onclick={()=>sendCandidates(selectedCandidates)}><WandIcon name="world" size={18}/>{selectedCandidates.length}</button>{/if}<button class="icon-button" aria-label={label('close')} onclick={toggleSelection}><WandIcon name="close" size={16}/></button>{/if}
     {#if filtersOpen}
       <section class="filter-panel" aria-label={label('filters')}>
         <div class="bar filter-heading"><strong>{label('filters')}</strong><span class="spacer"></span><button onclick={clearFilters}>{label('clear')}</button><button class="icon-button" aria-label={label('close')} onclick={()=>filtersOpen=false}><WandIcon name="close"/></button></div>
@@ -229,6 +239,7 @@
     {#if active}
       <div class="bar"><button aria-pressed={selectionMode} onclick={toggleSelection}><WandIcon name="check" size={16}/> {label('select')}</button></div>
       <div class="bar"><h2>{active.name}</h2><input bind:value={rename} aria-label={t('新しい名前','New name')} placeholder={t('新しい名前','New name')}/><button disabled={!rename.trim()||storageFailed} onclick={changeName}>{t('名前変更','Rename')}</button><button disabled={storageFailed} onclick={removeBoard}>{t('削除','Delete')}</button></div>
+      {#if boardCandidates.length}<button onclick={()=>sendCandidates(boardCandidates)}>{incomingWords[1]} · {boardCandidates.length}</button>{/if}
       {#key active.id}<label class="note">{t('メモ','Notes')}<textarea value={active.note} disabled={storageFailed} onchange={e=>{if(active)save(editBoard(boards,active.id,b=>({...b,note:e.currentTarget.value})));}}></textarea></label>{/key}
       <div class="bar"><input bind:value={groupName} aria-label={t('グループ名','Group name')} placeholder={t('グループ名','Group name')}/><button disabled={!groupName.trim()||storageFailed} onclick={addGroup}>{t('グループ作成','Add group')}</button></div>
       {#each [{id:null,name:t('未分類','Unsorted')},...active.groups] as group (group.id)}
@@ -238,7 +249,7 @@
           {@const item=byId.get(entry.itemId)}
           <article class="tile">
             <span class="art"><ItemArtwork itemId={entry.itemId} sourcePath={images[String(entry.itemId)]??null}/></span>
-            <span>{item?nameOf(item):t('アイテム情報なし','Item unavailable')}</span>
+            <span>{item?nameOf(item):t('アイテム情報なし','Item unavailable')}</span>{#if item&&catalogPlacementCandidate(item)}<button onclick={()=>sendCandidates([item])}>{incomingWords[0]}</button>{/if}
             <select aria-label={t('グループ移動','Move to group')} value={entry.groupId??''} disabled={storageFailed} onchange={e=>moveItem(entry.itemId,e.currentTarget.value)}><option value="">{t('未分類','Unsorted')}</option>{#each active.groups as g (g.id)}<option value={g.id}>{g.name}</option>{/each}</select>
             <div class="actions"><button disabled={storageFailed} aria-label={t('前へ','Move earlier')} onclick={()=>reorderItem(entry.itemId,-1)}>↑</button><button disabled={storageFailed} aria-label={t('後へ','Move later')} onclick={()=>reorderItem(entry.itemId,1)}>↓</button><button disabled={storageFailed} onclick={()=>toggle(entry.itemId)}>{t('取り除く','Remove')}</button></div>
           </article>
@@ -267,7 +278,7 @@
     <aside class="review" aria-label={t('アイテム詳細','Item details')}>
       <button onclick={()=>selected=null}>{t('閉じる','Close')}</button>
       <div class="large"><ItemArtwork itemId={selected.itemId} sourcePath={images[String(selected.itemId)]??null} large/></div>
-      <h2>{nameOf(selected)}</h2>
+      <h2>{nameOf(selected)}</h2>{#if catalogPlacementCandidate(selected)}<button onclick={()=>selected&&sendCandidates([selected])}>{incomingWords[0]}</button>{/if}
       {#if variantReview.length>1}<div class="variant-grid">{#each variantReview as variant (variant.itemId)}<button aria-label={nameOf(variant)} title={nameOf(variant)} aria-pressed={selected.itemId===variant.itemId} onclick={()=>{if(reviewDesign)pickVariant(reviewDesign,variant);}}><ItemArtwork itemId={variant.itemId} sourcePath={images[String(variant.itemId)]??null}/></button>{/each}</div>{/if}
       <button disabled={!active||storageFailed} onclick={()=>selected&&toggle(selected.itemId)}>{active?.entries.some(e=>e.itemId===selected?.itemId)?t('ボードから削除','Remove from board'):t('ボードへ追加','Add to board')}</button>
     </aside>

@@ -18,6 +18,9 @@
  import {presetPickerWords} from '$lib/world/preset-picker-words.ts';
  import {serviceWords} from '$lib/presets/service-words.ts';
  import {worldArtwork} from '$lib/world/world-artwork.ts';
+ import {goto} from '$app/navigation';
+ import {presetHandoff,worldIncoming,worldIncomingWords} from '$lib/world/world-incoming.ts';
+ function sendPreset(entry:SessionPreset){const pending=presetHandoff(entry);if(pending){worldIncoming.set(pending);void goto(base+'/world/');}}
  import {openPublicItemMaster} from '$lib/items/public-item-master.ts';
  type NativeRow={ordinal:number;kind:'tom-furniture'|'tom-clothing'|'native-decoration';storage:string;baseItemId:number|null;name:string|null;active:boolean};
  type NativeIndex={contract:string;gameSchema:number;groups:{group:string;status:string;count:number|null}[];rows:NativeRow[];writerAuthorized:false};
@@ -98,7 +101,7 @@
   {#if counts}<small>{counts.size} / {[...counts.values()].reduce((n,v)=>n+v,0)}</small><div class="item-list">{#each [...counts].slice(0,120) as [id,n] (id)}<div>{#if images.has(id)}<img src={images.get(id)} alt="" loading="lazy"/>{/if}<span>{names.get(id)??'—'}</span><strong>×{n}</strong></div>{/each}</div>{/if}
   {#if codeView}<code>{codeView}</code><small>{w[12]}</small>{/if}
   <div class="toolbar"><input bind:value={alias} maxlength="160" aria-label={p[4]}/><button type="button" on:click={()=>{if(current&&!renameSessionPreset(current.id,alias))error=true;}}>{p[4]}</button></div>
-  <div class="toolbar"><button type="button" on:click={()=>{if(current)void downloadPresetFile(current.file,current.name).catch(()=>error=true);}}>{p[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{p[5]}</button>{#if current.domain==='wand'}<button type="button" disabled={sharing} on:click={()=>current&&void shareFile(current)}>{w[22]}</button><a href={base+'/world/'}>{w[9]}</a>{/if}</div></aside>{/if}</div>
+  <div class="toolbar"><button type="button" on:click={()=>{if(current)void downloadPresetFile(current.file,current.name).catch(()=>error=true);}}>{p[6]}</button><button type="button" on:click={()=>{if(current)removeSessionPreset(current.id);selected=0;}}>{p[5]}</button>{#if current.domain==='wand'}<button type="button" disabled={sharing} on:click={()=>current&&void shareFile(current)}>{w[22]}</button><button type="button" on:click={()=>current&&sendPreset(current)}>{worldIncomingWords[locale][0]}</button>{/if}</div></aside>{/if}</div>
  {/if}
  {#if error}<small role="alert">{p[10]}</small>{/if}{#if shareError}<small role="alert">{w[23]}</small>{/if}
 </section>

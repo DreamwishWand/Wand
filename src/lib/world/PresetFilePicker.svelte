@@ -3,17 +3,24 @@
  import {sessionPresets,rememberPreset,renameSessionPreset,removeSessionPreset,downloadPresetFile} from './preset-session.ts';
  import {filterSessionPresets,type PresetSchema,type PresetKind} from './preset-session-format.ts';
  import {presetPickerWords} from './preset-picker-words.ts';
+ import {worldIncoming,incomingMatches,catalogPlacementFile,worldIncomingWords} from './world-incoming.ts';
  import type {WandLanguage} from '../ui/preferences';
  export let locale:WandLanguage='ja',schemas:readonly PresetSchema[]=[],kinds:readonly PresetKind[]|undefined=undefined,disabled=false,label='',showTrigger=true,onPick:(file:File)=>void;
  let visible=false,reading=false,query='',selected=0,alias='',error=false,alive=true,input:HTMLInputElement;
  const kindIndex:Record<PresetKind,number>={scene:11,support:12,biome:13,island:14,world:15,region:16,room:17,floor:18,building:19,design:20,network:21,'tom-furniture':22,'tom-clothing':23,'native-decoration':24,'decoration-code':25,'shop-code':26};
  $: w=presetPickerWords[locale];$: entries=filterSessionPresets($sessionPresets,schemas,query,kinds);
  $: current=entries.find(e=>e.id===selected);
+ $: pending=incomingMatches($worldIncoming,schemas,kinds)?$worldIncoming:null;
+ let candidateQuery='',candidateLimit=60;
+ $: candidates=pending?.type==='catalog'?pending.items.filter(i=>i.name.toLocaleLowerCase().includes(candidateQuery.trim().toLocaleLowerCase())):[];
+ $: pendingId=pending?.type==='preset'?pending.id:0;
+ $: transferred=entries.find(e=>e.id===pendingId);
  $: if(disabled&&visible)visible=false;
- export function open(){if(disabled)return;query='';selected=0;alias='';error=false;visible=true;}
+ export function open(){if(disabled)return;query='';candidateQuery='';candidateLimit=60;selected=0;alias='';error=false;visible=true;if(pending?.type==='preset'){const id=pending.id,row=$sessionPresets.find(e=>e.id===id);if(row){selected=row.id;alias=row.name;}}}
  function close(){visible=false;selected=0;}
  function choose(id:number){selected=id;alias=entries.find(e=>e.id===id)?.name??'';}
  function apply(){if(!current||disabled||reading)return;const file=current.file;close();onPick(file);}
+ function chooseCandidate(item:typeof candidates[number]){if(disabled||reading)return;try{const file=catalogPlacementFile(item);close();onPick(file);}catch{error=true;}}
  async function add(e:Event){
   const el=e.currentTarget as HTMLInputElement,files=[...(el.files??[])];el.value='';if(!files.length||reading||disabled)return;
   reading=true;error=false;let last=0;
@@ -23,9 +30,11 @@
  onDestroy(()=>{alive=false;});
 </script>
 {#if showTrigger}<button type="button" disabled={disabled} aria-expanded={visible} on:click={()=>visible?close():open()}>{label||w[0]}</button>{/if}
+{#if pending&&showTrigger}<button type="button" disabled={disabled} on:click={open} title={worldIncomingWords[locale][2]}>{worldIncomingWords[locale][2]}</button>{/if}
 {#if visible}<div class="preset-picker" role="dialog" aria-label={w[0]} on:keydown|stopPropagation>
  <div class="preset-picker-head"><strong>{w[0]}</strong><button type="button" aria-label={w[7]} on:click={close}>×</button></div>
  <small>{w[8]}</small>
+ {#if pending?.type==='catalog'}<strong>{worldIncomingWords[locale][5]} · {pending.items.length}</strong><input type="search" aria-label={w[2]} placeholder={w[2]} bind:value={candidateQuery} on:input={()=>candidateLimit=60}/><div class="preset-picker-list" role="region" aria-label={worldIncomingWords[locale][5]} tabindex="0" on:scroll={e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-80)candidateLimit=Math.min(candidates.length,candidateLimit+60);}}>{#each candidates.slice(0,candidateLimit) as item (item.itemId)}<button type="button" disabled={disabled||reading} on:click={()=>chooseCandidate(item)}>{item.name||worldIncomingWords[locale][5]}</button>{/each}</div>{:else if transferred}<strong>{worldIncomingWords[locale][2]} · {transferred.name}</strong>{/if}
  <input type="file" hidden multiple accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={add}/>
  <div class="preset-picker-actions"><button type="button" disabled={reading||disabled} on:click={()=>input.click()}>{w[1]}</button><input type="search" placeholder={w[2]} aria-label={w[2]} bind:value={query}/></div>
  <div class="preset-picker-list">{#each entries as entry (entry.id)}<button type="button" class:chosen={entry.id===selected} aria-pressed={entry.id===selected} on:click={()=>choose(entry.id)}><span>{entry.name}</span><small>{w[kindIndex[entry.kind]]}{entry.version?' · '+entry.version:''}</small></button>{:else}<small>{w[9]}</small>{/each}</div>
