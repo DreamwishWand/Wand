@@ -160,7 +160,12 @@ test('building layout restores only unambiguous existing same-grid objects',()=>
  assert.ok(result);assert.equal(result.moved,2);assert.deepEqual(result.plans.get(g.key).after,wanted);
  assert.equal(reviewBuildingLayout([g,h],objects,incoming,false),null);
  assert.equal(reviewBuildingLayout([g,h],objects,new Map([[g.key,{buildings:[]}],[h.key,{buildings:wanted}]]),true),null);
- assert.equal(reviewBuildingLayout([g,h],objects,new Map([[g.key,{buildings:[...wanted,wanted[0]]}],[h.key,{buildings:[]}]]),true),null);
+ const expanded=reviewBuildingLayout([g,h],objects,new Map([[g.key,{buildings:[...wanted,wanted[0]]}],[h.key,{buildings:[]}]]),true);
+ assert.ok(expanded);assert.equal(expanded.added,1);assert.equal(expanded.moved,2);
+ assert.equal(expanded.plans.get(g.key).freePlacement,true);
+ const extra={...p,object:{...p.object,localOrdinal:3,x:5,y:5}};
+ const reduced=reviewBuildingLayout([g,h],new Map([[g.key,[p,q,extra]],[h.key,[]]]),new Map([[g.key,{buildings:rows}],[h.key,{buildings:[]}]]),true);
+ assert.ok(reduced);assert.equal(reduced.removed,1);assert.equal(reduced.moved,0);
  const duplicate={...p,object:{...p.object,localOrdinal:3,x:5,y:5}};
  assert.equal(reviewBuildingLayout([g,h],new Map([[g.key,[p,duplicate]],[h.key,[]]]),new Map([[g.key,{buildings:[wanted[0],{...wanted[0],x:9}]}],[h.key,{buildings:[]}]]),true),null);
  assert.throws(()=>buildingPoseRows([{...wanted[0],itemId:20500001}],g));
