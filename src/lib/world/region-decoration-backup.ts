@@ -20,6 +20,23 @@ type BoundaryPose=ReturnType<typeof networkPose>;
 // Boundary connectivity is not inferred. Reject possible links to any
 // network outside the selection, including across native grid boundaries.
 function touches(a:BoundaryPose,b:BoundaryPose){return a.kind===b.kind&&(a.kind==='fence'||a.itemId===b.itemId)&&Math.abs(a.x-b.x)<=(a.kind==='road'?2:8)&&Math.abs(a.y-b.y)<=(a.kind==='road'?2:8);}
+// Spatial bins preserve the existing conservative distances, including
+// negative world coordinates and neighboring native grids. A large backup
+// need not scan every outside network row for each selected or incoming row.
+export function regionNetworkContactIndex(outside:readonly BoundaryPose[]){
+ const buckets=new Map<string,BoundaryPose[]>();
+ const span=(p:BoundaryPose)=>p.kind==='road'?2:8;
+ const key=(p:BoundaryPose,x:number,y:number)=>[p.kind,p.kind==='road'?p.itemId:0,x,y].join(':');
+ for(const p of outside){
+  const d=span(p),k=key(p,Math.floor(p.x/d),Math.floor(p.y/d)),rows=buckets.get(k);
+  if(rows)rows.push(p);else buckets.set(k,[p]);
+ }
+ return (p:BoundaryPose)=>{
+  const d=span(p),x=Math.floor(p.x/d),y=Math.floor(p.y/d);
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)if(buckets.get(key(p,x+dx,y+dy))?.some(o=>touches(p,o)))return true;
+  return false;
+ };
+}
 function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>){
  if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
  const objects=new Map<string,readonly MainlandSavedObject[]>(),rows=new Map<string,NetworkPose[]>(),insideNet:BoundaryPose[]=[],outsideNet:BoundaryPose[]=[];
@@ -30,20 +47,30 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
   const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
   if(hit.some(p=>!inside(region,p)))return null;
   const picked=all.filter(p=>inside(region,p));objects.set(g.key,picked);
-  const selected:NetworkPose[]=[];
+  const selected:NetworkPose[]=[],native=new Map<string,MainlandSavedObject|null>();
+  const objectKey=(id:number,x:number,y:number,orientation:unknown)=>[id,x,y,orientation].join(':');
+  for(const o of all)if(isNetwork(o)){
+   const k=objectKey(Number(o.object.itemId),o.object.x,o.object.y,o.object.orientation);
+   native.set(k,native.has(k)?null:o);
+  }
   for(const p of net){
-   const matches=all.filter(o=>isNetwork(o)&&Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]);if(matches.length!==1)return null;
-   if(inside(region,matches[0])){selected.push(p);insideNet.push(networkPose(g,p));}else outsideNet.push(networkPose(g,p));
+   const match=native.get(objectKey(p.itemId,p.x,p.y,CARDINAL_ORIENTATIONS[p.orientation]));if(!match)return null;
+   if(inside(region,match)){selected.push(p);insideNet.push(networkPose(g,p));}else outsideNet.push(networkPose(g,p));
   }
   rows.set(g.key,selected);
  }
- if(insideNet.some(a=>outsideNet.some(b=>touches(a,b))))return null;
- return {snapshot:{...snapshot,objects},networks:rows,outsideNet};
+ const outsideContact=regionNetworkContactIndex(outsideNet);
+ if(insideNet.some(outsideContact))return null;
+ return {snapshot:{...snapshot,objects},networks:rows,outsideContact};
 }
-export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees):string|null{
+export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees){
  const part=split(region,grids,snapshot,networks);if(!part)return null;
  const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,true);if(!doc)return null;
- const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,world:JSON.parse(doc.text)});return text.length<=WORLD_DECORATION_FILE_LIMIT?text:null;
+ const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,world:JSON.parse(doc.text)});
+ return text.length<=WORLD_DECORATION_FILE_LIMIT?{text,summaries:doc.summaries}:null;
+}
+export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees):string|null{
+ return reviewRegionCapture(region,grids,snapshot,networks,supports)?.text??null;
 }
 export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[]):{region:CaptureRegion;incoming:Incoming}{
  if(text.length>WORLD_DECORATION_FILE_LIMIT)throw Error('REGION_LIMIT');
@@ -63,7 +90,7 @@ export function mergeRegionDecoration(region:CaptureRegion,grids:readonly Mainla
  for(const g of grids){
   const before=current.get(g.key),replaced=old.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);if(!before?.supports||!replaced||!next?.supports||!geometry)return null;
   for(const p of next.furniture){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}
-  for(const p of next.network){const shape=networkSceneShape({...p,dx:0,dy:0,support:null},geometry.get(p.itemId),g.factor);if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape})||part.outsideNet.some(o=>touches(networkPose(g,p),o)))return null;}
+  for(const p of next.network){const shape=networkSceneShape({...p,dx:0,dy:0,support:null},geometry.get(p.itemId),g.factor);if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape})||part.outsideContact(networkPose(g,p)))return null;}
   const oldFurniture=new Set(replaced.furniture.map(pose)),oldNetwork=new Set(replaced.network.map(networkKey));
   const furniture:DesignPlacement[]=[],attachments:Map<number,NonNullable<typeof before.supports> extends ReadonlyMap<number,infer S>?S:never>=new Map();
   for(const [rows,scenes] of [[before.furniture.filter(p=>!oldFurniture.has(pose(p))),before.supports],[next.furniture,next.supports]] as const){
