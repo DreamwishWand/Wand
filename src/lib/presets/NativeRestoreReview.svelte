@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {verifyTomItemReferences} from '../items/tom-source.ts';
  import {openPublicItemMaster} from '../items/public-item-master.ts';
  import {base} from '$app/paths';
  import {testSaveExportEnabled,testSaveWords} from '../world/test-save-export.ts';
@@ -18,8 +19,8 @@
  let replaceSlot=0,dbIdentity:boolean|null=null,dbEpoch=0;
  $: void checkBase(result);
  async function checkBase(receipt:Receipt|null){const token=++dbEpoch;dbIdentity=null;if(!receipt?.baseItemId||!receipt.requiresNewId)return;
-  try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'}),[item]=await db.getItems([receipt.baseItemId]);let valid=!!item&&item.itemId===receipt.baseItemId&&item.itemType.code===(entry.kind==='tom-furniture'?4:5);
-   for(let start=0;valid&&start<receipt.componentStock.length;start+=128){const expected=receipt.componentStock.slice(start,start+128),rows=await db.getItems(expected.map(v=>v.itemId));valid=rows.length===expected.length&&rows.every((v,i)=>!!v&&v.itemId===expected[i].itemId&&v.itemType.code===10&&v.itemType.subtypeCode===expected[i].subtype&&v.sourceClass===(expected[i].subtype===0?'DecalItemData':'TextureItemData'));}
+  try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'});const kind=entry.kind;
+   const valid=(kind==='tom-furniture'||kind==='tom-clothing')&&await verifyTomItemReferences(db,kind,receipt.baseItemId,receipt.componentStock);
    if(token===dbEpoch)dbIdentity=valid;}catch{if(token===dbEpoch)dbIdentity=null;}
  }
  let previousFile:File|null=null,previousEntry:SessionPreset|null=null;

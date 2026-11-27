@@ -1,4 +1,5 @@
 import {testSaveExportEnabled} from '../world/test-save-export.ts';
+import {verifyTomItemReferences} from '../items/tom-source.ts';
 import {openPublicItemMaster} from '../items/public-item-master.ts';
 import {readExperimentalCopy} from '../world/experimental-copy.ts';
 import {readPresetText} from './preset-file.ts';
@@ -19,8 +20,7 @@ scope.onmessage=async({data})=>{
    const raw=await readPresetText(data.backup),review=JSON.parse(wasm.review_native_preset_restore(raw));
    if(review.tomTestCandidate!==true||!Number.isSafeInteger(review.baseItemId)||!Array.isArray(review.componentStock))throw Error('candidate');
    const db=await openPublicItemMaster(data.base,fetch,{scope:'complete',gameVersion:'1.26.2'});
-   const expected=[{itemId:review.baseItemId,type:review.kind==='tom-furniture'?4:5,subtype:null},...review.componentStock.map((v:any)=>({itemId:v.itemId,type:10,subtype:v.subtype}))];
-   for(let start=0;start<expected.length;start+=128){const rows=expected.slice(start,start+128),found=await db.getItems(rows.map(v=>v.itemId));if(found.length!==rows.length||found.some((v,i)=>!v||v.itemId!==rows[i].itemId||v.itemType.code!==rows[i].type||rows[i].subtype!==null&&(v.itemType.subtypeCode!==rows[i].subtype||v.sourceClass!==(rows[i].subtype===0?'DecalItemData':'TextureItemData'))))throw Error('item identity');}
+   if(!['tom-furniture','tom-clothing'].includes(review.kind)||!await verifyTomItemReferences(db,review.kind,review.baseItemId,review.componentStock))throw Error('item identity or customization eligibility');
    const copy=readExperimentalCopy(wasm.prepare_tom_restore_experimental_copy(raw,true),n=>wasm!.take_copy_chunk(n));
    scope.postMessage({kind:'tom-copy',...copy},[copy.bytes.buffer]);return;
   }

@@ -66,7 +66,14 @@ fn scan(source:&[u8])->Result<Scan<'_>,CodecError>{
 }
 pub(super) fn list(source:&[u8])->Result<String,CodecError>{
  let s=scan(source)?;
- let rows=s.rows.iter().enumerate().map(|(i,r)|json!({"ordinal":i+1,"kind":r.kind,"storage":r.storage,"baseItemId":r.base,"name":r.name.and_then(|n|serde_json::from_str::<String>(n.get()).ok()),"active":r.active})).collect::<Vec<_>>();
+ let rows=s.rows.iter().enumerate().map(|(i,r)|{
+  let visual=if r.base.is_some(){serde_json::from_str::<Value>(r.payload.get()).ok().map(|v|crate::native_tom_visual::inspect(&v).detail)}else{None};
+  let compact=visual.map(|v|{
+   let ids=|key:&str,limit:usize|v[key].as_array().map(|a|a.iter().take(limit).filter_map(|x|x["itemId"].as_u64()).collect::<Vec<_>>()).unwrap_or_default();
+   json!({"baseColor":v["baseColor"],"motifIds":ids("decals",4),"textureIds":ids("textures",2),"decalCount":v["decalCount"],"textureCount":v["textureCount"]})
+  });
+  json!({"ordinal":i+1,"kind":r.kind,"storage":r.storage,"baseItemId":r.base,"name":r.name.and_then(|n|serde_json::from_str::<String>(n.get()).ok()),"active":r.active,"visual":compact})
+ }).collect::<Vec<_>>();
  serde_json::to_string(&json!({"contract":"wand.native-preset-index@1","gameSchema":s.version,"groups":s.status,"rows":rows,"writerAuthorized":false})).map_err(|_|BAD)
 }
 pub(super) fn export(source:&[u8],ordinal:usize)->Result<String,CodecError>{
