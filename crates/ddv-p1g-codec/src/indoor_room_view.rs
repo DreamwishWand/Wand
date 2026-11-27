@@ -633,8 +633,8 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let mut source_ids=std::collections::HashSet::new();let mut clone_total=0usize;
   for row in rows{
-  let support=row.get("supportSource");let scene=row.get("scene");
-  if row.as_object().is_none_or(|r|r.len()!=if support.is_some()||scene.is_some(){6}else{5}||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"|"supportSource"|"scene")))||support.is_some()&&scene.is_some(){return Err(bad);}
+  let support=row.get("supportSource");let scene=row.get("scene");let storage=row.get("storageSource");
+  if row.as_object().is_none_or(|r|r.len()!=5+usize::from(support.is_some())+usize::from(scene.is_some())+usize::from(storage.is_some())||r.keys().any(|k|!matches!(k.as_str(),"itemId"|"expectedStock"|"x"|"y"|"orientation"|"supportSource"|"scene"|"storageSource")))||usize::from(support.is_some())+usize::from(scene.is_some())+usize::from(storage.is_some())>1{return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
@@ -642,7 +642,18 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let t=terrain.ok_or(bad)?;
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)? as u32;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)? as u32;
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:grid.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?.to_owned(),tessellation:factor,size:(sx,sy)};
-  let mut draft=if let Some(scene)=scene{
+  let mut draft=if let Some(w)=storage{
+   if surface!=1||w.as_object().is_none_or(|m|m.len()!=5||m.keys().any(|k|!matches!(k.as_str(),"index"|"expectedX"|"expectedY"|"expectedOrientation"|"copyContents"))){return Err(bad);}
+   let i=w.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+   let (key,obj)=objects.iter().nth(i).ok_or(bad)?;
+   let old=(coord(w,"expectedX")?,coord(w,"expectedY")?);
+   let old_orientation=w.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
+   let copy=w.get("copyContents").and_then(Value::as_bool).ok_or(bad)?;
+   if !source_ids.insert(key.clone())||!within_room(old)||obj["Orientation"].as_str()!=Some(old_orientation)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old_orientation)||!storage_pose(&root,obj){return Err(bad);}
+   let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:item};
+   if crate::grid_instance_preview::grid_identity_dependencies(source,&target)?.blocking()>0{return Err(bad);}
+   ddv_save_patch::preview_storage_duplicate(&working,&target,old,&d,xy,orientation,amount,copy,free).map_err(|_|CodecError::Patch)?
+  }else if let Some(scene)=scene{
    let tree=crate::grid_instance_preview::checked_support_scene(item,scene)?;
    let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
    let actual=current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64();

@@ -1873,6 +1873,44 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
  c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
  c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
 }
+/// Create an independent owned container using a proven placed storage
+/// record. Do not invent container defaults or copy stateful inventory items.
+pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::{Value,json};
+ let bad=PatchError::InvalidTarget;
+ if target.kind!=GridObjectKind::Full||target.grid_id!=d.grid_id||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}
+ validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ if obj["ID"].as_u64()!=target.object_id.parse::<u64>().ok()||obj["ItemID"].as_u64()!=Some(target.item_id)||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1))||
+    obj.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||!storage_pose(&root,obj){return Err(bad);}
+ let mut state=obj["State"].clone();let st=&mut state["Storage"];
+ if st.get("UnlockKeyItemID").and_then(Value::as_u64).unwrap_or(0)!=0||st.get("UnlockLocId").and_then(Value::as_str).is_some_and(|s|!s.is_empty()){return Err(bad);}
+ let old=st["ContainerInventoryID"].as_u64().ok_or(bad)?.to_string();
+ let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<8192).ok_or(bad)?;
+ let fresh=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(bad)?;
+ if containers.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*k||n>=fresh||v["ID"].as_u64()!=Some(u64::from(n))))||player_house_create::container_ref(&root,fresh,false){return Err(bad);}
+ let mut row=containers.get(&old).ok_or(bad)?.clone();
+ if row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize"))){return Err(bad);}
+ if copy_contents{
+  if row["Inventory"].as_array().is_none_or(|a|a.len()>8192||a.iter().any(|v|v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State")))||v["ItemID"].as_u64().is_none()||v["Amount"].as_u64().is_none()||v.get("State").is_some_and(|s|!s.is_null()))){return Err(bad);}
+ }else{row["Inventory"]=json!([]);}
+ row["ID"]=json!(fresh);st["ContainerInventoryID"]=json!(fresh);
+ let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,-1)?;
+ let intermediate=&amount.patched_json;
+ let mut locator=JsonLocator::new(intermediate,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mp=vec![k("Player"),k("ContainerInventories")];let cp=vec![k("Player"),k("NextContainerInventoryID")];
+ locator.capture.insert(mp.clone(),None);locator.capture.insert(cp.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&mp).and_then(|r|r.clone()).ok_or(bad)?;
+ let cr=locator.capture.get(&cp).and_then(|r|r.clone()).ok_or(bad)?;
+ if intermediate[cr.clone()].parse::<u32>().ok()!=Some(fresh){return Err(bad);}
+ let mut changes=[(mr.end-1..mr.end-1,format!(",\"{}\":{}",fresh,row)),(cr,(fresh+1).to_string())];
+ changes.sort_unstable_by_key(|(r,_)|r.start);let mut candidate=String::new();let mut last=0;
+ for (r,v) in changes{if r.start<last{return Err(bad);}candidate.push_str(&intermediate[last..r.start]);candidate.push_str(&v);last=r.end;}
+ candidate.push_str(&intermediate[last..]);validate_json_without_edit(&candidate)?;
+ insert_grid_record(&candidate,d,target.item_id,xy,orientation,Some(&state.to_string()))
+}
 /// Move a storage root only. Preserve the original lexical State and the
 /// entire Player container map, including any intentional native aliases.
 /// The codec resolves exclusive source/destination room or outdoor identities.

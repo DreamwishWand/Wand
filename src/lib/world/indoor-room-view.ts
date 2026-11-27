@@ -183,7 +183,7 @@ export const indoorEditWords={
  'pt-BR':['Editar móveis','Selecionar um objeto','Rotação e troca sem mudar a ocupação. A colocação livre requer o terreno original.','Devolver ao inventário','Revisar','Não foi possível criar a cópia.']
 } as const;
 
-export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string;supportSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string};scene?:SupportScene}
+export interface IndoorPlace{itemId:number;expectedStock:number;x:number;y:number;orientation:string;supportSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string};scene?:SupportScene;storageSource?:{index:number;expectedX:number;expectedY:number;expectedOrientation:string;copyContents:boolean}}
 /** Free room editing is limited to known, stateless furniture on an owned floor. */
 export function indoorFreeFloor(face:IndoorSurface|null):boolean{return !!face&&face.kind==='floor'&&face.gridStatus==='full'&&!!face.factor&&!!face.terrain&&face.sourcePath?.startsWith('GridData/Rooms/Room')===true;}
 function freeRoomPose(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,itemId:number,x:number,y:number,orientation:string):boolean{
@@ -370,7 +370,7 @@ export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly num
  if(!tree||!face?.terrain||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const counts=new Map<number,number>(),clip:DesignClipItem[]=[];
  for(const i of indices){
-  const o=tree.objects[i];if(!o||!(free?face.positions[i]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
+  const o=tree.objects[i];if(!o||face.positions[i]?.storage||!(free?face.positions[i]?.plain===true&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,i))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId))return null;
   const count=(counts.get(o.itemId)??0)+1;if(count>(stock.get(o.itemId)??0))return null;counts.set(o.itemId,count);
   clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:(worldOrientationCode(o.orientation)??-4)/4});
  }
