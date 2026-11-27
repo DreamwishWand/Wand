@@ -128,3 +128,12 @@ test('free group duplication preserves mixed cardinal and diagonal directions an
  assert.equal(groupPasteCandidate(clip,[g],r,d,stock,[],0,p.x,p.y,false),null);
  assert.equal(groupPasteCandidate(clip,[g],r,d,new Map([[item,1]]),[],0,p.x,p.y,true),null);
 });
+
+test('free room-to-world cut accepts diagonal pose but excludes support and ordinary strict plans',()=>{
+ const cut=[{roomSource:{roomOrdinal:1,index:0},area:'indoor',itemId:String(item),expectedX:2,expectedY:2,expectedOrientation:'GridOrientation_DownLeft'}];
+ const candidate={rows:[{itemId:String(item),x:4,y:5,orientation:'GridOrientation_DownLeft',destination:{factor:1}}],ghosts:[]};
+ assert.equal(groupCutPlan(cut,candidate),null);
+ assert.deepEqual(groupCutPlan(cut,candidate,true)[0].roomSource,{roomOrdinal:1,index:0});
+ assert.equal(groupCutPlan([{...cut[0],supportFactor:1}],candidate,true),null);
+ assert.equal(groupCutPlan([{...cut[0],roomSource:undefined,localOrdinal:1}],candidate,true),null);
+});
