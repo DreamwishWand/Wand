@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeFrameRect} from '../src/lib/media/native-frame-rect.ts';
+import {nativeFrameRect,nativeFramePlan,nativeFrameCovers} from '../src/lib/media/native-frame-rect.ts';
 const full={x:0,y:0,width:4926,height:4988};
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
 test('full native map fits landscape viewport without stretching or clipping',()=>{
@@ -29,4 +29,21 @@ test('a completed old frame moves with the current camera while redraw is pendin
  near(zoomed.width,fit.width*2);near(zoomed.height,fit.height*2);
  near(zoomed.left,fit.left-800*626/2494);
  near(zoomed.top,fit.top-500*626/2494);
+});
+
+test('bounded guard band preserves requested pixel density and covers nearby pan only',()=>{
+ const v={x:100,y:200,width:1000,height:800},p=nativeFramePlan(v,1000,800);
+ assert.equal(p.w,1250);assert.equal(p.h,1000);near(p.view.width,1250);near(p.view.height,1000);
+ assert.equal(nativeFrameCovers(p,{...v,x:200,y:250},1000,800),true);
+ assert.equal(nativeFrameCovers(p,{...v,x:226},1000,800),false);
+ assert.equal(nativeFrameCovers(p,{...v,width:500,height:400},1000,800),false);
+ assert.equal(nativeFrameCovers(p,v,999,800),false);
+});
+test('guard band never reduces requested resolution or exceeds backing buffer cap',()=>{
+ for(const [w,h] of [[2048,2048],[4096,512],[1920,1080],[4000,1000],[360,800]]){
+  const v={x:0,y:0,width:2*w,height:2*h},p=nativeFramePlan(v,w,h);
+  assert.ok(p.w>=w&&p.h>=h&&p.w<=4096&&p.h<=4096&&p.w*p.h<=4194304);
+  near(p.w/p.view.width,w/v.width);near(p.h/p.view.height,h/v.height);
+  assert.equal(nativeFrameCovers(p,v,w,h),true);
+ }
 });
