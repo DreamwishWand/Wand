@@ -105,6 +105,10 @@ export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
 function indoorShape(o:SupportTree['objects'][number],shapes:Readonly<Record<string,SourceObjectShape>>){
  return shapes[o.itemId+':'+(worldOrientationCode(o.orientation)??-4)];
 }
+export function indoorHitIndices(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,x:number,y:number):number[]{
+ if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))return [];
+ return tree.objects.flatMap((o,i)=>indoorShape(o,shapes)?.runs.some(run=>y===o.y+run.y&&x>=o.x+run.x&&x<o.x+run.x+run.width)?[i]:[]);
+}
 function indoorClear(t:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,index:number):boolean{
  const a=t.objects[index],s=a&&indoorShape(a,shapes);if(!a||!s||s.cellCount>65536)return false;
  for(let i=0;i<t.objects.length;i++){
