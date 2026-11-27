@@ -1522,7 +1522,7 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  Ok(std::mem::take(&mut *working))
 }
 /// An explicit exterior-only operation, not a generic Building placement.
-fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,CodecError>{
+pub(super) fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
     let grid=grids.get(gid).ok_or(bad)?;
@@ -2220,6 +2220,16 @@ mod tests{
         assert_eq!(cross_value["World"]["GridCollection"]["Grids"]["42"],original["World"]["GridCollection"]["Grids"]["42"]);
         assert_eq!(cross_value["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
         assert!(group_paste_candidate(cross_result.as_bytes(),&remove.to_string()).is_ok());
+        let expanded_raw=serde_json::to_vec(&expanded).unwrap();
+        let destination=resolve_plain_grid_destination(&expanded_raw,&cross["playerHouseDuplicate"]["destination"]).unwrap();
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:"1".into(),item_id:20500001};
+        let moved=ddv_save_patch::preview_player_house_transfer(std::str::from_utf8(&expanded_raw).unwrap(),&target,(1,2),&destination,(10,12),"GridOrientation_Down").unwrap();
+        let moved:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert!(moved["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],3);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["43"]["Objects"]["1"]["State"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(moved["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["90"],original["World"]["GridCollection"]["Grids"]["90"]);
         plan["playerHouseDuplicate"]["x"]=Value::from(400);
         assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
     }

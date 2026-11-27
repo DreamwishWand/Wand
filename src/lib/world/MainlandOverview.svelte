@@ -283,7 +283,7 @@ $: cutWords=groupCutWords[locale];
  function clearTransfer(){clearTransferCopy();transferWorker?.terminate();transferWorker=null;transfer=null;transferStatus='idle';transferSource=null;transferBaseline=null;transferOrdinal=null;}
  function offerTransfer(p:MainlandSavedObject,x:number,y:number){
   if(!bound||!$localSaveSession.file)return false;
-  const candidate=mainlandTransferCandidate(p,bound,rasters,timeline,x,y);if(!candidate)return false;
+  const candidate=mainlandTransferCandidate(p,bound,rasters,timeline,x,y,freePlacement&&testExport);if(!candidate)return false;
   clearTransfer();moving=false;hover=null;moveError=false;objectDrag=null;preciseOpen=false;transfer=candidate;transferSource=$localSaveSession.file;transferBaseline=timeline;transferOrdinal=p.object.localOrdinal;selected=p.object.localOrdinal;return true;
  }
  function validateTransfer(){runTransfer(false);}
