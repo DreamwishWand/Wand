@@ -1171,6 +1171,40 @@ fn saved_db04_source_projection(
 /// All group ordinals resolve against the same immutable original. Only
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
+pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Result<String,CodecError>{
+    use ddv_save_patch::{PlainGridStructureAction,preview_plain_grid_structure,preview_landscape_duplicate};
+    let bad=CodecError::Json;
+    if plan.len()>4096||destination.len()>4096{return Err(bad);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
+    let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+    let o=value.as_object().filter(|o|o.len()==7&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"))).ok_or(bad)?;
+    let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==402)).ok_or(bad)?;
+    let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+    let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+    let expected=(int("expectedX")?,int("expectedY")?);
+    let target=resolve_grid_mixed_targets(profile,&[(ordinal,item,expected,"full".to_owned(),None)])?.pop().ok_or(bad)?;
+    let refs=grid_identity_dependencies(profile,&target)?;
+    if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
+    let layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+    let scope=layout.strip_prefix("SceneLayouts/").and_then(|s|s.split_once('/')).map(|(s,_)|s).ok_or(bad)?;
+    if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|s.starts_with("GridData/Villages/")&&s.ends_with(".json")&&!s.contains("..")){return Err(bad);}
+    let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+    let draft=match o.get("action").and_then(Value::as_str){
+        Some("remove") if o.get("x").is_some_and(Value::is_null)&&o.get("y").is_some_and(Value::is_null)&&destination=="null"=>preview_plain_grid_structure(json,&target,expected,PlainGridStructureAction::Remove),
+        Some("duplicate")=>{
+            let witness:Value=serde_json::from_str(destination).map_err(|_|bad)?;
+            let dest=resolve_plain_grid_destination(profile,&witness)?;
+            let orientation=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(Value::as_str).ok_or(bad)?;
+            preview_landscape_duplicate(json,&target,expected,&dest,(int("x")?,int("y")?),orientation)
+        },
+        _=>return Err(bad)
+    }.map_err(|_|bad)?;
+    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+    Ok(draft.patched_json)
+}
+
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
@@ -1848,6 +1882,20 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn landscape_copy_and_remove_keep_inventory_and_unknown_fields(){
+        let source=r#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"Inventory":{"40200001":{"Amount":5}}}}},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-A.json","NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40200001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}}}}}},"Unknown":{"value":17}}"#;
+        let plan=r#"{"action":"duplicate","localOrdinal":1,"itemId":"40200001","expectedX":1,"expectedY":2,"x":4,"y":4}"#;
+        let witness=r#"{"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/Villages/Village04-A.json","factor":1,"sizeX":10,"sizeY":10}"#;
+        let copied=landscape_candidate(source.as_bytes(),plan,witness).unwrap();
+        let a:Value=serde_json::from_str(source).unwrap();let b:Value=serde_json::from_str(&copied).unwrap();
+        assert_eq!(a["Player"],b["Player"]);assert_eq!(a["Unknown"],b["Unknown"]);
+        assert_eq!(b["World"]["GridCollection"]["Grids"]["10"]["Objects"]["8"]["ItemID"],40200001);
+        let removed=landscape_candidate(source.as_bytes(),r#"{"action":"remove","localOrdinal":1,"itemId":"40200001","expectedX":1,"expectedY":2,"x":null,"y":null}"#,"null").unwrap();
+        let c:Value=serde_json::from_str(&removed).unwrap();assert_eq!(a["Player"],c["Player"]);assert!(c["World"]["GridCollection"]["Grids"]["10"]["Objects"].as_object().unwrap().is_empty());
+        assert!(landscape_candidate(source.replace("\"Orientation\":\"GridOrientation_Down\"","\"Orientation\":\"GridOrientation_Down\",\"State\":{\"Unknown\":1}").as_bytes(),plan,witness).is_err());
+    }
 
     #[test]
     fn group_pickup_resolves_once_and_returns_all_stock_or_nothing(){
