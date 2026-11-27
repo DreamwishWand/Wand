@@ -2,8 +2,9 @@ import {currentDesign,emptyDesign,restoreDesign,type DesignItemGeometry,type Des
 import {roomDesignValid,type RoomDesignTemplate} from './room-design.ts';
 import {roomFinishIdValid} from './room-finish-design.ts';
 import {newRoomSurface,ROOM_PROJECT_WALL_LIMIT,serializeRoomProject,parseRoomProject,type RoomProjectSurface} from './room-project-design.ts';
-import type {IndoorRoom,IndoorSurface} from './indoor-room-view.ts';
+import {indoorFreeFloor,indoorGroupPlace,type IndoorRoom,type IndoorSurface} from './indoor-room-view.ts';
 import type {IndoorSupportWitness} from './indoor-support.ts';
+import type {RoomApplySurfaceGeometry} from './room-project-apply.ts';
 import {parseSupportScene,supportSceneRootCounts,type SupportScene} from './support-scene.ts';
 
 /** Only a portable design: no house name, native identifiers, save bytes,
@@ -24,7 +25,7 @@ export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:Room
   const x=p.x*template.grid.factor/face.factor,y=p.y*template.grid.factor/face.factor,w=byIndex.get(i);
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>=template.grid.sizeX*template.grid.factor||y>=template.grid.sizeY*template.grid.factor)return null;
   if(w){
-   if(w.itemId!==p.itemId||w.x!==p.x||w.y!==p.y)return null;
+   if(p.orientationCode%4!==0||w.itemId!==p.itemId||w.x!==p.x||w.y!==p.y)return null;
    try{const scene=parseSupportScene(JSON.stringify(scenes.get(w.localOrdinal)));if(scene.ownerItemId!==p.itemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)return null;
     rows.push({id:i+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4,attachment:{scene,designOnly:false}});
    }catch{return null;}
@@ -32,16 +33,34 @@ export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:Room
  }
  return rows;
 }
-export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplate,rows:readonly DesignPlacement[],definitions:ReadonlyMap<number,DesignItemGeometry>,finishIds:ReadonlySet<number>):RoomProjectSurface|null{
+/** Backup uses the native floor lattice, not synthetic factor-two diagonal geometry.
+ * Only plain furniture can bypass placement restrictions. Stateful support roots
+ * still require a validated attachment and a legal native placement. */
+export function roomBackupSurfaceValid(face:IndoorSurface,s:RoomProjectSurface,g:RoomApplySurfaceGeometry,free=false):boolean{
+ if(!free||!indoorFreeFloor(face))return roomDesignValid(s.timeline,s.template.grid,s.template.raster,g.design);
+ if(!face.factor)return false;
+ const rows=currentDesign(s.timeline),strict=rows.filter(p=>p.attachment),leaf=rows.filter(p=>!p.attachment);
+ if(rows.some(p=>{const d=g.design.get(p.itemId);return !d||d.layer!=='furniture'||!!d.supportPath!==!!p.attachment||d.surfaceCapable&&!p.attachment||p.attachment?.designOnly||p.attachment&&(!Number.isInteger(p.orientation)||p.attachment.scene.tree.sourcePath!==d.supportPath)||!Number.isSafeInteger(p.x*face.factor/s.template.grid.factor)||!Number.isSafeInteger(p.y*face.factor/s.template.grid.factor);}))return false;
+ const empty={...face,positions:[],items:[]},stock=new Map(rows.map(p=>[p.itemId,rows.length]));
+ // Validate supports using the regular room design lattice. Leaves are
+ // independently checked against the real native raster and shape.
+ if(strict.length&&!roomDesignValid({snapshots:[strict],cursor:0,nextId:1},s.template.grid,s.template.raster,g.design))return false;
+ for(const p of leaf){if(!g.freeAllowed?.has(p.itemId)||!indoorGroupPlace(empty,g.shapes,g.freeAllowed,stock,[{itemId:p.itemId,dx:p.x*2/s.template.grid.factor,dy:p.y*2/s.template.grid.factor,orientation:p.orientation}],0,0,true))return false;}
+ return true;
+}
+export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplate,rows:readonly DesignPlacement[],definitions:ReadonlyMap<number,DesignItemGeometry>,finishIds:ReadonlySet<number>,native?:RoomApplySurfaceGeometry):RoomProjectSurface|null{
  const finish=face.finish;if(finish===null||finish!==0&&(!roomFinishIdValid(finish,face.kind)||!finishIds.has(finish)))return null;
  if(rows.length!==face.positions.length||rows.some(p=>{const g=definitions.get(p.itemId);return !g||!!g.supportPath!==!!p.attachment||g.surfaceCapable&&!p.attachment;}))return null;
- const timeline=restoreDesign(emptyDesign(),rows,definitions,template.grid.sizeX*template.grid.factor,template.grid.sizeY*template.grid.factor);
- if(!timeline||!roomDesignValid(timeline,template.grid,template.raster,definitions))return null;
- return {...newRoomSurface(face.ordinal,template),timeline,finish,definitions};
+ const free=!!native&&indoorFreeFloor(face);
+ const timeline=free?{snapshots:[[...rows]],cursor:0,nextId:rows.length+1}:restoreDesign(emptyDesign(),rows,definitions,template.grid.sizeX*template.grid.factor,template.grid.sizeY*template.grid.factor);
+ if(!timeline)return null;
+ const surface={...newRoomSurface(face.ordinal,template),timeline,finish,definitions};
+ if(native?!roomBackupSurfaceValid(face,surface,native,free):!roomDesignValid(timeline,template.grid,template.raster,definitions))return null;
+ return surface;
 }
-export function capturedRoomDocument(room:IndoorRoom,surfaces:readonly RoomProjectSurface[],templates:readonly RoomDesignTemplate[]):string|null{
+export function capturedRoomDocument(room:IndoorRoom,surfaces:readonly RoomProjectSurface[],templates:readonly RoomDesignTemplate[],backup=false):string|null{
  if(!surfaces.length||surfaces.length!==room.surfaces.length||surfaces.length>ROOM_PROJECT_WALL_LIMIT+1||surfaces.some((s,i)=>s.id!==room.surfaces[i].ordinal||s.template.kind!==room.surfaces[i].kind||currentDesign(s.timeline).length!==room.surfaces[i].positions.length))return null;
- try{const raw=serializeRoomProject(surfaces,surfaces[0].id);parseRoomProject(raw,templates);return raw;}catch{return null;}
+ try{const raw=serializeRoomProject(surfaces,surfaces[0].id);parseRoomProject(raw,templates,backup);return raw;}catch{return null;}
 }
 export const roomCaptureWords={
  ja:['部屋を設計ファイルに保存','設計を保存できません。未確認の地形・家具・支持面・仕上げがあります。','確認中…'],
