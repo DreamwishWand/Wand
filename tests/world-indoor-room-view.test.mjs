@@ -368,3 +368,15 @@ test('free symmetry duplicate accepts native diagonal mirror and overlap but rej
  assert.equal(indoorSymmetricDuplicate(full,{'40000001:10':shape},allowed,stock,[0],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
  assert.equal(indoorSymmetricDuplicate(full,shapes,allowed,stock,[1],{mode:'vertical',x2:6,y2:0},new Map(),true),null);
 });
+
+test('free linked symmetry moves and turns diagonal partners over occupied cells',async()=>{
+ const {indoorLinkedMove,indoorLinkedRotate,indoorLinkedPlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const terrain={sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>0)};
+ const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40000001,x:1,y:1,orientationCode:10,plain:true},{itemId:40000001,x:4,y:1,orientationCode:6,plain:true},{itemId:40000002,x:2,y:2,orientationCode:8}],missingPositions:0,terrain};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(code=>['40000001:'+code,shape])),allowed=new Set([40000001]),axis={mode:'vertical',x2:6,y2:0};
+ assert.deepEqual(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis,true)?.map(p=>[p.index,p.x,p.y]),[[0,2,2],[1,3,2]]);
+ assert.equal(indoorLinkedMove({...full,positions:[...full.positions,{...full.positions[1]}]},shapes,allowed,[0],0,2,2,axis,true),null);
+ assert.deepEqual(indoorLinkedRotate(full,shapes,allowed,[0],1,axis,true)?.map(p=>p.orientation),['GridOrientation_UpLeft','GridOrientation_UpRight']);
+ assert.deepEqual(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,2]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true)?.map(p=>[p.x,p.y,p.expectedStock]),[[2,2,2],[3,2,1]]);
+ assert.equal(indoorLinkedPlacement(full,shapes,allowed,new Map([[40000001,1]]),[{itemId:40000001,dx:0,dy:0,orientation:2.5}],'corner',2,2,axis,true),null);
+});
