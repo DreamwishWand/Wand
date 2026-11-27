@@ -9,12 +9,32 @@ import {landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landsca
 import {stockSourceEligible} from './save-furniture-placement.ts';
 import {supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import {captureBuildingPoses,type BuildingPose} from './building-pose-backup.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
 type Incoming=ReturnType<typeof parseIslandDecoration>;
 const isNetwork=(p:MainlandSavedObject)=>p.object.layer==='ground'||p.object.layer==='fence';
 const inside=(r:CaptureRegion,p:{x:number;y:number;factor:number;shape:SourceObjectShape|null})=>!!p.shape&&p.shape.runs.every(q=>p.x+q.x/p.factor>=r.x&&p.x+(q.x+q.width)/p.factor<=r.x+r.w&&p.y-(q.y+1)/p.factor>=r.y&&p.y-q.y/p.factor<=r.y+r.h);
+/** Portable partial backups cannot guess which stateful building of a
+ * repeated ItemID is intended. Include only unique, fully enclosed records. */
+export function regionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[]):BuildingPose[]|null{
+ const rows=captureBuildingPoses(g,objects);if(!rows)return null;
+ const counts=new Map<number,number>();for(const row of rows)counts.set(row.itemId,(counts.get(row.itemId)??0)+1);
+ const enclosed=new Set(objects.filter(p=>p.area===g.key&&inside(region,p)).map(p=>Number(p.object.itemId)));
+ return rows.filter(p=>counts.get(p.itemId)===1&&enclosed.has(p.itemId));
+}
+export function validateRegionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],wanted:readonly BuildingPose[],geometry:ReadonlyMap<number,DesignItemGeometry>):boolean{
+ const available=regionBuildingPoses(region,g,objects);if(!available)return false;
+ const seen=new Set<number>();
+ for(const p of wanted){
+  const before=available.find(q=>q.itemId===p.itemId);if(!before||seen.has(p.itemId))return false;seen.add(p.itemId);
+  const source=objects.find(q=>q.area===g.key&&Number(q.object.itemId)===p.itemId&&q.object.x===before.x&&q.object.y===before.y&&q.object.orientation===CARDINAL_ORIENTATIONS[before.orientation]);
+  const shape=p.orientation===before.orientation?source?.shape:geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+  if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return false;
+ }
+ return true;
+}
 const pose=(p:DesignPlacement)=>[p.itemId,p.x,p.y,p.orientation].join(':');
 const networkPose=(g:MainlandGrid,p:NetworkPose)=>({...mainlandMapAnchor(g,p.x,p.y),area:g.key,itemId:p.itemId,kind:p.network.kind});
 type BoundaryPose=ReturnType<typeof networkPose>;
@@ -72,7 +92,18 @@ export function reviewRegionCapture(region:CaptureRegion,grids:readonly Mainland
  if(!validRegionScope(grids,world))return null;
  const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
  const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!doc)return null;
- const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,...(world?{world:JSON.parse(doc.text)}:{island:JSON.parse(doc.text)})});
+ const inner=JSON.parse(doc.text);
+ if(world){
+  for(const area of inner.areas){
+   const g=grids.find(g=>g.key===area.furniture.design.grid.key);if(!g)return null;
+   const all=snapshot.objects.get(g.key);if(!all)return null;
+   const buildings=regionBuildingPoses(region,g,all);if(!buildings)return null;
+   area.buildings=buildings;
+   const summary=doc.summaries.find(s=>s.key===g.key);if(!summary)return null;
+   summary.buildingCount=buildings.length;summary.protectedCount=Math.max(0,summary.protectedCount-buildings.length);
+  }
+ }
+ const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,...(world?{world:inner}:{island:inner})});
  return text.length<=WORLD_DECORATION_FILE_LIMIT?{text,summaries:doc.summaries}:null;
 }
 export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>):string|null{
@@ -83,7 +114,7 @@ export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],
  const v=JSON.parse(text),r=v?.region;
  if(!v||Object.keys(v).length!==3||v.schema!=='wand.preset.region-decoration@1'||!r||Object.keys(r).length!==4||!['x','y','w','h'].every(k=>typeof r[k]==='number')||!validCaptureRegion(r,mainlandExtent(grids)))throw Error('REGION_SCOPE');
  if(!Object.hasOwn(v,world?'world':'island'))throw Error('REGION_SCOPE');
- const incoming=parseIslandDecoration(JSON.stringify(world?v.world:v.island),grids,world);if([...incoming.values()].some(a=>!a.supports||a.houses!==undefined||a.buildings!==undefined))throw Error('REGION_SUPPORT');
+ const incoming=parseIslandDecoration(JSON.stringify(world?v.world:v.island),grids,world);if([...incoming.values()].some(a=>!a.supports||a.houses!==undefined)||[...incoming.values()].some(a=>a.buildings!==undefined)&&(!world||[...incoming.values()].some(a=>a.buildings===undefined)))throw Error('REGION_SUPPORT');
  return {region:{x:r.x,y:r.y,w:r.w,h:r.h},incoming};
 }
 /** Merge only selected cells into the exact current full-world document.
@@ -106,7 +137,8 @@ export function mergeRegionDecoration(region:CaptureRegion,grids:readonly Mainla
   }
   let landscape:LandscapePose[]|undefined;
   if(next.landscape!==undefined){if(!before.landscape||!replaced.landscape)return null;for(const p of next.landscape){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}const old=new Set(replaced.landscape.map(landscapePoseKey));landscape=[...before.landscape.filter(p=>!old.has(landscapePoseKey(p))),...next.landscape];}
-  result.set(g.key,{...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
+  if(next.buildings!==undefined){const all=snapshot.objects.get(g.key);if(!world||!all||!validateRegionBuildingPoses(region,g,all,next.buildings,geometry))return null;}
+  result.set(g.key,{...(next.buildings!==undefined?{buildings:next.buildings}:{}),...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
  }
  return result;
 }
