@@ -16,14 +16,16 @@ const multi='120000227';
 assert.equal(Object.keys(index.variants).length,5);
 const maxDog='120000152';
 assert.equal(index.variants[maxDog].length,1);
-assert.ok(index.variants[maxDog][0].male.companionIncluded===false&&index.variants[maxDog][0].female.companionIncluded===true,'native body-specific Max alternate');
+const maxAlt=index.variants[maxDog][0];
+assert.ok(maxAlt.male.companionIncluded===true&&maxAlt.female.companionIncluded===true,'native body-specific Max alternate');
+assert.deepEqual(maxAlt.male.actor,maxAlt.female.actor);assert.ok(maxAlt.male.actorRoot&&!maxAlt.female.actorRoot);
 assert.equal(index.variants[multi].length,1);
 assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
 const expandedActor='120000238';
 assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.items[expandedActor]?.female?.companionIncluded===true,'new actor scene');
 const bindActor='120000005';
 assert.ok(index.items[bindActor]?.male?.companionIncluded===true&&index.items[bindActor]?.female?.companionIncluded===true,'native-bind actor scene');
-assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,4);
+assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,5);
 const curveActor='120000264';
 assert.ok(index.items[curveActor]?.male?.companionIncluded===true&&index.items[curveActor]?.female?.companionIncluded===true,'quality-flag actor scene');
 const rigidActor='120000147',partialActor='120000177';
@@ -112,7 +114,7 @@ try{
         await body.nth(0).click();
         await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
         assert.equal(await body.nth(0).getAttribute('aria-pressed'),'true');
-        assert.equal(await preview.locator('input[type=checkbox]').count(),0);
+        assert.equal(await preview.locator('input[type=checkbox]').count(),1);
       }
       await body.nth(1).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});

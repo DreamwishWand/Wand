@@ -16,6 +16,12 @@ ITEM="120000152"
 SOURCES={"male":"afcac755721a4df1ffad8bf817911bf1a5808b6b9b0070b4bf5a2ed9140462a9",
          "female":"81403e1bdfccebafa5414a7e102ae11aaa6c4a4cdd8eb4094f07e495c72a0812"}
 ACTOR_SOURCE="0940a9d0847033bf979bef348461aaa9b670362346abbaa72c5d84bb2ba9a32f"
+# PetPhotoPose.AttachmentData AppearanceType 0=Female, 1=Male, Extra5=10.
+# Both bodies select the same single controller state through AttachPet.
+MALE_ROOT={"translation":[0.07199999690055847,0.0010000000474974513,0.17399999499320984],
+           "rotation":[0.2778135820089528,0.7263349848786196,0.6279782020562718,0.03000801784361439]}
+FEMALE_ROOT={"translation":[0.0031599877402186394,-0.014542588964104652,0.07119163125753403],
+             "rotation":[0.27081301284748804,0.7237130263591042,0.6337629434119814,0.035274624142500176]}
 
 def download_max():
     req=urllib.request.Request(URL,headers={"User-Agent":"Dreamwish-Wand-Pages"})
@@ -83,6 +89,10 @@ def apply_max(raw,dest):
                 row.update(companionIncluded=True,actor={**e,"sourceSha256":ACTOR_SOURCE},anchor=anchor)
             else:require("actor" not in o and "anchor" not in o,"unverified male actor")
             options[body]=row
+        male,female=options["male"],options["female"];actor=female["actor"];doc=metadata(assets[actor["sha256"]+".glb"]);root=doc["nodes"][0]
+        require(nodes["male"][6]["name"]==female["anchor"]["path"] and all(len(root[k])==len(v) and all(abs(a-b)<1e-6 for a,b in zip(root[k],v)) for k,v in FEMALE_ROOT.items())
+                and not any(ch["target"]["node"]==0 for ch in doc["animations"][0]["channels"]),"Max native attachment root")
+        male.update(companionIncluded=True,actor=actor,anchor=female["anchor"],actorRoot=MALE_ROOT)
         require(len(assets)==3 and set(files)=={"photo-max-alternate.json",*assets},"Max archive coverage")
         for name,data in assets.items():
             path=dest/name
@@ -90,4 +100,4 @@ def apply_max(raw,dest):
         for name,data in assets.items():(dest/name).write_bytes(data)
         public.setdefault("variants",{})[ITEM]=[options]
         index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
-        print("Max alternate pose: two player clips; one source-controller companion actor")
+        print("Max alternate pose: two player clips; one shared source-controller actor, two native attachment transforms")
