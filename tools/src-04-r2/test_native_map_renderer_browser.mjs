@@ -1,4 +1,4 @@
-// Optional browser smoke test, synthetic textures only; no server or asset publication.
+// Browser smoke test, synthetic textures only; no server or asset publication.
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import {chromium} from 'playwright';
@@ -18,7 +18,9 @@ try{
    const read=(x,y)=>{const p=new Uint8Array(4);g.readPixels(x,y,1,1,g.RGBA,g.UNSIGNED_BYTE,p);return [...p];};
    const close=(got,expected,tolerance=1)=>{if(got.some((v,i)=>Math.abs(v-expected[i])>tolerance))throw Error(JSON.stringify({got,expected}));};
    try{
-    const stats=await r.render([red,blue,skip],view,()=>{throw Error('unexpected source');});
+    const progress=[];
+    const stats=await r.render([red,blue,skip],view,()=>{throw Error('unexpected source');},undefined,p=>progress.push(p));
+    if(JSON.stringify(progress)!==JSON.stringify([{done:0,total:2},{done:1,total:2},{done:2,total:2}]))throw Error('visible layer progress');
     close(read(8,8),[128,0,128,191]);if(stats.drawn!==2||stats.skipped!==1)throw Error('culling');
     const t={kind:'sdf',unitQuadToCanvas:quad,rgba:[0,1,0,1],imageSha256:'a'.repeat(64),size:[2,2],wrap:[1,1],colorSpace:'Linear'};
     const pixels=new Uint8ClampedArray([0,0,0,255,255,0,0,255,0,0,0,255,255,0,0,255]);
@@ -32,7 +34,17 @@ try{
       close(read(x,8),[Math.round(255*(1-a)),Math.round(255*a),0,Math.round(255*(a*a+1-a))],3);samples++;
      }
     }
-    return {blend:true,culling:true,sdfSamples:samples};
+    // Rect mask in source UV, and framebuffer copying with unchanged coordinates.
+    canvas.width=16;canvas.height=16;
+    const masked={...blue,rgba:[0,0,1,1],mask:{kind:'rect',overlayToMaskUv:[2,0,0,1,-.5,0]}};
+    await r.render([red,masked],view,source);
+    close(read(1,8),[255,0,0,255]);close(read(8,8),[0,0,255,255]);close(read(14,8),[255,0,0,255]);
+    const output=document.createElement('canvas');output.width=16;output.height=16;
+    const ctx=output.getContext('2d');ctx.drawImage(canvas,0,0);
+    close([...ctx.getImageData(8,7,1,1).data],[0,0,255,255]);
+    await r.render([red,masked],{x:4,y:0,width:8,height:16},source);
+    close(read(8,8),[0,0,255,255]);
+    return {blend:true,culling:true,progress:true,rectMask:true,canvasCopy:true,sdfSamples:samples};
    }finally{r.dispose();}
   }finally{URL.revokeObjectURL(url);}
  },js);
