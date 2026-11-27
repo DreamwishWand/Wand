@@ -1873,6 +1873,34 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
  c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
  c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
 }
+/// Initialize an empty storage using a source-authorized native template.
+pub fn preview_initial_storage(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str,expected_stock:u32,template:&str,capacity:u32,room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ use serde_json::{Value,json};
+ let bad=PatchError::InvalidTarget;
+ if item/100_000!=400||template!="Chest_48Slot"||capacity!=48||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ if room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}validate_local_grid_destination_mode(source,d,item,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,item,xy,orientation)?;}
+ let root:Value=serde_json::from_str(source).map_err(|_|bad)?;
+ let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<8192).ok_or(bad)?;
+ let fresh=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(bad)?;
+ if containers.iter().any(|(k,v)|k.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*k||n>=fresh||v["ID"].as_u64()!=Some(u64::from(n))))||player_house_create::container_ref(&root,fresh,false){return Err(bad);}
+ let row=json!({"ID":fresh,"Size":capacity,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":item,"ExtraSize":0});
+ let state=json!({"Storage":{"ContainerInventoryID":fresh,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
+ let amount=preview_default_furniture_stock(source,item,expected_stock,-1)?;
+ let intermediate=&amount.patched_json;
+ let mut locator=JsonLocator::new(intermediate,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mp=vec![k("Player"),k("ContainerInventories")];let cp=vec![k("Player"),k("NextContainerInventoryID")];
+ locator.capture.insert(mp.clone(),None);locator.capture.insert(cp.clone(),None);locator.walk_complete()?;
+ let mr=locator.capture.get(&mp).and_then(|r|r.clone()).ok_or(bad)?;
+ let cr=locator.capture.get(&cp).and_then(|r|r.clone()).ok_or(bad)?;
+ if intermediate[cr.clone()].parse::<u32>().ok()!=Some(fresh){return Err(bad);}
+ let mut changes=[(mr.end-1..mr.end-1,format!("{}\"{}\":{}",if containers.is_empty(){""}else{","},fresh,row)),(cr,(fresh+1).to_string())];
+ changes.sort_unstable_by_key(|(r,_)|r.start);let mut candidate=String::new();let mut last=0;
+ for (r,v) in changes{if r.start<last{return Err(bad);}candidate.push_str(&intermediate[last..r.start]);candidate.push_str(&v);last=r.end;}
+ candidate.push_str(&intermediate[last..]);validate_json_without_edit(&candidate)?;
+ insert_grid_record(&candidate,d,item,xy,orientation,Some(&state.to_string()))
+}
 /// Empty, unlocked storage with a known container record may be returned
 /// to furniture stock. Nonempty and unknown storage are never discarded.
 pub fn storage_pickup_eligible(root:&serde_json::Value,obj:&serde_json::Value)->bool{

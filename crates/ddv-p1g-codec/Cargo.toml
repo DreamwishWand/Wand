@@ -23,3 +23,8 @@ wasm-bindgen = { version = "0.2", optional = true }
 
 [lib]
 crate-type = ["rlib", "cdylib"]
+
+[build-dependencies]
+flate2 = { version = "=1.1.5", default-features = false, features = ["rust_backend"] }
+serde_json = "=1.0.145"
+sha2 = "=0.10.8"
