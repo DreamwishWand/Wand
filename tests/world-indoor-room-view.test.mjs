@@ -393,7 +393,7 @@ test('free indoor cut captures overlapping diagonal records and pastes them with
  assert.equal(captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set([0]),true),null);
 });
 
-test('storage root can move and rotate cardinally but cannot use leaf pickup or cut',async()=>{
+test('storage root supports cardinal move and explicit storage cut but not leaf pickup',async()=>{
  const {indoorFreeTransform,indoorFreeRotate,indoorPickup}=await import('../src/lib/world/indoor-room-view.ts');
  const full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:40001680,x:1,y:1,orientationCode:8,storage:true}],missingPositions:0,terrain:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64)}};
  const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:''},shapes=Object.fromEntries([0,2,4,6,8,10,12,14].map(n=>['40001680:'+n,shape])),allowed=new Set([40001680]);
@@ -401,5 +401,8 @@ test('storage root can move and rotate cardinally but cannot use leaf pickup or 
  assert.ok(indoorFreeRotate(full,shapes,allowed,0,1));
  assert.equal(indoorFreeTransform(full,shapes,allowed,0,3,3,'GridOrientation_DownLeft'),null);
  assert.equal(indoorPickup(full,0,allowed,new Map([[40001680,1]]),true),null);
- assert.equal(captureIndoorCut(full,1,[0],shapes,allowed,allowed,new Set(),true),null);
+ const cut=captureIndoorCut(full,1,[0],shapes,allowed,allowed,new Set(),true);
+ assert.equal(cut.rows[0].storage,true);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,2,2,true)[0].storage,true);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,[{...cut.clip[0],orientation:2.5}],2,2,true),null);
 });
