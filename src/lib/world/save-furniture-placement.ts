@@ -1,3 +1,4 @@
+import initialTemplates from './building-initial-templates.json';
 /** Original terrain and ordinary furniture only. A candidate never authorizes Save writes. */
 import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
@@ -65,6 +66,19 @@ function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gr
 export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidate|null{
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
+}
+export function initialBuildingEligible(id:number,grid:MainlandGrid):boolean{
+ const ids=(initialTemplates.scopes as Record<string,readonly number[]>)[sourceWorldScope(grid)];
+ return !!bindMainlandGrid(grid)&&!!ids?.includes(id);
+}
+export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number):StockCandidate|null{
+ if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
+ const hits=mainlandFreeHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
+ const g=hits[0],def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
+ if(!initialBuildingEligible(id,g)||def?.nativeType!=='Building'||def.itemId!==id||def.surfaceCapable||def.supportPath||!shape||shape.cellCount<1||shape.cellCount>65536)return null;
+ const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
+ if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
+ return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'place',itemId:String(id),x,y,orientation}};
 }
 export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false,allowDiagonal=false):StockCandidate|null{
  const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
