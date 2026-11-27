@@ -5,7 +5,7 @@ import {roomDesignValid} from './room-design.ts';
 import {roomFinishIdValid} from './room-finish-design.ts';
 import {roomProjectCounts,type RoomProjectSurface} from './room-project-design.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
-export interface RoomApplySurfaceGeometry{design:ReadonlyMap<number,DesignItemGeometry>;shapes:Readonly<Record<string,SourceObjectShape>>;allowed:ReadonlySet<number>}
+export interface RoomApplySurfaceGeometry{design:ReadonlyMap<number,DesignItemGeometry>;shapes:Readonly<Record<string,SourceObjectShape>>;allowed:ReadonlySet<number>;freeAllowed?:ReadonlySet<number>}
 export interface RoomApplyRow{surfaceOrdinal:number;sourcePath:string;factor:1|2;place:IndoorPlace[];finish:{itemId:number;expected:number|null}|null}
 export interface RoomApplyPlan{roomOrdinal:number;surfaces:RoomApplyRow[]}
 export function roomApplyMatches(s:RoomProjectSurface,face:IndoorSurface):boolean{
