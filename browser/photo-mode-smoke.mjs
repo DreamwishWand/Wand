@@ -34,10 +34,12 @@ assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitt
 const eulerSquirrel='120000005',eulerPair='120000001';
 assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index.items[eulerPair]?.male?.eulerRotationCorrected===true,'Euler rotation corrections');
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
-const ids=[...new Set([eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027','70200028','70200029'];
+assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
+const ids=[...new Set([mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,26);
-assert.equal(Object.keys(index.items).length,255);
+assert.equal(Object.keys(index.items).length,263);
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,206);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
