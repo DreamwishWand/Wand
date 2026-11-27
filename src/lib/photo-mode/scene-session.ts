@@ -1,3 +1,4 @@
+import type {LimboMaterial} from './limbo-material.ts';
 import {PosePlayback,type PosePlaybackState,type PoseSpeed} from './playback.ts';
 
 export interface PosePrimitive {
@@ -11,6 +12,7 @@ export interface PosePrimitive {
   readonly skin:number;
   readonly color:readonly [number,number,number,number];
   readonly texture?:ImageBitmap;
+  readonly limbo?:LimboMaterial;
 }
 export interface PoseScene {
   readonly duration:number;
