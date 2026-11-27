@@ -25,6 +25,19 @@ export function generalBuildingSourceEligible(p:MainlandSavedObject|null):p is M
  return !!p?.shape&&p.object.nativeType==='Building'&&[200,201,202,203].includes(Math.floor(Number(p.object.itemId)/100000))&&!p.object.subgrid&&isCardinal(p.object.orientation);
 }
 export function buildingSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{return playerHouseSourceEligible(p)||generalBuildingSourceEligible(p);}
+/** Existing source records only; no default building state is synthesized. */
+export function buildingPlacementSources(grids:readonly MainlandGrid[],objects:readonly MainlandSavedObject[]):Map<number,MainlandSavedObject>{
+ const byGrid=new Map(grids.filter(g=>!!bindMainlandGrid(g)).map(g=>[g.key,g]));
+ const sources=new Map<number,MainlandSavedObject>();
+ for(const p of objects){
+  if(!buildingSourceEligible(p)||!p.shape?.cellCount||p.shape.cellCount>65536)continue;
+  const g=byGrid.get(p.area);
+  if(!g||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
+  const id=Number(p.object.itemId),old=sources.get(id);
+  if(!old||p.object.localOrdinal<old.object.localOrdinal)sources.set(id,p);
+ }
+ return sources;
+}
 /** Exterior-only, same source world. The Rust writer verifies the native
  * HouseData and matching existing interior before generating a copy. */
 export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
