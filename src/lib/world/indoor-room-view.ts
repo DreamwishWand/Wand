@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[];anchorOptions?:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';removeRecoverCount?:number;resize?:{current:string;options:string[];anchorOptions?:string[];recoveryOptions?:[string,number][]};ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -35,13 +35,17 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  if(!record(value)||value.contract!=='wand.db05.indoor-rooms@1'||value.geometryVerified!==false||value.writerAuthorized!==false||!Array.isArray(value.rooms)||value.rooms.length>2048)throw Error('INDOOR_REPORT_INVALID');
  let total=0;const roomSlots=new Set<string>();
  return value.rooms.map((room,i)=>{
-  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','resize','appendFloorCount','addRoomSlots','addRoomSizes','removeKind','removeRecoverCount','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
   if(typeof room.roomSlot==='number'){const address=room.house+':'+room.floor+':'+room.roomSlot;if(roomSlots.has(address))throw Error('INDOOR_ROOM_ADDRESS');roomSlots.add(address);}
-  if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,19)||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
+  if(room.appendFloorCount!==undefined&&(!integer(room.appendFloorCount,1,127)||room.house!==1||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_FLOOR_APPEND_INVALID');
+  if(room.removeRecoverCount!==undefined&&(!integer(room.removeRecoverCount,1,2048)||!['room','floor'].includes(String(room.removeKind))))throw Error('INDOOR_REMOVE_COUNT_INVALID');
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
   const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
   const slots=room.addRoomSlots;if(slots!==undefined&&(!Array.isArray(slots)||slots.length<1||slots.length>3||new Set(slots).size!==slots.length||slots.some(n=>!integer(n,1,3))||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_ADD_ROOM_INVALID');
-  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).some(k=>!["current","options","anchorOptions"].includes(k))||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)||resize.anchorOptions!==undefined&&(!Array.isArray(resize.anchorOptions)||resize.anchorOptions.length<1||resize.anchorOptions.length+resize.options.length>26||new Set(resize.anchorOptions).size!==resize.anchorOptions.length||resize.anchorOptions.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current||(resize.options as unknown[]).includes(n)))))throw Error('INDOOR_RESIZE_INVALID');
+  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).some(k=>!["current","options","anchorOptions","recoveryOptions"].includes(k))||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)||resize.anchorOptions!==undefined&&(!Array.isArray(resize.anchorOptions)||resize.anchorOptions.length<1||resize.anchorOptions.length+resize.options.length>26||new Set(resize.anchorOptions).size!==resize.anchorOptions.length||resize.anchorOptions.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current||(resize.options as unknown[]).includes(n)))))throw Error('INDOOR_RESIZE_INVALID');
+  if(record(resize)&&resize.recoveryOptions!==undefined){
+   const a=resize.recoveryOptions;if(!Array.isArray(a)||a.length<1||a.length>26||a.some(v=>!Array.isArray(v)||v.length!==2||typeof v[0]!=='string'||!/^\d{1,2}x\d{1,2}$/.test(v[0])||v[0]===resize.current||!integer(v[1],1,2048)||(resize.options as unknown[]).includes(v[0])||Array.isArray(resize.anchorOptions)&&resize.anchorOptions.includes(v[0]))||new Set(a.map(v=>v[0])).size!==a.length||a.length+(resize.options as unknown[]).length+(Array.isArray(resize.anchorOptions)?resize.anchorOptions.length:0)>26)throw Error('INDOOR_RECOVER_INVALID');
+  }
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
    if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
@@ -57,7 +61,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    }
    return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
-  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[],addRoomSizes:sizes as string[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove}:{}),ceiling:room.ceiling,surfaces};
+  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),...(resize?{resize:resize as IndoorRoom['resize']}:{}),...(typeof room.appendFloorCount==='number'?{appendFloorCount:room.appendFloorCount}:{}),...(slots?{addRoomSlots:slots as number[],addRoomSizes:sizes as string[]}:{}),...(remove==='room'||remove==='floor'?{removeKind:remove,...(typeof room.removeRecoverCount==='number'?{removeRecoverCount:room.removeRecoverCount}:{})}:{}),ceiling:room.ceiling,surfaces};
  });
 }
 export const indoorWords={
@@ -505,6 +509,8 @@ export const roomRenameWords={
 
 export function indoorRoomResizePlan(room:IndoorRoom|null,size:string){
  if(!room?.resize)return null;
+ const recovery=room.resize.recoveryOptions?.find(v=>v[0]===size);
+ if(recovery)return {roomOrdinal:room.ordinal,expected:room.resize.current,size,recoverCount:recovery[1]};
  const free=room.resize.anchorOptions?.includes(size)===true;
  if(!room.resize.options.includes(size)&&!free)return null;
  return {roomOrdinal:room.ordinal,expected:room.resize.current,size,...(free?{preserveAnchors:true as const}:{})};
@@ -520,9 +526,11 @@ export const roomResizeWords={
  'pt-BR':['Redimensionar cômodo','Apenas tamanhos que preservam objetos. Portas e elevadores padrão recentralizados; tamanho registrado como comprado.']
 } as const;
 
-export function indoorAppendFloorPlan(room:IndoorRoom|null){
- if(room?.houseItemId!==20500000||room.roomSlot!==0||!integer(room.appendFloorCount,1,19))return null;
- return {house:room.house,houseItemId:room.houseItemId,expectedCount:room.appendFloorCount};
+export function indoorAppendFloorPlan(room:IndoorRoom|null,count=1,extended=false){
+ if(room?.houseItemId!==20500000||room.house!==1||room.roomSlot!==0||!integer(room.appendFloorCount,1,127)||!integer(count,1,127))return null;
+ const next=room.appendFloorCount+count;
+ if(next>128||extended!==(next>20))return null;
+ return {house:room.house,houseItemId:room.houseItemId,expectedCount:room.appendFloorCount,...(count!==1||extended?{count}:{}),...(extended?{extended:true as const}:{})};
 }
 export const floorAppendWords={
  ja:['階を追加','エレベーター付きの空の3×3の階を最上階に追加します。'],
@@ -552,7 +560,7 @@ export const addRoomWords={
 
 export function indoorRemoveRoomPlan(room:IndoorRoom|null){
  if(room?.houseItemId!==20500000||!(room.removeKind==='floor'&&room.roomSlot===0&&room.floor>1||room.removeKind==='room'&&integer(room.roomSlot,1,3)))return null;
- return {house:room.house,houseItemId:room.houseItemId,floor:room.floor,slot:room.roomSlot,kind:room.removeKind};
+ return {house:room.house,houseItemId:room.houseItemId,floor:room.floor,slot:room.roomSlot,kind:room.removeKind,...(room.removeRecoverCount?{recoverCount:room.removeRecoverCount}:{})};
 }
 export const removeRoomWords={
  ja:['部屋を削除','最上階を削除','空の部屋と接続ドアを削除します。','空の最上階とエレベーターを削除します。'],
@@ -574,4 +582,42 @@ export const anchorResizeWords={
  'es-ES':['Colocación libre','Se conservan posiciones; no se verifican salientes ni solapamientos.'],
  'zh-CN':['自由摆放','保留家具坐标，不检查占地范围越界或重叠。'],
  'pt-BR':['Posicionamento livre','Posições preservadas; limites da área ocupada e sobreposições não verificados.']
+} as const;
+
+export const recoverResizeWords={
+ ja:['範囲外の家具を回収','個の家具を所持品に戻します。残る家具のフットプリントや重なりは未検証です。'],
+ en:['Recover outside furniture',' furniture objects will return to stock. Remaining footprints and overlap are not checked.'],
+ fr:['Récupérer les meubles hors limites',' meubles seront remis en stock. Empreintes et chevauchements restants non vérifiés.'],
+ it:['Recupera mobili fuori limite',' mobili saranno restituiti. Ingombri e sovrapposizioni residui non verificati.'],
+ de:['Möbel außerhalb zurücknehmen',' Möbel werden ins Inventar zurückgelegt. Überstände und Überlappungen bleiben ungeprüft.'],
+ 'es-ES':['Recoger muebles fuera del límite',' muebles volverán al inventario. No se comprueban las huellas ni los solapamientos restantes.'],
+ 'zh-CN':['收回范围外的家具','件家具将返回库存。其余家具占地及重叠未验证。'],
+ 'pt-BR':['Recolher móveis fora da área',' móveis retornarão ao estoque. Áreas ocupadas e sobreposições restantes não são verificadas.']
+} as const;
+
+export const removeRecoveryWords={
+ ja:['個の家具を所持品に回収してから削除します。','部屋と接続ドアを削除します。','最上階の全室とエレベーターを削除します。'],
+ en:[' furniture objects will return to stock before removal.','Remove the room and connecting doors.','Remove every room and the elevator on the top floor.'],
+ fr:[' meubles seront remis en stock avant suppression.','Supprimer la pièce et ses portes.','Supprimer toutes les pièces et l’ascenseur du dernier étage.'],
+ it:[' mobili saranno restituiti prima della rimozione.','Rimuovi la stanza e le porte.','Rimuovi tutte le stanze e l’ascensore dell’ultimo piano.'],
+ de:[' Möbel werden vor dem Entfernen zurückgelegt.','Raum und Verbindungstüren entfernen.','Alle Räume und den Aufzug der obersten Etage entfernen.'],
+ 'es-ES':[' muebles volverán al inventario antes de eliminar.','Eliminar la habitación y sus puertas.','Eliminar todas las habitaciones y el ascensor de la última planta.'],
+ 'zh-CN':['件家具将在删除前返回库存。','删除房间及连接门。','删除顶层全部房间及电梯。'],
+ 'pt-BR':[' móveis retornarão ao estoque antes da remoção.','Remover cômodo e portas.','Remover todos os cômodos e o elevador do último andar.']
+} as const;
+
+export function indoorCeilingFinishPlan(room:IndoorRoom|null,itemId:number){
+ if(!room||!integer(room.ceiling,0,2147483647)||!integer(itemId,160100000,160199999)||room.ceiling===itemId||room.surfaces.length!==5||room.surfaces.slice(1).some((s,i)=>s.wallPosition!==i))return null;
+ return {roomOrdinal:room.ordinal,itemId,kind:'ceiling' as const,wall:null,expected:room.ceiling};
+}
+
+export const floorBatchWords={
+ ja:['追加する階数','変更後の階数','20階超は試験的なセーブ出力です。ゲーム内の動作は未確認です。','20階を超える増設を許可'],
+ en:['Floors to add','Total floors','More than 20 floors is experimental; game runtime is not verified.','Allow exceeding 20 floors'],
+ fr:['Étages à ajouter','Total des étages','Au-delà de 20 étages, export expérimental non vérifié en jeu.','Autoriser plus de 20 étages'],
+ it:['Piani da aggiungere','Piani totali','Oltre 20 piani: esportazione sperimentale non verificata nel gioco.','Consenti più di 20 piani'],
+ de:['Etagen hinzufügen','Etagen insgesamt','Über 20 Etagen: experimenteller, im Spiel ungeprüfter Export.','Mehr als 20 Etagen erlauben'],
+ 'es-ES':['Plantas que añadir','Total de plantas','Más de 20 plantas: exportación experimental sin verificar en el juego.','Permitir más de 20 plantas'],
+ 'zh-CN':['添加楼层数量','总楼层数','超过20层为实验性存档输出，未验证游戏内运行。','允许超过20层'],
+ 'pt-BR':['Andares a adicionar','Total de andares','Mais de 20 andares: exportação experimental não verificada no jogo.','Permitir mais de 20 andares']
 } as const;
