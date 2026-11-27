@@ -27,3 +27,10 @@ test('unpublished, mismatched versions, unknown assets and unsupported claims ar
   assert.throws(()=>parsePublishedWorldMapParts(index,'1.27.0'));
   assert.throws(()=>parsePublishedWorldMapParts(index,'1.26.2','https://example.com'));
 });
+
+import {readWorldMapRelease,loadWorldMapRelease} from '../src/lib/media/world-map-release.ts';
+test('inactive map release does not resolve artwork and unsupported versions are absent',async()=>{
+  assert.equal(readWorldMapRelease({state:'unpublished'},'1.26.2'),null);
+  assert.equal(await loadWorldMapRelease('1.27.0'),null);
+  assert.throws(()=>readWorldMapRelease({state:'published',canonicalMetadataVerified:false},'1.26.2'));
+});
