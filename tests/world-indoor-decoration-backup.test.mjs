@@ -64,3 +64,23 @@ test('multi-room backups bind native room slots and reject shifted or sparse leg
  assert.equal('slot' in JSON.parse(single).rooms[0],false);
  assert.equal(parseIndoorBackup(single,'room',[targets[0]],templates).length,1);
 });
+
+test('protected native room objects are not exported, returned to stock, or removed by decoration restore',()=>{
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([0,4,8,12].map(n=>[id+':'+n,shape]));
+ const defs=new Map([[id,{itemId:id,name:'Test',layer:'furniture',surfaceCapable:false,shapes}]]),g={design:defs,shapes,allowed:new Set([id])},geometry=new Map([[1,g]]);
+ const fixed={itemId:40300001,x:0,y:0,orientationCode:8,protected:true};
+ const placed={itemId:id,x:1,y:1,orientationCode:8,plain:true};
+ const occupiedFace={...face,items:[{itemId:fixed.itemId,quantity:1},{itemId:id,quantity:1}],positions:[fixed,placed]};
+ const occupied={...rooms[0],surfaces:[occupiedFace]};
+ const rows=captureRoomRows(occupied,occupiedFace,floor,[],new Map());
+ assert.deepEqual(rows,[{id:1,itemId:id,x:2,y:2,orientation:2}]);
+ const captured=captureRoomSurface(occupiedFace,floor,rows,defs,new Set());assert.ok(captured);
+ const raw=serializeIndoorBackup('room',[{room:occupied,surfaces:[captured]}],templates);
+ assert.equal(raw.includes('40300001'),false);
+ const blank=newRoomSurface(1,floor);
+ const q=buildIndoorRestore('room',[{room:occupied,before:[captured],after:[blank],geometry}],new Map([[id,0]]),new Set());
+ assert.ok(q);assert.equal(q.removed,1);assert.equal(q.plan.rooms[0].surfaces[0].pickup[0].index,1);
+ assert.deepEqual([...q.returned],[[id,1]]);
+ const unknown={...occupiedFace,positions:[{...fixed,protected:undefined},placed]};
+ assert.equal(captureRoomRows(occupied,unknown,floor,[],new Map()),null);
+});

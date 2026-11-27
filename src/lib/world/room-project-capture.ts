@@ -21,15 +21,16 @@ export function captureRoomRows(room:IndoorRoom,face:IndoorSurface,template:Room
  if(byIndex.size!==parents.length||parents.some(p=>!face.positions[p.index]||!scenes.has(p.localOrdinal)))return null;
  const rows:DesignPlacement[]=[];
  for(const [i,p] of face.positions.entries()){
+  if(p.protected===true){if(byIndex.has(i))return null;continue;}
   if(p.orientationCode===null||Math.floor(p.itemId/100000)!==400)return null;
   const x=p.x*template.grid.factor/face.factor,y=p.y*template.grid.factor/face.factor,w=byIndex.get(i);
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>=template.grid.sizeX*template.grid.factor||y>=template.grid.sizeY*template.grid.factor)return null;
   if(w){
    if(p.orientationCode%4!==0||w.itemId!==p.itemId||w.x!==p.x||w.y!==p.y)return null;
    try{const scene=parseSupportScene(JSON.stringify(scenes.get(w.localOrdinal)));if(scene.ownerItemId!==p.itemId||[...supportSceneRootCounts(scene).values()].reduce((a,b)=>a+b,0)>32)return null;
-    rows.push({id:i+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4,attachment:{scene,designOnly:false}});
+    rows.push({id:rows.length+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4,attachment:{scene,designOnly:false}});
    }catch{return null;}
-  }else{if(p.plain!==true)return null;rows.push({id:i+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4});}
+  }else{if(p.plain!==true)return null;rows.push({id:rows.length+1,itemId:p.itemId,x,y,orientation:p.orientationCode/4});}
  }
  return rows;
 }
@@ -50,7 +51,7 @@ export function roomBackupSurfaceValid(face:IndoorSurface,s:RoomProjectSurface,g
 }
 export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplate,rows:readonly DesignPlacement[],definitions:ReadonlyMap<number,DesignItemGeometry>,finishIds:ReadonlySet<number>,native?:RoomApplySurfaceGeometry):RoomProjectSurface|null{
  const finish=face.finish;if(finish===null||finish!==0&&(!roomFinishIdValid(finish,face.kind)||!finishIds.has(finish)))return null;
- if(rows.length!==face.positions.length||rows.some(p=>{const g=definitions.get(p.itemId);return !g||!!g.supportPath!==!!p.attachment||g.surfaceCapable&&!p.attachment;}))return null;
+ if(rows.length!==face.positions.filter(p=>!p.protected).length||rows.some(p=>{const g=definitions.get(p.itemId);return !g||!!g.supportPath!==!!p.attachment||g.surfaceCapable&&!p.attachment;}))return null;
  const free=!!native&&indoorFreeFloor(face);
  const timeline=free?{snapshots:[[...rows]],cursor:0,nextId:rows.length+1}:restoreDesign(emptyDesign(),rows,definitions,template.grid.sizeX*template.grid.factor,template.grid.sizeY*template.grid.factor);
  if(!timeline)return null;
@@ -59,7 +60,7 @@ export function captureRoomSurface(face:IndoorSurface,template:RoomDesignTemplat
  return surface;
 }
 export function capturedRoomDocument(room:IndoorRoom,surfaces:readonly RoomProjectSurface[],templates:readonly RoomDesignTemplate[],backup=false):string|null{
- if(!surfaces.length||surfaces.length!==room.surfaces.length||surfaces.length>ROOM_PROJECT_WALL_LIMIT+1||surfaces.some((s,i)=>s.id!==room.surfaces[i].ordinal||s.template.kind!==room.surfaces[i].kind||currentDesign(s.timeline).length!==room.surfaces[i].positions.length))return null;
+ if(!surfaces.length||surfaces.length!==room.surfaces.length||surfaces.length>ROOM_PROJECT_WALL_LIMIT+1||surfaces.some((s,i)=>s.id!==room.surfaces[i].ordinal||s.template.kind!==room.surfaces[i].kind||currentDesign(s.timeline).length!==room.surfaces[i].positions.filter(p=>!p.protected).length))return null;
  try{const raw=serializeRoomProject(surfaces,surfaces[0].id);parseRoomProject(raw,templates,backup);return raw;}catch{return null;}
 }
 export const roomCaptureWords={
@@ -71,4 +72,15 @@ export const roomCaptureWords={
  'es-ES':['Guardar habitación como diseño','Terreno, muebles, soportes o acabados sin verificar.','Comprobando…'],
  'zh-CN':['将房间保存为设计','存在未验证的地形、家具、支撑面或饰面。','正在检查…'],
  'pt-BR':['Salvar cômodo como projeto','Terreno, móveis, apoios ou acabamentos não verificados.','Verificando…']
+} as const;
+
+export const protectedRoomWords={
+ ja:'固定オブジェクトは装飾ファイルに含めず、復元時も保持します。',
+ en:'Protected objects are excluded from decoration files and retained during restore.',
+ fr:'Les objets protégés sont exclus des fichiers et conservés lors de la restauration.',
+ it:'Gli oggetti protetti sono esclusi dai file e conservati durante il ripristino.',
+ de:'Geschützte Objekte werden nicht exportiert und beim Wiederherstellen beibehalten.',
+ 'es-ES':'Los objetos protegidos no se exportan y se conservan al restaurar.',
+ 'zh-CN':'受保护的物体不包含在装饰文件中，恢复时保持原状。',
+ 'pt-BR':'Objetos protegidos não são exportados e permanecem durante a restauração.'
 } as const;

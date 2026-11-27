@@ -10,7 +10,7 @@ import {reflectedDesignItem,type DesignSymmetry} from './design-symmetry.ts';
 import {sceneFromClip,parseSceneAnyFactor,convertSceneFactor,type ScenePreset} from './scene-preset.ts';
 import {parseMixedScene,parseSupportScene,mixedSceneFromClip,mixedSceneCounts,supportSceneRootCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
 import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
-export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true}
+export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
 export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;ceiling:number|null;surfaces:IndoorSurface[]}
@@ -42,7 +42,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    const seen=new Set<number>();
    const items:IndoorItem[]=s.items.map(p=>{if(!record(p)||Object.keys(p).length!==2||!integer(p.itemId,1,4294967295)||!integer(p.quantity,1,100000)||seen.has(p.itemId))throw Error('INDOOR_ITEM_INVALID');seen.add(p.itemId);total+=p.quantity;if(total>100000)throw Error('INDOOR_LIMIT');return {itemId:p.itemId,quantity:p.quantity};});
    const quantities=new Map<number,number>(items.map(p=>[p.itemId,p.quantity]));let count=0;
-   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&p.plain===true)||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||[0,2,4,6,8,10,12,14].includes(p.orientationCode as number))||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{})};});
+   const positions:IndoorPosition[]=s.positions.map(p=>{if(!record(p)||!(Object.keys(p).length===4||Object.keys(p).length===5&&(p.plain===true||p.protected===true))||Object.keys(p).some(k=>!['itemId','x','y','orientationCode','plain','protected'].includes(k))||!integer(p.itemId,1,4294967295)||!integer(p.x,-1000000,1000000)||!integer(p.y,-1000000,1000000)||!(p.orientationCode===null||[0,2,4,6,8,10,12,14].includes(p.orientationCode as number))||(quantities.get(p.itemId)??0)<1)throw Error('INDOOR_POSITION_INVALID');quantities.set(p.itemId,quantities.get(p.itemId)!-1);count++;return {itemId:p.itemId,x:p.x,y:p.y,orientationCode:p.orientationCode as IndoorPosition['orientationCode'],...(p.plain===true?{plain:true as const}:{}),...(p.protected===true?{protected:true as const}:{})};});
    if([...quantities.values()].reduce((a,b)=>a+b,0)!==s.missingPositions||s.gridStatus!=='full'&&(count||s.missingPositions||s.factor!==null))throw Error('INDOOR_POSITION_COUNT');
    let terrain:TerrainRaster|undefined,sourcePath:string|undefined;
    if(s.terrain!==undefined){
@@ -150,7 +150,7 @@ export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Recor
  return t.objects.flatMap((_,i)=>supportChildEdits(t,shapes,allowed,first,i,1)&&indoorClear(t,shapes,i)?[i]:[]);
 }
 export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false):IndoorPickup|null{
- const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!(free?indoorFreeFloor(face)&&face?.positions[index]?.plain===true&&isEightWay(o.orientation):isCardinal(o.orientation)&&t.objects.filter(p=>p.x===o.x&&p.y===o.y).length===1))return null;
+ const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||face?.positions[index]?.protected||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!(free?indoorFreeFloor(face)&&face?.positions[index]?.plain===true&&isEightWay(o.orientation):isCardinal(o.orientation)&&t.objects.filter(p=>p.x===o.x&&p.y===o.y).length===1))return null;
  const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
  return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
 }
