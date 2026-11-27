@@ -11,7 +11,7 @@ import {groupPickupPlan,type GroupPickupRow} from './group-pickup.ts';
 import {supportSceneRootCounts,type SupportScene} from './support-scene.ts';
 export const BIOME_CHANGE_LIMIT=2048;
 export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:(GroupPasteRow&{scene?:SupportScene})[]}
-const eligible=(p:MainlandSavedObject,diagonal:boolean)=>stockSourceEligible(p)||diagonal&&!isCardinal(p.object.orientation)&&!p.object.surfaceCapable&&stockSourceEligible(p,true)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');
+const eligible=(p:MainlandSavedObject,diagonal:boolean)=>{const ordinary:boolean=stockSourceEligible(p);return ordinary||diagonal&&!isCardinal(p.object.orientation)&&!p.object.surfaceCapable&&stockSourceEligible(p,true)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');};
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
 export function supportAreaEligible(p:MainlandSavedObject){return !!p.object.subgrid&&!!groupPickupPlan([p]);}
 export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
