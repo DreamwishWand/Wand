@@ -2374,7 +2374,7 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
 /// output. Same-grid objects retain their native identities; cross-grid
 /// ordinary leaves require unreferenced old and newly allocated identities.
 pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
-    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_world_transfer,preview_support_parent_grid_transfer};
+    use ddv_save_patch::{PlainGridDestination,GridMixedEdit,preview_existing_grid_mixed_batch,preview_plain_world_transfer,preview_support_parent_world_transfer};
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
     if plan.len()>65536{return Err(CodecError::Bounds);}
@@ -2462,11 +2462,19 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
         let tree=if let Some(factor)=factor{
-            if scope(layout)!=scope(&d.layout_path)||u64::from(d.tessellation)!=*factor||
+            if u64::from(d.tessellation)!=*factor||
                source.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(*factor)||
                old.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid")){return Err(bad);}
             let refs=grid_identity_dependencies(profile,target)?;
             if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
+            if scope(layout)!=scope(&d.layout_path){
+                let from=outdoor_identity(&root,&target.grid_id)?;
+                let to=outdoor_identity(&root,&d.grid_id)?;
+                if from.0!=player_house_grid_scope(&root,&target.grid_id)?||to.0!=player_house_grid_scope(&root,&d.grid_id)?||
+                   to.1!=d.layout_path||to.2!=u64::from(d.tessellation)||to.3!=u64::from(d.size.0)||to.4!=u64::from(d.size.1)||
+                   selection.2.0<0||selection.2.1<0||selection.2.0 as u64>=from.3*from.2||selection.2.1 as u64>=from.4*from.2{return Err(bad);}
+                support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut HashSet::new(),&mut 0,0,512)?;
+            }
             Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
             if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
@@ -2510,7 +2518,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let draft=if let Some(tree)=tree{
             let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
             let next=current.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
-            let draft=preview_support_parent_grid_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+            let draft=preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
             let parsed:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
             let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
             if subgrid_tree(c,&d.grid_id,&next)?!=tree{return Err(bad);}
@@ -2651,6 +2659,28 @@ mod tests{
         plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
     }
 
+    #[test]
+    fn cross_world_support_cut_keeps_child_identity_and_stock(){
+        let layout="SceneLayouts/VillageExpansion01/DefaultExpansion01Layout01-AtlanteanOutpost01Grids.json";
+        let data="GridData/Villages/VillageExpansion01/VillageExpansion01-OutpostArea01LevelGrid02-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":7},"World":{"GridCollection":{"Grids":{
+          "42":{"ID":42,"GridDefaultLayoutPath":"","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":80}}}}},
+          "43":{"ID":43,"GridDefaultLayoutPath":"","GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}},
+          "80":{"ID":80,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}
+        }}}});
+        let plan=serde_json::json!([{"localOrdinal":1,"itemId":"40005160","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":{"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":96,"sizeY":48},"x":5,"y":5,"orientation":"GridOrientation_Left","supportFactor":1}]);
+        let d=group_cut_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+        let out:Value=serde_json::from_str(&d).unwrap();
+        let grids=&out["World"]["GridCollection"]["Grids"];
+        assert!(grids["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(grids["43"]["Objects"]["5"]["State"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(grids["80"],raw["World"]["GridCollection"]["Grids"]["80"]);
+        assert_eq!(out["Player"],raw["Player"]);
+        let mut invalid=plan.clone();invalid[0]["destination"]["sizeX"]=95.into();
+        assert!(group_cut_candidate(raw.to_string().as_bytes(),&invalid.to_string()).is_err());
+        let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":80,"GridObjectID":1}]);
+        assert!(group_cut_candidate(linked.to_string().as_bytes(),&plan.to_string()).is_err());
+    }
     #[test]
     fn cut_between_outdoor_worlds_rechecks_both_addresses_and_preserves_inventory(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/VillageExpansion01/B.json","GridDataPath":"GridData/Villages/VillageExpansion01/VillageExpansion01-DesertArea01LevelGrid01-GridData.json","TessellationFactor":2,"NextGridObjectID":5,"Objects":{}}}}}}"#;
