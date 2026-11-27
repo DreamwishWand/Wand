@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {bindMainlandGrid,mainlandMapAnchor} from '../src/lib/world/mainland-world-coordinates.ts';
+import {regionBuildingPoses,mergeRegionBuildingPoses} from '../src/lib/world/region-decoration-backup.ts';
+const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
+const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]};
+const make=(itemId,x,y,localOrdinal)=>({area:g.key,factor:1,...mainlandMapAnchor(g,x,y),shape,object:{localOrdinal,localGridOrdinal:1,itemId:String(itemId),x,y,orientation:'GridOrientation_Down',orientationCode:8,shapeKey:itemId+':8',nativeType:'Building',layer:'other',surfaceCapable:false}});
+const origin=mainlandMapAnchor(g,0,0),region={x:origin.x,y:origin.y-6,w:6,h:6};
+test('free region captures exact building multiplicities and protects exterior instances',()=>{
+ const a=make(20300001,2,2,1),b=make(20300001,2,2,2),outside=make(20300001,9,9,3),unrelated=make(20100001,3,4,4);
+ const objects=[a,b,outside,unrelated];
+ const selected=regionBuildingPoses(region,g,objects,true);
+ assert.equal(selected.filter(p=>p.itemId===20300001).length,2);
+ assert.equal(regionBuildingPoses(region,g,objects,false).filter(p=>p.itemId===20300001).length,0);
+ const pose=selected.find(p=>p.itemId===20300001);
+ const expectedOutside={...pose,x:9,y:9};
+ assert.deepEqual(mergeRegionBuildingPoses(region,g,objects,[pose],new Map(),true),[expectedOutside,pose]);
+ assert.deepEqual(mergeRegionBuildingPoses(region,g,objects,[pose,pose,pose],new Map(),true),[expectedOutside,pose,pose,pose]);
+ assert.equal(mergeRegionBuildingPoses(region,g,objects,[{...pose,x:9,y:9}],new Map(),true),null);
+ assert.equal(mergeRegionBuildingPoses(region,g,objects,[{...pose,itemId:20300002}],new Map(),true),null);
+ assert.deepEqual(mergeRegionBuildingPoses(region,g,[outside],[pose],new Map(),true),[expectedOutside,pose]);
+ assert.equal(mergeRegionBuildingPoses(region,g,[a,{...outside,shape:null}],[pose],new Map(),true),null);
+});
+test('free region requires full target footprint and preserves crossing building',()=>{
+ const a=make(20300001,2,2,1),crossing=make(20300001,5,2,2);
+ crossing.shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}]};
+ const selected=regionBuildingPoses(region,g,[a,crossing],true);
+ assert.equal(selected.length,1);
+ const pose=selected[0],defs=new Map([[20300001,{shapes:{'20300001:4':crossing.shape}}]]);
+ assert.deepEqual(mergeRegionBuildingPoses(region,g,[a,crossing],[pose],new Map(),true),[{...pose,x:5},pose]);
+ assert.equal(mergeRegionBuildingPoses(region,g,[a,crossing],[{...pose,x:5,orientation:1}],defs,true),null);
+});

@@ -16,24 +16,42 @@ type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
 type Incoming=ReturnType<typeof parseIslandDecoration>;
 const isNetwork=(p:MainlandSavedObject)=>p.object.layer==='ground'||p.object.layer==='fence';
 const inside=(r:CaptureRegion,p:{x:number;y:number;factor:number;shape:SourceObjectShape|null})=>!!p.shape&&p.shape.runs.every(q=>p.x+q.x/p.factor>=r.x&&p.x+(q.x+q.width)/p.factor<=r.x+r.w&&p.y-(q.y+1)/p.factor>=r.y&&p.y-q.y/p.factor<=r.y+r.h);
-/** Portable partial backups cannot guess which stateful building of a
- * repeated ItemID is intended. Include only unique, fully enclosed records. */
-export function regionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[]):BuildingPose[]|null{
+const buildingKey=(p:BuildingPose)=>[p.itemId,p.x,p.y,p.orientation].join(':');
+/** Count pose multiplicities, not merely Item IDs or occupied anchors. */
+export function regionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],free=false):BuildingPose[]|null{
  const rows=captureBuildingPoses(g,objects);if(!rows)return null;
  const counts=new Map<number,number>();for(const row of rows)counts.set(row.itemId,(counts.get(row.itemId)??0)+1);
- const enclosed=new Set(objects.filter(p=>p.area===g.key&&inside(region,p)).map(p=>Number(p.object.itemId)));
- return rows.filter(p=>counts.get(p.itemId)===1&&enclosed.has(p.itemId));
+ const enclosed=new Map<string,number>();
+ for(const p of objects){if(p.area!==g.key||!inside(region,p))continue;
+  const direction=CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as typeof CARDINAL_ORIENTATIONS[number]);
+  if(direction<0)continue;
+  const key=buildingKey({itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:direction});
+  enclosed.set(key,(enclosed.get(key)??0)+1);
+ }
+ return rows.filter(p=>{if(!free&&counts.get(p.itemId)!==1)return false;const k=buildingKey(p),n=enclosed.get(k)??0;if(!n)return false;enclosed.set(k,n-1);return true;});
 }
-export function validateRegionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],wanted:readonly BuildingPose[],geometry:ReadonlyMap<number,DesignItemGeometry>):boolean{
- const available=regionBuildingPoses(region,g,objects);if(!available)return false;
+export function validateRegionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],wanted:readonly BuildingPose[],geometry:ReadonlyMap<number,DesignItemGeometry>,free=false):boolean{
+ const available=free?captureBuildingPoses(g,objects):regionBuildingPoses(region,g,objects);if(!available)return false;
  const seen=new Set<number>();
  for(const p of wanted){
-  const before=available.find(q=>q.itemId===p.itemId);if(!before||seen.has(p.itemId))return false;seen.add(p.itemId);
-  const source=objects.find(q=>q.area===g.key&&Number(q.object.itemId)===p.itemId&&q.object.x===before.x&&q.object.y===before.y&&q.object.orientation===CARDINAL_ORIENTATIONS[before.orientation]);
-  const shape=p.orientation===before.orientation?source?.shape:geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+  const before=available.find(q=>q.itemId===p.itemId);if(!before||!free&&seen.has(p.itemId))return false;seen.add(p.itemId);
+  const source=objects.find(q=>q.area===g.key&&Number(q.object.itemId)===p.itemId&&q.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]&&q.shape);
+  const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]??source?.shape;
   if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return false;
  }
  return true;
+}
+/** Expand the selected rows back into a complete set for each explicitly
+ * requested family; the Rust writer sees unchanged outside instances too. */
+export function mergeRegionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],wanted:readonly BuildingPose[],geometry:ReadonlyMap<number,DesignItemGeometry>,free=false):BuildingPose[]|null{
+ if(!validateRegionBuildingPoses(region,g,objects,wanted,geometry,free))return null;
+ if(!free)return [...wanted];
+ const all=captureBuildingPoses(g,objects),selected=regionBuildingPoses(region,g,objects,true);if(!all||!selected)return null;
+ const families=new Set(wanted.map(p=>p.itemId)),counts=new Map<string,number>();
+ for(const p of selected){if(!families.has(p.itemId))continue;const key=buildingKey(p);counts.set(key,(counts.get(key)??0)+1);}
+ const outside=all.filter(p=>{if(!families.has(p.itemId))return false;const k=buildingKey(p),n=counts.get(k)??0;if(!n)return true;counts.set(k,n-1);return false;});
+ if([...counts.values()].some(n=>n!==0))return null;
+ return [...outside,...wanted];
 }
 const pose=(p:DesignPlacement)=>[p.itemId,p.x,p.y,p.orientation].join(':');
 const networkPose=(g:MainlandGrid,p:NetworkPose)=>({...mainlandMapAnchor(g,p.x,p.y),area:g.key,itemId:p.itemId,kind:p.network.kind});
@@ -88,7 +106,7 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
 // Independent island surfaces have separate local coordinate bases.
  // Never interpret coincident coordinates on two surfaces as the same area.
  const validRegionScope=(grids:readonly MainlandGrid[],world:boolean)=>world?grids.length>0:grids.length===1&&!!bindFloatingIslandGrid(grids[0]);
-export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
+export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false){
  if(!validRegionScope(grids,world))return null;
  const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
  const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!doc)return null;
@@ -97,7 +115,7 @@ export function reviewRegionCapture(region:CaptureRegion,grids:readonly Mainland
   for(const area of inner.areas){
    const g=grids.find(g=>g.key===area.furniture.design.grid.key);if(!g)return null;
    const all=snapshot.objects.get(g.key);if(!all)return null;
-   const buildings=regionBuildingPoses(region,g,all);if(!buildings)return null;
+   const buildings=regionBuildingPoses(region,g,all,free);if(!buildings)return null;
    area.buildings=buildings;
    const summary=doc.summaries.find(s=>s.key===g.key);if(!summary)return null;
    summary.buildingCount=buildings.length;summary.protectedCount=Math.max(0,summary.protectedCount-buildings.length);
@@ -106,8 +124,8 @@ export function reviewRegionCapture(region:CaptureRegion,grids:readonly Mainland
  const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,...(world?{world:inner}:{island:inner})});
  return text.length<=WORLD_DECORATION_FILE_LIMIT?{text,summaries:doc.summaries}:null;
 }
-export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>):string|null{
- return reviewRegionCapture(region,grids,snapshot,networks,supports,world,landscapes)?.text??null;
+export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false):string|null{
+ return reviewRegionCapture(region,grids,snapshot,networks,supports,world,landscapes,free)?.text??null;
 }
 export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],world=true):{region:CaptureRegion;incoming:Incoming}{
  if(text.length>WORLD_DECORATION_FILE_LIMIT||!validRegionScope(grids,world))throw Error('REGION_LIMIT');
@@ -120,7 +138,7 @@ export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],
 /** Merge only selected cells into the exact current full-world document.
  * All outside objects, support trees and networks are retained. Untrusted
  * incoming rows must fit entirely inside the chosen rectangle. */
-export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>):Incoming|null{
+export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false):Incoming|null{
  if(!validRegionScope(grids,world))return null;
  const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
  const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!captured)return null;
@@ -137,8 +155,9 @@ export function mergeRegionDecoration(region:CaptureRegion,grids:readonly Mainla
   }
   let landscape:LandscapePose[]|undefined;
   if(next.landscape!==undefined){if(!before.landscape||!replaced.landscape)return null;for(const p of next.landscape){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}const old=new Map<string,number>();for(const p of replaced.landscape){const k=landscapePoseKey(p);old.set(k,(old.get(k)??0)+1);}landscape=[...before.landscape.filter(p=>{const k=landscapePoseKey(p),n=old.get(k)??0;if(n){old.set(k,n-1);return false;}return true;}),...next.landscape];if([...old.values()].some(n=>n!==0))return null;}
-  if(next.buildings!==undefined){const all=snapshot.objects.get(g.key);if(!world||!all||!validateRegionBuildingPoses(region,g,all,next.buildings,geometry))return null;}
-  result.set(g.key,{...(next.buildings!==undefined?{buildings:next.buildings}:{}),...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
+  let buildings:BuildingPose[]|undefined;
+  if(next.buildings!==undefined){const all=snapshot.objects.get(g.key);if(!world||!all)return null;const merged=mergeRegionBuildingPoses(region,g,all,next.buildings,geometry,free);if(!merged)return null;buildings=merged;}
+  result.set(g.key,{...(buildings!==undefined?{buildings}:{}),...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
  }
  return result;
 }
