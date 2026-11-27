@@ -136,7 +136,7 @@ export function mergeRegionDecoration(region:CaptureRegion,grids:readonly Mainla
    for(const p of rows){const id=furniture.length+1;furniture.push({...p,id});const scene=scenes.get(p.id);if(scene)attachments.set(id,scene);}
   }
   let landscape:LandscapePose[]|undefined;
-  if(next.landscape!==undefined){if(!before.landscape||!replaced.landscape)return null;for(const p of next.landscape){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}const old=new Set(replaced.landscape.map(landscapePoseKey));landscape=[...before.landscape.filter(p=>!old.has(landscapePoseKey(p))),...next.landscape];}
+  if(next.landscape!==undefined){if(!before.landscape||!replaced.landscape)return null;for(const p of next.landscape){const shape=geometry.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];if(!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;}const old=new Map<string,number>();for(const p of replaced.landscape){const k=landscapePoseKey(p);old.set(k,(old.get(k)??0)+1);}landscape=[...before.landscape.filter(p=>{const k=landscapePoseKey(p),n=old.get(k)??0;if(n){old.set(k,n-1);return false;}return true;}),...next.landscape];if([...old.values()].some(n=>n!==0))return null;}
   if(next.buildings!==undefined){const all=snapshot.objects.get(g.key);if(!world||!all||!validateRegionBuildingPoses(region,g,all,next.buildings,geometry))return null;}
   result.set(g.key,{...(next.buildings!==undefined?{buildings:next.buildings}:{}),...(landscape!==undefined?{landscape}:{}),furniture,network:[...before.network.filter(p=>!oldNetwork.has(networkKey(p))),...next.network],supports:attachments});
  }
