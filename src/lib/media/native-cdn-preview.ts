@@ -3,6 +3,8 @@ import {publicImageUrl} from './public-image-key.ts';
 import type {ImageSource} from './native-map-renderer.ts';
 const LIMIT=80*1024*1024;
 const CACHE_LIMIT=64*1024*1024;
+const PREFETCH_LIMIT=32*1024*1024;
+const PREFETCH_COUNT=3;
 const ORIGIN='https://media.dreamwishwand.com';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function check(ok:unknown,msg:string):asserts ok{if(!ok)throw Error(msg);}
@@ -36,8 +38,8 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cac
   check(digest===layer.imageSha256,'CDN image digest mismatch');signal?.throwIfAborted();
   return new Blob([bytes],{type:'image/webp'});
  }
- const source:ImageSource=async(layer,signal)=>{
-  const blob=await readVerified(layer,signal);signal?.throwIfAborted();
+ async function decode(layer:Parameters<ImageSource>[0],blob:Blob,signal?:AbortSignal){
+  signal?.throwIfAborted();
   const bitmap=await createImageBitmap(blob,{colorSpaceConversion:'none',premultiplyAlpha:'none',imageOrientation:'none'});
   if(signal?.aborted||bitmap.width!==layer.size[0]||bitmap.height!==layer.size[1]){bitmap.close();signal?.throwIfAborted();throw Error('CDN image dimensions mismatch');}
   if(blob.size<=cacheLimit&&!cache.has(layer.imageSha256)){
@@ -45,6 +47,37 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cac
    cache.set(layer.imageSha256,blob);resident+=blob.size;
   }
   return bitmap;
+ }
+ const source:ImageSource=async(layer,signal)=>decode(layer,await readVerified(layer,signal),signal);
+ source.beginFrame=parent=>{
+  const controller=new AbortController(),signal=controller.signal;
+  const abort=()=>controller.abort(parent?.reason);
+  if(parent?.aborted)abort();else parent?.addEventListener('abort',abort,{once:true});
+  type Outcome={ok:true;blob:Blob}|{ok:false;error:unknown};
+  const staged=new Map<string,{bytes:number;result:Promise<Outcome>}>();
+  let reserved=0;
+  const prefetch=(rows:readonly Parameters<ImageSource>[0][])=>{
+   if(signal.aborted)return;
+   for(const row of rows){
+    const sha=row.imageSha256,bytes=images.get(sha);
+    if(cache.has(sha)||staged.has(sha))continue;
+    if(!bytes||staged.size>=PREFETCH_COUNT||reserved+bytes>PREFETCH_LIMIT)break;
+    reserved+=bytes;
+    const result=readVerified(row,signal).then<Outcome,Outcome>(blob=>({ok:true,blob}),error=>({ok:false,error}));
+    staged.set(sha,{bytes,result});
+   }
+  };
+  const read:ImageSource=async(row)=>{
+   signal.throwIfAborted();
+   const entry=staged.get(row.imageSha256);
+   if(!entry)return decode(row,await readVerified(row,signal),signal);
+   try{
+    const result=await entry.result;signal.throwIfAborted();
+    if(!result.ok)throw result.error;
+    return await decode(row,result.blob,signal);
+   }finally{if(staged.delete(row.imageSha256))reserved-=entry.bytes;}
+  };
+  return {source:read,prefetch,dispose:()=>{parent?.removeEventListener('abort',abort);controller.abort();staged.clear();reserved=0;}};
  };
  return {maps,source};
 }
