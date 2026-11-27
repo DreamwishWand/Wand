@@ -256,7 +256,7 @@ pub(super) fn resize_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::G
 /// With no source room raster, only identical-footprint rotation/swap (UI
 /// geometry witness) and stock pickup are enabled. No arbitrary new cells.
 /// Resolve a cut witness from an exact owned floor, independently of UI state.
-fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected:(i32,i32),old:&str,support_factor:Option<u32>)->Result<ddv_save_patch::GridCoordinateTarget,CodecError>{
+fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected:(i32,i32),old:&str,support_factor:Option<u32>,free:bool)->Result<ddv_save_patch::GridCoordinateTarget,CodecError>{
  use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
  let bad=CodecError::Json;
  let w=row.as_object().filter(|r|r.len()==2&&r.keys().all(|k|matches!(k.as_str(),"roomOrdinal"|"index"))).ok_or(bad)?;
@@ -282,8 +282,9 @@ fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u64,expected
  let (key,obj)=objects.iter().nth(index).ok_or(bad)?;
  let at=|v:&Value|v.get("X").and_then(Value::as_i64)==Some(i64::from(expected.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(expected.1));
  if item/100_000!=400||obj.get("ID").and_then(id).filter(|n|*n>0).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||!at(obj)||obj.get("Orientation").and_then(Value::as_str)!=Some(old)||
- !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||
- obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||objects.values().filter(|o|at(o)).count()!=1{return Err(bad);}
+ !(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||free&&support_factor.is_none()&&face.get("factor").and_then(Value::as_u64)==Some(1)&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old))||
+ obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||!free&&objects.values().filter(|o|at(o)).count()!=1{return Err(bad);}
+ if free{let t=face.get("terrain").ok_or(bad)?;let f=face.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)?;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)?;if support_factor.is_some()||expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}}
  if let Some(f)=support_factor{
   if face.get("factor").and_then(Value::as_u64)!=Some(u64::from(f))||obj.get("State").and_then(Value::as_object).is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
   let t=face.get("terrain").ok_or(bad)?;
@@ -305,7 +306,7 @@ pub(super) fn room_to_outdoor_candidate(source:&[u8],row:&Value)->Result<String,
  let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
  let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let expected=(int("expectedX")?,int("expectedY")?);
- let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support)?;
+ let target=resolve_room_cut_source(source,&root,o.get("roomSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?,support,false)?;
  let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,o.get("destination").ok_or(bad)?)?;
  let xy=(int("x")?,int("y")?);
  let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
@@ -517,7 +518,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let factor=face.get("factor").and_then(Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
  let terrain=face.get("terrain");
  let free=p.get("freePlacement").and_then(Value::as_bool)==Some(true);
- if free&&(surface!=1||!p.contains_key("edits")&&!p.contains_key("align")&&!p.contains_key("paired")&&!p.contains_key("pairedRotate")&&!p.contains_key("place")&&!p.contains_key("pickup")||terrain.and_then(|v|v.get("sourcePath")).and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Rooms/Room")||grid.get("GridDataPath").and_then(Value::as_str)!=Some(v))){return Err(bad);}
+ if free&&(surface!=1||!p.contains_key("edits")&&!p.contains_key("align")&&!p.contains_key("paired")&&!p.contains_key("pairedRotate")&&!p.contains_key("transfer")&&!p.contains_key("place")&&!p.contains_key("pickup")||terrain.and_then(|v|v.get("sourcePath")).and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Rooms/Room")||grid.get("GridDataPath").and_then(Value::as_str)!=Some(v))){return Err(bad);}
  let allowed_orientation=|v:&str|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&v)||free&&factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&v);
  let within_room=|(x,y):(i32,i32)|->bool{terrain.is_some_and(|t|t.get("sizeX").and_then(Value::as_u64).zip(t.get("sizeY").and_then(Value::as_u64)).is_some_and(|(sx,sy)|x>=0&&y>=0&&(x as u64)<sx*u64::from(factor)&&(y as u64)<sy*u64::from(factor)))};
  let on_terrain=|(x,y):(i32,i32)|->bool{
@@ -564,21 +565,21 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
   if row.as_object().is_none_or(|r|r.len()!=if support.is_some(){9}else{8}||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"))){return Err(bad);}
   let room_source=row.get("roomSource");
-  if support.is_some()&&support!=Some(factor){return Err(bad);}
+  if support.is_some()&&(free||support!=Some(factor)){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-  let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support)?}else{
+  let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support,free)?}else{
    let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
    if let Some(f)=support{crate::grid_instance_preview::resolve_outdoor_support_cut_target(source,source_ordinal,item,expected,old,f)?}else{crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?}
   };
   let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let from=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
-  if from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
+  if (!free||room_source.is_none())&&from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  if !on_terrain(xy)||!empty_anchor(xy,None)||target.grid_id==gid||!seen.insert((target.grid_id.clone(),target.object_id.clone()))||!anchors.insert(xy){return Err(bad);}
+  if (if free{!within_room(xy)||!allowed_orientation(orientation)}else{!on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy)})||target.grid_id==gid||!seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}
   let tree=if support.is_some(){Some(crate::grid_instance_preview::subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)}else{None};
   moves.push((target,expected,xy,orientation.to_owned(),room_source.is_some(),tree));
   }
@@ -600,7 +601,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
     let c=after["World"]["GridCollection"].as_object().ok_or(bad)?;
     if crate::grid_instance_preview::subgrid_tree(c,&gid,&fresh)?!=tree||after["Player"]!=before["Player"]{return Err(bad);}
     result
-   }else{(if room_source{ddv_save_patch::preview_indoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}).map_err(|_|CodecError::Patch)?};
+   }else{(if free{if room_source{ddv_save_patch::preview_free_indoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_free_outdoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}}else if room_source{ddv_save_patch::preview_indoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}else{ddv_save_patch::preview_outdoor_to_indoor_transfer(&working,&target,expected,&d,xy,&orientation)}).map_err(|_|CodecError::Patch)?};
    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
    working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
   }
