@@ -104,14 +104,31 @@ def keys(layers):
         if l.get('mask',{}).get('kind')=='alpha':yield from keys([l['mask']['image']])
 
 
-def verify(doc,out,reader=fetch,*,stop_on_connection_error=True):
+def verify(doc,out,reader=fetch,*,stop_on_connection_error=True,prior=None,publication=None):
     check(doc['schema']=='wand.src04.native-cdn-audit-input@1' and doc['privateOnly'] is True and doc['publicationAuthorized'] is False and doc['worldPlacementVerified'] is False and doc['gameVersion']=='1.26.2','Invalid audit input')
     assets=doc['images'];maps=doc['maps'];check(doc.get('sourceIdentityCount',len(assets))==118 and 0<len(assets)<=118 and len(maps)==10,'Unexpected audit coverage')
     check(set(assets)=={s for m in maps for s in keys(m['locked']+m['unlocked'])},'Unknown image reference')
     for s,m in assets.items():check(SHA.fullmatch(s) and SHA.fullmatch(m['pixelSha256']) and m['kind'] in ('texture','sdf') and type(m['width'])==type(m['height'])==int and 0<m['width']*m['height']<=100_000_000,'Invalid image witness')
     verified={};errors={};budget=[TOTAL];downloaded=0;stopped=None
-    print('Checking first image before continuing...',flush=True)
-    for i,(sha,meta) in enumerate(sorted(assets.items()),1):
+    pin=digest(json.dumps(doc,sort_keys=True,separators=(',',':')).encode())
+    if prior is not None:
+        check(publication is not None and publication.get('canonicalMetadataVerified') is True and publication.get('bucket')=='dreamwishwand-media' and publication.get('gameVersion')==doc['gameVersion'],'Canonical receipt required for resume')
+        objects=publication['objects']
+        check(set(objects)=={'images/'+s+'.webp' for s in assets},'Receipt scope mismatch')
+        check(prior.get('auditInputSha256',pin)==pin and prior.get('privateOnly') is True and prior.get('worldPlacementVerified') is False,'Prior audit mismatch')
+        for sha,row in prior['verified'].items():
+            check(sha in assets and row=={'bytes':objects['images/'+sha+'.webp'],'width':assets[sha]['width'],'height':assets[sha]['height']},'Prior image verification mismatch')
+            verified[sha]=row
+    resumed=len(verified)
+    pending=[(s,m) for s,m in sorted(assets.items()) if s not in verified]
+    print(f'Resuming: {resumed} verified; {len(pending)} remaining.',flush=True)
+    def checkpoint():
+        ready=[m for m in maps if set(keys(m['locked']+m['unlocked']))<=verified.keys()]
+        report={'privateOnly':True,'publicationAuthorized':False,'cdnVerified':not errors and set(verified)==set(assets),'auditInputSha256':pin,'resumedVerified':resumed,'stoppedReason':stopped,'notAttempted':len(assets)-len(verified)-len(errors),'worldPlacementVerified':False,'verified':verified,'errors':errors,'downloadBytes':downloaded,'reservedReadBytes':TOTAL-budget[0],'readyMaps':[m['id'] for m in ready]}
+        tmp=out/'audit.tmp';tmp.write_text(json.dumps(report,indent=2));tmp.replace(out/'audit.json')
+        return report,ready
+    checkpoint()
+    for i,(sha,meta) in enumerate(pending,1):
         try:
             check(budget[0]>0,'Read budget exhausted');raw=reader(sha,budget);downloaded+=len(raw)
             n=verify_bytes(sha,meta,raw);verified[sha]={'bytes':n,'width':meta['width'],'height':meta['height']}
@@ -121,11 +138,10 @@ def verify(doc,out,reader=fetch,*,stop_on_connection_error=True):
                 stopped=errors[sha]
                 print('CDN audit stopped: '+stopped,flush=True)
                 break
-        if i==1 and sha in verified:print('First image verified; continuing with remaining images.',flush=True)
-        if i%10==0 or i==len(assets):print(f'CDN {i}/{len(assets)}; verified {len(verified)}; errors {len(errors)}',flush=True)
-    ready=[m for m in maps if set(keys(m['locked']+m['unlocked']))<=verified.keys()]
-    report={'privateOnly':True,'publicationAuthorized':False,'cdnVerified':not errors and set(verified)==set(assets),'stoppedReason':stopped,'notAttempted':len(assets)-len(verified)-len(errors),'worldPlacementVerified':False,'verified':verified,'errors':errors,'downloadBytes':downloaded,'reservedReadBytes':TOTAL-budget[0],'readyMaps':[m['id'] for m in ready]}
-    (out/'audit.json').write_text(json.dumps(report,indent=2))
+        checkpoint()
+        if i==1 and sha in verified:print('First remaining image verified; continuing.',flush=True)
+        if i%10==0 or i==len(pending):print(f'CDN {len(verified)}/{len(assets)}; verified {len(verified)}; errors {len(errors)}',flush=True)
+    report,ready=checkpoint()
     for m in ready:
         folder=out/m['id'];folder.mkdir();used=set(keys(m['locked']+m['unlocked']))
         (folder/'manifest.json').write_text(json.dumps({'schema':'wand.media.native-cdn-preview@1','gameVersion':'1.26.2','privateOnly':True,'publicationAuthorized':False,'worldPlacementVerified':False,'cdnVerified':True,'sourcePixelsVerified':True,'images':{s:verified[s] for s in sorted(used)},'maps':[m]},separators=(',',':')))
@@ -135,11 +151,11 @@ def verify(doc,out,reader=fetch,*,stop_on_connection_error=True):
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='mode',required=True)
     a=sub.add_parser('prepare');a.add_argument('--plan',type=Path,required=True);a.add_argument('--packs',type=Path,nargs='+',required=True);a.add_argument('--out',type=Path,required=True)
-    b=sub.add_parser('verify');b.add_argument('--input',type=Path,required=True);b.add_argument('--out',type=Path,required=True);b.add_argument('--confirm-read',action='store_true')
+    b=sub.add_parser('verify');b.add_argument('--input',type=Path,required=True);b.add_argument('--out',type=Path,required=True);b.add_argument('--confirm-read',action='store_true');b.add_argument('--resume',type=Path);b.add_argument('--publication',type=Path)
     args=p.parse_args();out=args.out.resolve();check(not out.exists() and not any((q/'.git').exists() for q in out.parents),'New private output outside Git required')
     if args.mode=='prepare':
         doc=prepare(json.loads(args.plan.read_bytes()),args.packs);out.write_text(json.dumps(doc,separators=(',',':')));print(len(doc['images']),'original pixel witnesses; no network');return
     check(args.confirm_read,'Explicit read confirmation required (118 GETs, at most 500 MB, no writes)')
-    socket.getaddrinfo('media.dreamwishwand.com',443);out.mkdir();r=verify(json.loads(args.input.read_bytes()),out);print(len(r['verified']),'verified;',len(r['readyMaps']),'complete maps');raise SystemExit(0 if r['cdnVerified'] else 2)
+    socket.getaddrinfo('media.dreamwishwand.com',443);out.mkdir();r=verify(json.loads(args.input.read_bytes()),out,prior=json.loads(args.resume.read_bytes()) if args.resume else None,publication=json.loads(args.publication.read_bytes()) if args.publication else None);print(len(r['verified']),'verified;',len(r['readyMaps']),'complete maps');raise SystemExit(0 if r['cdnVerified'] else 2)
 
 if __name__=='__main__':main()
