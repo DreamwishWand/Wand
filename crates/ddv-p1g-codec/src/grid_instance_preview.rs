@@ -381,6 +381,8 @@ fn outdoor_catalog_identity(grid:&Value)->Result<(String,String,u64,u64,u64),Cod
         for g in e["grids"].as_array().ok_or(bad)?{
             if g["gridDataPath"].as_str()!=Some(data){continue;}
             let native_layout=g["layoutId"].as_str().ok_or(bad)?;
+            // The authoring template is not evidence of a playable saved island.
+            if layout.is_empty()&&native_layout.starts_with("SceneLayouts/FloatingIslands/FloatingIsland_TEMPLATE/"){continue;}
             if !layout.is_empty()&&layout!=native_layout{continue;}
             if g["factor"].as_u64()!=Some(factor){continue;}
             let sx=g["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?;
@@ -3046,9 +3048,16 @@ mod terrain_session_tests{
     fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let entries=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="FloatingIslands").unwrap()["grids"].as_array().unwrap();
+        let (mut playable,mut templates)=(0,0);
         for g in entries{
             let raw=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"","GridDataPath":g["gridDataPath"],"TessellationFactor":g["factor"],"NextGridObjectID":5,"Objects":{}}}}}});
             let witness=serde_json::json!({"layoutId":g["layoutId"],"gridDataPath":g["gridDataPath"],"factor":g["factor"],"sizeX":g["sizeX"],"sizeY":g["sizeY"]});
+            if g["layoutId"].as_str().unwrap().starts_with("SceneLayouts/FloatingIslands/FloatingIsland_TEMPLATE/"){
+                templates+=1;
+                assert!(resolve_plain_grid_destination(raw.to_string().as_bytes(),&witness).is_err());
+                continue;
+            }
+            playable+=1;
             let d=resolve_plain_grid_destination(raw.to_string().as_bytes(),&witness).unwrap();
             assert_eq!(d.grid_id,"42");
             assert!(player_house_grid_scope(&raw,"42").is_err());
@@ -3059,6 +3068,7 @@ mod terrain_session_tests{
             let mut wrong=witness.clone();wrong["sizeX"]=(g["sizeX"].as_u64().unwrap()+1).into();
             assert!(resolve_plain_grid_destination(raw.to_string().as_bytes(),&wrong).is_err());
         }
+        assert_eq!((playable,templates),(28,4));
     }
 
     #[test]
