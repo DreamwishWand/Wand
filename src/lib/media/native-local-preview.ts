@@ -12,7 +12,7 @@ function parseLayer(value:unknown,allowMask=true):Layer{
  const l:Layer={kind:value.kind,unitQuadToCanvas:m as unknown as Affine,rgba:c as unknown as Layer['rgba']};
  if(value.kind!=='fill'){
   check(typeof value.imageSha256==='string'&&sha.test(value.imageSha256)&&Array.isArray(value.size)&&value.size.length===2&&value.size.every(dimension)&&value.size[0]*value.size[1]<=100_000_000&&Array.isArray(value.wrap)&&value.wrap.length===2&&value.wrap.every(x=>x===0||x===1)&&value.colorSpace===(value.kind==='sdf'?'Linear':'sRGB'),'Invalid image');
-  l.imageSha256=value.imageSha256;l.size=value.size as unknown as ImageLayer['size'];l.wrap=value.wrap as unknown as ImageLayer['wrap'];l.colorSpace=value.colorSpace;
+  l.imageSha256=value.imageSha256;l.size=value.size as unknown as ImageLayer['size'];l.wrap=value.wrap as unknown as ImageLayer['wrap'];l.colorSpace=value.kind==='sdf'?'Linear':'sRGB';
  }
  if(value.mask!==undefined){
   const mask=value.mask;check(allowMask&&object(mask)&&Array.isArray(mask.overlayToMaskUv)&&mask.overlayToMaskUv.length===6&&mask.overlayToMaskUv.every(Number.isFinite),'Invalid mask');
