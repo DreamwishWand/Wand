@@ -14,3 +14,12 @@ test('quaternion hemisphere continuity and invalid track rejection',()=>{
  assert.throws(()=>new RigSampler([node(-1)],skins,[t,t]),/Invalid track/);
  assert.throws(()=>new RigSampler([node(0)],skins,[t]),/Invalid rest transform/);
 });
+
+test('unequal native clip periods preserve independent absolute timing',()=>{
+ const track=(node,period)=>({node,path:'translation',times:new Float32Array([0,period]),values:new Float32Array([0,0,0,period,0,0]),loopDuration:period});
+ const nodes=[node(-1),node(0)],skins=[{joints:[0,1],inverseBind:new Float32Array([...identity,...identity])}];
+ const rig=new RigSampler(nodes,skins,[track(0,2),track(1,5)]);
+ assert.equal(rig.duration,5);assert.equal(rig.sample(3)[0][12],1);assert.equal(rig.sample(3)[0][28],4);
+ assert.equal(rig.sample(5)[0][28],6);assert.equal(rig.sample(1)[0][28],2);
+ assert.throws(()=>new RigSampler(nodes,skins,[{...track(0,2),loopDuration:3}]),/Invalid native loop duration/);
+});
