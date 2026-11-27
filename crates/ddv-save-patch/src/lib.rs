@@ -2454,6 +2454,16 @@ mod structural_tests{
   assert_eq!(a["Player"],b["Player"]);
   assert_eq!(b["World"]["GridCollection"]["Grids"]["10"]["Objects"],serde_json::json!({}));
   assert_eq!(b["World"]["GridCollection"]["Grids"]["20"]["Objects"]["3"]["ItemID"],40200001);
+  let with_null=source.replace(r#""Orientation":"GridOrientation_Down""#,r#""Orientation":"GridOrientation_Down","State":null"#);
+  let overlap=with_null.replace(r#""NextGridObjectID":3,"Objects":{}"#,r#""NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40200002,"X":5,"Y":6,"Orientation":"GridOrientation_Down"}} "#);
+  let moved=preview_plain_grid_transfer(&overlap,&target,(1,2),&dest,(5,6),"GridOrientation_Down").unwrap();
+  let output:serde_json::Value=serde_json::from_str(&moved.patched_json).unwrap();
+  let objects=&output["World"]["GridCollection"]["Grids"]["20"]["Objects"];
+  assert_eq!(objects["1"]["ItemID"],40200002);assert_eq!(objects["3"]["ItemID"],40200001);
+  assert!(objects["3"].get("State").is_some_and(|s|s.is_null()));
+  assert_eq!(output["Player"],a["Player"]);
+  let stateful=with_null.replace(r#""State":null"#,r#""State":{"Unknown":1}"#);
+  assert!(preview_plain_grid_transfer(&stateful,&target,(1,2),&dest,(5,6),"GridOrientation_Down").is_err());
   assert!(preview_plain_grid_transfer(source,&target,(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
   let other=source.replace("SceneLayouts/Village04/B.json","SceneLayouts/VillageExpansion01/B.json").replace("GridData/Villages/Village04-B.json","GridData/Villages/VillageExpansion01/VillageExpansion01-B.json");
   let other_dest=PlainGridDestination{layout_path:"SceneLayouts/VillageExpansion01/B.json".into(),data_path:"GridData/Villages/VillageExpansion01/VillageExpansion01-B.json".into(),..dest.clone()};
