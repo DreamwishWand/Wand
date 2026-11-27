@@ -109,6 +109,9 @@ jobs:
       - name: Prepare publication assets when deployment code changed
         if: needs.scope.outputs.pages == 'true'
         run: python3 scripts/build-collection-images.py
+      - name: Verify and prepare approved photo-mode release assets
+        run: python3 tools/photo-mode/prepare_pages_preview.py
+        if: needs.scope.outputs.pages == 'true'
       - run: npm run build
         id: build
         env:

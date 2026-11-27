@@ -54,6 +54,13 @@ def prepare(source,dest):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--source',type=Path,default=Path(__file__).parent/'pages-transfer')
+    p.add_argument('--source',type=Path,help='Explicit legacy two-scene transfer fixture')
+    p.add_argument('--archive',type=Path,help='Local copy of pinned diagnostic release')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
-    a=p.parse_args();prepare(a.source,a.dest)
+    a=p.parse_args()
+    if a.source:
+        if a.archive: p.error('--source and --archive are mutually exclusive')
+        prepare(a.source,a.dest)
+    else:
+        from prepare_release_preview import download, project
+        project(a.archive.read_bytes() if a.archive else download(), a.dest)
