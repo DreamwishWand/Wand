@@ -113,3 +113,17 @@ test('free group copy allows overlapping leaf furniture while retaining stock, e
  const other={...grid,key:'B'};empty.set('B',empty.get('A'));
  assert.equal(groupPasteCandidate(clip,[grid,other],empty,defs,stock,[],0,4.1,-3.1,true),null);
 });
+
+import {bindMainlandGrid,mainlandMapAnchor} from '../src/lib/world/mainland-world-coordinates.ts';
+test('free group duplication preserves mixed cardinal and diagonal directions and quarter turns',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});assert.ok(g);
+ const source=[{...saved(2,4,-3),object:{...saved(2,4,-3).object,orientation:'GridOrientation_DownLeft',orientationCode:10,shapeKey:item+':10'}},saved(3,6,-3)];
+ assert.equal(captureFurnitureGroup(source),null);
+ const clip=captureFurnitureGroup(source,false,true);assert.deepEqual(clip.map(p=>p.orientation),[2.5,2]);
+ const geo={...geometry,shapes:Object.fromEntries([0,2,4,6,8,10,12,14].map(code=>[item+':'+code,shape]))},d=new Map([[item,new Map([[1,geo]])]]),stock=new Map([[item,2]]);
+ const rotated=rotateFurnitureGroup(clip,d,1);assert.deepEqual(rotated.map(p=>[p.dx,p.dy,p.orientation]),[[0,0,1.5],[0,4,1]]);
+ const r=new Map([[g.key,{sizeX:400,sizeY:350,nativeFloorValues:new Uint32Array(400*350).fill(4)}]]),p=mainlandMapAnchor(g,5.1,6.1);
+ const q=groupPasteCandidate(clip,[g],r,d,stock,[],0,p.x,p.y,true);assert.ok(q);assert.deepEqual(q.rows.map(p=>p.orientation),['GridOrientation_DownLeft','GridOrientation_Down']);
+ assert.equal(groupPasteCandidate(clip,[g],r,d,stock,[],0,p.x,p.y,false),null);
+ assert.equal(groupPasteCandidate(clip,[g],r,d,new Map([[item,1]]),[],0,p.x,p.y,true),null);
+});

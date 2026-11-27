@@ -3,7 +3,7 @@
  * source geometry release and the Rust receipt/plan schema are versioned. */
 import {WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
 import {parseCheckpointJournal,type CheckpointJournal} from './checkpoint-journal.ts';
-import {isCardinal} from './saved-map-transform.ts';
+import {isEightWay} from './saved-map-transform.ts';
 import {PUBLIC_TERRAIN_ROOT} from './public-terrain-projection.ts';
 import {readDesignDraft,changeLocalWorldDraft} from './design-draft.ts';
 import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -40,7 +40,7 @@ export function parseSaveSessionDraft(value:unknown,identity:SaveDraftIdentity,s
   for(const entry of snapshot.edits){
    if(!rec(entry)||!rec(entry.plan)||!positive(entry.gridOrdinal)||!str(entry.name,512)||!str(entry.warning,2048))throw Error('WORLD_SAVE_DRAFT_EDIT');
    const p=entry.plan;
-   if(p.recordKind!=='full'||!positive(p.localOrdinal)||seen.has(p.localOrdinal)||typeof p.itemId!=='string'||!/^[1-9][0-9]{0,19}$/.test(p.itemId)||!int(p.expectedX)||!int(p.expectedY)||(p.replacementX!==null&&!int(p.replacementX))||(p.replacementY!==null&&!int(p.replacementY))||(p.replacementX===null)!==(p.replacementY===null)||(p.expectedOrientation!==null&&!isCardinal(p.expectedOrientation))||(p.replacementOrientation!==null&&!isCardinal(p.replacementOrientation))||(p.expectedOrientation===null)!==(p.replacementOrientation===null))throw Error('WORLD_SAVE_DRAFT_PLAN');
+   if(p.recordKind!=='full'||!positive(p.localOrdinal)||seen.has(p.localOrdinal)||typeof p.itemId!=='string'||!/^[1-9][0-9]{0,19}$/.test(p.itemId)||!int(p.expectedX)||!int(p.expectedY)||(p.replacementX!==null&&!int(p.replacementX))||(p.replacementY!==null&&!int(p.replacementY))||(p.replacementX===null)!==(p.replacementY===null)||(p.expectedOrientation!==null&&!isEightWay(p.expectedOrientation))||(p.replacementOrientation!==null&&!isEightWay(p.replacementOrientation))||(p.expectedOrientation===null)!==(p.replacementOrientation===null))throw Error('WORLD_SAVE_DRAFT_PLAN');
    const original=points.get(p.localOrdinal);
    if(!original||original.subgrid||original.localGridOrdinal!==entry.gridOrdinal||original.itemId!==p.itemId||original.x!==p.expectedX||original.y!==p.expectedY||(p.expectedOrientation!==null&&original.orientation!==p.expectedOrientation))throw Error('WORLD_SAVE_DRAFT_STALE');
    if((p.replacementX===null||p.replacementX===p.expectedX&&p.replacementY===p.expectedY)&&(p.replacementOrientation===null||p.replacementOrientation===p.expectedOrientation))invalid();

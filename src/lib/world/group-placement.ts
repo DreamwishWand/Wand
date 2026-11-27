@@ -1,6 +1,6 @@
 import type {SymmetryMode} from './design-symmetry.ts';
 import {stockSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
-import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
+import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import {rotateDesignClipboard,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -14,8 +14,9 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
   if(!(free?stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
-  const orientation=CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal);
-  if(orientation<0)return null;
+  const code=worldOrientationCode(p.object.orientation);
+  if(code===null||code%4!==0&&!free)return null;
+  const orientation=code/4;
   return {itemId:Number(p.object.itemId),dx:p.x*2,dy:-p.y*2,orientation};
  });
  if(rows.some(p=>!p))return null;
@@ -23,7 +24,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
 export type GroupGeometry=ReadonlyMap<number,ReadonlyMap<number,DesignItemGeometry>>;
-export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:Cardinal;destination:StockDestination}
+export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:EightWay;destination:StockDestination}
 export interface GroupPasteCandidate{rows:GroupPasteRow[];ghosts:StockCandidate[]}
 export function groupStockAvailable(clip:readonly DesignClipItem[],counts:ReadonlyMap<number,number>):boolean{
  const used=new Map<number,number>();
@@ -32,6 +33,18 @@ export function groupStockAvailable(clip:readonly DesignClipItem[],counts:Readon
 /** Rotate in common half-cell coordinates. Scale source factor-1 dimensions
  * for rotation only; actual placement uses the native runs for each target. */
 export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGeometry,turn:number){
+ // The Save clipboard retains the legacy quarter-turn unit (0..3).
+ // Half-integers encode 45-degree poses, without changing cardinal values.
+ if(clip.some(p=>!Number.isInteger(p.orientation))){
+  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!Number.isSafeInteger(turn)||clip.some(p=>!Number.isSafeInteger(p.dx)||!Number.isSafeInteger(p.dy)||p.dx<0||p.dy<0||!Number.isSafeInteger(p.orientation*2)||p.orientation<0||p.orientation>=4||p.attachment))return null;
+  const n=((turn%4)+4)%4;if(n===0)return [...clip];
+  const rows=clip.map(p=>{const g=defs.get(p.itemId)?.get(1),s=g?.shapes[p.itemId+':'+p.orientation*4],orientation=(p.orientation-n+4)%4,next=g?.shapes[p.itemId+':'+orientation*4];return s&&next&&next.width===(n%2?s.height:s.width)&&next.height===(n%2?s.width:s.height)?{p,s,orientation}:null;});
+  if(rows.some(r=>!r))return null;
+  const valid=rows.filter(r=>r!==null),left=Math.min(...valid.map(r=>r.p.dx)),top=Math.min(...valid.map(r=>r.p.dy)),right=Math.max(...valid.map(r=>r.p.dx+r.s.width*2)),bottom=Math.max(...valid.map(r=>r.p.dy+r.s.height*2));
+  const rotated=valid.map(({p,s,orientation})=>{const x=p.dx-left,y=p.dy-top,w=s.width*2,h=s.height*2;return {...p,dx:n===1?bottom-top-y-h:n===2?right-left-x-w:y,dy:n===1?x:n===2?bottom-top-y-h:right-left-x-w,orientation};});
+  const x=Math.min(...rotated.map(p=>p.dx)),y=Math.min(...rotated.map(p=>p.dy));
+  return rotated.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
+ }
  const scaled=new Map<number,DesignItemGeometry>();
  for(const item of clip){
   const a=defs.get(item.itemId),d=a?.get(2)??a?.get(1);if(!d)return null;
@@ -57,7 +70,7 @@ export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonl
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
  const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
- if(clip.some(p=>![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3))return null;
+ if(clip.some(p=>![p.dx,p.dy,p.orientation*2].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>=4||!free&&!Number.isInteger(p.orientation)))return null;
  return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free);
 }
 export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
@@ -68,12 +81,12 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
  if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
-  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3)return null;
+  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isSafeInteger(p.orientation*2)||p.orientation<0||p.orientation>=4||!free&&!Number.isInteger(p.orientation))return null;
   const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
   if(free&&(Math.floor(p.itemId/100000)!==400||geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath))return null;
-  const q=stockPlacement(grids,rasters,geo,p.itemId,CARDINAL_ORIENTATIONS[p.orientation],x+.001,y-.001,null,free);
+  const q=stockPlacement(grids,rasters,geo,p.itemId,EIGHT_WAY_ORIENTATIONS[p.orientation*2],x+.001,y-.001,null,free);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
   anchors.add(key);

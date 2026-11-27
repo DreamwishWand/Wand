@@ -74,3 +74,34 @@ test('free player house move uses the destination Grid even without ordinary ter
  assert.ok(move);assert.equal(move.area,h.key);assert.deepEqual([move.plan.x,move.plan.y],[5,6]);
  assert.equal(mainlandTransferCandidate({...p,object:{...p.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
 });
+
+import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode} from '../src/lib/world/saved-map-transform.ts';
+import {stageWorldEdit,projectWorldEdits} from '../src/lib/world/saved-map-batch.ts';
+test('45-degree furniture rotation stages and projects native shape code without widening other types',()=>{
+ const shape={width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}]};
+ const map={objects:[o],shapes:{[o.shapeKey]:shape,'40000001:10':shape}};
+ assert.deepEqual(EIGHT_WAY_ORIENTATIONS.map(worldOrientationCode),[0,2,4,6,8,10,12,14]);
+ const turn='GridOrientation_DownLeft';
+ assert.equal(draftSavedMapTransform(o,1,1,turn),null);
+ const t=stageWorldEdit(map,emptyWorldTimeline(),1,1,1,turn,'test',true);
+ assert.ok(t);assert.equal(currentWorldEdits(t)[0].plan.replacementOrientation,turn);
+ const p=projectWorldEdits(map,currentWorldEdits(t)).objects[0];
+ assert.equal(p.orientationCode,10);assert.equal(p.shapeKey,'40000001:10');
+ assert.equal(draftSavedMapTransform({...o,itemId:'20500001',nativeType:'Building'},1,1,turn,true),null);
+ assert.equal(draftSavedMapTransform({...o,subgrid:{}},1,1,turn,true),null);
+ assert.equal(draftSavedMapTransform({...o,itemId:'40100001',layer:'ground'},1,1,turn,true),null);
+});
+
+import {stockPlacement,stockPickup} from '../src/lib/world/save-furniture-placement.ts';
+test('oblique stock placement and duplicate preserve the selected shape and orientation',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});assert.ok(g);
+ const r={sizeX:400,sizeY:350,nativeFloorValues:new Uint32Array(400*350)};
+ const shape={width:2,height:2,cellCount:2,runs:[{x:0,y:0,width:1},{x:1,y:1,width:1}]};
+ const id=40000001,orientation='GridOrientation_DownLeft',def={itemId:id,layer:'furniture',surfaceCapable:false,shapes:{[id+':10']:shape}};
+ const defs=new Map([[1,def]]),rasters=new Map([[g.key,r]]),x=g.bounds.x+5.1,y=g.bounds.y+g.bounds.h-6.1;
+ assert.equal(stockPlacement([g],rasters,defs,id,orientation,x,y,null,false),null);
+ const placed=stockPlacement([g],rasters,defs,id,orientation,x,y,null,true);assert.ok(placed);assert.equal(placed.plan.orientation,orientation);assert.equal(placed.shape,shape);
+ const p={area:g.key,factor:1,x:g.bounds.x+1,y:g.bounds.y+g.bounds.h-1,shape,object:{...o,orientation}};
+ assert.equal(stockPlacement([g],rasters,defs,id,orientation,x,y,p,true)?.plan.action,'duplicate');assert.equal(stockPickup(p,true)?.plan.action,'remove');
+ assert.equal(stockPlacement([g],rasters,new Map([[1,{...def,surfaceCapable:true}]]),id,orientation,x,y,null,true),null);
+});

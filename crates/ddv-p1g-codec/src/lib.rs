@@ -761,7 +761,23 @@ mod browser_amount_preview {
                 "expectedX":r["expectedX"],"expectedY":r["expectedY"]
             });
             let (ordinal,item_id,kind,expected,position,orientation)=
-                if x.is_some()&&before.is_some(){
+                if before.zip(after).is_some_and(|(a,b)|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&a)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&b)){
+                    let (a,b)=(before.ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?,after.ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?);
+                    if a==b||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&a)||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&b){return Err(fail("DB05_ORIENTATION_NOT_CONFIRMED"));}
+                    let mut part=shared;
+                    part["expectedOrientation"]="GridOrientation_Up".into();
+                    part["replacementOrientation"]="GridOrientation_Right".into();
+                    let p=parse_grid_orientation_plan(&part.to_string())?;
+                    if p.kind!="full"||p.item_id/100_000!=400{return Err(fail("DB05_ORIENTATION_NOT_CONFIRMED"));}
+                    let position=if x.is_some(){
+                        let mut coords=part;
+                        let m=coords.as_object_mut().ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?;
+                        m.remove("expectedOrientation");m.remove("replacementOrientation");
+                        coords["replacementX"]=r["replacementX"].clone();coords["replacementY"]=r["replacementY"].clone();
+                        Some(parse_grid_coordinate_plan(&coords.to_string())?.replacement)
+                    }else{None};
+                    (p.ordinal,p.item_id,p.kind,p.expected,position,Some((a.to_owned(),b.to_owned())))
+                }else if x.is_some()&&before.is_some(){
                     let parsed=parse_grid_transform_plan(
                         &serde_json::to_string(row)
                             .map_err(|_|fail("DB05_GRID_MIXED_ROW_INVALID"))?
@@ -1995,6 +2011,8 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            grid_instance_preview::validate_oblique_grid_edits(original,&edits)
+                .map_err(|_|fail("DB05_GRID_OBLIQUE_UNSUPPORTED"))?;
             let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
             grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
                 .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
@@ -2066,6 +2084,8 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            grid_instance_preview::validate_oblique_grid_edits(original,&edits)
+                .map_err(|_|fail("DB05_GRID_OBLIQUE_UNSUPPORTED"))?;
             let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
             grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
                 .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
@@ -2114,27 +2134,47 @@ mod browser_amount_preview {
             let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
             let stock=root.get("Player").and_then(|v|v.get("ListInventories")).and_then(|v|v.get("0")).and_then(|v|v.get("Inventory")).and_then(|v|v.get(item.to_string().as_str())).and_then(|v|v.get("Amount")).and_then(|v|v.as_u64()).and_then(|v|u32::try_from(v).ok()).ok_or(fail("DB05_FURNITURE_STOCK_UNAVAILABLE"))?;
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
+            let oblique=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
+            let check_destination=|d:&ddv_save_patch::PlainGridDestination,orientation:&str|->Result<(),JsValue>{
+                if oblique(orientation){
+                    if root["GameInfo"]["Version"].as_u64()!=Some(643)||item/100_000!=400||d.tessellation!=1{return Err(invalid());}
+                    grid_instance_preview::player_house_grid_scope(&root,&d.grid_id).map_err(|_|invalid())?;
+                }
+                Ok(())
+            };
             let mut draft=if action=="place"{
                 if o.len()!=5||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation")){return Err(invalid());}
                 let dest:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                 let dest=grid_instance_preview::resolve_plain_grid_destination(original,&dest).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                 let orientation=o.get("orientation").and_then(|v|v.as_str()).ok_or_else(invalid)?;
+                check_destination(&dest,orientation)?;
                 preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
             }else{
                 // Reuse the original-source structural rehearsal, including
                 // dependency blocking when the removal guard is available.
-                self.preview_plain_grid_structure(plan)?;
+                if o.len()!=7||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y")){return Err(invalid());}
                 let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
                 let expected=(int("expectedX")?,int("expectedY")?);
                 let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
                     .map_err(|_|fail("DB05_FURNITURE_STOCK_STALE"))?.pop().ok_or_else(invalid)?;
+                let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+                let orientation=obj["Orientation"].as_str().ok_or_else(invalid)?;
+                if oblique(orientation){
+                    let check=ddv_save_patch::GridMixedEdit{target:target.clone(),expected,position:None,orientation:None};
+                    grid_instance_preview::validate_oblique_grid_edits(original,&[check]).map_err(|_|invalid())?;
+                    if action=="remove"&&(!o["x"].is_null()||!o["y"].is_null()){return Err(invalid());}
+                    if !matches!(action,"duplicate"|"remove"){return Err(invalid());}
+                    // Verify source record without allocating or publishing a removal.
+                    let mut guard=ddv_save_patch::preview_plain_grid_structure(json,&target,expected,ddv_save_patch::PlainGridStructureAction::Remove).map_err(|_|invalid())?;
+                    guard.patched_json.zeroize();
+                }else{self.preview_plain_grid_structure(plan)?;}
                 match action{
                     "remove"=>preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Pickup{target:&target,expected}),
                     "duplicate"=>{
                         let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                         let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                         // Copy creates a new ordinary object at the independently resolved destination. The source identity remains unchanged.
-                        let orientation=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(target.grid_id.as_str())).and_then(|v|v.get("Objects")).and_then(|v|v.get(target.object_id.as_str())).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str()).ok_or_else(invalid)?;
+                        check_destination(&dest,orientation)?;
                         preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
                     },
                     _=>return Err(invalid())

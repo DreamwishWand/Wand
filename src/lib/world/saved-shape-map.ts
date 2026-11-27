@@ -9,8 +9,7 @@ import {parseSavedSubgridSummary,type SavedNumericPoint} from './saved-grid-sour
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const uint=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
 const int32=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v>=-2147483648&&v<=2147483647;
-const CARDINAL:Readonly<Record<string,number>>=Object.freeze({
-  GridOrientation_Up:0,GridOrientation_Right:4,GridOrientation_Down:8,GridOrientation_Left:12});
+import {worldOrientationCode,eightWayFurniture} from './saved-map-transform.ts';
 export interface SavedShapeObject extends SavedNumericPoint{
   readonly shapeKey:string|null;readonly name:string|null;
   readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;readonly nativeType?:'Building';
@@ -46,15 +45,16 @@ export function buildSavedShapeMap(source:unknown,layoutId:string,gridIdNative:n
   const geometry=factor?createSourceGeometryCache(source,factor):null;
   const objects:SavedShapeObject[]=points.map(p=>{
     const id=Number(p.itemId);
-    const orientationCode=p.orientation!==null&&Object.hasOwn(CARDINAL,p.orientation)?CARDINAL[p.orientation]:null;
+    const orientationCode=worldOrientationCode(p.orientation);
     const resolved=geometry&&uint(id)&&id>0?geometry.resolve(id,orientationCode):
       {shapeKey:null,name:null,layer:'other' as const,surfaceCapable:false};
     return {...p,...resolved,orientationCode};
   });
-  // Precompute alternative cardinal shapes using the same bounded Worker cache.
+  // Keep cardinal alternatives first, then add 45-degree alternatives to the same bounded cache.
   if(geometry)for(const o of objects){
     if(o.shapeKey&&o.orientationCode!==null)for(const code of [0,4,8,12])geometry.resolve(Number(o.itemId),code);
   }
+  if(geometry&&factor===1)for(const o of objects){if(eightWayFurniture(o))for(const code of [2,6,10,14])geometry.resolve(Number(o.itemId),code);}
   return {layoutId,gridIdNative,gridDataPath:domain.gridDataPath,sourceGridFactor:factor,
     objects,shapes:geometry?.shapes??{},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
 }

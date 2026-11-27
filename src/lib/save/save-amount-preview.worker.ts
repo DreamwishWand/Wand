@@ -563,8 +563,8 @@ interface GridMixedPlan {
   recordKind:'full'|'diff_modified';
   expectedX:number;expectedY:number;
   replacementX:number|null;replacementY:number|null;
-  expectedOrientation:CardinalOrientation|null;
-  replacementOrientation:CardinalOrientation|null;
+  expectedOrientation:CardinalOrientation|'GridOrientation_UpRight'|'GridOrientation_DownRight'|'GridOrientation_DownLeft'|'GridOrientation_UpLeft'|null;
+  replacementOrientation:CardinalOrientation|'GridOrientation_UpRight'|'GridOrientation_DownRight'|'GridOrientation_DownLeft'|'GridOrientation_UpLeft'|null;
 }
 function validateGridMixedEdits(raw:unknown):GridMixedPlan[]{
   if(!Array.isArray(raw)||raw.length<1||raw.length>MAX_GRID_MIXED_EDITS)
@@ -594,8 +594,9 @@ function validateGridMixedEdits(raw:unknown):GridMixedPlan[]{
         throw new TypeError('DB05_GRID_MIXED_POSITION_INVALID');
     }
     if(hasOrientation){
-      if(!cardinalNames.includes(String(value.expectedOrientation))||
-         !cardinalNames.includes(String(value.replacementOrientation))||
+      const names=value.recordKind==='full'&&BigInt(String(value.itemId))/100000n===400n?[...cardinalNames,'GridOrientation_UpRight','GridOrientation_DownRight','GridOrientation_DownLeft','GridOrientation_UpLeft']:cardinalNames;
+      if(!names.includes(String(value.expectedOrientation))||
+         !names.includes(String(value.replacementOrientation))||
          value.expectedOrientation===value.replacementOrientation)
         throw new TypeError('DB05_GRID_MIXED_ORIENTATION_INVALID');
     }

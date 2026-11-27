@@ -3,6 +3,12 @@ import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 export const CARDINAL_ORIENTATIONS=['GridOrientation_Up','GridOrientation_Right','GridOrientation_Down','GridOrientation_Left'] as const;
 export type Cardinal=typeof CARDINAL_ORIENTATIONS[number];
 export function isCardinal(v:unknown):v is Cardinal{return CARDINAL_ORIENTATIONS.some(x=>x===v);}
+export const EIGHT_WAY_ORIENTATIONS=['GridOrientation_Up','GridOrientation_UpRight','GridOrientation_Right','GridOrientation_DownRight','GridOrientation_Down','GridOrientation_DownLeft','GridOrientation_Left','GridOrientation_UpLeft'] as const;
+export type EightWay=typeof EIGHT_WAY_ORIENTATIONS[number];
+export function isEightWay(v:unknown):v is EightWay{return EIGHT_WAY_ORIENTATIONS.some(x=>x===v);}
+export function worldOrientationCode(v:unknown):number|null{return isEightWay(v)?EIGHT_WAY_ORIENTATIONS.indexOf(v)*2:null;}
+export function eightWayFurniture(o:SavedShapeObject|null):boolean{return !!o&&!o.subgrid&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.shapeKey!==null;}
+export function worldOrientationAllowed(o:SavedShapeObject|null,v:unknown,free=false):v is EightWay{return isCardinal(v)||free&&eightWayFurniture(o)&&isEightWay(v);}
 const int32=(n:unknown):n is number=>typeof n==='number'&&Number.isInteger(n)&&n>=-2147483648&&n<=2147483647;
 /** Mirror the source-verified DB-01 type/subtype contract for immediate
  * feedback. The Rust codec independently checks ALL saved records before
@@ -29,7 +35,7 @@ export function worldMoveEligible(o:SavedShapeObject|null,free=false):boolean{
   return worldTransformKindEligible(o)&&(free&&!exclusiveAnchorClass(o!.itemId)||!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move')&&(o?.nativeType!=='Building'||o.editRestrictions?.move==='allowedFlag'));
 }
 export function worldRotateEligible(o:SavedShapeObject|null,free=false):boolean{
-  return worldTransformKindEligible(o)&&!exclusiveAnchorClass(o!.itemId)&&isCardinal(o!.orientation)&&
+  return worldTransformKindEligible(o)&&!exclusiveAnchorClass(o!.itemId)&&worldOrientationAllowed(o,o!.orientation,free)&&
     (free||!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate')&&(o?.nativeType!=='Building'||o.editRestrictions?.rotate==='allowedFlag'));
 }
 export function worldTransformEligible(o:SavedShapeObject|null,free=false):boolean{
@@ -48,7 +54,7 @@ export function draftSavedMapTransform(o:SavedShapeObject|null,x:number|undefine
   const turned=orientation!==o.orientation;
   // Preserve exact orientation on road/fence moves until connection/edge semantics are verified.
   if(moved&&!worldMoveEligible(o,free))return null;
-  if(turned&&(!worldRotateEligible(o,free)||!isCardinal(orientation)))return null;
+  if(turned&&(!worldRotateEligible(o,free)||!worldOrientationAllowed(o,orientation,free)))return null;
   if(!moved&&!turned)return null;
   return {localOrdinal:o.localOrdinal,itemId:o.itemId,recordKind:'full' as const,
     expectedX:o.x,expectedY:o.y,replacementX:moved?x:null,replacementY:moved?y:null,
