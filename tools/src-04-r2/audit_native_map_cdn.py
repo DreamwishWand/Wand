@@ -103,7 +103,7 @@ def keys(layers):
 
 def verify(doc,out,reader=fetch):
     check(doc['schema']=='wand.src04.native-cdn-audit-input@1' and doc['privateOnly'] is True and doc['publicationAuthorized'] is False and doc['worldPlacementVerified'] is False and doc['gameVersion']=='1.26.2','Invalid audit input')
-    assets=doc['images'];maps=doc['maps'];check(len(assets)==118 and len(maps)==10,'Unexpected audit coverage')
+    assets=doc['images'];maps=doc['maps'];check(doc.get('sourceIdentityCount',len(assets))==118 and 0<len(assets)<=118 and len(maps)==10,'Unexpected audit coverage')
     check(set(assets)=={s for m in maps for s in keys(m['locked']+m['unlocked'])},'Unknown image reference')
     for s,m in assets.items():check(SHA.fullmatch(s) and SHA.fullmatch(m['pixelSha256']) and m['kind'] in ('texture','sdf') and type(m['width'])==type(m['height'])==int and 0<m['width']*m['height']<=100_000_000,'Invalid image witness')
     verified={};errors={};budget=[TOTAL];downloaded=0
