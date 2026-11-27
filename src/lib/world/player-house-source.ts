@@ -25,3 +25,14 @@ export const houseSourceWords={
  'zh-CN':['在本地读取原始房屋布局','不支持的原始布局文件。','已读取的房屋类型'],
  'pt-BR':['Carregar layouts originais localmente','Arquivo original não compatível.','Tipos de casas carregados']
 } as const;
+
+export const newHouseWords={
+ ja:'新規内装を生成します。原本レイアウトは作業復元用にこの端末内だけに保持されます。ゲーム内動作は未検証です。',
+ en:'Creates a new interior. The original layout is kept only on this device for draft recovery. In-game behavior is unverified.',
+ fr:'Crée un nouvel intérieur. Le plan original reste uniquement sur cet appareil pour la reprise. Comportement en jeu non vérifié.',
+ it:'Crea un nuovo interno. Il layout originale resta solo su questo dispositivo per il ripristino. Comportamento in gioco non verificato.',
+ de:'Erstellt einen neuen Innenraum. Das Originallayout bleibt zur Wiederherstellung nur auf diesem Gerät. Spielverhalten ungeprüft.',
+ 'es-ES':'Crea un interior nuevo. El diseño original se conserva solo en este dispositivo para recuperar el borrador. Comportamiento en el juego sin verificar.',
+ 'zh-CN':'生成新的室内空间。原始布局仅保留在此设备上以恢复编辑。游戏内行为尚未验证。',
+ 'pt-BR':'Cria um novo interior. O layout original fica apenas neste dispositivo para recuperar o rascunho. Comportamento no jogo não verificado.'
+} as const;
