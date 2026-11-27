@@ -108,7 +108,16 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   case 'wand.preset.floating-island-design@1':{keys(doc,['schema','gameVersion','layoutId','areas']);const grids=islandGrids(doc.layoutId);parseIslandDesign(raw,grids);multiarea(doc,grids,(a,g)=>{design(a,g);},a=>a.grid);break;}
   case 'wand.preset.floating-island-decoration@1':{keys(doc,['schema','gameVersion','layoutId','areas']);const grids=islandGrids(doc.layoutId);parseIslandDecoration(raw,grids);multiarea(doc,grids,(a,g)=>decoration(a,g,'island'),a=>a.furniture?.design?.grid);break;}
   case 'wand.preset.world-decoration@1':worldDecoration(doc);break;
-  case 'wand.preset.region-decoration@1':{keys(doc,['schema','region','world']);const grids=worldDecoration(doc.world);parseRegionDecoration(raw,grids);break;}
+  case 'wand.preset.region-decoration@1':{
+   if(Object.hasOwn(doc,'island')){
+    keys(doc,['schema','region','island']);const d=doc.island;
+    keys(d,['schema','gameVersion','layoutId','areas']);if(!Array.isArray(d.areas)||d.areas.length!==1)fail();
+    const g=areaGrid(d.areas[0]?.furniture?.design?.grid);
+    const grids=islandGrids(d.layoutId).filter(t=>sameTerrainGrid(t,g));if(grids.length!==1)fail();
+    parseRegionDecoration(raw,grids,false);multiarea(d,grids,(a,g)=>decoration(a,g,'island'),a=>a.furniture?.design?.grid);
+   }else{keys(doc,['schema','region','world']);const grids=worldDecoration(doc.world);parseRegionDecoration(raw,grids);}
+   break;
+  }
   case 'wand.mainland-design@1':case 'wand.world-scope-design@1':{
    const mainland=doc.schema==='wand.mainland-design@1';
    keys(doc,mainland?['schema','platform','gameVersion','areas']:['schema','platform','gameVersion','scope','areas']);

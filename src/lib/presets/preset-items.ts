@@ -23,7 +23,7 @@ export function presetItems(raw:string):Map<number,number>|null{
     case 'wand.preset.biome-network@1':if(!Array.isArray(d.rows))throw Error('NETWORK');for(const p of d.rows)add(p.itemId);return;
     case 'wand.preset.biome-decoration@1':case 'wand.preset.world-grid-decoration@1':case 'wand.preset.island-grid-decoration@1':walk(d.furniture,depth+1);walk(d.network,depth+1);if(d.supports){if(!Array.isArray(d.supports))throw Error('SUPPORT');for(const p of d.supports)support(p.scene);}return;
     case 'wand.preset.world-decoration@1':case 'wand.preset.floating-island-decoration@1':case 'wand.preset.floating-island-design@1':case 'wand.mainland-design@1':case 'wand.world-scope-design@1':if(!Array.isArray(d.areas))throw Error('AREAS');for(const a of d.areas)walk(a,depth+1);return;
-    case 'wand.preset.region-decoration@1':walk(d.world,depth+1);return;
+    case 'wand.preset.region-decoration@1':walk(d.world??d.island,depth+1);return;
     case 'wand.room-design@1':if(!Array.isArray(d.surfaces))throw Error('ROOM');for(const s of d.surfaces)walk(s.design,depth+1);return;
     case 'wand.preset.indoor-decoration@1':if(!Array.isArray(d.rooms))throw Error('INDOOR');for(const e of d.rooms)walk(e.design,depth+1);return;
     default:throw Error('TYPE');

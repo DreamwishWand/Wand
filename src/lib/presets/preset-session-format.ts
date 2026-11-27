@@ -36,13 +36,13 @@ export function presetHeader(raw:string):PresetHeader{
   case 'wand.preset.biome-decoration@1':if(!v.furniture||!v.network)throw Error('PRESET_AREA');kind='biome';break;
   case 'wand.preset.floating-island-design@1':case 'wand.preset.floating-island-decoration@1':if(!Array.isArray(v.areas))throw Error('PRESET_AREA');kind='island';break;
   case 'wand.preset.world-decoration@1':if(!Array.isArray(v.areas))throw Error('PRESET_AREA');kind='world';break;
-  case 'wand.preset.region-decoration@1':if(!v.region||!v.world)throw Error('PRESET_REGION');kind='region';break;
+  case 'wand.preset.region-decoration@1':if(!v.region||!!v.world===!!v.island)throw Error('PRESET_REGION');kind='region';break;
   case 'wand.preset.indoor-decoration@1':if(!Array.isArray(v.rooms)||!['room','floor','building'].includes(v.scope))throw Error('PRESET_ROOM');kind=v.scope;break;
   case 'wand.room-design@1':if(!Array.isArray(v.surfaces))throw Error('PRESET_ROOM');kind='room';break;
   case 'wand.world-design@1':if(!Array.isArray(v.placements))throw Error('PRESET_DESIGN');kind='design';break;
   default:if(!Array.isArray(v.areas))throw Error('PRESET_DESIGN');kind='design';
  }
- const version=schema==='wand.preset.region-decoration@1'?v.world?.gameVersion:v.gameVersion;
+ const version=schema==='wand.preset.region-decoration@1'?(v.world??v.island)?.gameVersion:v.gameVersion;
  return {schema,kind,domain:presetDomain(kind),privateBackup:schema==='wand.preset.native-backup@1',version:typeof version==='string'&&/^\d+\.\d+(\.\d+)?$/.test(version)?version:null};
 }
 export interface PublicPresetSource{workId:string;revisionId:string;creatorProfileId:string;creatorName:string;title:string}

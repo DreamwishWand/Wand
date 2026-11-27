@@ -6,7 +6,7 @@ import {serializeDesign,emptyDesign} from '../src/lib/world/design-layout.ts';
 import {serializeWholeArea} from '../src/lib/world/whole-area-preset.ts';
 import {roomDesignTemplates} from '../src/lib/world/room-design.ts';
 import {serializeRoomProject,newRoomSurface} from '../src/lib/world/room-project-design.ts';
-import {bindMainland} from '../src/lib/world/mainland-world-coordinates.ts';
+import {bindMainland,bindFloatingIslandGrid} from '../src/lib/world/mainland-world-coordinates.ts';
 import {captureIslandDecoration} from '../src/lib/world/island-decoration-preset.ts';
 import {captureRegionDecoration} from '../src/lib/world/region-decoration-backup.ts';
 const get=n=>JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/'+n,import.meta.url),'utf8'));
@@ -51,4 +51,17 @@ test('publication receipt binds the exact compact file and its semantic metadata
  const changed=new Uint8Array(await out.file.arrayBuffer());changed[changed.length-1]^=1;
  await assert.rejects(verifyPublicPreset(new Blob([changed]),out.receipt,catalog),/CHECKSUM/);
  await assert.rejects(preparePublicPreset(source,'scene',catalog,1),/PUBLIC_SIZE/);
+});
+
+test('island selected region shares only one trusted surface and retains region metadata',async()=>{
+ const grids=catalog.release.entries.flatMap(e=>e.grids).map(bindFloatingIslandGrid).filter(Boolean);
+ const g=grids[0],scope=[g],region={x:g.bounds.x,y:g.bounds.y,w:1,h:1};
+ const sn={objects:new Map([[g.key,[]]]),summaries:[],text:''},net=new Map([[g.key,[]]]);
+ const raw=captureRegionDecoration(region,scope,sn,net,new Map(),false);assert.ok(raw);valid(raw);
+ const {presetHeader}=await import('../src/lib/presets/preset-session-format.ts');
+ const {presetItems}=await import('../src/lib/presets/preset-items.ts');
+ assert.equal(presetHeader(raw).version,'1.26.2');assert.equal(presetHeader(raw).kind,'region');assert.equal(presetItems(raw).size,0);
+ const bad=JSON.parse(raw);bad.island.areas.push(bad.island.areas[0]);reject(bad);
+ const dual=JSON.parse(raw);dual.world=dual.island;reject(dual);
+ const wrong=JSON.parse(raw);wrong.island.areas[0].furniture.design.grid.gridIdNative+=1;reject(wrong);
 });
