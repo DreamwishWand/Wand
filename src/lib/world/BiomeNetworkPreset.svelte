@@ -61,7 +61,7 @@
    job.terminate();if(own!==job||epoch!==token)return;own=null;reading=true;
    try{
     if(d?.kind!=='area-network')throw Error('read');
-    const rows=networkRows(d.rows,g);if(full)currentLandscape=verifiedLandscape(g,objects,d.landscape);
+    const rows=networkRows(d.rows,g);if(full)currentLandscape=verifiedLandscape(g,objects,d.landscape,freePlacement);
     if(download&&full&&withSupport){if(!worker)throw Error('worker');const ac=new AbortController();supportAbort=ac;currentSupports=await readAreaSupportTrees(f,objects.filter(p=>p.area===g.key),worker,nextRequest,ac.signal);if(epoch!==token||ac.signal.aborted)return;}
     if(download){const text=full?captureBiomeDecoration(g,objects,omitted,rows,false,withSupport?currentSupports:undefined,false,currentLandscape,true)?.text:serializeBiomeNetwork(g,rows);if(!text)throw Error('capture');savePresetFile(text,'wand-biome-'+(full?'decoration-':'network-')+g.key+'.json');return;}
     if(!preset||!worker||preset.size>(full?BIOME_DECORATION_FILE_LIMIT:1_000_000))throw Error('file');
