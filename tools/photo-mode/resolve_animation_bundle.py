@@ -48,7 +48,7 @@ class Reader:
         return n
 
 
-def unityfs(raw):
+def unityfs(raw, include_resources=False):
     import lz4.block
     r = Reader(raw, '>')
     if r.cstring() != 'UnityFS' or r.unpack('I') != (8,):
@@ -80,7 +80,7 @@ def unityfs(raw):
     for (offset, size, kind), name in nodes:
         if offset + size > len(body) or name in files:
             raise ValueError('invalid bundle node')
-        if kind & 4:
+        if kind & 4 or (include_resources and name.endswith(".resS")):
             files[name] = bytes(body[offset:offset+size])
     return revision, files
 
