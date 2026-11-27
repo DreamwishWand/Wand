@@ -204,6 +204,19 @@ mod tests{
  use super::*;
  const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Other":1e2,"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"ItemMarker_Favorite"},"40000002":{"Amount":0}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000002,"X":2,"Y":2,"Orientation":"GridOrientation_Down","State":null},"3":{"ID":3,"ItemID":40000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","Unknown":1e2}}},"8":{"ID":8,"Objects":{}}}}}}"#;
  fn target(id:&str,item_id:u64)->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"7".into(),object_id:id.into(),item_id}}
+ #[test]fn bulk_diagonal_outdoor_furniture_roundtrip(){
+  let source=SOURCE.replace("GridData/Test.json","GridData/Villages/Village04-Test-GridData.json").replacen("GridOrientation_Down","GridOrientation_DownLeft",1);
+  let t=target("1",40000001);
+  let pickup=BulkPickup{target:&t,expected:(1,1),orientation:"GridOrientation_DownLeft"};
+  let removed=preview_bulk_furniture(&source,&[pickup],&[]).unwrap();
+  let d=PlainGridDestination{grid_id:"7".into(),layout_path:"SceneLayouts/Village04/Test.json".into(),data_path:"GridData/Villages/Village04-Test-GridData.json".into(),tessellation:1,size:(16,16)};
+  let place=BulkPlace{destination:&d,item_id:40000001,xy:(4,4),orientation:"GridOrientation_DownLeft"};
+  let restored=preview_bulk_furniture(&removed.patched_json,&[],&[place]).unwrap();
+  let root:Value=serde_json::from_str(&restored.patched_json).unwrap();
+  assert_eq!(root["World"]["GridCollection"]["Grids"]["7"]["Objects"]["4"]["Orientation"],"GridOrientation_DownLeft");
+  assert_eq!(root["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],2);
+  assert!(restored.patched_json.contains("\"Unknown\":1e2"));
+ }
  #[test]fn bulk_matches_sequential_stock_and_grid_semantics_without_normalizing_survivors(){
   let a=target("1",40000001);let b=target("2",40000002);let c=target("3",40000001);
   let rows=[BulkPickup{target:&a,expected:(1,1),orientation:"GridOrientation_Down"},BulkPickup{target:&b,expected:(2,2),orientation:"GridOrientation_Down"}];
