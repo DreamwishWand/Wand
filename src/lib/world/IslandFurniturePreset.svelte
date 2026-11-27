@@ -10,6 +10,7 @@
  import type {CaptureRegion} from './scene-capture-region.ts';
  import {readAreaSupportTrees,validateAreaSupportTrees,supportAreaWords} from './area-support-trees.ts';
  import type {SupportAreaTrees} from './biome-furniture-preset.ts';
+ import {houseBackupWords} from './player-house-backup.ts';
  import {captureIslandDecoration,parseIslandDecoration,reviewIslandDecoration,islandDecorationWords,ISLAND_DECORATION_FILE_LIMIT,WORLD_DECORATION_FILE_LIMIT,worldDecorationWords} from './island-decoration-preset.ts';
  import {networkRows,type NetworkPose} from './biome-network-preset.ts';
  import {biomeDecorationWords} from './biome-decoration-preset.ts';
@@ -108,7 +109,7 @@
   if(busy||copy||blocked||!snapshot||!file||!worker||!networkSnapshot)return;
   includeSupport=value;review=null;decorationReview=null;error=false;if(!value||supportSnapshot)return;
   const f=file,own=worker,ss=sessions,token=++epoch;reading=true;
-  try{const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss||!snapshot)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
+  try{const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss||!snapshot)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
   catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
  }
  async function load(){
@@ -125,7 +126,7 @@
    }
    if(token!==epoch||file!==f||sessions!==ss)return;
    snapshot=islandSaveSnapshot(grids,ss,maps,world);if(!snapshot)throw Error('snapshot');
-   if(world||region){includeNetworks=true;includeSupport=true;await loadNetworks(f,ss,token);const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
+   if(world||region){includeNetworks=true;includeSupport=true;await loadNetworks(f,ss,token);const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  function exportPreset(){
@@ -171,7 +172,7 @@
     trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;
     await validateAreaSupportTrees(own,[...combined.values()].flatMap(v=>[...v.supports!.values()]),nextRequest,ac.signal);
     if(token!==epoch||ac.signal.aborted||file!==f||sessions!==ss||!snapshot)return;
-    supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes);if(!supportSnapshot)throw Error('support');
+    supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');
    }
    const stock=await readStock(f);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
@@ -194,12 +195,12 @@
 </script>
 <aside class="biome-furniture-panel island-furniture-panel" aria-label={region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}>
  <strong>{region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}</strong>{#if !world&&!region}<label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label>{#if includeNetworks}<label><input type="checkbox" checked={includeSupport} disabled={!networkSnapshot||busy||!!copy} on:change={e=>void setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}{/if}<small>{region?rg[4]:world?ww[3]:includeNetworks?(includeSupport?sw[1]:dw[4]):w[3]}</small>
- {#if region}{#if regionCapture}<small>{bw2[4]} {regionCapture.summaries.reduce((n,r)=>n+r.furnitureCount,0)} · {bw2[5]} {regionCapture.summaries.reduce((n,r)=>n+r.networkCount,0)} · {landscapeBackupWords[locale]} {regionCapture.summaries.reduce((n,r)=>n+r.landscapeCount,0)} · {bw[7]} {regionCapture.summaries.reduce((n,r)=>n+r.protectedCount,0)}</small>{:else if !busy}<small role="alert">{rg[4]}</small>{/if}{:else if includeNetworks&&selectedSnapshot}{#each selectedSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {landscapeBackupWords[locale]} {row.landscapeCount} · {bw[7]} {row.protectedCount}</small>{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
+ {#if region}{#if regionCapture}<small>{bw2[4]} {regionCapture.summaries.reduce((n,r)=>n+r.furnitureCount,0)} · {bw2[5]} {regionCapture.summaries.reduce((n,r)=>n+r.networkCount,0)} · {landscapeBackupWords[locale]} {regionCapture.summaries.reduce((n,r)=>n+r.landscapeCount,0)} · {bw[7]} {regionCapture.summaries.reduce((n,r)=>n+r.protectedCount,0)}</small>{:else if !busy}<small role="alert">{rg[4]}</small>{/if}{:else if includeNetworks&&selectedSnapshot}{#each selectedSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {landscapeBackupWords[locale]} {row.landscapeCount} · {bw[7]} {row.protectedCount}</small>{#if world&&row.houseCount}<small>{houseBackupWords[locale]} {row.houseCount}</small>{/if}{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
  <input class="island-save-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot||!!region&&!regionCapture} on:click={exportPreset}>{region?rg[2]:world?ww[1]:includeNetworks?dw[2]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={region?['wand.preset.region-decoration@1']:world?['wand.preset.world-decoration@1','wand.preset.region-decoration@1']:['wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.whole-area-design@1']} kinds={region?['region']:world?['world','region']:['island']} disabled={!snapshot||blocked||busy||!!copy} label={region?rg[3]:world?ww[2]:openWords[locale]} onPick={f=>void openPreset(f)}/>{/if}</div>
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}
-  {#if decorationReview&&includeNetworks}{#each [...decorationReview.reviews] as [key,r] (key)}<small>{label(key)} · {bw2[4]} {bw[4]} {r.furniture.retained.length} · {bw[5]} {r.furniture.removed.length} · {bw[6]} {r.furniture.ghosts.length}</small><small>{bw2[5]} · {bw[4]} {r.network.retained} · {bw[5]} {r.network.removed.length} · {bw[6]} {r.network.ghosts.length}</small>{/each}{:else if review}{#each [...review.reviews] as [key,r] (key)}<small>{label(key)} · {bw[4]} {r.retained.length} · {bw[5]} {r.removed.length} · {bw[6]} {r.plan.add.length}</small>{/each}{/if}
+  {#if decorationReview&&includeNetworks}{#if decorationReview.houseReview}<small>{houseBackupWords[locale]} · {bw[4]} {decorationReview.houseReview.retained} · {bw[5]} {decorationReview.houseReview.removed} · {bw[6]} {decorationReview.houseReview.added}</small>{/if}{#each [...decorationReview.reviews] as [key,r] (key)}<small>{label(key)} · {bw2[4]} {bw[4]} {r.furniture.retained.length} · {bw[5]} {r.furniture.removed.length} · {bw[6]} {r.furniture.ghosts.length}</small><small>{bw2[5]} · {bw[4]} {r.network.retained} · {bw[5]} {r.network.removed.length} · {bw[6]} {r.network.ghosts.length}</small>{/each}{:else if review}{#each [...review.reviews] as [key,r] (key)}<small>{label(key)} · {bw[4]} {r.retained.length} · {bw[5]} {r.removed.length} · {bw[6]} {r.plan.add.length}</small>{/each}{/if}
   <RestoreStockReview rows={stockRows} {locale}/>
   {#if result.missing.length}<small role="alert">{bw[8]} · {result.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}
   {#if !result.changed}<small>{bw[13]}</small>{/if}

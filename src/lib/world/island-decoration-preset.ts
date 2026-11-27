@@ -1,3 +1,4 @@
+import {captureHousePoses,reviewHouseLayout,type HouseAreaPlan} from './player-house-backup.ts';
 import type {LandscapePose} from './landscape-decoration-preset.ts';
 import {worldDecorationScope} from './island-save-preset.ts';
 import {mainlandTerrainHits} from './mainland-world-coordinates.ts';
@@ -16,15 +17,16 @@ type Incoming=ReturnType<typeof parseBiomeDecoration>;
 type Review=NonNullable<ReturnType<typeof reviewBiomeDecoration>>;
 export const ISLAND_DECORATION_FILE_LIMIT=3_000_000;
 export const WORLD_DECORATION_FILE_LIMIT=12_000_000;
-export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
+export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,includeHouses=false){
  const scope=world?worldDecorationScope(grids):grids[0]?.layoutId;
  if(!grids.length||!scope||!world&&grids.some(g=>g.layoutId!==scope)||networks.size!==grids.length||snapshot.objects.size!==grids.length)return null;
- const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;landscapeCount:number;protectedCount:number}[]=[];
+ const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;landscapeCount:number;protectedCount:number;houseCount:number}[]=[];
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),rows=networks.get(g.key);
   if(!objects||!rows)return null;
   const capture=captureBiomeDecoration(g,objects,0,rows,!world,supports,world,landscapes?.get(g.key));if(!capture)return null;
-  areas.push(JSON.parse(capture.text));summaries.push({key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,landscapeCount:capture.landscapeCount,protectedCount:capture.protectedCount});
+  const houses=world&&includeHouses?captureHousePoses(g,objects):undefined;if(houses===null)return null;
+  areas.push({...JSON.parse(capture.text),...(houses!==undefined?{houses}:{})});summaries.push({houseCount:houses?.length??0,key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,landscapeCount:capture.landscapeCount,protectedCount:capture.protectedCount-(houses?.length??0)});
  }
  try{
   const text=JSON.stringify({schema:world?'wand.preset.world-decoration@1':'wand.preset.floating-island-decoration@1',gameVersion:'1.26.2',...(world?{scope}:{layoutId:scope}),areas});
@@ -47,14 +49,16 @@ export function parseIslandDecoration(text:string,grids:readonly MainlandGrid[],
 }
 export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:Snapshot,before:ReadonlyMap<string,readonly NetworkPose[]>,incoming:ReadonlyMap<string,Incoming>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false){
  if(!grids.length||world&&!worldDecorationScope(grids)||incoming.size!==grids.length||before.size!==grids.length)return null;
- const plan:Review['plan'][]=[],reviews=new Map<string,Review>(),balance=new Map(stock),required=new Map<number,number>();
+ const houseIncluded=[...incoming.values()].some(a=>a.houses!==undefined),houseReview=houseIncluded&&world?reviewHouseLayout(grids,snapshot.objects,incoming,free):null;
+ if(houseIncluded&&!houseReview)return null;
+ const plan:(Review['plan']&{houses?:HouseAreaPlan})[]=[],reviews=new Map<string,Review>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0,changed=false;
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),old=before.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!old||!next||!geometry)return null;
   if(world&&(!supports||!next.supports))return null;
   const q=reviewBiomeDecoration(g,world?grids:[g],rasters,objects,0,old,next,geometry,stock,!world,supports,world,landscapes?.get(g.key),free);if(!q)return null;
-  plan.push(q.plan);reviews.set(g.key,q);changed||=q.changed;
+  plan.push({...q.plan,...(houseReview?.changed?{houses:houseReview.plans.get(g.key)!}:{})});reviews.set(g.key,q);changed||=q.changed;
   changes+=q.furniture.changeCount;
   if(changes>BIOME_CHANGE_LIMIT)return null;
   for(const [id,n] of q.furniture.returned){if(!balance.has(id))return null;balance.set(id,balance.get(id)!+n);}
@@ -75,7 +79,7 @@ export function reviewIslandDecoration(grids:readonly MainlandGrid[],rasters:Rea
  }
  const missing=[...required].filter(([id,n])=>(balance.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(balance.get(itemId)??0)}));
  try{parseReplayStep({command:'island-decoration-export',plan});}catch{return null;}
- return {plan,reviews,missing,changed};
+ return {plan,reviews,missing,changed:changed||!!houseReview?.changed,houseReview};
 }
 export const islandDecorationWords={
  ja:['浮島装飾Preset','道・フェンスも含める','浮島の装飾を一括保存','浮島装飾Presetを開く','全Gridの通常家具・道・フェンスを一括置換します。支持家具などは保持します。'],

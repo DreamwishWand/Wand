@@ -81,7 +81,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   const rows=parseBiomeNetwork(JSON.stringify(d),g);if(!same(rows,d.rows))fail();count(rows.length);
  }
  function decoration(d:any,g:MainlandGrid,mode:'biome'|'island'|'world'){
-  keys(d,['schema','gameVersion','furniture','network'],['supports']);parseBiomeDecoration(JSON.stringify(d),g,mode==='island',mode==='world');
+  keys(d,['schema','gameVersion','furniture','network'],mode==='world'?['supports','landscape','houses']:['supports','landscape']);parseBiomeDecoration(JSON.stringify(d),g,mode==='island',mode==='world');
   whole(d.furniture,g,mode==='island'?'floating-island':mode==='world'?'world-grid':'biome');network(d.network,g);
   if(d.supports)for(const p of d.supports){keys(p,['placementId','scene']);const scene=parseSupportScene(JSON.stringify(p.scene));if(!same(scene,p.scene))fail();support(scene);}
  }
