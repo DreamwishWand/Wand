@@ -79,6 +79,7 @@ def add_thumbnails(root,objects,index,ledger=None):
         if n%25==0 or n==len(originals):
             write_json(cache_file,{"policy":POLICY,"images":{**cache,**mapping}})
             print(f"  Memory thumbnails {n}/{len(originals)}",flush=True)
+    write_json(cache_file,{"policy":POLICY,"images":mapping})
     for refs in index["references"].values():
         if "Image" in refs:
             refs["Thumbnail"]=mapping[refs["Image"]]["sha256"]
