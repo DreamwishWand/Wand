@@ -146,3 +146,16 @@ test('free outdoor cut preserves exact diagonal witness and checks visible sourc
  assert.equal(cutWitnessMatches(rows,[p]),false);
  assert.equal(cutWitnessMatches(rows,[{...p,object:{...p.object,x:9}}],true),false);
 });
+
+test('owned storage uses explicit cut witness rather than stock duplication',()=>{
+ const p=saved(1,2,-3);p.object.storage=true;
+ assert.equal(captureFurnitureGroup([p]),null);
+ assert.equal(captureFurnitureGroup([p],false,true),null);
+ const rows=captureCutWitness([p],true);
+ assert.equal(rows[0].storage,true);
+ assert.ok(cutWitnessMatches(rows,[p],true));assert.ok(cutWitnessMatches(rows,[p]));
+ assert.equal(cutWitnessMatches(rows,[{...p,object:{...p.object,storage:undefined}}],true),false);
+ const q={rows:[{itemId:String(item),x:4,y:5,orientation:'GridOrientation_Left',destination:{factor:1}}],ghosts:[]};
+ assert.equal(groupCutPlan(rows,q,true)[0].storage,true);
+ assert.equal(groupCutPlan(rows,{...q,rows:[{...q.rows[0],orientation:'GridOrientation_DownLeft'}]},true),null);
+});

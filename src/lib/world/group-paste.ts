@@ -16,16 +16,16 @@ export type {GroupGeometry,GroupPasteCandidate,GroupPasteRow,WorldGroupPose,Worl
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
 export const ROOM_CUT_LIMIT=32;
 export type RoomCutSource={roomOrdinal:number;index:number};
-type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2};
+type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2;storage?:true};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
 export function captureCutWitness(items:readonly MainlandSavedObject[],free=false):CutWitness[]|null{
  if(!captureFurnitureGroup(items,true,free)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
- return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{})}));
+ return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{}),...(p.object.storage?{storage:true as const}:{})}));
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[],free=false):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],false,true):cutEligible(p,!!r.supportFactor)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],!!r.storage,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust
@@ -79,7 +79,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
  if(cut.length!==candidate.rows.length||free&&cut.some(r=>r.supportFactor)||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
- return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor))?rows:null;
+ return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor)&&(!r.storage||CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))?rows:null;
 }
 export const groupCutWords={
  ja:['切り取り','切り取り済み（貼り付けまで元の家具は残ります）','家具を移動','移動元を確認できません。'],
