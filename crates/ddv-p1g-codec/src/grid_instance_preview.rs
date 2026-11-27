@@ -381,6 +381,31 @@ fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u64),CodecErr
     Ok((row["sizeX"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor,row["sizeY"].as_u64().filter(|n|*n>0&&*n<=65536).ok_or(bad)?*factor))
 }
 
+/// Only ordinary leaf furniture, on a proven factor-one outdoor Grid.
+pub(super) fn validate_oblique_grid_edits(profile:&[u8],edits:&[ddv_save_patch::GridMixedEdit])->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    for e in edits{
+        let grid=&root["World"]["GridCollection"]["Grids"][&e.target.grid_id];
+        let obj=&grid["Objects"][&e.target.object_id];
+        let diagonal=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
+        let old=obj["Orientation"].as_str().unwrap_or("");
+        if !diagonal(old)&&!e.orientation.as_ref().is_some_and(|(a,b)|diagonal(a)||diagonal(b)){continue;}
+        if root["GameInfo"]["Version"].as_u64()!=Some(643)||e.target.kind!=GridObjectKind::Full||e.target.item_id/100_000!=400||
+           grid["ID"].as_u64()!=key_id(&e.target.grid_id)||obj["ID"].as_u64()!=key_id(&e.target.object_id)||
+           grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(1)||
+           root["World"]["GridCollection"].get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&e.target.grid_id)))||
+           obj.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+           obj.get("State").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.is_empty()))||
+           !ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old)||
+           grid_identity_dependencies(profile,&e.target)?.blocking()>0{return Err(bad);}
+        let (sx,sy)=building_transform_grid_size(&root,&e.target.grid_id)?;
+        let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx&&(y as u64)<sy;
+        if !valid(e.expected)||e.position.is_some_and(|p|!valid(p)){return Err(bad);}
+    }
+    Ok(())
+}
+
 /// Validate the native category's state envelope; nested data is not
 /// reconstructed or normalized by the lexical transform. Unknown oneof
 /// cases are unsupported, and identity references are checked separately.
@@ -2873,6 +2898,22 @@ mod terrain_session_tests{
         assert!(check(&state,20000001).is_err());
         let mut offgrid=source.clone();offgrid["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["ItemID"]=20400001.into();
         assert!(check(&offgrid,20400001).is_err());
+    }
+    #[test]
+    fn oblique_leaf_furniture_requires_factor_one_and_preserves_other_bytes(){
+        let raw=br#"{"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":4,"Y":5,"Orientation":"GridOrientation_Down","State":null}}}}}},"Marker":1e2}"#;
+        let targets=resolve_grid_mixed_targets(raw,&[(1,40000001,(4,5),"full".into(),Some("GridOrientation_Down".into()))]).unwrap();
+        let edit=ddv_save_patch::GridMixedEdit{target:targets[0].clone(),expected:(4,5),position:None,orientation:Some(("GridOrientation_Down".into(),"GridOrientation_DownLeft".into()))};
+        let edits=[edit];
+        assert!(validate_oblique_grid_edits(raw,&edits).is_ok());
+        let draft=ddv_save_patch::preview_existing_grid_mixed_batch(std::str::from_utf8(raw).unwrap(),&edits).unwrap();
+        assert_eq!(draft.patched_json,std::str::from_utf8(raw).unwrap().replace("GridOrientation_Down","GridOrientation_DownLeft"));
+        let mut wrong:Value=serde_json::from_slice(raw).unwrap();
+        wrong["World"]["GridCollection"]["Grids"]["10"]["TessellationFactor"]=Value::from(2);
+        assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
+        wrong["World"]["GridCollection"]["Grids"]["10"]["TessellationFactor"]=Value::from(1);
+        wrong["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":90}});
+        assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
     }
     #[test]
     fn typed_building_transforms_preserve_state_and_require_original_grid(){
