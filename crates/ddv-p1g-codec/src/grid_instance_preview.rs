@@ -1688,7 +1688,17 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
     let json=std::str::from_utf8(profile).map_err(|_|bad)?;
     let draft=if remove{
         let verified_grids:HashSet<String>=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?.iter().filter(|(_,g)|g.get("Objects").and_then(Value::as_object).is_some_and(|m|m.values().any(|v|v.get("ItemID").and_then(Value::as_u64)==Some(item)))).filter_map(|(id,_)|house_exterior_identity(&root,id).ok().filter(|s|s.0==scope).map(|_|id.clone())).collect();
-        ddv_save_patch::preview_player_house_remove(json,target,expected,orientation,&verified_grids)
+        match ddv_save_patch::preview_player_house_remove(json,target,expected,orientation,&verified_grids){
+            Ok(d)=>Ok(d),
+            Err(_)=>{
+                if refs.historical>0{return Err(bad);}
+                let object=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+                let index=object["State"]["HouseData"]["PlayerHouseIndex"].as_u64().and_then(|n|usize::try_from(n).ok()).filter(|i|*i>0).ok_or(bad)?;
+                let d=ddv_save_patch::preview_player_house_detach(json,target,expected,orientation).map_err(|_|CodecError::Patch)?;
+                if detached_player_house_indices(d.patched_json.as_bytes())?.get(&item)!=Some(&index){return Err(bad);}
+                Ok(d)
+            }
+        }
     }else{
         let witness=o.get("destination").ok_or(bad)?;
         let dest=resolve_plain_grid_destination(profile,witness)?;
@@ -3820,6 +3830,15 @@ mod terrain_session_tests{
         let restored:Value=serde_json::from_str(&group_paste_candidate(detached.to_string().as_bytes(),&reattach.to_string()).unwrap()).unwrap();
         assert_eq!(restored["World"]["GridCollection"]["Grids"]["11"]["Objects"]["7"]["State"],state);
         assert_eq!(restored["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        let remove_last=serde_json::json!({"playerHouseRemove":{"localOrdinal":1,"itemId":"20500002","expectedX":8,"expectedY":9,"orientation":"GridOrientation_Right"}});
+        let last=group_paste_candidate(restored.to_string().as_bytes(),&remove_last.to_string()).unwrap();
+        let last_root:Value=serde_json::from_str(&last).unwrap();
+        assert_eq!(last_root["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        assert!(last_root["World"]["GridCollection"]["Grids"]["11"]["Objects"].as_object().unwrap().is_empty());
+        let recreated:Value=serde_json::from_str(&group_paste_candidate(last.as_bytes(),&reattach.to_string()).unwrap()).unwrap();
+        assert_eq!(recreated["World"]["GridCollection"]["Grids"]["11"]["Objects"]["8"]["State"],state);
+        let mut broken=restored.clone();broken["World"]["PlayerHouses"][1]["Floors"][0]["Rooms"]["0"]["FloorGridID"]=91.into();
+        assert!(group_paste_candidate(broken.to_string().as_bytes(),&remove_last.to_string()).is_err());
         let mut primary=original.clone();
         primary["World"]["PlayerHouses"].as_array_mut().unwrap().swap(0,1);
         primary["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]["HouseData"]["PlayerHouseIndex"]=0.into();

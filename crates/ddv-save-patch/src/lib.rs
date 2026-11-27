@@ -1214,6 +1214,21 @@ pub fn preview_checked_building_remove(source:&str,target:&GridCoordinateTarget,
 
 /// Remove only an exterior when another exact exterior in the same world
 /// retains the same interior binding. Never delete the last exterior here.
+/// Detach the exterior only. The codec must prove the surviving interior can be
+/// reattached without guessing any state, and that no native exterior refs remain.
+pub fn preview_player_house_detach(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let state=checked_player_house_state_mode(&root["World"],target,expected,orientation,true)?;
+    let house=&state["HouseData"];
+    if house["UpgradeState"]["Level"].as_u64()!=Some(1){return Err(bad);}
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+    let candidate=room_lexical_map_edit(source,path,&target.object_id,None)?;
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
 pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,verified_grids:&HashSet<String>)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;

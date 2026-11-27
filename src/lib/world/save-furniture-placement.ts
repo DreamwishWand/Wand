@@ -60,13 +60,13 @@ export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:Readonly
  if(!shape||!shape.cellCount||shape.cellCount>65536)return null;
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'duplicate',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x,y,...(direction===p.object.orientation?{}:{replacementOrientation:direction})}};
 }
-export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
- if(!playerHouseSourceEligible(p)||!p.shape||!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
+export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[],allowDetached=false):StockCandidate|null{
+ if(!playerHouseSourceEligible(p)||!p.shape||!allowDetached&&!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 export function buildingPickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
  if(!buildingSourceEligible(p)||!p.shape)return null;
- if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects);
+ if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects,true);
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
