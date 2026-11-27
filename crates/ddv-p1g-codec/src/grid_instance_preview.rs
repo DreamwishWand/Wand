@@ -2550,9 +2550,11 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root.get("GameInfo").and_then(|g|g.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
     let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
-    let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    let free=value.is_object();
+    let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
+    let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
     if rows.iter().any(|r|r.get("roomSource").is_some()){
-        if rows.len()>32{return Err(bad);}
+        if rows.len()>32||free&&rows.iter().any(|r|r.get("supportFactor").is_some()){return Err(bad);}
         // All source indices refer to one unchanged room; remove highest first
         // so the remaining indices cannot shift. Reject mixed/duplicate witnesses.
         let mut sorted=Vec::new();let mut room=None;let mut seen=HashSet::new();
@@ -2566,11 +2568,12 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         sorted.sort_by_key(|(index,_)|std::cmp::Reverse(*index));
         let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
         for (_,row) in sorted{
-            let next=crate::indoor_room_view::room_to_outdoor_candidate(working.as_bytes(),row)?;
+            let next=crate::indoor_room_view::room_to_outdoor_candidate_mode(working.as_bytes(),row,free)?;
             working.zeroize();*working=next;
         }
         return Ok(std::mem::take(&mut *working));
     }
+    if free{return Err(bad);}
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
