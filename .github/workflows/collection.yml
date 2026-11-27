@@ -136,6 +136,9 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' && needs.scope.outputs.save == 'true' }}
       - run: node browser/world-graph-smoke.mjs
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' && needs.scope.outputs.world == 'true' }}
+      - name: Verify native map WebGL2 drawing
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' && needs.scope.outputs.world == 'true' }}
+        run: node tools/src-04-r2/test_native_map_renderer_browser.mjs
   native:
     needs: scope
     if: needs.scope.outputs.collection == 'true' || ((needs.scope.outputs.save == 'true' || needs.scope.outputs.world == 'true') && needs.scope.outputs.db05 != 'true')
