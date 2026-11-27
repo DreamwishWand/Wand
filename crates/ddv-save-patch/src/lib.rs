@@ -517,6 +517,10 @@ pub const OBSERVED_CARDINAL_ORIENTATIONS:[&str;4]=[
     "GridOrientation_Up","GridOrientation_Right",
     "GridOrientation_Down","GridOrientation_Left"
 ];
+pub const EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS:[&str;8]=[
+    "GridOrientation_Up","GridOrientation_UpRight","GridOrientation_Right","GridOrientation_DownRight",
+    "GridOrientation_Down","GridOrientation_DownLeft","GridOrientation_Left","GridOrientation_UpLeft"
+];
 pub fn preview_existing_grid_orientation(
     source:&str,target:GridCoordinateTarget,
     expected:&str,replacement:&str
@@ -621,8 +625,9 @@ pub fn preview_existing_grid_mixed_batch(
         }
         if edit.position==Some(edit.expected){return Err(PatchError::InvalidTarget);}
         if let Some((before,after))=&edit.orientation{
-            if before==after||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&before.as_str())||
-                !OBSERVED_CARDINAL_ORIENTATIONS.contains(&after.as_str()){
+            let allowed=|s:&str|OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)||
+                edit.target.kind==GridObjectKind::Full&&edit.target.item_id/100_000==400&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s);
+            if before==after||!allowed(before)||!allowed(after){
                 return Err(PatchError::InvalidTarget);
             }
         }
