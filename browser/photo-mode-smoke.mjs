@@ -10,10 +10,14 @@ const companionOnly=Object.entries(index.items).find(([,row])=>row.male?.kind===
 const attached=Object.entries(index.items).find(([,row])=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true)?.[0];
 const expansion='120000009';
 assert.ok(index.items[expansion]?.male?.companionIncluded===false&&index.items[expansion]?.female?.companionIncluded===false,'new companion scene');
-const ids=[byKind('player'),byKind('pair'),companionOnly,attached,expansion];
+const multi='120000197';
+assert.equal(Object.keys(index.variants).length,4);
+assert.equal(index.variants[multi].length,1);
+assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
+const ids=[byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,168);
-assert.equal(Object.keys(index.items).length,221);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,202);
+assert.equal(Object.keys(index.items).length,255);
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,36);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
@@ -60,6 +64,17 @@ try{
       const paused=await seek.inputValue();
       await page.waitForTimeout(100);
       assert.equal(await seek.inputValue(),paused,'pause holds playback position');
+    }
+    if(id===multi){
+      const variants=detail.locator('.pose-variants button');
+      assert.equal(await variants.count(),2);
+      await variants.nth(1).click();
+      await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+      assert.equal(await variants.nth(1).getAttribute('aria-pressed'),'true');
+      await body.nth(1).click();
+      await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+      assert.equal(await body.nth(1).getAttribute('aria-pressed'),'true');
+      console.log('Native alternate pose ready:',id,'both body types');
     }
     console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
   }
