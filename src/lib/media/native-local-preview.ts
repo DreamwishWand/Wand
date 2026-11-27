@@ -77,3 +77,8 @@ export function nativeMapForEditor(pack:LocalNativePreviewPack|null,scope:string
  const m=pack.maps.find(m=>m.id===EDITOR_MAP_IDS[scope]);
  return m&&m.ticksToCanvas[0]===m.ticksToCanvas[3]?m:null;
 }
+
+/** Only the six connected source worlds are mapped; other scenes are independent. */
+export function nativeMapSourceScope(id:string):string|null{
+ return Object.entries(EDITOR_MAP_IDS).find(([,map])=>map===id)?.[0]??null;
+}
