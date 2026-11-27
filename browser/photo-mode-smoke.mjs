@@ -33,7 +33,7 @@ assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessor
 const materialActor='120000113',secondaryActor='120000109';
 assert.ok(index.items[materialActor]?.male?.companionIncluded===true&&index.items[materialActor]?.female?.companionIncluded===true,'external texture actor');
 assert.ok(index.items[secondaryActor]?.male?.secondaryPassOmitted===true&&index.items[secondaryActor]?.female?.secondaryPassOmitted===true,'base pass actor');
-assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitted===true&&row.female?.secondaryPassOmitted===true).length,6);
+assert.equal(Object.values(index.items).filter(row=>row.male?.secondaryPassOmitted===true&&row.female?.secondaryPassOmitted===true).length,11);
 const eulerSquirrel='120000005',eulerPair='120000001';
 assert.ok(index.items[eulerSquirrel]?.male?.eulerRotationCorrected===true&&index.items[eulerPair]?.male?.eulerRotationCorrected===true,'Euler rotation corrections');
 assert.equal(Object.values(index.items).flatMap(row=>Object.values(row)).filter(o=>o.eulerRotationCorrected===true).length,52);
@@ -42,11 +42,13 @@ assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind=
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
 assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
-const ids=[...new Set([limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const residualActors=['120000072','120000145','120000176','120000239','120000251'];
+assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');
+const ids=[...new Set([residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,9);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,4);
 assert.equal(Object.keys(index.items).length,263);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,223);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,228);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
