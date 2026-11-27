@@ -35,10 +35,12 @@ pub struct HouseInteriorDraft{
 /// Remap the source-local room Grid IDs, including zero. Keep native object
 /// identities and exact initial poses; no stock or ownership changes.
 pub fn prepare_house_interior(template:&Value,item:u64,expected_layout:&str,next:u32)->Result<HouseInteriorDraft,PatchError>{
-    let states=template["stateFields"].as_object().filter(|m|m.keys().all(|k|k=="1")).ok_or(BAD)?;
+    let states=template["stateFields"].as_object().filter(|m|m.keys().all(|k|matches!(k.as_str(),"1"|"11"))).ok_or(BAD)?;
     let support_count=states.get("1").map(id).transpose()?.unwrap_or(0);
-    if item/100_000!=205||next==0||template["stateFree"].as_bool()!=Some(support_count==0)||
-        (support_count==0&&!states.is_empty())||
+    let storage_count=states.get("11").map(id).transpose()?.unwrap_or(0);
+    if item/100_000!=205||next==0||storage_count>1||
+        template["stateFree"].as_bool()!=Some(support_count==0&&storage_count==0)||
+        states.values().any(|v|id(v).is_err()||id(v)==Ok(0))||
         !valid_layout(&template["layoutPath"])||template["layoutPath"].as_str()!=Some(expected_layout){return Err(BAD);}
     let floors=template["floors"].as_array().filter(|a|a.len()==1).ok_or(BAD)?;
     let source=template["grids"].as_object().filter(|m|!m.is_empty()&&m.len()<=64).ok_or(BAD)?;
@@ -76,7 +78,7 @@ pub fn prepare_house_interior(template:&Value,item:u64,expected_layout:&str,next
     }
     let roots=refs.clone();
     let mut edges=HashMap::<u32,Vec<u32>>::new();
-    let mut counted=0u32;
+    let mut counted=0u32;let mut stored=0u32;
     let mut grids=Map::new();let mut total=0usize;
     for old in source_ids{
         let mut grid=source[&old.to_string()].clone();
@@ -93,6 +95,15 @@ pub fn prepare_house_interior(template:&Value,item:u64,expected_layout:&str,next
                 !["X","Y"].iter().all(|k|obj[*k].as_i64().is_some_and(|n|i32::try_from(n).is_ok()))||
                 !obj["Orientation"].as_str().is_some_and(|s|DIRECTIONS.contains(&s)){return Err(BAD);}
             if let Some(state)=obj.get("State"){
+                if let Some(storage)=state.get("Storage"){
+                    exact(state,&["Storage"])?;
+                    exact(storage,&["ContainerInventoryID","DefaultContainerInventoryData","UnlockKeyItemID","UnlockLocId","DesignID"])?;
+                    if id(&obj["ItemID"])?!=40001680||storage["ContainerInventoryID"].as_u64()!=Some(0)||
+                        storage["DefaultContainerInventoryData"].as_str()!=Some("Chest_48Slot")||
+                        storage["UnlockKeyItemID"].as_u64()!=Some(0)||storage["UnlockLocId"].as_str()!=Some("")||!storage["DesignID"].is_null(){return Err(BAD);}
+                    stored=stored.checked_add(1).ok_or(BAD)?;
+                    continue;
+                }
                 let sub=&exact(state,&["SubGrid"])?["SubGrid"];
                 exact(sub,&["GridID","DesignID"])?;
                 if !sub["DesignID"].is_null()||id(&obj["ItemID"])?/100_000!=400{return Err(BAD);}
@@ -106,7 +117,7 @@ pub fn prepare_house_interior(template:&Value,item:u64,expected_layout:&str,next
         let new=remap[&old];grid["ID"]=json!(new);
         grids.insert(new.to_string(),grid);
     }
-    if refs.len()!=source.len()||counted!=support_count{return Err(BAD);}
+    if refs.len()!=source.len()||counted!=support_count||stored!=storage_count{return Err(BAD);}
     // A disconnected cycle can have one incoming edge per grid and still
     // satisfy reference counts. Require every child to be reachable from a room.
     let mut pending:Vec<(u32,usize)>=roots.into_iter().map(|n|(n,0)).collect();
@@ -129,6 +140,38 @@ fn existing_identity(v:&Value,item:u64,index:u64)->bool{
         Value::Array(a)=>a.iter().any(|v|existing_identity(v,item,index)),
         _=>false
     }
+}
+// Fresh storage allocation intentionally leaves detached/orphan contents untouched.
+fn container_ref(v:&Value,fresh:u32,marked:bool)->bool{
+    match v{
+        Value::Object(m)=>m.iter().any(|(k,v)|{
+            let key=k.to_ascii_lowercase();
+            key!="nextcontainerinventoryid"&&container_ref(v,fresh,marked||key.contains("container")&&key.contains("id"))
+        }),
+        Value::Array(a)=>a.iter().any(|v|container_ref(v,fresh,marked)),
+        _=>marked&&v.as_u64()==Some(u64::from(fresh))
+    }
+}
+fn attach_initial_storage(root:&Value,new:&mut HouseInteriorDraft)->Result<Option<(u32,Value)>,PatchError>{
+    let mut result=None;
+    for grid in new.grids.values_mut(){
+        let objects=grid["Objects"].as_object_mut().ok_or(BAD)?;
+        for obj in objects.values_mut(){
+            if obj["State"].get("Storage").is_none(){continue;}
+            if result.is_some(){return Err(BAD);}
+            let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|!m.is_empty()&&m.len()<8192).ok_or(BAD)?;
+            let fresh=id(&root["Player"]["NextContainerInventoryID"])?;
+            if fresh<2||fresh==u32::MAX||containers.iter().any(|(k,v)|key_id(k).is_err()||key_id(k).is_ok_and(|n|n>=fresh||v["ID"].as_u64()!=Some(u64::from(n))))||container_ref(root,fresh,false){return Err(BAD);}
+            let parent=id(&obj["ItemID"])?;
+            if parent!=40001680||obj["State"]["Storage"]["ContainerInventoryID"].as_u64()!=Some(0){return Err(BAD);}
+            // Steam 1.26.2 protoDb Chest_48Slot: field 2=48, field 4=true,
+            // no materialized slots. Native Initialize assigns ID and parent.
+            let row=json!({"ID":fresh,"Size":48,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":parent,"ExtraSize":0});
+            obj["State"]["Storage"]["ContainerInventoryID"]=json!(fresh);
+            result=Some((fresh,row));
+        }
+    }
+    Ok(result)
 }
 fn exterior_address(v:&Value,grid:u32,object:u32)->bool{
     match v{
@@ -156,9 +199,10 @@ pub fn preview_new_player_house(source:&str,template:&Value,expected_layout:&str
     let target=old_grids.get(&d.grid_id).ok_or(BAD)?;
     let target_next=id(&target["NextGridObjectID"])?;
     if target_next==0||exterior_address(&root,key_id(&d.grid_id)?,target_next){return Err(BAD);}
-    let new=prepare_house_interior(template,item,expected_layout,next)?;
+    let mut new=prepare_house_interior(template,item,expected_layout,next)?;
     let reserved:HashSet<u32>=(next..new.next_grid_id).collect();
     if !grid_capacity(old_grids,diffs,new.grids.len())||reserved_ref(&root,&reserved,false){return Err(BAD);}
+    let storage=attach_initial_storage(&root,&mut new)?;
     let grid_members=new.grids.iter().map(|(key,g)|Ok(format!(",\"{}\":{}",key,serde_json::to_string(g).map_err(|_|BAD)?))).collect::<Result<Vec<_>,PatchError>>()?.join("");
     let house_member=format!(",{}",serde_json::to_string(&new.house).map_err(|_|BAD)?);
     let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
@@ -166,12 +210,21 @@ pub fn preview_new_player_house(source:&str,template:&Value,expected_layout:&str
     let gp=vec![k("World"),k("GridCollection"),k("Grids")];
     let cp=vec![k("World"),k("GridCollection"),k("NextGridID")];
     let hp=vec![k("World"),k("PlayerHouses")];
+    let ip=vec![k("Player"),k("ContainerInventories")];
+    let ic=vec![k("Player"),k("NextContainerInventoryID")];
     for p in [&gp,&cp,&hp]{locator.capture.insert(p.clone(),None);}
+    if storage.is_some(){for p in [&ip,&ic]{locator.capture.insert(p.clone(),None);}}
     locator.walk_complete()?;
     let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(BAD);
     let gr=span(&gp)?;let cr=span(&cp)?;let hr=span(&hp)?;
     if source[cr.clone()].parse::<u32>().ok()!=Some(next){return Err(BAD);}
-    let mut patches=[(gr.end-1..gr.end-1,grid_members),(cr,new.next_grid_id.to_string()),(hr.end-1..hr.end-1,house_member)];
+    let mut patches=vec![(gr.end-1..gr.end-1,grid_members),(cr,new.next_grid_id.to_string()),(hr.end-1..hr.end-1,house_member)];
+    if let Some((fresh,row))=&storage{
+        let mr=span(&ip)?;let counter=span(&ic)?;
+        if source[counter.clone()].parse::<u32>().ok()!=Some(*fresh){return Err(BAD);}
+        patches.push((mr.end-1..mr.end-1,format!(",\"{}\":{}",fresh,row)));
+        patches.push((counter,(fresh+1).to_string()));
+    }
     patches.sort_unstable_by_key(|(r,_)|r.start);
     let mut intermediate=String::new();let mut last=0;
     for (r,v) in patches{if r.start<last{return Err(BAD);}intermediate.push_str(&source[last..r.start]);intermediate.push_str(&v);last=r.end;}
@@ -180,6 +233,10 @@ pub fn preview_new_player_house(source:&str,template:&Value,expected_layout:&str
     root["World"]["GridCollection"]["Grids"].as_object_mut().ok_or(BAD)?.extend(new.grids);
     root["World"]["GridCollection"]["NextGridID"]=json!(new.next_grid_id);
     root["World"]["PlayerHouses"].as_array_mut().ok_or(BAD)?.push(new.house);
+    if let Some((fresh,row))=storage{
+        root["Player"]["ContainerInventories"].as_object_mut().ok_or(BAD)?.insert(fresh.to_string(),row);
+        root["Player"]["NextContainerInventoryID"]=json!(fresh+1);
+    }
     if serde_json::from_str::<Value>(&intermediate).map_err(|_|BAD)?!=root{return Err(BAD);}
     preview_checked_building_initial(&intermediate,d,item,xy,orientation,InitialBuildingState::ExistingPlayerHouse{index})
 }
@@ -227,6 +284,25 @@ mod tests{
         bad["grids"]["5"]["Objects"]=json!({"0":{"ID":0,"ItemID":40000001,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":5,"DesignID":null}}}});
         bad["grids"]["5"]["NextGridObjectID"]=json!(1);
         assert!(prepare_house_interior(&bad,20500002,LAYOUT,90).is_err());
+    }
+    #[test]
+    fn initial_storage_is_independent_and_preserves_existing_contents(){
+        let mut t=template();t["stateFree"]=json!(false);t["stateFields"]=json!({"11":1});
+        t["grids"]["0"]["Objects"]["0"]["ItemID"]=json!(40001680);
+        t["grids"]["0"]["Objects"]["0"]["State"]=json!({"Storage":{"ContainerInventoryID":0,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
+        let raw=json!({"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":3,"ContainerInventories":{"2":{"ID":2,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}]}}},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[{}]}],"GridCollection":{"NextGridID":90,"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":7,"Objects":{}}}}}});
+        let d=PlainGridDestination{grid_id:"10".into(),layout_path:"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json".into(),data_path:"GridData/Villages/Village04-BeachLevel-GridData.json".into(),tessellation:1,size:(100,100)};
+        let p=preview_new_player_house(&raw.to_string(),&t,LAYOUT,20500002,&d,(3,4),"GridOrientation_Down").unwrap();
+        let v:Value=serde_json::from_str(&p.patched_json).unwrap();
+        assert_eq!(v["Player"]["ContainerInventories"]["2"],raw["Player"]["ContainerInventories"]["2"]);
+        assert_eq!(v["Player"]["ContainerInventories"]["3"]["Size"],48);
+        assert_eq!(v["Player"]["ContainerInventories"]["3"]["Inventory"],json!([]));
+        assert_eq!(v["Player"]["NextContainerInventoryID"],4);
+        assert_eq!(v["World"]["GridCollection"]["Grids"]["90"]["Objects"]["0"]["State"]["Storage"]["ContainerInventoryID"],3);
+        let mut bad=raw.clone();bad["World"]["Unknown"]=json!({"ContainerInventoryID":3});
+        assert!(preview_new_player_house(&bad.to_string(),&t,LAYOUT,20500002,&d,(3,4),"GridOrientation_Down").is_err());
+        t["grids"]["0"]["Objects"]["0"]["State"]["Storage"]["DefaultContainerInventoryData"]=json!("Unknown");
+        assert!(prepare_house_interior(&t,20500002,LAYOUT,90).is_err());
     }
     #[test]
     fn invalid_source_graph_is_rejected(){

@@ -44,9 +44,15 @@ fn object(v:Wire)->Result<Value,CodecError>{
  let turn=T.get(int(&f,5)? as usize).ok_or(BAD)?;
  let mut row=json!({"ID":int(&f,1)?,"ItemID":int(&f,2)?,"X":signed(&f,3)?,"Y":signed(&f,4)?,"Orientation":format!("GridOrientation_{}",turn)});
  if let Some(state)=one(&f,6)?{
-  let s=fields(bytes(state)?,&[(1,2)])?;
-  let sub=fields(required(&s,1)?,&[(1,0)])?;
-  row["State"]=json!({"SubGrid":{"GridID":int(&sub,1)?,"DesignID":null}});
+  let s=fields(bytes(state)?,&[(1,2),(11,2)])?;
+  if s.len()!=1{return Err(BAD);}
+  row["State"]=match s[0].0{
+   1=>{let sub=fields(required(&s,1)?,&[(1,0)])?;json!({"SubGrid":{"GridID":int(&sub,1)?,"DesignID":null}})},
+   11=>{let st=fields(required(&s,11)?,&[(2,2)])?;
+    if int(&f,2)?!=40001680||string(&st,2)?!="Chest_48Slot"{return Err(BAD);}
+    json!({"Storage":{"ContainerInventoryID":0,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}})},
+   _=>return Err(BAD)
+  };
  }
  Ok(row)
 }
@@ -61,8 +67,17 @@ fn decode(raw:&[u8],layout:&str)->Result<Value,CodecError>{
  let mut floors=Vec::new();for (_,v) in h{let f=fields(bytes(v)?,&[(1,2)])?;floors.push(json!({"Rooms":map(&f,1,false,room)?}));}
  let c=fields(required(&root,2)?,&[(1,2),(3,0)])?;
  let grids=map(&c,1,false,grid)?;
- let count=grids.as_object().ok_or(BAD)?.values().map(|g|g["Objects"].as_object().map_or(0,|m|m.values().filter(|o|o.get("State").is_some()).count())).sum::<usize>();
- Ok(json!({"layoutPath":layout,"floors":floors,"grids":grids,"sourceNextGridID":int(&c,3)?,"stateFree":count==0,"stateFields":if count==0{json!({})}else{json!({"1":count})}}))
+ let mut counts=Map::new();
+ for grid in grids.as_object().ok_or(BAD)?.values(){
+  for obj in grid["Objects"].as_object().ok_or(BAD)?.values(){
+   if let Some(state)=obj.get("State"){
+    let k=if state.get("SubGrid").is_some(){"1"}else if state.get("Storage").is_some(){"11"}else{return Err(BAD);};
+    let count=counts.get(k).and_then(Value::as_u64).unwrap_or(0)+1;
+    counts.insert(k.to_owned(),json!(count));
+   }
+  }
+ }
+ Ok(json!({"layoutPath":layout,"floors":floors,"grids":grids,"sourceNextGridID":int(&c,3)?,"stateFree":counts.is_empty(),"stateFields":counts}))
 }
 pub(super) fn verified_template(item:u64,hex:&str)->Result<Value,CodecError>{
  if hex.is_empty()||hex.len()>16384||hex.len()%2!=0||!hex.bytes().all(|b|b.is_ascii_hexdigit()){return Err(BAD);}
