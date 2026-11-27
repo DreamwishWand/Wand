@@ -13,7 +13,7 @@
   let copy=$derived(locale==='ja'?ja:en);
   onMount(()=>{
     let alive=true;
-    void loadPagesPoseIndex(base).then(m=>{if(!alive||!m)return;const row=m.items[String(itemId)];if(!row)return;playerOnly=bodyTypes.some(b=>row[b]?.kind==='player');options=bodyTypes.flatMap((b,i)=>{const entry=row[b];return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:copy.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPairScene(base,itemId,entry,copy.companion,signal)}]:[]})}).catch(()=>{});
+    void loadPagesPoseIndex(base).then(m=>{if(!alive||!m)return;const row=m.items[String(itemId)];if(!row)return;playerOnly=bodyTypes.some(b=>row[b]?.kind==='player');options=bodyTypes.flatMap((b,i)=>{const entry=row[b];return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:copy.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,copy.companion,signal)}]:[]})}).catch(()=>{});
     return()=>{alive=false};
   });
 </script>
