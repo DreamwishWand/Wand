@@ -6,6 +6,7 @@
  import {nativeEditorExtent,editorViewToNativeCanvas,nativeMapSourceScope,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
+ import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
  import NativeCalibrationOverlay from '$lib/world/NativeCalibrationOverlay.svelte';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
@@ -15,6 +16,12 @@
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
  let points:NativeLandmark[]=[];
+ let overrides=new Map<number,boolean>();
+ $: states=new Map((map?.areaPlan?.areaTypes??[]).map(id=>[id,overrides.get(id)??locked]));
+ $: drawLayers=map?(map.areaPlan?selectNativeAreaLayers(map.locked,map.areaPlan,states):locked?map.locked:map.unlocked):[];
+ $: stateKey=map?.id+':'+locked+':'+[...states].map(([id,value])=>id+'='+Number(value)).join(',');
+ function toggleArea(id:number,value:boolean){overrides=new Map(overrides).set(id,value);points=[];}
+ function resetAreas(){overrides=new Map();points=[];}
  let knownX:number|undefined,knownZ:number|undefined,reference='',reportError='';
  $: lastPoint=points.at(-1);
  $: lastMeasurement=map&&lastPoint?nativeLandmarkMeasurement(map,lastPoint):null;
@@ -31,18 +38,18 @@
   try{
    const {maps:next,source:provider}=await openNativePreviewPack(files);
    if(revision!==ticket)return;
-   nativePreviewSession.set({maps:next,source:provider});maps=next;source=provider;selected=initialMap(next);camera=defaultMapCamera();points=[];status='drawing';
+   nativePreviewSession.set({maps:next,source:provider});maps=next;source=provider;selected=initialMap(next);camera=defaultMapCamera();resetAreas();status='drawing';
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
  }
- function clear(){ticket++;nativePreviewSession.clear();maps=[];source=null;selected='';points=[];error='';}
- function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();points=[];}
+ function clear(){ticket++;nativePreviewSession.clear();maps=[];source=null;selected='';resetAreas();error='';}
+ function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();resetAreas();}
  function attachReference(){
   if(!map||!lastPoint||typeof knownX!=='number'||typeof knownZ!=='number'||!Number.isFinite(knownX)||!Number.isFinite(knownZ)||!reference.trim())return;
   const p={...lastPoint,worldXZ:[knownX,knownZ] as const,reference:reference.trim()};
   try{nativeLandmarkMeasurement(map,p);points=[...points.slice(0,-1),p];knownX=undefined;knownZ=undefined;reference='';reportError='';}catch(e){reportError=e instanceof Error?e.message:'比較点の座標が無効です';}
  }
  async function exportLandmarks(){
-  if(!map||!points.length)return;
+  if(!map||!points.length||overrides.size)return;
   reportError='';
   try{
    const report=await nativeLandmarkReport(map,locked,points);
@@ -77,9 +84,10 @@
   {#if map&&source}
    <button type="button" on:click={clear}>素材を解除</button>
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
-   <label><input type="checkbox" bind:checked={locked} on:change={()=>points=[]}/> 全区画を未解放として表示</label>
+   <label><input type="checkbox" bind:checked={locked} on:change={resetAreas}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
-   <button type="button" disabled={!points.length||status!=='ready'} on:click={exportLandmarks}>検証座標を保存</button>
+   <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>検証座標を保存</button>
+   {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> 区画 {id} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>手動指定・セーブ判定ではありません。個別設定中は座標記録の出力を無効にします。</p></details>{/if}
    {#if terrainScope}<label><input type="checkbox" bind:checked={showTerrain}/> 原本地形を重ねる</label>
     {#if showTerrain}<label>地形の濃さ <input type="range" min="0" max="1" step=".05" bind:value={terrainOpacity}/></label>{/if}
    {/if}
@@ -88,7 +96,7 @@
  {#if error}<p role="alert">{error}</p>{/if}
  {#if map&&source}
   <div class="frame">
-   <NativeMapCanvas layers={locked?map.locked:map.unlocked} view={editorViewToNativeCanvas(map,viewport)} {source} activeKey={map.id+':'+locked} onStatus={s=>status=s}/>
+   <NativeMapCanvas layers={drawLayers} view={editorViewToNativeCanvas(map,viewport)} {source} activeKey={stateKey} onStatus={s=>status=s}/>
    <svg bind:this={svg} viewBox={viewBox} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Editor coordinate candidate"
      on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
      on:pointerdown={beginPan} on:dragstart|preventDefault
