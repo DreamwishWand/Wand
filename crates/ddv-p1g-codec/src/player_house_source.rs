@@ -40,9 +40,15 @@ fn room(v:Wire)->Result<Value,CodecError>{
 }
 fn object(v:Wire)->Result<Value,CodecError>{
  const T:[&str;16]=["Up","UpUpRight","UpRight","UpRightRight","Right","DownRightRight","DownRight","DownDownRight","Down","DownDownLeft","DownLeft","DownLeftLeft","Left","UpLeftLeft","UpLeft","UpUpLeft"];
- let f=fields(bytes(v)?,&[(1,0),(2,0),(3,0),(4,0),(5,0)])?;
+ let f=fields(bytes(v)?,&[(1,0),(2,0),(3,0),(4,0),(5,0),(6,2)])?;
  let turn=T.get(int(&f,5)? as usize).ok_or(BAD)?;
- Ok(json!({"ID":int(&f,1)?,"ItemID":int(&f,2)?,"X":signed(&f,3)?,"Y":signed(&f,4)?,"Orientation":format!("GridOrientation_{}",turn)}))
+ let mut row=json!({"ID":int(&f,1)?,"ItemID":int(&f,2)?,"X":signed(&f,3)?,"Y":signed(&f,4)?,"Orientation":format!("GridOrientation_{}",turn)});
+ if let Some(state)=one(&f,6)?{
+  let s=fields(bytes(state)?,&[(1,2)])?;
+  let sub=fields(required(&s,1)?,&[(1,0)])?;
+  row["State"]=json!({"SubGrid":{"GridID":int(&sub,1)?,"DesignID":null}});
+ }
+ Ok(row)
 }
 fn grid(v:Wire)->Result<Value,CodecError>{
  let f=fields(bytes(v)?,&[(1,0),(2,2),(3,2),(4,0),(5,2),(6,0)])?;
@@ -54,7 +60,9 @@ fn decode(raw:&[u8],layout:&str)->Result<Value,CodecError>{
  let h=fields(required(&root,1)?,&[(1,2)])?;
  let mut floors=Vec::new();for (_,v) in h{let f=fields(bytes(v)?,&[(1,2)])?;floors.push(json!({"Rooms":map(&f,1,false,room)?}));}
  let c=fields(required(&root,2)?,&[(1,2),(3,0)])?;
- Ok(json!({"layoutPath":layout,"floors":floors,"grids":map(&c,1,false,grid)?,"sourceNextGridID":int(&c,3)?,"stateFree":true,"stateFields":{}}))
+ let grids=map(&c,1,false,grid)?;
+ let count=grids.as_object().ok_or(BAD)?.values().map(|g|g["Objects"].as_object().map_or(0,|m|m.values().filter(|o|o.get("State").is_some()).count())).sum::<usize>();
+ Ok(json!({"layoutPath":layout,"floors":floors,"grids":grids,"sourceNextGridID":int(&c,3)?,"stateFree":count==0,"stateFields":if count==0{json!({})}else{json!({"1":count})}}))
 }
 pub(super) fn verified_template(item:u64,hex:&str)->Result<Value,CodecError>{
  if hex.is_empty()||hex.len()>16384||hex.len()%2!=0||!hex.bytes().all(|b|b.is_ascii_hexdigit()){return Err(BAD);}
@@ -70,5 +78,11 @@ pub(super) fn verified_template(item:u64,hex:&str)->Result<Value,CodecError>{
 mod tests{
  use super::*;
  #[test]fn unverified_template_rejects_even_valid_wire(){assert!(verified_template(20500001,"0a001200").is_err());assert!(verified_template(20500001,"éé").is_err());}
+ #[test]fn native_support_state_only(){
+  let row=object(Wire::Bytes(&[0x10,0x01,0x32,0x04,0x0a,0x02,0x08,0x05])).unwrap();
+  assert_eq!(row["State"]["SubGrid"]["GridID"],5);
+  assert!(object(Wire::Bytes(&[0x32,0x02,0x5a,0x00])).is_err());
+  assert!(object(Wire::Bytes(&[0x32,0x04,0x0a,0x02,0x10,0x01])).is_err());
+ }
  #[test]fn bounded_wire(){assert!(fields(&[0x08,0x80],&[(1,0)]).is_err());assert!(fields(&[0x12,0xff],&[(2,2)]).is_err());assert!(fields(&[0x08,0x01],&[(2,0)]).is_err());}
 }
