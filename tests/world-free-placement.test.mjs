@@ -58,3 +58,19 @@ test('player house exterior duplication targets exact grids in the same world',(
  assert.equal(playerHousePickup(p,[p]),null);
  assert.equal(playerHousePickup(p,[p,{...p,area:h.key,object:{...p.object,localOrdinal:2}}]).plan.action,'remove');
 });
+
+import {mainlandTransferCandidate} from '../src/lib/world/mainland-saved-objects.ts';
+test('free player house move uses the destination Grid even without ordinary terrain',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});
+ const h=bindMainlandGrid({key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:196,sizeY:100});
+ assert.ok(g&&h);
+ const raster=(g)=>({sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)});
+ const rasters=new Map([[g.key,raster(g)],[h.key,raster(h)]]);
+ rasters.get(h.key).nativeFloorValues[6*h.sizeX+5]=4;
+ const p={area:g.key,factor:1,x:g.bounds.x+1,y:g.bounds.y+g.bounds.h-1,shape:{width:2,height:2,cellCount:4,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}]},object:{...o,itemId:'20500001',nativeType:'Building',layer:'other'}};
+ const x=h.bounds.x+5.1,y=h.bounds.y+h.bounds.h-6.1;
+ assert.equal(mainlandTransferCandidate(p,[g,h],rasters,emptyWorldTimeline(),x,y),null);
+ const move=mainlandTransferCandidate(p,[g,h],rasters,emptyWorldTimeline(),x,y,true);
+ assert.ok(move);assert.equal(move.area,h.key);assert.deepEqual([move.plan.x,move.plan.y],[5,6]);
+ assert.equal(mainlandTransferCandidate({...p,object:{...p.object,subgrid:{}}},[g,h],rasters,emptyWorldTimeline(),x,y,true),null);
+});
