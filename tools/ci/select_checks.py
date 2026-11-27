@@ -40,7 +40,7 @@ SOURCE_PATTERNS = {
 def source_checks(paths: list[str], *, full: bool = False) -> dict[str, bool]:
     # Unknown diff or explicit regression runs exercise all source contracts.
     all_sources = full or not paths or any(
-        p.startswith("tools/ci/") or p.startswith(".github/workflows/") for p in paths
+        p.startswith("tools/ci/") or p.startswith(".github/workflows/") or p.startswith(".github/actions/") for p in paths
     )
     return {name: all_sources or any(fnmatchcase(path, pattern) for path in paths for pattern in patterns)
             for name, patterns in SOURCE_PATTERNS.items()}
@@ -87,7 +87,7 @@ def main() -> None:
     # Exercise changes to the publication code before they reach main.
     result["pages"] = args.full or not paths or any(
         p == ".github/workflows/publish.yml" or p == ".github/workflows/collection.yml"
-        or p.startswith("tools/ci/") or p == "scripts/build-collection-images.py"
+        or p.startswith("tools/ci/") or p.startswith(".github/actions/") or p == "scripts/build-collection-images.py"
         for p in paths
     )
     result.update(source_checks(paths, full=args.full))

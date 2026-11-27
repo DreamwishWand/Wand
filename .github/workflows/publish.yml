@@ -46,11 +46,29 @@ jobs:
           path: ~/.npm
           key: npm-downloads-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json') }}
           restore-keys: npm-downloads-${{ runner.os }}-
-      - run: wasm-pack build crates/wand-collection-core --release --target web --out-dir ../../src/lib/collection/wasm/pkg
-      - run: wasm-pack build crates/ddv-save-schema --release --target web --out-dir ../../src/lib/save/wasm/pkg --features wasm
-      - run: wasm-pack build crates/ddv-p1g-codec --release --target web --out-dir ../../src/lib/save/wasm/p1g-pkg --features wasm
-      - run: wasm-pack build crates/wand-acquisition-core --release --target web --out-dir ../../src/lib/acquisition/wasm/pkg --features wasm
-      - run: wasm-pack build crates/wand-world-core --release --target web --out-dir ../../src/lib/world/wasm/pkg
+      - uses: ./.github/actions/wand-wasm
+        with:
+          crate: crates/wand-collection-core
+          output: src/lib/collection/wasm/pkg
+      - uses: ./.github/actions/wand-wasm
+        with:
+          crate: crates/ddv-save-schema
+          output: src/lib/save/wasm/pkg
+          features: wasm
+      - uses: ./.github/actions/wand-wasm
+        with:
+          crate: crates/ddv-p1g-codec
+          output: src/lib/save/wasm/p1g-pkg
+          features: wasm
+      - uses: ./.github/actions/wand-wasm
+        with:
+          crate: crates/wand-acquisition-core
+          output: src/lib/acquisition/wasm/pkg
+          features: wasm
+      - uses: ./.github/actions/wand-wasm
+        with:
+          crate: crates/wand-world-core
+          output: src/lib/world/wasm/pkg
       - run: npm install --no-audit --no-fund
       - run: python3 scripts/build-collection-images.py
       - run: npm run build
