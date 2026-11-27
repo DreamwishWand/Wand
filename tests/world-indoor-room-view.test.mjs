@@ -298,3 +298,11 @@ test('removal requires a verified empty room or last floor projection',()=>{
  assert.throws(()=>parseIndoorRooms(report([{...r,roomSlot:0,removeKind:'floor'}])));
  assert.equal(indoorRemoveRoomPlan(parseIndoorRooms(report([{...r,roomSlot:0,floor:2,removeKind:'floor'}]))[0]).kind,'floor');
 });
+
+test('occupied resize marks anchor-only options explicitly',()=>{
+ const r={...room,resize:{current:'6x6',options:['6x8'],anchorOptions:['12x12']}};
+ const p=parseIndoorRooms(report([r]))[0];
+ assert.deepEqual(indoorRoomResizePlan(p,'12x12'),{roomOrdinal:1,expected:'6x6',size:'12x12',preserveAnchors:true});
+ assert.deepEqual(indoorRoomResizePlan(p,'6x8'),{roomOrdinal:1,expected:'6x6',size:'6x8'});
+ assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,anchorOptions:['6x8']}}])));
+});
