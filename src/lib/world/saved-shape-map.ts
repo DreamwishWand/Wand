@@ -33,7 +33,7 @@ export function parseSavedShapePoints(input:unknown):SavedNumericPoint[]{
       throw new TypeError('DB04_SAVE_SHAPE_POINT_INVALID');
     seen.add(row.localOrdinal);
     return {localOrdinal:row.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
-      x:row.x,y:row.y,orientation:row.orientation as string|null,...(row.subgrid===undefined?{}:{subgrid:parseSavedSubgridSummary(row.subgrid)})};
+      x:row.x,y:row.y,orientation:row.orientation as string|null,...(row.subgrid===undefined?{}:{subgrid:parseSavedSubgridSummary(row.subgrid)}),...(row.storage===true?{storage:true as const}:{})};
   });
 }
 export function buildSavedShapeMap(source:unknown,layoutId:string,gridIdNative:number,input:unknown):SavedShapeMap{

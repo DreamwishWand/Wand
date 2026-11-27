@@ -1258,7 +1258,8 @@ fn saved_db04_source_projection(
                         "sourceRefIndex":witness_index,
                         "savedFactor":factor,
                         "sourceLocalCoordinateMappingVerified":aligned,
-                        "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id)
+                        "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id),
+                        "storage":aligned&&target.item_id/100_000==400&&grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o))
                     }));
                 }
             }
@@ -2578,11 +2579,15 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
     let mut hierarchy=Vec::with_capacity(rows.len());
+    let mut storage_flags=Vec::with_capacity(rows.len());
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut poses=Vec::with_capacity(rows.len());
     let mut anchors=HashSet::new();
     for row in rows{
-        let o=row.as_object().filter(|o|(o.len()==9||o.len()==10&&o.contains_key("supportFactor"))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"))).ok_or(bad)?;
+        let storage=row.get("storage").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+        if storage&&row.get("supportFactor").is_some(){return Err(bad);}
+        let o=row.as_object().filter(|o|o.len()==9+usize::from(o.contains_key("supportFactor"))+usize::from(storage)&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"|"storage"))).ok_or(bad)?;
+        storage_flags.push(storage);
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
@@ -2618,7 +2623,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let mut same=Vec::new();
     let mut cross=Vec::new();
     let mut same_trees=Vec::new();
-    for (((target,selection),(key,xy,orientation)),factor) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy){
+    for ((((target,selection),(key,xy,orientation)),factor),&storage) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy).zip(&storage_flags){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
         let raw_layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
         let recovered;
@@ -2633,14 +2638,14 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
-        if free{
+        if free||storage{
             let from=house_exterior_identity(&root,&target.grid_id)?;
             let to=house_exterior_identity(&root,&d.grid_id)?;
             let diagonal=|o:&str|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o);
             if to.1!=d.layout_path||to.2!=u64::from(d.tessellation)||to.3!=u64::from(d.size.0)||to.4!=u64::from(d.size.1)||
                selection.2.0<0||selection.2.1<0||selection.2.0 as u64>=from.3*from.2||selection.2.1 as u64>=from.4*from.2||
-               diagonal(selection.4.as_deref().ok_or(bad)?)&&(from.2!=1||from.0.starts_with("SceneLayouts/FloatingIslands/"))||
-               diagonal(orientation)&&(to.2!=1||to.0.starts_with("SceneLayouts/FloatingIslands/"))||
+               diagonal(selection.4.as_deref().ok_or(bad)?)&&(storage||from.2!=1||from.0.starts_with("SceneLayouts/FloatingIslands/"))||
+               diagonal(orientation)&&(storage||to.2!=1||to.0.starts_with("SceneLayouts/FloatingIslands/"))||
                grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
         }
         let tree=if let Some(factor)=factor{
@@ -2659,7 +2664,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }
             Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
-            if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
+            if storage{if !ddv_save_patch::storage_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
             None
         };
         let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
@@ -2673,7 +2678,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         }else{
             *new_counts.entry(d.grid_id.clone()).or_default()+=1;
             old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
-            cross.push((target,selection.2,d,*xy,orientation,tree));
+            cross.push((target,selection.2,d,*xy,orientation,tree,storage));
         }
     }
     if same.is_empty()&&cross.is_empty(){return Err(bad);}
@@ -2696,8 +2701,8 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let draft=preview_existing_grid_mixed_batch(&working,&same).map_err(|_|CodecError::Patch)?;
         update(&mut working,draft)?;
     }
-    for (target,expected,d,xy,orientation,tree) in cross{
-        let draft=if let Some(tree)=tree{
+    for (target,expected,d,xy,orientation,tree,storage) in cross{
+        let draft=if storage{ddv_save_patch::preview_storage_transfer(&working,target,expected,d,xy,orientation,false,free).map_err(|_|CodecError::Patch)?}else if let Some(tree)=tree{
             let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
             let next=current.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
             let draft=preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;

@@ -1,6 +1,6 @@
 import type {SymmetryMode} from './design-symmetry.ts';
 import {stockSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
-import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
+import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode,isCardinal,type EightWay} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import {rotateDesignClipboard,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -9,11 +9,11 @@ import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {supportParentEligible} from './subgrid-local.ts';
 
-export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
+export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{if(p.object.storage)return allowSupport&&stockSourceEligible(p)&&isCardinal(p.object.orientation);const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
 export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false,free=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
-  if(!(free?stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  if(!(p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const code=worldOrientationCode(p.object.orientation);
   if(code===null||code%4!==0&&!free)return null;
   const orientation=code/4;
