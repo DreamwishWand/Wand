@@ -25,7 +25,9 @@ const rigidActor='120000147',partialActor='120000177';
 assert.ok(index.items[rigidActor]?.male?.companionIncluded===true&&index.items[rigidActor]?.female?.companionIncluded===true,'rigid actor');
 assert.ok(index.items[partialActor]?.male?.companionIncluded===false&&index.items[partialActor]?.female?.companionIncluded===true,'body-specific actor');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,6);
-const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const props=['70200018','70200020'];
+assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessoryIncluded===true)),'both prop scenes');
+const ids=[...new Set([...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,33);
 assert.equal(Object.keys(index.items).length,255);
@@ -64,7 +66,7 @@ try{
       const t=await seek.inputValue();
       const toggle=preview.locator('input[type=checkbox]');
       const option=index.items[id][b===0?'male':'female'];
-      const hasActor=option.kind==='pair'||option.companionIncluded===true;
+      const hasActor=option.kind==='pair'||option.companionIncluded===true||option.accessoryIncluded===true;
       assert.equal(await toggle.count(),hasActor?1:0);
       if(hasActor){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
       const canvas=preview.locator('canvas');

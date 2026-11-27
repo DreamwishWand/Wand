@@ -64,10 +64,11 @@ if __name__=='__main__':
     p.add_argument('--actor-bind',type=Path,help='Local copy of the native-bind actor overlay')
     p.add_argument('--actor-curve',type=Path,help='Local copy of the curve-flag actor overlay')
     p.add_argument('--actor-partial',type=Path,help='Local copy of rigid and body-specific actor overlay')
+    p.add_argument('--props',type=Path,help='Local copy of native accessory overlay')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -88,3 +89,5 @@ if __name__=='__main__':
         apply_curve(a.actor_curve.read_bytes() if a.actor_curve else download_curve(), a.dest)
         from prepare_actor_partial import download_partial, apply_partial
         apply_partial(a.actor_partial.read_bytes() if a.actor_partial else download_partial(), a.dest)
+        from prepare_photo_props import download_props, apply_props
+        apply_props(a.props.read_bytes() if a.props else download_props(), a.dest)

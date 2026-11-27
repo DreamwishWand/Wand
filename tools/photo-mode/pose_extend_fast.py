@@ -2,6 +2,7 @@
 import argparse, json, struct, shutil
 from pathlib import Path
 import numpy as np
+from scipy.spatial.transform import Rotation
 from pose_extend_package import read,verified
 from resolve_animation_bundle import digest,unityfs
 from pose_curves import decode,require
@@ -20,11 +21,12 @@ def sample_tracks(clip,nodes):
     cols.extend(np.full(len(ts),v) for v in clip['constants']);values=np.asarray(cols).T;require(np.isfinite(values).all(),'nonfinite sample')
     g=Glb();doc=g.doc;animation=dict(name=clip['name'],samplers=[],channels=[],extras=dict(sourceSha256=clip['sha256'],fullPoseVerified=False));time=g.add(times,'SCALAR','<f4',bounds=True);seen=set()
     for b in bind(clip,{'nodes':nodes})['matched']:
-        i=b['node'];path={1:'translation',2:'rotation',3:'scale'}.get(b['attribute']);
+        i=b['node'];path={1:'translation',2:'rotation',3:'scale',4:'rotation'}.get(b['attribute']);
         if path is None:continue
         require((i,path) not in seen,'duplicate track');seen.add((i,path));v=values[:,b['offset']:b['offset']+b['dimensions']].copy()
         if path=='translation':v*=np.array([-1,1,1])
         if path=='rotation':
+            if b['attribute']==4:v=Rotation.from_euler('zxy',v[:,[2,0,1]],degrees=True).as_quat()
             v*=np.array([1,-1,-1,1]);norm=np.linalg.norm(v,axis=1);require(np.all(norm>1e-7),'zero quaternion');v/=norm[:,None]
         v=v.astype(np.float32)
         if path=='rotation':
