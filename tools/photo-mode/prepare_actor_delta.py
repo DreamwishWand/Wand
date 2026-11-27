@@ -21,10 +21,15 @@ def duration(doc, animation):
     return max(doc["accessors"][s["input"]]["max"][0] for s in animation["samplers"])
 
 def apply_actors(raw, dest):
-    require(len(raw)==ACTOR_BYTES and digest(raw)==ACTOR_SHA, "actor release integrity")
+    return apply_actor_archive(raw, dest, size=ACTOR_BYTES, sha=ACTOR_SHA, base_count=107, item_count=36,
+                               schema="wand.photo-mode.companion-actor-delta@1",
+                               manifest="companion-actor-delta.json")
+
+def apply_actor_archive(raw, dest, *, size, sha, base_count, item_count, schema, manifest, prior=None):
+    require(len(raw)==size and digest(raw)==sha, "actor release integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["publicationAuthorized"] is True
-            and public["testOnly"] is True and public["fullPoseVerified"] is False and len(public["items"])==107,
+            and public["testOnly"] is True and public["fullPoseVerified"] is False and len(public["items"])==base_count,
             "unexpected base manifest")
     models=public["models"];nodes={}
     for b in BODY_TYPES:
@@ -36,12 +41,14 @@ def apply_actors(raw, dest):
         for i in archive.infolist():
             require(not i.is_dir() and i.filename not in files,"invalid archive entry")
             files[i.filename]=i
-        mi=files.get("companion-actor-delta.json")
+        mi=files.get(manifest)
         require(mi is not None and mi.file_size<1024*1024,"missing manifest")
         m=json.loads(archive.read(mi))
-        require(m["schema"]=="wand.photo-mode.companion-actor-delta@1" and m["gameVersion"]==public["gameVersion"]
+        require(m["schema"]==schema and m["gameVersion"]==public["gameVersion"]
                 and m["baseReleaseSha256"]==RELEASE_SHA and m["baseCompanionDeltaSha256"]==DELTA_SHA
-                and m["models"]==models and len(m["items"])==36,"actor release identity")
+                and m["models"]==models and len(m["items"])==item_count,"actor release identity")
+        if prior is not None:
+            require(all(m.get(k)==v for k,v in prior.items()) and m.get("variants")=={},"actor expansion base identity")
         assets={};updates={}
         for item,row in m["items"].items():
             require(re.fullmatch(r"12[0-9]{7}",item) is not None and item in public["items"],"unknown companion")
@@ -63,6 +70,7 @@ def apply_actors(raw, dest):
             for b in BODY_TYPES:
                 o=public["items"][item][b];a=row["anchors"][b]
                 require(o["kind"]=="player" and o["companionIncluded"] is False
+                        and (prior is None or row["playerSourceSha256"][b]==o["sourceSha256"])
                         and type(a["node"]) is int and 0<=a["node"]<len(nodes[b])
                         and nodes[b][a["node"]]["name"]==a["path"],"actor attachment identity")
                 c=entry(o["clip"]);wpa=(dest/(c["sha256"]+".wpa")).read_bytes()
@@ -70,7 +78,7 @@ def apply_actors(raw, dest):
                 pd=metadata(wpa,True);require(abs(duration(pd,pd["animation"])-dur)<1e-5,"actor timing mismatch")
                 options[b]={**o,"companionIncluded":True,"actor":{**e,"sourceSha256":source},"anchor":a}
             updates[item]=options
-        require(len(assets)==36 and set(files)=={"companion-actor-delta.json",*assets},"unexpected actor assets")
+        require(len(assets)==item_count and set(files)=={manifest,*assets},"unexpected actor assets")
         for name,data in assets.items():
             path=dest/name
             if path.exists():require(path.read_bytes()==data,"actor asset conflict")
