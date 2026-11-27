@@ -20,8 +20,8 @@ export type ActorEntry=BlobEntry & {sourceSha256:string};
 type SceneNode={name:string;children?:number[];mesh?:number;skin?:number;extras?:{actorId?:string}};
 type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number}[]};
 type SceneMaterial={pbrMetallicRoughness:{baseColorFactor:number[];baseColorTexture?:{index:number}}};
-type SceneAnimation=Animation & {extras:Animation['extras']&{companionItemId?:number;companionClipSha256?:string}};
-type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean}}};
+type SceneAnimation=Animation & {extras:Animation['extras']&{companionItemId?:number;companionClipSha256?:string;propItemId?:number;propClipSha256?:string}};
+type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean;propActorDiagnostic?:boolean;attachedPropDiagnostic?:boolean}}};
 function checkedIndex(n:number,size:number){check(Number.isSafeInteger(n)&&n>=0&&n<size,'Actor index out of range');return n}
 function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,otherBin:Uint8Array){
   const bo=(bin.length+3)&~3,vo=doc.bufferViews.length,ao=doc.accessors.length;
@@ -32,14 +32,21 @@ function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,other
   return {bin:out,accessor:(i:number)=>checkedIndex(i,other.accessors.length)+ao,view:(i:number)=>checkedIndex(i,other.bufferViews.length)+vo};
 }
 /** Compose the original attached actor without duplicating the player model or animation. */
-export async function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string):Promise<ArrayBuffer>{
+export function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string){
+  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'companion');
+}
+export function attachProp(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string){
+  check(entry.sourceSha256===playerSourceSha256,'Prop animation identity');
+  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'prop');
+}
+async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,kind:'companion'|'prop'):Promise<ArrayBuffer>{
   check(validHash(entry.sourceSha256)&&validHash(playerSourceSha256)&&Number.isSafeInteger(itemId)&&itemId>0,'Invalid attached actor identity');
   await verifyBlob(actorBytes,entry);
   const {doc:p,bin:pb}=decode<SceneDocument>(playerBytes,false),{doc:a,bin:ab}=decode<SceneDocument>(actorBytes,false);
   bounds(p,pb);bounds(a,ab);
-  check(p.asset.extras.privateOnly===true&&p.asset.extras.fullPoseVerified===false&&p.animations.length===1&&p.animations[0].extras.sourceSha256===playerSourceSha256&&p.animations[0].extras.companionItemId===undefined,'Invalid player scene');
-  check(a.asset.extras.privateOnly===true&&a.asset.extras.fullPoseVerified===false&&a.asset.extras.companionActorDiagnostic===true&&a.animations.length===1&&a.animations[0].extras.sourceSha256===entry.sourceSha256&&a.animations[0].extras.fullPoseVerified===false,'Invalid companion scene');
-  check(p.nodes[checkedIndex(anchor.node,p.nodes.length)].name===anchor.path&&a.scenes[a.scene]?.nodes.length===1&&a.scenes[a.scene].nodes[0]===0&&a.nodes.length>0&&a.nodes.every(n=>n.extras?.actorId==='companion'),'Invalid actor anchor or root');
+  check(p.asset.extras.privateOnly===true&&p.asset.extras.fullPoseVerified===false&&p.animations.length===1&&p.animations[0].extras.sourceSha256===playerSourceSha256&&p.animations[0].extras.companionItemId===undefined&&p.animations[0].extras.propItemId===undefined,'Invalid player scene');
+  check(a.asset.extras.privateOnly===true&&a.asset.extras.fullPoseVerified===false&&(kind==='companion'?a.asset.extras.companionActorDiagnostic===true:a.asset.extras.propActorDiagnostic===true)&&a.animations.length===1&&a.animations[0].extras.sourceSha256===entry.sourceSha256&&a.animations[0].extras.fullPoseVerified===false,'Invalid companion scene');
+  check(p.nodes[checkedIndex(anchor.node,p.nodes.length)].name===anchor.path&&a.scenes[a.scene]?.nodes.length===1&&a.scenes[a.scene].nodes[0]===0&&a.nodes.length>0&&a.nodes.every(n=>n.extras?.actorId===kind),'Invalid actor anchor or root');
   check(a.meshes.length>0&&a.skins.length>0&&a.materials.length>0&&a.images?.length&&a.textures?.length,'Missing companion geometry or texture');
   const no=p.nodes.length,mo=p.meshes.length,so=p.skins.length,ma=p.materials.length;
   const pi=p.images??(p.images=[]),pt=p.textures??(p.textures=[]),io=pi.length,to=pt.length;
@@ -56,8 +63,8 @@ export async function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBu
   check(source.channels.length>0,'Missing actor animation channels');
   target.samplers.push(...source.samplers.map(s=>{check(s.interpolation==='LINEAR','Unsupported actor animation');return {...s,input:accessor(s.input),output:accessor(s.output)}}));
   target.channels.push(...source.channels.map(c=>{check(['translation','rotation','scale'].includes(c.target.path),'Unsupported actor channel');return {...c,sampler:checkedIndex(c.sampler,source.samplers.length)+s0,target:{...c.target,node:node(c.target.node)}}}));
-  target.extras={...target.extras,companionItemId:itemId,companionClipSha256:entry.sourceSha256};
-  p.asset.extras.attachedPairDiagnostic=true;
+  if(kind==='companion'){target.extras={...target.extras,companionItemId:itemId,companionClipSha256:entry.sourceSha256};p.asset.extras.attachedPairDiagnostic=true}
+  else {target.extras={...target.extras,propItemId:itemId,propClipSha256:entry.sourceSha256};p.asset.extras.attachedPropDiagnostic=true}
   const js=new TextEncoder().encode(JSON.stringify(p)),n=(js.length+3)&~3,binLen=(bin.length+3)&~3,out=new ArrayBuffer(28+n+binLen),v=new DataView(out),u=new Uint8Array(out);
   [0x46546c67,2,out.byteLength,n,0x4e4f534a].forEach((x,i)=>v.setUint32(i*4,x,true));u.fill(32,20,20+n);u.set(js,20);v.setUint32(20+n,binLen,true);v.setUint32(24+n,0x004e4942,true);u.set(bin,28+n);
   return out;

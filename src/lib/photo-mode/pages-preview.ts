@@ -1,10 +1,10 @@
 import {openPrivateDiagnostic} from '../../../tools/photo-mode/gpu-scene-loader.ts';
-import {combine,attachCompanion,verifyBlob,type BlobEntry,type ClipEntry,type Manifest,type ActorEntry,type ActorAnchor} from '../../../tools/photo-mode/split-loader.ts';
+import {combine,attachCompanion,attachProp,verifyBlob,type BlobEntry,type ClipEntry,type Manifest,type ActorEntry,type ActorAnchor} from '../../../tools/photo-mode/split-loader.ts';
 import type {PoseScene} from './scene-session.ts';
 export const bodyTypes=['male','female'] as const;
 export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
-export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry;accessoryIncluded:false}&({companionIncluded?:false;actor?:never;anchor?:never}|{companionIncluded:true;actor:ActorEntry;anchor:ActorAnchor});
+export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry}&(({accessoryIncluded:false;prop?:never}&({companionIncluded?:false;actor?:never;anchor?:never}|{companionIncluded:true;actor:ActorEntry;anchor:ActorAnchor}))|{accessoryIncluded:true;prop:ActorEntry;anchor:ActorAnchor;companionIncluded?:never;actor?:never});
 export type PreviewOption=PairOption|PlayerOption;
 export type PoseRow=Partial<Record<BodyType,PreviewOption>>;
 export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>};
@@ -19,7 +19,7 @@ export function loadPagesPoseIndex(base:string){
     check((m.schema==='wand.photo-mode.pages-test@1'||m.schema==='wand.photo-mode.pages-test@2')&&m.publicationAuthorized===true&&m.testOnly===true&&m.fullPoseVerified===false,'Invalid approved test manifest');
     check(bodyTypes.every(b=>validEntry(m.bodyIcons[b])),'Invalid body icons');
     if(m.schema==='wand.photo-mode.pages-test@2')check(m.models&&bodyTypes.every(b=>validEntry(m.models![b])),'Invalid models');
-    function validateRow(options:PoseRow){for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&o.accessoryIncluded===false&&(o.companionIncluded===undefined||o.companionIncluded===false||o.companionIncluded===true&&validEntry(o.actor)&&/^[a-f0-9]{64}$/.test(o.actor.sourceSha256)&&Number.isSafeInteger(o.anchor.node)&&o.anchor.node>=0&&typeof o.anchor.path==='string'),'Invalid player scene')}}}
+    function validateRow(options:PoseRow){for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&((o.accessoryIncluded===false&&(o.companionIncluded===undefined||o.companionIncluded===false||o.companionIncluded===true&&validEntry(o.actor)&&/^[a-f0-9]{64}$/.test(o.actor.sourceSha256)&&Number.isSafeInteger(o.anchor.node)&&o.anchor.node>=0&&typeof o.anchor.path==='string'))||(o.accessoryIncluded===true&&o.companionIncluded===undefined&&validEntry(o.prop)&&o.prop.sourceSha256===o.sourceSha256&&Number.isSafeInteger(o.anchor.node)&&o.anchor.node>=0&&o.anchor.path==='root')),'Invalid player scene')}}}
     for(const [id,options] of Object.entries(m.items)){
       check(/^[1-9][0-9]{0,14}$/.test(id)&&Number.isSafeInteger(Number(id)),'Invalid item');validateRow(options);
     }
@@ -41,7 +41,7 @@ async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa',signal:A
   return verifyBlob(await response.arrayBuffer(),entry);
 }
 const modelCache=new Map<string,ArrayBuffer>();
-export async function loadPreviewScene(base:string,itemId:number,body:BodyType,index:PreviewIndex,entry:PreviewOption,companionLabel:string,signal:AbortSignal):Promise<PoseScene>{
+export async function loadPreviewScene(base:string,itemId:number,body:BodyType,index:PreviewIndex,entry:PreviewOption,companionLabel:string,signal:AbortSignal,propLabel='Prop'):Promise<PoseScene>{
   signal.throwIfAborted();
   let raw:ArrayBuffer;
   if(entry.kind==='pair')raw=await fetchAsset(base,entry.asset,'.glb',signal);
@@ -52,11 +52,13 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
     signal.throwIfAborted();modelCache.set(key,modelBytes);
     const manifest:Manifest={schema:'wand.private-pose-package@1',privateOnly:true,publicationAuthorized:false,fullPoseVerified:false,model,clips:[entry.clip]};
     raw=await combine(modelBytes,clipBytes,manifest,entry.clip);
-    if(entry.companionIncluded===true){const actor=await fetchAsset(base,entry.actor,'.glb',signal);signal.throwIfAborted();raw=await attachCompanion(raw,actor,entry.actor,entry.anchor,itemId,entry.sourceSha256)}
+    if(entry.accessoryIncluded===true){const prop=await fetchAsset(base,entry.prop,'.glb',signal);signal.throwIfAborted();raw=await attachProp(raw,prop,entry.prop,entry.anchor,itemId,entry.sourceSha256)}
+    else if(entry.companionIncluded===true){const actor=await fetchAsset(base,entry.actor,'.glb',signal);signal.throwIfAborted();raw=await attachCompanion(raw,actor,entry.actor,entry.anchor,itemId,entry.sourceSha256)}
   }
   signal.throwIfAborted();
   const g=openPrivateDiagnostic(raw,0);
-  const paired=g.primitives.some(p=>p.actorId==='companion');
+  const paired=g.primitives.some(p=>p.actorId==='companion'),hasProp=g.primitives.some(p=>p.actorId==='prop');
+  check(entry.kind==='player'&&entry.accessoryIncluded===true?hasProp&&g.propItemId===itemId:!hasProp&&g.propItemId===undefined,'Prop identity mismatch');
   check(g.sourceSha256===entry.sourceSha256&&(entry.kind==='pair'||entry.kind==='player'&&entry.companionIncluded===true?paired&&g.companionItemId===itemId:!paired&&g.companionItemId===undefined),'Scene identity mismatch');
   const images=new Map<string,ImageBitmap>();
   try{
@@ -66,7 +68,7 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
       primitives.push({...primitive,texture});
     }
     signal.throwIfAborted();
-    return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[])],center:[0,1.05,0],radius:1.25,sample:t=>g.sampler.sample(t),dispose(){for(const im of images.values())im.close();images.clear()}};
+    return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[]),...(hasProp?[{id:'prop',label:propLabel,canHide:true}]:[])],center:[0,1.05,0],radius:1.25,sample:t=>g.sampler.sample(t),dispose(){for(const im of images.values())im.close();images.clear()}};
   }catch(e){for(const im of images.values())im.close();throw e}
 }
 
