@@ -276,6 +276,7 @@
   let bulkAmountError='';
   let bulkAmountStatus='';
   let dbMap=new Map<string,Db00ItemContext>();
+  let dbMediaVersion:string|null=null;
   $: selectedAmountItemId=kind==='inventory'?itemId:chestItemId;
   $: selectedAmountMetadata=dbMap.get(selectedAmountItemId);
   $: selectedAmountLocation=kind==='inventory'
@@ -709,7 +710,7 @@
     orientationSelection=null;orientationValue='GridOrientation_Up';
     db04Match=null;db04ObjectSources=[];db04State='idle';
     db03Summary=null;db03State='idle';
-    dbMap=new Map();dbStatus='idle';
+    dbMap=new Map();dbMediaVersion=null;dbStatus='idle';
   }
   function onFileChange():void{
     const file=fileInput?.files?.[0]??null;
@@ -820,7 +821,7 @@
     const request=++catalogRevision;
     // Reinspection must not display stale names or category matches while the
     // current publication is unresolved (including a failed catalog request).
-    dbMap=new Map();
+    dbMap=new Map();dbMediaVersion=null;
     dbStatus='loading';
     const ids=[...new Set([
       ...rows.map(row=>String(row.itemId)),
@@ -837,13 +838,14 @@
       worker.terminate();dbWorker=null;
       const r=reply as {
         kind?:string;contract?:string;editPermissionFromDb?:boolean;
-        lookup?:{rows?:Db00ItemContext[]};
+        lookup?:{rows?:Db00ItemContext[];gameVersion?:string|null};
       };
       if(r?.kind!=='resolved'||
          r.contract!=='wand.db05.db00-visible-item-mapping@1'||
          r.editPermissionFromDb!==false||!Array.isArray(r.lookup?.rows)){
         dbStatus='unavailable';return;
       }
+      dbMediaVersion=typeof r.lookup.gameVersion==='string'?r.lookup.gameVersion:null;
       dbMap=new Map(r.lookup.rows.map(row=>[row.itemId,row]));
       dbStatus='ready';
     };
@@ -1853,8 +1855,8 @@
       {/if}
     {:else}
       <div class="selected-amount-item" aria-label="選択中のアイテム">
-        {#if selectedAmountMetadata?.media}
-          <VerifiedSaveItemIcon media={selectedAmountMetadata.media} basePath={base}/>
+        {#if selectedAmountMetadata?.match==='current_db00'}
+          <VerifiedSaveItemIcon context={selectedAmountMetadata} gameVersion={dbMediaVersion} basePath={base}/>
         {/if}
         <span class="selected-amount-description">
           <strong>{selectedAmountMetadata?.name??selectedAmountItemId}</strong>
@@ -1983,8 +1985,8 @@
               aria-label={`所持アイテム ${String(slot.itemId)} を選択 · ${ownedSlotLocation(slot)}`}
               on:click={()=>selectSavedSlot(slot)}>
               <span class="slot-item-detail">
-                {#if meta?.media}
-                  <VerifiedSaveItemIcon media={meta.media} basePath={base}/>
+                {#if meta?.match==='current_db00'}
+                  <VerifiedSaveItemIcon context={meta} gameVersion={dbMediaVersion} basePath={base}/>
                 {/if}
                 <span>
                   <strong>{meta?.name??String(slot.itemId)}</strong>
