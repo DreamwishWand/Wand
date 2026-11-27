@@ -1,5 +1,5 @@
 import {biomeFurnitureSnapshot,biomeFurnitureReplacement,type SupportAreaTrees} from './biome-furniture-preset.ts';
-import {landscapeRows,reviewLandscape,landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
+import {landscapeRows,reviewLandscape,landscapeDelta,landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
 import {buildingPoseRows,captureBuildingPoses,reviewBuildingLayout,type BuildingPose} from './building-pose-backup.ts';
 import {housePoseRows} from './player-house-backup.ts';
 import {parseSupportScene,supportSceneRootCounts} from './support-scene.ts';
@@ -53,8 +53,9 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
   if(!p)return null;deletedNetworkOrdinals.add(p.object.localOrdinal);
  }
  // Furniture may occupy a removed fence but never a retained fence.
- const landscapeOld=new Set((currentLandscape??[]).map(landscapePoseKey)),landscapeNext=new Set((incoming.landscape??[]).map(landscapePoseKey));
- const landscapeRemoved=incoming.landscape===undefined?[]:objects.filter(o=>o.area===grid.key&&landscapeOld.has(landscapePoseKey(landscapeObjectPose(o)))&&!landscapeNext.has(landscapePoseKey(landscapeObjectPose(o))));
+ const delta=incoming.landscape===undefined?null:landscapeDelta(grid,objects,currentLandscape!,incoming.landscape,free);
+ if(incoming.landscape!==undefined&&!delta)return null;
+ const landscapeRemoved=delta?.removed??[];
  const furniture=biomeFurnitureReplacement(grid,grids,rasters,objects.filter(o=>!deletedNetworkOrdinals.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o)),omitted,incoming.furniture,defs,stock,island,supportContext,world,free);
  if(!furniture)return null;
  const removedFurniture=new Set(furniture.removed.map(o=>o.object.localOrdinal));
@@ -62,7 +63,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
  const addedFurniture=furniture.ghosts.flatMap((g,i)=>furniture.plan.add[i].freePlacement?[]:[ghostObject(g,1_000_000+i)]);
  // Keep the original networks for exact before/after matching, but inspect
  // fence collision against final furniture, not the furniture being removed.
- const landscape=incoming.landscape!==undefined?reviewLandscape(grid,grids,rasters,[...objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!deletedNetworkOrdinals.has(o.object.localOrdinal)),...addedFurniture],currentLandscape!,incoming.landscape,defs):null;
+ const landscape=incoming.landscape!==undefined?reviewLandscape(grid,grids,rasters,[...objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!deletedNetworkOrdinals.has(o.object.localOrdinal)),...addedFurniture],currentLandscape!,incoming.landscape,defs,free):null;
  if(incoming.landscape!==undefined&&!landscape)return null;
  const network=reviewBiomeNetwork(grid,rasters,[...finalFurniture,...addedFurniture,...(landscape?.ghosts??[]).map((g,i)=>ghostObject(g,2_000_000+i))],omitted,before,incoming.network,defs);
  if(!network)return null;
