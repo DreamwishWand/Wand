@@ -20,7 +20,7 @@
       return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop)}]:[];
     });
   });
-  let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined}));
+  let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&(o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined||o?.kind==='mermaid'&&o.accessoryIncluded!==true)}));
   let companionOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===false}));
   let partialActor=$derived(companionOnly&&bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='pair'||o?.kind==='player'&&o.companionIncluded===true}));
   let secondaryPassOmitted=$derived(bodyTypes.some(b=>{const o=row?.[b];return o?.kind==='player'&&o.companionIncluded===true&&o.secondaryPassOmitted===true}));
@@ -39,7 +39,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic} {#if itemId===70200029}{copy.playerOnly}{/if}{/if}</p>
+      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic}{/if}</p>
       {#if poses.length>1}
         <div class="pose-variants" aria-label={copy.pose}>
           {#each poses as _,i}

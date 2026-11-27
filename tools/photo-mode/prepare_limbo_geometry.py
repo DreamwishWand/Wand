@@ -1,6 +1,10 @@
 """Publish source-derived companion motion diagnostics without claiming special shader parity."""
 import urllib.request
+import json
+import struct
+from pathlib import Path
 from prepare_actor_delta import apply_actor_archive
+from prepare_release_preview import BODY_TYPES,entry,digest,metadata,require,valid_hash
 
 NAME="Dreamwish-Wand-companion-limbo-diagnostic-20261128.zip"
 URL="https://github.com/DreamwishWand/Wand/releases/download/photo-mode-assets-20261127/"+NAME
@@ -13,6 +17,37 @@ def download_limbo():
         return response.read(SIZE+1)
 
 def apply_limbo(raw,dest):
-    return apply_actor_archive(raw,dest,size=SIZE,sha=SHA,base_count=263,item_count=17,
+    apply_actor_archive(raw,dest,size=SIZE,sha=SHA,base_count=263,item_count=17,
                                geometry_count=17,schema="wand.photo-mode.companion-limbo-diagnostic@1",
                                manifest="companion-limbo-diagnostic.json",prior={})
+
+    # The original forward pixel program uses the default white texture (no
+    # material texture reference), a view-angle radial term and a binary rim.
+    # Reuse the immutable geometry asset; retain the partial-rendering notice.
+    source=json.loads(Path(__file__).with_name("limbo-materials-1.26.2.json").read_text(encoding="utf-8"))
+    path=dest/"index.json";public=json.loads(path.read_bytes())
+    ids={item for item,row in public["items"].items() if all(row[b].get("limboGeometryDiagnostic") is True for b in BODY_TYPES)}
+    require(public["gameVersion"]==source["gameVersion"] and ids==set(source["items"]) and len(ids)==17,"limbo material coverage")
+    for item in sorted(ids):
+        record=source["items"][item];row=public["items"][item]
+        require(valid_hash(record["sourceSha256"]) and type(record["palette"]) is int and 0<=record["palette"]<len(source["palettes"]),"limbo material identity")
+        for b in BODY_TYPES:
+            o=row[b];e=entry(o["actor"]);data=(dest/(e["sha256"]+".glb")).read_bytes()
+            require(len(data)==e["bytes"] and digest(data)==e["sha256"],"limbo actor integrity")
+            d=metadata(data);start=28+struct.unpack_from("<I",data,12)[0]
+            def accessor_hash(i,kind,components):
+                a=d["accessors"][i];v=d["bufferViews"][a["bufferView"]]
+                require(a["type"]==kind and a["componentType"] in components and a.get("byteOffset",0)==0 and v["buffer"]==0 and "byteStride" not in v,"limbo accessor layout")
+                begin=start+v.get("byteOffset",0);end=begin+v["byteLength"]
+                require(start<=begin<end<=len(data),"limbo accessor bounds")
+                return digest(data[begin:end])
+            expected={tuple(k) for k in record["primitiveKeys"]};seen=set();slots=[]
+            for mi,mesh in enumerate(d["meshes"]):
+                for pi,p in enumerate(mesh["primitives"]):
+                    key=(accessor_hash(p["attributes"]["POSITION"],"VEC3",(5126,)),accessor_hash(p["indices"],"SCALAR",(5123,5125)))
+                    if key in expected:
+                        require(key not in seen,"ambiguous limbo primitive");seen.add(key);slots.append([mi,pi])
+            require(seen==expected and slots,"limbo primitive coverage: "+item)
+            o["limboMaterial"]={"material":record["material"],"sourceSha256":record["sourceSha256"],"primitiveSlots":slots,**source["palettes"][record["palette"]]}
+    path.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
+    print("Source limbo forward materials: 17 items; no additional geometry or textures")

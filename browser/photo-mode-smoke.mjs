@@ -33,7 +33,7 @@ const skunks=['120000177','120000179','120000180','120000181','120000192','12000
 assert.ok(index.items[rigidActor]?.male?.companionIncluded===true&&index.items[rigidActor]?.female?.companionIncluded===true,'rigid actor');
 for(const id of skunks){const row=index.items[id];assert.equal(row.male.companionIncluded,true);assert.equal(row.female.companionIncluded,true);assert.deepEqual(row.male.actor,row.female.actor);assert.ok(row.male.nativeLoops.player>row.male.nativeLoops.companion);assert.equal(row.female.nativeLoops,undefined);}
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===true).length,0);
-const props=['70200018','70200020'];
+const props=['70200018','70200020','70200029'];
 assert.ok(props.every(id=>['male','female'].every(b=>index.items[id][b].accessoryIncluded===true)),'both prop scenes');
 const materialActor='120000113',secondaryActor='120000109';
 assert.ok(index.items[materialActor]?.male?.companionIncluded===true&&index.items[materialActor]?.female?.companionIncluded===true,'external texture actor');
@@ -46,6 +46,9 @@ const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027
 assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
+const limboRows=Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true);
+assert.equal(limboRows.length,17);for(const row of limboRows){assert.ok(row.male.limboMaterial);assert.deepEqual(row.male.limboMaterial,row.female.limboMaterial);}
+assert.equal(new Set(limboRows.map(row=>JSON.stringify(row.male.limboMaterial.main))).size,4);
 assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
 const residualActors=['120000072','120000145','120000176','120000239','120000251'];
 assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');

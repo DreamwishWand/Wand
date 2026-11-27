@@ -1,0 +1,296 @@
+{
+  "gameVersion": "1.26.2",
+  "shaderSha256": "fc3655a20eb3c53cdb29bb58cedd7110aceafa3027e0344bdf6218a9daecbaa9",
+  "forwardProgramSha256": "6001396423de7ee8de86ba026c4627a161e8133e21d4de242e1b15dd3027e476",
+  "palettes": [
+    {
+      "main": [
+        0.13047270476818085,
+        0,
+        0.18719999492168427
+      ],
+      "secondary": [
+        0,
+        0,
+        0
+      ],
+      "edge": [
+        0.2029077261686325,
+        0,
+        0.6320754289627075
+      ],
+      "brightness": -0.10000000149011612,
+      "radial": 1,
+      "threshold": 0,
+      "edgeRatio": 0.44999998807907104
+    },
+    {
+      "main": [
+        0,
+        0.3676983714103699,
+        0.6000000238418579
+      ],
+      "secondary": [
+        0.463636189699173,
+        1.703054428100586,
+        2.8083114624023438
+      ],
+      "edge": [
+        1,
+        0.6933962106704712,
+        0.9699408411979675
+      ],
+      "brightness": -0.15000000596046448,
+      "radial": 1,
+      "threshold": -1,
+      "edgeRatio": 0.5699999928474426
+    },
+    {
+      "main": [
+        0.6000000238418579,
+        0.21226416528224945,
+        0.5390428304672241
+      ],
+      "secondary": [
+        3.2788758277893066,
+        0.7269204258918762,
+        3.1781411170959473
+      ],
+      "edge": [
+        0.599056601524353,
+        0.7934255599975586,
+        1
+      ],
+      "brightness": -0.15000000596046448,
+      "radial": 1,
+      "threshold": -1,
+      "edgeRatio": 0.5699999928474426
+    },
+    {
+      "main": [
+        1,
+        0.21226416528224945,
+        0.5390428304672241
+      ],
+      "secondary": [
+        3.2788758277893066,
+        0.7269204258918762,
+        3.1781411170959473
+      ],
+      "edge": [
+        0.599056601524353,
+        0.7934255599975586,
+        1
+      ],
+      "brightness": -0.15000000596046448,
+      "radial": 1,
+      "threshold": -1,
+      "edgeRatio": 0.5699999928474426
+    }
+  ],
+  "items": {
+    "120000051": {
+      "material": "vfx_limbo_squirrel_material_shadow",
+      "palette": 0,
+      "sourceSha256": "f4052936fdfa84908f70910577a313a9e31cc3ca7b0e4c7383e0fc867b4d46f1",
+      "primitiveKeys": [
+        [
+          "c3d55634fcb8448f970566ef4bc75ad85cc6467e19ada880eb0ac6cccc4df2dc",
+          "49cb62b135a74165510f3bfcd1d46f2ba443ddf9141d74a2dd10af566cd13fcb"
+        ]
+      ]
+    },
+    "120000053": {
+      "material": "vfx_limbo_squirrel_material_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "d5a443dc5c90b53df32a5993ef40baa68d97ef807d4e3131873b50bc53fc3f24",
+      "primitiveKeys": [
+        [
+          "c3d55634fcb8448f970566ef4bc75ad85cc6467e19ada880eb0ac6cccc4df2dc",
+          "49cb62b135a74165510f3bfcd1d46f2ba443ddf9141d74a2dd10af566cd13fcb"
+        ]
+      ]
+    },
+    "120000054": {
+      "material": "vfx_limbo_squirrel_material_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "87b6f2912ae9e9f6a2df720766c2e129cecd1c7dc7f70025aecf5bd6c4e2fdd0",
+      "primitiveKeys": [
+        [
+          "c3d55634fcb8448f970566ef4bc75ad85cc6467e19ada880eb0ac6cccc4df2dc",
+          "49cb62b135a74165510f3bfcd1d46f2ba443ddf9141d74a2dd10af566cd13fcb"
+        ]
+      ]
+    },
+    "120000058": {
+      "material": "vfx_mat_crocodile_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "bff102c652f424a5f414441a403c023be9d17cb46f909f97d629b7096ed895a7",
+      "primitiveKeys": [
+        [
+          "1add8bb7dff4ca3631736da45fc5ae875b67ad2016123fe8ebd7a9e57947194f",
+          "474e9ed4a51a4c7d6954272a5ac540295b7bb0638ea319661fd40526572e796b"
+        ]
+      ]
+    },
+    "120000059": {
+      "material": "fx_mat_crocodile_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "54c084cabc9bb547c0bc130159dcc619953a20c06fa4590d1e115ddec706ebd2",
+      "primitiveKeys": [
+        [
+          "1add8bb7dff4ca3631736da45fc5ae875b67ad2016123fe8ebd7a9e57947194f",
+          "474e9ed4a51a4c7d6954272a5ac540295b7bb0638ea319661fd40526572e796b"
+        ]
+      ]
+    },
+    "120000060": {
+      "material": "vfx_mat_fox_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "c2a5900f0a9a01a10ae2d7d5ff4df716f0179fd1d06295a1ed85716071cfb9ca",
+      "primitiveKeys": [
+        [
+          "8b33b980b1e7610b73ecbd9192a48b6565a3532ff9fe40d5841ca88b29ed77f5",
+          "f701ca9fb6f1237e9f99edd2ab02be46d2cbbbc21847ac5c586d8dad1677511d"
+        ]
+      ]
+    },
+    "120000061": {
+      "material": "fx_mat_fox_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "5a4fe73d11c9cffacca74117aa17b6500bd6f4b8a679c2fb4f7e3f86677f03fe",
+      "primitiveKeys": [
+        [
+          "8b33b980b1e7610b73ecbd9192a48b6565a3532ff9fe40d5841ca88b29ed77f5",
+          "f701ca9fb6f1237e9f99edd2ab02be46d2cbbbc21847ac5c586d8dad1677511d"
+        ]
+      ]
+    },
+    "120000062": {
+      "material": "vfx_mat_rabbit_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "d9283b455b0a04df2d20bb3d67f276b6c3404cb72280d5ff18a583f2909ece83",
+      "primitiveKeys": [
+        [
+          "6deaab15340c111567dd13c0423c0a27d25cff8be46da16a240c58137db57816",
+          "8af93e45823881eaeef451b5d0c2d88bc8f0d22e6aa965f952b4fb8f8fa3d438"
+        ]
+      ]
+    },
+    "120000063": {
+      "material": "fx_mat_rabbit_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "9cff359834b5158813815b7b96836bbb53ed134d8cfeffd1ad2d5bb35e3588ef",
+      "primitiveKeys": [
+        [
+          "6deaab15340c111567dd13c0423c0a27d25cff8be46da16a240c58137db57816",
+          "8af93e45823881eaeef451b5d0c2d88bc8f0d22e6aa965f952b4fb8f8fa3d438"
+        ]
+      ]
+    },
+    "120000064": {
+      "material": "vfx_mat_racoon_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "0c3241b6b419528a51400cec74fa90d3936a57c62d6bbdea35ec3a1ad4689f8d",
+      "primitiveKeys": [
+        [
+          "3ce80faea1d7604995dc5f7fb1bca099a31bf440d6548ad007a9f146c2f6eeea",
+          "4e5f59ec030f0a7d716a354bec8fc67ed19980597ec7f3de6c7e313b9bddd267"
+        ]
+      ]
+    },
+    "120000065": {
+      "material": "fx_mat_racoon_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "560b900ab160fe66f634aa36eb4c1e0694ae31b753026ebc08ae4d232a50c048",
+      "primitiveKeys": [
+        [
+          "3ce80faea1d7604995dc5f7fb1bca099a31bf440d6548ad007a9f146c2f6eeea",
+          "4e5f59ec030f0a7d716a354bec8fc67ed19980597ec7f3de6c7e313b9bddd267"
+        ]
+      ]
+    },
+    "120000066": {
+      "material": "vfx_limbo_squirrel_material_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "d5a443dc5c90b53df32a5993ef40baa68d97ef807d4e3131873b50bc53fc3f24",
+      "primitiveKeys": [
+        [
+          "1710cb1e84b8f84f3fb7f9054d4df12ac9054b4369e49a402e6f6885f53d84af",
+          "bde6b2f75575f0059574da893e8f1c645810521733d9fbbb78d13c082a659dfe"
+        ],
+        [
+          "1710cb1e84b8f84f3fb7f9054d4df12ac9054b4369e49a402e6f6885f53d84af",
+          "1366146655b6547bd4c05cee7d48aab5329dcf55263c54fac33d186cf0d681be"
+        ]
+      ]
+    },
+    "120000067": {
+      "material": "fx_mat_raven_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "70faba961214126f70557e01e787598d3cfe13b566fb1ced1dd3f7a51e161ca8",
+      "primitiveKeys": [
+        [
+          "1710cb1e84b8f84f3fb7f9054d4df12ac9054b4369e49a402e6f6885f53d84af",
+          "bde6b2f75575f0059574da893e8f1c645810521733d9fbbb78d13c082a659dfe"
+        ],
+        [
+          "1710cb1e84b8f84f3fb7f9054d4df12ac9054b4369e49a402e6f6885f53d84af",
+          "1366146655b6547bd4c05cee7d48aab5329dcf55263c54fac33d186cf0d681be"
+        ]
+      ]
+    },
+    "120000068": {
+      "material": "vfx_mat_sunbird_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "11212de72572753759c9f235ea796c6239d61edf22360bafe3ec7aa15818bd7d",
+      "primitiveKeys": [
+        [
+          "84afdebbf3a85b03e2ffcd19d349a75d33dc4f9276b1ee01b7931b54be26940c",
+          "a7cef9d0c878b123f07675018d6001950daf32e403cd7b704a18f97327265c8b"
+        ]
+      ]
+    },
+    "120000069": {
+      "material": "fx_mat_sunbird_light_pinkblue",
+      "palette": 3,
+      "sourceSha256": "b8721f72694e361ffd5198ccd4f5e6ae6d36c9a55014e9b41fb9f3fd9aafce5b",
+      "primitiveKeys": [
+        [
+          "84afdebbf3a85b03e2ffcd19d349a75d33dc4f9276b1ee01b7931b54be26940c",
+          "a7cef9d0c878b123f07675018d6001950daf32e403cd7b704a18f97327265c8b"
+        ]
+      ]
+    },
+    "120000070": {
+      "material": "vfx_mat_turtle_light_bluepink",
+      "palette": 1,
+      "sourceSha256": "44f28c3264a00ec7b49b92d1e96522aa2f813304d62a2d5cb50fb7ee27bf77e5",
+      "primitiveKeys": [
+        [
+          "2321f65cda9d9ffa01f7a2a71177e14e69a199014c0b5dfe6b80e4c287219251",
+          "75b3d5d56580ef1d9b81e820269081e95f4293d1486cebcee95a6faad61fbab6"
+        ],
+        [
+          "2321f65cda9d9ffa01f7a2a71177e14e69a199014c0b5dfe6b80e4c287219251",
+          "716d3099233a96f81d9151133e1d3ac6a0eda2b08dce0d21a25993ee5f792d94"
+        ]
+      ]
+    },
+    "120000071": {
+      "material": "fx_mat_turtle_light_pinkblue",
+      "palette": 2,
+      "sourceSha256": "714eefdbcfb290b80141449f5057ee7492d722039e3d27dfb458b2281e36c939",
+      "primitiveKeys": [
+        [
+          "2321f65cda9d9ffa01f7a2a71177e14e69a199014c0b5dfe6b80e4c287219251",
+          "75b3d5d56580ef1d9b81e820269081e95f4293d1486cebcee95a6faad61fbab6"
+        ],
+        [
+          "2321f65cda9d9ffa01f7a2a71177e14e69a199014c0b5dfe6b80e4c287219251",
+          "716d3099233a96f81d9151133e1d3ac6a0eda2b08dce0d21a25993ee5f792d94"
+        ]
+      ]
+    }
+  }
+}
