@@ -1878,8 +1878,10 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
 pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::{Value,json};
  let bad=PatchError::InvalidTarget;
- if target.kind!=GridObjectKind::Full||target.grid_id!=d.grid_id||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}
- validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;
+ if target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ let room=d.layout_path.is_empty()&&d.data_path.starts_with("GridData/Rooms/Room");
+ if room{if target.grid_id!=d.grid_id{return Err(bad);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
  if obj["ID"].as_u64()!=target.object_id.parse::<u64>().ok()||obj["ItemID"].as_u64()!=Some(target.item_id)||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1))||
