@@ -35,3 +35,30 @@ test('R2 receipts stay distinct from verified CDN and are still subject to brows
  assert.throws(()=>parseNativeCdnPreview({...r2,cdnVerified:true}));
  await assert.rejects(parseNativeCdnPreview(r2,async()=>response(new Uint8Array(20))).source(layer));
 });
+
+test('verified encoded cache avoids repeat HTTP and hash reads but decodes fresh bitmaps',async()=>{
+ let calls=0,decoded=0;
+ const pack=parseNativeCdnPreview(doc,async()=>{calls++;return response(bytes);},20);
+ const old=globalThis.createImageBitmap;
+ try{
+  globalThis.createImageBitmap=async()=>{decoded++;return {width:2,height:2,close(){}}};
+  (await pack.source(layer)).close();(await pack.source(layer)).close();
+  assert.equal(calls,1);assert.equal(decoded,2);
+  const disabled=parseNativeCdnPreview(doc,async()=>{calls++;return response(bytes);},0);
+  (await disabled.source(layer)).close();(await disabled.source(layer)).close();assert.equal(calls,3);
+ }finally{if(old)globalThis.createImageBitmap=old;else delete globalThis.createImageBitmap;}
+});
+test('encoded cache evicts LRU entries and never stores failed decodes',async()=>{
+ const otherBytes=Uint8Array.from({length:20},(_,i)=>i+1),otherSha=createHash('sha256').update(otherBytes).digest('hex');
+ const second={...layer,imageSha256:otherSha};
+ const two={...doc,images:{...doc.images,[otherSha]:{width:2,height:2,bytes:20}},maps:[{...doc.maps[0],locked:[layer,second]}]};
+ let calls=0,fail=false;
+ const pack=parseNativeCdnPreview(two,async url=>{calls++;return response(String(url).includes(otherSha)?otherBytes:bytes);},20);
+ const old=globalThis.createImageBitmap;
+ try{
+  globalThis.createImageBitmap=async()=>{if(fail)throw Error('decode');return {width:2,height:2,close(){}}};
+  fail=true;await assert.rejects(pack.source(layer));fail=false;
+  (await pack.source(layer)).close();(await pack.source(second)).close();(await pack.source(layer)).close();
+  assert.equal(calls,4);
+ }finally{if(old)globalThis.createImageBitmap=old;else delete globalThis.createImageBitmap;}
+});
