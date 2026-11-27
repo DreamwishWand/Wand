@@ -4,7 +4,7 @@
  */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
-import {draftSavedMapTransform,CARDINAL_ORIENTATIONS,isCardinal,exclusiveAnchorConflict,exclusiveAnchorClass,worldMoveEligible,worldRotateEligible} from './saved-map-transform.ts';
+import {draftSavedMapTransform,CARDINAL_ORIENTATIONS,isCardinal,worldOrientationCode,exclusiveAnchorConflict,exclusiveAnchorClass,worldMoveEligible,worldRotateEligible} from './saved-map-transform.ts';
 export type WorldEditPlan=NonNullable<ReturnType<typeof draftSavedMapTransform>>;
 export interface WorldStagedEdit {readonly plan:WorldEditPlan;readonly name:string;readonly warning:string;readonly gridOrdinal:number}
 export interface WorldEditSnapshot {readonly edits:readonly WorldStagedEdit[];readonly title:string;readonly warning:string}
@@ -31,7 +31,7 @@ export function projectWorldEdits(map:SavedShapeMap,edits:readonly WorldStagedEd
     if(!edit||!matchesOriginal(o,edit))return o;
     const p=edit.plan;
     const orientation=p.replacementOrientation??o.orientation;
-    const orientationCode=isCardinal(orientation)?CARDINAL_ORIENTATIONS.indexOf(orientation)*4:null;
+    const orientationCode=worldOrientationCode(orientation);
     const key=orientationCode===null?null:o.itemId+':'+orientationCode;
     return {...o,x:p.replacementX??o.x,y:p.replacementY??o.y,orientation,orientationCode,
       shapeKey:key&&map.shapes[key]?key:null};
@@ -64,7 +64,7 @@ export function groupTargets(map:SavedShapeMap,objects:readonly SavedShapeObject
  if(objects.length<2||objects.length>WORLD_BATCH_LIMIT||![dx,dy,turns].every(Number.isSafeInteger))return null;
  const turn=((turns%4)+4)%4;
  if(!objects.every(o=>worldMoveEligible(o,free)&&o.localGridOrdinal===objects[0].localGridOrdinal))return null;
- if(turn&&!objects.every(o=>worldRotateEligible(o,free)&&o.shapeKey&&map.shapes[o.shapeKey]))return null;
+ if(turn&&!objects.every(o=>isCardinal(o.orientation)&&worldRotateEligible(o,free)&&o.shapeKey&&map.shapes[o.shapeKey]))return null;
  let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
  for(const o of objects){const s=o.shapeKey?map.shapes[o.shapeKey]:null;left=Math.min(left,o.x);top=Math.min(top,o.y);right=Math.max(right,o.x+(s?.width??1));bottom=Math.max(bottom,o.y+(s?.height??1));}
  const result:GroupTarget[]=[];
