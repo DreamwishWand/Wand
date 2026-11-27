@@ -1898,7 +1898,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
                 if o.contains_key("freePlacement"){return Err(CodecError::Json);}
                 o.insert("freePlacement".into(),Value::Bool(true));
             }
-            return mixed_scene_candidate(profile,&Value::Array(rows));
+            return mixed_scene_bounded_mode(profile,&Value::Array(rows),MAX_SCENE_FURNITURE,true);
         }
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
     }
@@ -1914,6 +1914,9 @@ fn mixed_scene_candidate(profile:&[u8],value:&Value)->Result<String,CodecError>{
     mixed_scene_bounded(profile,value,MAX_SCENE_FURNITURE)
 }
 fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,CodecError>{
+    mixed_scene_bounded_mode(profile,value,limit,false)
+}
+fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:bool)->Result<String,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
     let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=limit).ok_or(bad)?;
@@ -1929,7 +1932,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }Ok(())
     }
     for row in rows{
-        let o=row.as_object().filter(|o|o.len()==5+(o.contains_key("scene") as usize)+(o.contains_key("freePlacement") as usize)&&(!o.contains_key("freePlacement")||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"|"freePlacement"))).ok_or(bad)?;
+        let o=row.as_object().filter(|o|o.len()==5+(o.contains_key("scene") as usize)+(o.contains_key("freePlacement") as usize)&&(!o.contains_key("freePlacement")||(free_mode||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"scene"|"freePlacement"))).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let xy=(int("x")?,int("y")?);
@@ -1944,7 +1947,7 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
         }
         if total>limit{return Err(CodecError::Bounds);}
     }
-    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+    if free_mode||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_scene_place};
         let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
         if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
