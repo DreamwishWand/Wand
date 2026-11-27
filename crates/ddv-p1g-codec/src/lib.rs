@@ -15,6 +15,8 @@ mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
 mod storage_source;
+#[cfg(feature="wasm")]
+mod saved_area_flags;
 mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
@@ -1396,6 +1398,14 @@ mod browser_amount_preview {
             };
             grid_instance_preview::saved_grid_instances_json(profile)
                 .map_err(|_|fail("DB05_GRID_INSTANCE_READ_INVALID"))
+        }
+        pub fn list_saved_area_flags(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"));}
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"))?.profile.as_slice()
+            };
+            super::saved_area_flags::saved_area_flags(profile).map_err(|_|fail("DB05_AREA_FLAGS_INVALID"))
         }
         pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {

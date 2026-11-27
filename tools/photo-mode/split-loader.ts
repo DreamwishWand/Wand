@@ -17,6 +17,8 @@ export async function combine(modelBytes:ArrayBuffer,clipBytes:ArrayBuffer,manif
 
 export type ActorAnchor={node:number;path:string};
 export type ActorEntry=BlobEntry & {sourceSha256:string};
+export type ActorRoot={translation:[number,number,number];rotation:[number,number,number,number]};
+export function validActorRoot(root:ActorRoot|undefined){return root===undefined||!!root&&Object.keys(root).length===2&&Array.isArray(root.translation)&&root.translation.length===3&&root.translation.every(v=>Number.isFinite(v)&&Math.abs(v)<=10)&&Array.isArray(root.rotation)&&root.rotation.length===4&&root.rotation.every(Number.isFinite)&&Math.abs(Math.hypot(...root.rotation)-1)<.001}
 type SceneNode={name:string;children?:number[];mesh?:number;skin?:number;extras?:{actorId?:string}};
 type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number}[]};
 type SceneMaterial={pbrMetallicRoughness:{baseColorFactor:number[];baseColorTexture?:{index:number}}};
@@ -32,14 +34,14 @@ function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,other
   return {bin:out,accessor:(i:number)=>checkedIndex(i,other.accessors.length)+ao,view:(i:number)=>checkedIndex(i,other.bufferViews.length)+vo};
 }
 /** Compose the original attached actor without duplicating the player model or animation. */
-export function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string){
-  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'companion');
+export function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,root?:ActorRoot){
+  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'companion',root);
 }
 export function attachProp(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string){
   check(entry.sourceSha256===playerSourceSha256,'Prop animation identity');
   return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'prop');
 }
-async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,kind:'companion'|'prop'):Promise<ArrayBuffer>{
+async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,kind:'companion'|'prop',root?:ActorRoot):Promise<ArrayBuffer>{
   check(validHash(entry.sourceSha256)&&validHash(playerSourceSha256)&&Number.isSafeInteger(itemId)&&itemId>0,'Invalid attached actor identity');
   await verifyBlob(actorBytes,entry);
   const {doc:p,bin:pb}=decode<SceneDocument>(playerBytes,false),{doc:a,bin:ab}=decode<SceneDocument>(actorBytes,false);
@@ -47,6 +49,7 @@ async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:
   check(p.asset.extras.privateOnly===true&&p.asset.extras.fullPoseVerified===false&&p.animations.length===1&&p.animations[0].extras.sourceSha256===playerSourceSha256&&p.animations[0].extras.companionItemId===undefined&&p.animations[0].extras.propItemId===undefined,'Invalid player scene');
   check(a.asset.extras.privateOnly===true&&a.asset.extras.fullPoseVerified===false&&(kind==='companion'?a.asset.extras.companionActorDiagnostic===true:a.asset.extras.propActorDiagnostic===true)&&a.animations.length===1&&a.animations[0].extras.sourceSha256===entry.sourceSha256&&a.animations[0].extras.fullPoseVerified===false,'Invalid companion scene');
   check(p.nodes[checkedIndex(anchor.node,p.nodes.length)].name===anchor.path&&a.scenes[a.scene]?.nodes.length===1&&a.scenes[a.scene].nodes[0]===0&&a.nodes.length>0&&a.nodes.every(n=>n.extras?.actorId===kind),'Invalid actor anchor or root');
+  check(validActorRoot(root)&&(!root||kind==='companion'&&!a.animations[0].channels.some(ch=>ch.target.node===0)),'Invalid actor root override');
   const geometry=kind==='companion'&&a.asset.extras.limboGeometryDiagnostic===true;
   check(a.meshes.length>0&&a.skins.length>0&&a.materials.length>0&&(geometry?!a.images?.length&&!a.textures?.length:a.images?.length&&a.textures?.length),'Missing companion geometry or texture');
   const no=p.nodes.length,mo=p.meshes.length,so=p.skins.length,ma=p.materials.length;
@@ -58,7 +61,7 @@ async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:
   p.materials.push(...a.materials.map(m=>{const q=m.pbrMetallicRoughness,t=q.baseColorTexture;if(geometry){check(!t&&q.baseColorFactor.length===4&&q.baseColorFactor.every(v=>Number.isFinite(v)&&v>=0&&v<=1),'Invalid diagnostic color');return m}check(t,'Missing source albedo');return {...m,pbrMetallicRoughness:{...q,baseColorTexture:{...t,index:checkedIndex(t.index,a.textures?.length??0)+to}}}}));
   p.meshes.push(...a.meshes.map(m=>({...m,primitives:m.primitives.map(q=>({...q,attributes:Object.fromEntries(Object.entries(q.attributes).map(([k,v])=>[k,accessor(v)])),indices:accessor(q.indices),material:checkedIndex(q.material,a.materials.length)+ma}))})));
   p.skins.push(...a.skins.map(s=>({...s,joints:s.joints.map(node),inverseBindMatrices:accessor(s.inverseBindMatrices),...(s.skeleton===undefined?{}:{skeleton:node(s.skeleton)})})));
-  p.nodes.push(...a.nodes.map((n,i)=>({...n,...(n.children?{children:n.children.map(c=>{check(c>i,'Non-topological actor hierarchy');return node(c)})}:{}),...(n.mesh===undefined?{}:{mesh:checkedIndex(n.mesh,a.meshes.length)+mo}),...(n.skin===undefined?{}:{skin:checkedIndex(n.skin,a.skins.length)+so})})));
+  p.nodes.push(...a.nodes.map((n,i)=>({...n,...(i===0&&root?root:{}),...(n.children?{children:n.children.map(c=>{check(c>i,'Non-topological actor hierarchy');return node(c)})}:{}),...(n.mesh===undefined?{}:{mesh:checkedIndex(n.mesh,a.meshes.length)+mo}),...(n.skin===undefined?{}:{skin:checkedIndex(n.skin,a.skins.length)+so})})));
   (p.nodes[anchor.node].children??=[]).push(no);
   const target=p.animations[0],source=a.animations[0],s0=target.samplers.length;
   check(source.channels.length>0,'Missing actor animation channels');
