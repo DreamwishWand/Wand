@@ -949,7 +949,7 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
 }
 
 /// Verify the existing exterior and its shared interior without modifying it.
-fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<&'a serde_json::Map<String,serde_json::Value>,PatchError>{
+pub fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<&'a serde_json::Map<String,serde_json::Value>,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
