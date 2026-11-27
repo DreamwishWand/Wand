@@ -1,6 +1,11 @@
 name: SRC-02 Acquisition
 on:
   workflow_call:
+    inputs:
+      common_unit_full:
+        type: boolean
+        default: false
+        description: Full product unit suite runs in the required product job
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,4 +35,6 @@ jobs:
           output: src/lib/acquisition/wasm/pkg
           features: wasm
       - run: node tools/db-01-items/materialize-public-master.mjs
-      - run: node --test tests/acquisition*.test.mjs
+        if: ${{ !inputs.common_unit_full }}
+      - run: node --experimental-strip-types --test tests/acquisition*.test.mjs
+        if: ${{ !inputs.common_unit_full }}
