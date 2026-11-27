@@ -49,6 +49,19 @@ pub fn room_resize_options(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<S
  if !available(&shapes[old]){return None;}
  Some((shapes[old].name.clone(),shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)).map(|(_,s)|s.name.clone()).collect()))
 }
+// Do not treat GridCollection or a GridObject counter as a Grid reference.
+fn existing_grid_reference(v:&Value,ids:&HashSet<u32>,marked:bool)->bool{
+ match v{
+  Value::Object(m)=>m.iter().any(|(k,v)|{
+   let key=k.to_ascii_lowercase();
+   let grid_ref=key.split_once("grid").is_some_and(|(_,suffix)|suffix.contains("id")&&!suffix.starts_with("object"));
+   let flag=marked||grid_ref&&!matches!(key.as_str(),"nextgridid"|"nextgridobjectid");
+   existing_grid_reference(v,ids,flag)
+  }),
+  Value::Array(a)=>a.iter().any(|v|existing_grid_reference(v,ids,marked)),
+  _=>marked&&v.as_u64().and_then(|n|u32::try_from(n).ok()).is_some_and(|n|ids.contains(&n))
+ }
+}
 pub fn preview_room_resize(source:&str,t:RoomFinishTarget,expected:&str,replacement:&str)->Result<GridCoordinateDraft,PatchError>{
  validate_json_without_edit(source)?;
  let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
@@ -62,7 +75,7 @@ pub fn preview_room_resize(source:&str,t:RoomFinishTarget,expected:&str,replacem
  let room_pointer=format!("/World/PlayerHouses/{}/Floors/{}/Rooms/{}",t.house_index,t.floor_index,t.room_slot);
  let room=refs.pointer_mut(&room_pointer).and_then(Value::as_object_mut).ok_or(BAD)?;
  room.remove("FloorGridID");room.remove("WallGridIDs");
- if crate::support_clone::reserved_ref(&refs,&ids.iter().copied().collect(),false){return Err(BAD);}
+ if existing_grid_reference(&refs,&ids.iter().copied().collect(),false){return Err(BAD);}
  let mut edits:Vec<(Vec<Segment>,Option<Value>,Value)>=Vec::new();
  let mut path=room_path(t);path.push(k("RoomPrefabAddress"));
  edits.push((path,Some(json!(shapes[old].prefab)),json!(next.prefab)));
@@ -134,6 +147,7 @@ mod tests{
   let mut b=raw.clone();b["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]=json!({"ID":1});assert!(preview_room_resize(&b.to_string(),target,"6x6","10x12").is_err());
   let mut b=raw.clone();b["World"]["Alias"]=json!({"FloorGridID":10});assert!(preview_room_resize(&b.to_string(),target,"6x6","10x12").is_err());
   assert!(preview_room_resize(&raw.to_string(),target,"6x6","8x3").is_err());
+  let mut b=raw.clone();b["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=json!(11);assert!(preview_room_resize(&b.to_string(),target,"6x6","10x12").is_ok());
   let mut b=raw.clone();b["World"]["PlayerHouses"][0]["Floors"][0].as_object_mut().unwrap().remove("BoughtRooms");
   let d=preview_room_resize(&b.to_string(),target,"6x6","10x12").unwrap();
   assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap()["World"]["PlayerHouses"][0]["Floors"][0]["BoughtRooms"]["0"]["GridDataPaths"],json!(["GridData/Rooms/Room20x24-GridData.json"]));
