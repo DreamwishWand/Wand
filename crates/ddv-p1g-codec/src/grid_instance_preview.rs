@@ -3244,6 +3244,32 @@ mod terrain_session_tests{
         assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
     }
     #[test]
+    fn building_clone_accepts_observed_schema643_state_families_and_rejects_embedded_links(){
+        let root=serde_json::json!({});
+        let house=serde_json::json!({"HouseData":{"Built":true,"PlayerHouseIndex":0,"UpgradeState":null}});
+        let skin=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":null,"CurrentSkinItemID":0}});
+        let shop=serde_json::json!({"StallData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":0,"ShopData":{"LastRefresh":"2020-01-01T00:00:00Z","NumRefresh":1,"Seed":2,"Slots":[{"SlotId":0,"MaxAmount":5,"Regen":null,"Item":{"id":10000001,"amount":3}}]}}});
+        let garden=serde_json::json!({"GardenData":{"Slots":[{"PlantedSeedItemID":400001,"LastActivity":"2020-01-01T00:00:00Z","Harvest":{"EndOfGrowth":"2020-01-01T00:00:00Z","EndOfLife":null,"NumberOfProductionLeft":1,"SaplingGridObjectID":0}}]}});
+        let fishing=serde_json::json!({"FishingStallData":{"UpgradeState":{"Level":1},"LastCollect":"2020-01-01T00:00:00Z","PendingFishes":[]}});
+        for (item,state) in [(20000001,&house),(20300001,&house),(20000001,&skin),(20100001,&skin),(20300001,&skin),(20100001,&shop),(20200001,&garden),(20100002,&fishing)]{
+            assert!(known_building_transform_state(&root,item,state));
+            assert!(building_clone_state(item,Some(state)));
+        }
+        let mut unknown_shop=shop.clone();unknown_shop["StallData"]["ShopData"]["Slots"][0]["Item"]["GridID"]=1.into();
+        assert!(!building_clone_state(20100001,Some(&unknown_shop)));
+        let mut linked_garden=garden.clone();linked_garden["GardenData"]["Slots"][0]["Harvest"]["SaplingGridObjectID"]=7.into();
+        assert!(!building_clone_state(20200001,Some(&linked_garden)));
+        let mut fishing_rewards=fishing.clone();fishing_rewards["FishingStallData"]["PendingFishes"]=serde_json::json!([{}]);
+        assert!(!building_clone_state(20100002,Some(&fishing_rewards)));
+        let mut linked_house=house.clone();linked_house["HouseData"]["PlayerHouseIndex"]=1.into();
+        assert!(!building_clone_state(20000001,Some(&linked_house)));
+        assert!(!building_clone_state(20500001,Some(&house)));
+        assert!(!building_clone_state(20200001,Some(&shop)));
+        let mut dormant=shop.clone();dormant["StallData"]["ShopData"]=Value::Null;
+        assert!(building_clone_state(20100001,Some(&dormant)));
+    }
+
+    #[test]
     fn building_clone_and_remove_preserve_state_and_reject_last_stateful_instance(){
         let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
         let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
