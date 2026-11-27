@@ -163,7 +163,7 @@
  let captureDrag:{pointer:number;start:{x:number;y:number};region:CaptureRegion;edge:'move'|'nw'|'ne'|'sw'|'se'}|null=null;
  $: crw=captureRegionWords[locale];
  $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureRegionBounds(pasteSelection);
- $: capturePlan=captureRegion?captureRegionPlan(captureRegion,captureMembers,projection.objects,captureOptions,projection.omitted):null;
+ $: capturePlan=captureRegion?captureRegionPlan(captureRegion,captureMembers,projection.objects,captureOptions,projection.omitted,freePlacement):null;
  $: if(captureRegion&&(!furnitureReady||furnitureBlocked||networkOpen||roadSeed||supportOpen||furniturePlacing||pasteActive||groupPickupActive||editSymmetryOpen))closeCaptureRegion();
  function closeCaptureRegion(){regionBackupMode=false;captureRegion=null;captureMembers=[];captureDrag=null;}
  function openRegionBackup(){
