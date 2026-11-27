@@ -15,8 +15,8 @@ function image(i:NativeImage|undefined,quad:Affine,rgba:Color,resolve:ResolveIma
  const sha=resolve(i.source);check(sha,'Unresolved native overlay or mask texture');
  const l:ImageLayer={kind:'texture',imageSha256:sha,size:i.size,wrap:[i.sampling.wrapU,i.sampling.wrapV],colorSpace:'sRGB',unitQuadToCanvas:quad,rgba};validateLayer(l);return l;
 }
-/** Unpublished preview plan. CanvasGroup alpha and save-derived lock predicates are not evaluated here. */
-export function buildNativeMaskedPreview(background:readonly Background[],overlays:readonly Overlay[],nodeOrder:readonly string[],rootToCanvas:Affine,locked:ReadonlyMap<number,boolean>,resolve:ResolveImage){
+/** Unpublished preview plan. CanvasGroup alpha must be computed for the same area state; save-derived predicates are not evaluated here. */
+export function buildNativeMaskedPreview(background:readonly Background[],overlays:readonly Overlay[],nodeOrder:readonly string[],rootToCanvas:Affine,locked:ReadonlyMap<number,boolean>,resolve:ResolveImage,canvasAlpha:ReadonlyMap<string,number>){
  const order=new Map(nodeOrder.map((id,i)=>[id,i]));check(order.size===nodeOrder.length,'Duplicate native node');
  const rows:{node:string;layer:Layer}[]=selectNativeBackgroundLayers(background,locked).map(layer=>({node:layer.node,layer}));
  for(const {overlay:o,overlayToMaskUv} of selectLockOverlayCandidates(overlays,locked)){
@@ -28,5 +28,10 @@ export function buildNativeMaskedPreview(background:readonly Background[],overla
  }
  const seen=new Set<string>();for(const r of rows){check(order.has(r.node)&&!seen.has(r.node),'Missing or duplicate draw node');seen.add(r.node);validateLayer(r.layer);}
  rows.sort((a,b)=>order.get(a.node)!-order.get(b.node)!);
- return {layers:rows.map(r=>r.layer),runtimeVisibilityVerified:false as const,canvasGroupAlphaVerified:false as const,maskGpuVerified:false as const};
+ const layers=rows.map(r=>{
+  const alpha=canvasAlpha.get(r.node);check(typeof alpha==='number'&&Number.isFinite(alpha)&&alpha>=0&&alpha<=1,'Missing or invalid native CanvasGroup alpha');
+  const rgba:Color=[r.layer.rgba[0],r.layer.rgba[1],r.layer.rgba[2],r.layer.rgba[3]*alpha];
+  return {...r.layer,rgba};
+ });
+ return {layers,runtimeVisibilityVerified:false as const,canvasGroupAlphaApplied:true as const,canvasGroupAlphaVerified:false as const,maskGpuVerified:false as const};
 }
