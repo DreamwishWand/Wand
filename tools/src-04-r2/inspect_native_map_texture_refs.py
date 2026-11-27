@@ -9,6 +9,18 @@ from pathlib import Path
 from inspect_native_map_layout import Reader, check, serialized
 
 LIMIT=64*1024*1024
+# Serialized texture offsets verified against this original bundle and Unity version.
+SAMPLING_SOURCE_SHA="4b04c922d6d1eab53982f6756a4bee30b63734aa7dfbf8eff8d5e6c21c2a6734"
+
+
+def texture_sampling(raw,offset,width,height):
+    check(len(raw)>=offset+84,"Truncated Texture2D settings")
+    w,h,n=struct.unpack_from("<iii",raw,offset+4)
+    fmt,mips=struct.unpack_from("<ii",raw,offset+20)
+    filter_mode,aniso,bias,u,v,z,lightmap,color=struct.unpack_from("<iifiiiii",raw,offset+52)
+    check((w,h)==(width,height) and n>0 and 1<=mips<=32,"Invalid Texture2D dimensions or mip count")
+    check(filter_mode in (0,1,2) and 0<=aniso<=16 and bias==0 and all(x in (0,1,2,3) for x in (u,v,z)) and color in (0,1),"Unexpected sampling settings")
+    return {"format":fmt,"mipCount":mips,"nativeBytes":n,"filterMode":filter_mode,"aniso":aniso,"mipBias":bias,"wrapU":u,"wrapV":v,"wrapW":z,"lightmapFormat":lightmap,"textureColorSpace":color,"rgba8DecodedBytes":w*h*4}
 
 def read_cab(path):
     import lz4.block
@@ -66,9 +78,12 @@ def inspect(path):
         group=rows.setdefault(guid,{})
         check(cl in (28,213) and str(cl) not in group,"Unsupported or ambiguous container class")
         if cl==28:
+            offset=rr.pos
             rr.read(4);width,height=rr.number("i"),rr.number("i")
             check(0<width<=65536 and 0<height<=65536,"Invalid texture dimensions")
             group["28"]={"pathID":str(pid),"name":name,"width":width,"height":height}
+            if digest==SAMPLING_SOURCE_SHA and unity=="6000.0.62f1":
+                group["28"]["sampling"]=texture_sampling(b,offset,width,height)
         else:
             # Steam 1.26.2 Sprite header: m_Rect, m_Offset, then verified render-data Texture PPtr at +100.
             pos=rr.pos;rect=list(struct.unpack_from("<4f",b,pos));offset=list(struct.unpack_from("<2f",b,pos+16))
@@ -82,7 +97,7 @@ def inspect(path):
         if s:
             check(s["texturePathID"]==t["pathID"] and s["name"]==t["name"],"GUID pair identity mismatch")
             pairs+=1
-    return {"schema":"wand.src04.native-map-texture-refs@1","bundleSha256":digest,"cab":cab,"unityVersion":unity,"guidCount":len(rows),"spriteTexturePairs":pairs,"assets":rows}
+    return {"schema":"wand.src04.native-map-texture-refs@1","bundleSha256":digest,"cab":cab,"unityVersion":unity,"guidCount":len(rows),"spriteTexturePairs":pairs,"samplingMetadataVerified":digest==SAMPLING_SOURCE_SHA and unity=="6000.0.62f1","assets":rows}
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--hires",type=Path,required=True);p.add_argument("--out",type=Path,required=True);a=p.parse_args()
