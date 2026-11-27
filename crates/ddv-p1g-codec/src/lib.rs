@@ -14,6 +14,7 @@ use zeroize::Zeroize;
 mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
+mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
 #[cfg(feature="wasm")]

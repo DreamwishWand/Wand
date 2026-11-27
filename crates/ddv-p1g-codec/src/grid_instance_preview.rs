@@ -1975,14 +1975,22 @@ fn detached_player_house_indices(profile:&[u8])->Result<HashMap<u64,usize>,Codec
 }
 pub(super) fn detached_player_houses_json(profile:&[u8])->Result<String,CodecError>{
     let mut ids:Vec<_>=detached_player_house_indices(profile)?.into_keys().collect();ids.sort_unstable();
-    Ok(serde_json::json!({"contract":"wand.db05.detached-player-houses@1","itemIds":ids,"writerAuthorized":false}).to_string())
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    let houses=root["World"]["PlayerHouses"].as_array().ok_or(CodecError::Json)?;
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.invalid>0||scan.sampled{return Err(CodecError::Json);}
+    let mut existing:HashSet<u64>=scan.private_targets.iter().map(|(t,_)|t.item_id).collect();
+    existing.extend(houses.iter().filter_map(|h|h["HouseItemID"].as_u64()));
+    let manifest:Value=serde_json::from_str(include_str!("../../../src/lib/world/player-house-source.json")).map_err(|_|CodecError::Json)?;
+    let new_ids:Vec<u64>=manifest["templates"].as_array().ok_or(CodecError::Json)?.iter().flat_map(|t|t["itemIds"].as_array().into_iter().flatten()).filter_map(Value::as_u64).filter(|id|houses.len()<128&&!houses.is_empty()&&!existing.contains(id)).collect();
+    Ok(serde_json::json!({"contract":"wand.db05.detached-player-houses@1","itemIds":ids,"newItemIds":new_ids,"writerAuthorized":false}).to_string())
 }
 
 /// Source-pinned experimental initial placement. No arbitrary State is accepted
 /// from a preset, and existing native instances must use the clone path instead.
 fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
     let bad=CodecError::Json;
-    let o=plan.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+    let o=plan.as_object().filter(|o|(o.len()==5||o.len()==6&&o.contains_key("nativeHouseTemplate"))&&o.keys().all(|k|matches!(k.as_str(),"itemId"|"destination"|"x"|"y"|"orientation"|"nativeHouseTemplate"))).ok_or(bad)?;
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).map_err(|_|bad)?;
     if root["GameInfo"]["Version"].as_u64()!=templates["saveVersion"].as_u64()||templates["saveVersion"].as_u64()!=Some(643){return Err(bad);}
@@ -1991,7 +1999,9 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     let well=templates["scopes"][&scope].as_array().is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item)));
     let other=templates["otherBuildings"][&scope].get(item.to_string());
     let detached=if item/100_000==205{detached_player_house_indices(profile)?.get(&item).copied()}else{None};
-    if !well&&other.is_none()&&detached.is_none(){return Err(bad);}
+    let native_source=o.get("nativeHouseTemplate");
+    if native_source.is_some()&&(item/100_000!=205||detached.is_some()){return Err(bad);}
+    if !well&&other.is_none()&&detached.is_none()&&native_source.is_none(){return Err(bad);}
     let d=resolve_plain_grid_destination(profile,witness)?;
     let native=house_exterior_identity(&root,&d.grid_id)?;
     if native.0!=scope||native.1!=d.layout_path||native.2!=u64::from(d.tessellation)||native.3!=u64::from(d.size.0)||native.4!=u64::from(d.size.1){return Err(bad);}
@@ -2003,6 +2013,16 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.values().any(|g|g["GridDefaultLayoutPath"].as_str().and_then(|p|p.split('/').nth(1))==Some(scope.as_str())))){return Err(bad);}
     let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    if let Some(source)=native_source{
+        let template=crate::player_house_source::verified_template(item,source.as_str().ok_or(bad)?)?;
+        let layout=template["layoutPath"].as_str().ok_or(bad)?;
+        let next=collection["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
+        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[next])?;
+        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+        let draft=ddv_save_patch::player_house_create::preview_new_player_house(std::str::from_utf8(profile).map_err(|_|bad)?,&template,layout,item,&d,(int("x")?,int("y")?),orientation).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+        return Ok(draft.patched_json);
+    }
     use ddv_save_patch::InitialBuildingState;
     let initial=if let Some(index)=detached{InitialBuildingState::ExistingPlayerHouse{index}}else if well{
         let template=templates["scopeTemplates"].get(&scope).unwrap_or(&templates["template"]);
