@@ -20,7 +20,7 @@ export type ActorEntry=BlobEntry & {sourceSha256:string};
 export type ActorRoot={translation:[number,number,number];rotation:[number,number,number,number]};
 export function validActorRoot(root:ActorRoot|undefined){return root===undefined||!!root&&Object.keys(root).length===2&&Array.isArray(root.translation)&&root.translation.length===3&&root.translation.every(v=>Number.isFinite(v)&&Math.abs(v)<=10)&&Array.isArray(root.rotation)&&root.rotation.length===4&&root.rotation.every(Number.isFinite)&&Math.abs(Math.hypot(...root.rotation)-1)<.001}
 type SceneNode={name:string;children?:number[];mesh?:number;skin?:number;extras?:{actorId?:string}};
-type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number}[]};
+type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number;extras?:{limboSource?:true}}[]};
 type SceneMaterial={pbrMetallicRoughness:{baseColorFactor:number[];baseColorTexture?:{index:number}}};
 type SceneAnimation=Animation & {extras:Animation['extras']&{companionItemId?:number;companionClipSha256?:string;propItemId?:number;propClipSha256?:string}};
 type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean;propActorDiagnostic?:boolean;attachedPropDiagnostic?:boolean;limboGeometryDiagnostic?:boolean}}};
@@ -34,14 +34,14 @@ function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,other
   return {bin:out,accessor:(i:number)=>checkedIndex(i,other.accessors.length)+ao,view:(i:number)=>checkedIndex(i,other.bufferViews.length)+vo};
 }
 /** Compose the original attached actor without duplicating the player model or animation. */
-export function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,root?:ActorRoot){
-  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'companion',root);
+export function attachCompanion(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,root?:ActorRoot,limboSlots?:readonly [number,number][]){
+  return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'companion',root,limboSlots);
 }
 export function attachProp(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string){
   check(entry.sourceSha256===playerSourceSha256,'Prop animation identity');
   return attachActor(playerBytes,actorBytes,entry,anchor,itemId,playerSourceSha256,'prop');
 }
-async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,kind:'companion'|'prop',root?:ActorRoot):Promise<ArrayBuffer>{
+async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:ActorEntry,anchor:ActorAnchor,itemId:number,playerSourceSha256:string,kind:'companion'|'prop',root?:ActorRoot,limboSlots?:readonly [number,number][]):Promise<ArrayBuffer>{
   check(validHash(entry.sourceSha256)&&validHash(playerSourceSha256)&&Number.isSafeInteger(itemId)&&itemId>0,'Invalid attached actor identity');
   await verifyBlob(actorBytes,entry);
   const {doc:p,bin:pb}=decode<SceneDocument>(playerBytes,false),{doc:a,bin:ab}=decode<SceneDocument>(actorBytes,false);
@@ -52,6 +52,7 @@ async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:
   check(validActorRoot(root)&&(!root||kind==='companion'&&!a.animations[0].channels.some(ch=>ch.target.node===0)),'Invalid actor root override');
   const geometry=kind==='companion'&&a.asset.extras.limboGeometryDiagnostic===true;
   check(a.meshes.length>0&&a.skins.length>0&&a.materials.length>0&&(geometry?!a.images?.length&&!a.textures?.length:a.images?.length&&a.textures?.length),'Missing companion geometry or texture');
+  const slots=new Set(limboSlots?.map(s=>{check(geometry&&a.meshes[s[0]]?.primitives[s[1]],'Invalid limbo primitive slot');return s.join(':')})??[]);
   const no=p.nodes.length,mo=p.meshes.length,so=p.skins.length,ma=p.materials.length;
   const pi=p.images??(p.images=[]),pt=p.textures??(p.textures=[]),io=pi.length,to=pt.length;
   const {bin,accessor,view}=appendBuffer(p,pb,a,ab);
@@ -59,7 +60,7 @@ async function attachActor(playerBytes:ArrayBuffer,actorBytes:ArrayBuffer,entry:
   for(const im of a.images??[]){check(im.mimeType==='image/png','Unsupported companion texture');pi.push({...im,bufferView:view(im.bufferView)})}
   for(const tx of a.textures??[])pt.push({...tx,source:checkedIndex(tx.source,a.images?.length??0)+io});
   p.materials.push(...a.materials.map(m=>{const q=m.pbrMetallicRoughness,t=q.baseColorTexture;if(geometry){check(!t&&q.baseColorFactor.length===4&&q.baseColorFactor.every(v=>Number.isFinite(v)&&v>=0&&v<=1),'Invalid diagnostic color');return m}check(t,'Missing source albedo');return {...m,pbrMetallicRoughness:{...q,baseColorTexture:{...t,index:checkedIndex(t.index,a.textures?.length??0)+to}}}}));
-  p.meshes.push(...a.meshes.map(m=>({...m,primitives:m.primitives.map(q=>({...q,attributes:Object.fromEntries(Object.entries(q.attributes).map(([k,v])=>[k,accessor(v)])),indices:accessor(q.indices),material:checkedIndex(q.material,a.materials.length)+ma}))})));
+  p.meshes.push(...a.meshes.map((m,mi)=>({...m,primitives:m.primitives.map((q,pi)=>({...q,extras:slots.has(mi+':'+pi)?{limboSource:true}:undefined,attributes:Object.fromEntries(Object.entries(q.attributes).map(([k,v])=>[k,accessor(v)])),indices:accessor(q.indices),material:checkedIndex(q.material,a.materials.length)+ma}))})));
   p.skins.push(...a.skins.map(s=>({...s,joints:s.joints.map(node),inverseBindMatrices:accessor(s.inverseBindMatrices),...(s.skeleton===undefined?{}:{skeleton:node(s.skeleton)})})));
   p.nodes.push(...a.nodes.map((n,i)=>({...n,...(i===0&&root?root:{}),...(n.children?{children:n.children.map(c=>{check(c>i,'Non-topological actor hierarchy');return node(c)})}:{}),...(n.mesh===undefined?{}:{mesh:checkedIndex(n.mesh,a.meshes.length)+mo}),...(n.skin===undefined?{}:{skin:checkedIndex(n.skin,a.skins.length)+so})})));
   (p.nodes[anchor.node].children??=[]).push(no);

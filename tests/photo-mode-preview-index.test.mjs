@@ -41,7 +41,7 @@ test('related links open the exact shared alternate pose, independent of variant
 
 import {validLimboMaterial,limboViewDirection} from '../src/lib/photo-mode/limbo-material.ts';
 test('source limbo material accepts HDR parameters, rejects invalid inputs and tracks orthographic orbit',()=>{
- const m={material:'source',sourceSha256:'a'.repeat(64),main:[0,.4,.6],secondary:[.5,1.7,2.8],edge:[1,.7,.9],brightness:-.15,radial:1,threshold:-1,edgeRatio:.57};
+ const m={material:'source',sourceSha256:'a'.repeat(64),primitiveSlots:[[0,0]],main:[0,.4,.6],secondary:[.5,1.7,2.8],edge:[1,.7,.9],brightness:-.15,radial:1,threshold:-1,edgeRatio:.57};
  assert.equal(validLimboMaterial(m),true);for(const bad of [{...m,radial:0},{...m,main:[0,NaN,0]},{...m,edgeRatio:2},{...m,sourceSha256:'bad'},{...m,extra:true}])assert.equal(validLimboMaterial(bad),false);
  assert.deepEqual(limboViewDirection(0,0),[0,0,1]);const a=limboViewDirection(Math.PI/2,0);assert.ok(Math.abs(a[0]-1)<1e-12&&Math.abs(a[2])<1e-12);
  assert.ok(Math.abs(Math.hypot(...limboViewDirection(.8,.4))-1)<1e-12);

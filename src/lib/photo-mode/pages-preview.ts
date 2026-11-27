@@ -58,7 +58,7 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
     const manifest:Manifest={schema:'wand.private-pose-package@1',privateOnly:true,publicationAuthorized:false,fullPoseVerified:false,model,clips:[entry.clip]};
     raw=await combine(modelBytes,clipBytes,manifest,entry.clip);
     if(entry.kind==='player'&&entry.accessoryIncluded===true){const prop=await fetchAsset(base,entry.prop,'.glb',signal);signal.throwIfAborted();raw=await attachProp(raw,prop,entry.prop,entry.anchor,itemId,entry.sourceSha256)}
-    else if(entry.kind==='player'&&entry.companionIncluded===true){const actor=await fetchAsset(base,entry.actor,'.glb',signal);signal.throwIfAborted();raw=await attachCompanion(raw,actor,entry.actor,entry.anchor,itemId,entry.sourceSha256,entry.actorRoot)}
+    else if(entry.kind==='player'&&entry.companionIncluded===true){const actor=await fetchAsset(base,entry.actor,'.glb',signal);signal.throwIfAborted();raw=await attachCompanion(raw,actor,entry.actor,entry.anchor,itemId,entry.sourceSha256,entry.actorRoot,entry.limboMaterial?.primitiveSlots)}
   }
   signal.throwIfAborted();
   const g=openPrivateDiagnostic(raw,0,entry.kind==='player'&&entry.companionIncluded===true?entry.nativeLoops:undefined,entry.kind==='player'&&entry.companionIncluded===true?entry.limboMaterial:undefined);

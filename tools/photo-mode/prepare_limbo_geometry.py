@@ -1,6 +1,7 @@
 """Publish source-derived companion motion diagnostics without claiming special shader parity."""
 import urllib.request
 import json
+import struct
 from pathlib import Path
 from prepare_actor_delta import apply_actor_archive
 from prepare_release_preview import BODY_TYPES,entry,digest,metadata,require,valid_hash
@@ -33,8 +34,20 @@ def apply_limbo(raw,dest):
         for b in BODY_TYPES:
             o=row[b];e=entry(o["actor"]);data=(dest/(e["sha256"]+".glb")).read_bytes()
             require(len(data)==e["bytes"] and digest(data)==e["sha256"],"limbo actor integrity")
-            d=metadata(data);matches=[i for i,v in enumerate(d["materials"]) if v.get("name")==record["material"]]
-            require(len(matches)==1 and any(p["material"]==matches[0] for mesh in d["meshes"] for p in mesh["primitives"]),"limbo source material not found: "+item+" "+str([x.get("name") for x in d["materials"]]))
-            o["limboMaterial"]={"material":record["material"],"sourceSha256":record["sourceSha256"],**source["palettes"][record["palette"]]}
+            d=metadata(data);start=28+struct.unpack_from("<I",data,12)[0]
+            def accessor_hash(i,kind,components):
+                a=d["accessors"][i];v=d["bufferViews"][a["bufferView"]]
+                require(a["type"]==kind and a["componentType"] in components and a.get("byteOffset",0)==0 and v["buffer"]==0 and "byteStride" not in v,"limbo accessor layout")
+                begin=start+v.get("byteOffset",0);end=begin+v["byteLength"]
+                require(start<=begin<end<=len(data),"limbo accessor bounds")
+                return digest(data[begin:end])
+            expected={tuple(k) for k in record["primitiveKeys"]};seen=set();slots=[]
+            for mi,mesh in enumerate(d["meshes"]):
+                for pi,p in enumerate(mesh["primitives"]):
+                    key=(accessor_hash(p["attributes"]["POSITION"],"VEC3",(5126,)),accessor_hash(p["indices"],"SCALAR",(5123,5125)))
+                    if key in expected:
+                        require(key not in seen,"ambiguous limbo primitive");seen.add(key);slots.append([mi,pi])
+            require(seen==expected and slots,"limbo primitive coverage: "+item)
+            o["limboMaterial"]={"material":record["material"],"sourceSha256":record["sourceSha256"],"primitiveSlots":slots,**source["palettes"][record["palette"]]}
     path.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Source limbo forward materials: 17 items; no additional geometry or textures")
