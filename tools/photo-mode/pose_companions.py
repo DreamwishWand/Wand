@@ -20,7 +20,16 @@ def script_identity(path):
 def decode_pose(r):
     attachment,=r.unpack('i');offset=r.unpack('3f');rotation=r.unpack('4f')
     require(all(map(math.isfinite,offset+rotation)),'invalid attachment transform')
-    require(r.count(4)==0,'attachment overrides not decoded')
+    # IL2CPP PetPhotoPose.AttachmentData: AppearanceType, Point, Offset, Rotation.
+    overrides=[];seen=set()
+    for _ in range(r.count(36)):
+        appearance,point,*transform=r.unpack('ii3f4f')
+        require(appearance in (0,1) and appearance not in seen and 0<=point<=10
+                and all(map(math.isfinite,transform))
+                and abs(math.hypot(*transform[3:])-1)<1e-3,'invalid attachment override')
+        seen.add(appearance)
+        overrides.append(dict(appearanceType=appearance,attachmentPoint=point,
+                              attachedOffset=tuple(transform[:3]),attachedRotation=tuple(transform[3:])))
     triggers=[[r.string() for _ in range(r.count(4))] for _ in range(3)]
     body,tool=r.unpack('ii');refs={};types={}
     for role in ROLES:
@@ -29,7 +38,7 @@ def decode_pose(r):
         require((not guid and not sub and not typ) or (guid and not sub and (not typ or typ.startswith('UnityEngine.AnimationClip, UnityEngine.AnimationModule,'))),'unsupported asset reference')
         refs[role]=guid or None;types[role]=typ or None
     require(r.pos==len(r.data),'unparsed PetPhotoPose fields')
-    return dict(attachmentPoint=attachment,attachedOffset=offset,attachedRotation=rotation,attachedResetTriggers=triggers[0],attachedSetTriggers=triggers[1],detachedResetTriggers=triggers[2],bodyNumber=body,toolToEquip=tool,clipGuids=refs,clipReferenceTypes=types)
+    return dict(attachmentPoint=attachment,attachedOffset=offset,attachedRotation=rotation,attachmentOverrides=overrides,attachedResetTriggers=triggers[0],attachedSetTriggers=triggers[1],detachedResetTriggers=triggers[2],bodyNumber=body,toolToEquip=tool,clipGuids=refs,clipReferenceTypes=types)
 
 def extract(path,identity,targets):
     raw=path.read_bytes();version,files=unityfs(raw);require(version=='6000.0.62f1','unsupported bundle');out={};sha=digest(raw)

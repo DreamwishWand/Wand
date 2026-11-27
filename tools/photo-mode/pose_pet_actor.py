@@ -86,6 +86,9 @@ def run(relations,sources,avatar,script,body_bundles,out):
   if not row.get('poses'):continue
   rec={'itemId':row['itemId'],'fullPoseVerified':False,'actors':[]};records.append(rec);p=row['prefab'];source=sources[p['assetFile']];require(source.sha==p['bundleSha256'],'prefab source mismatch');go=int(p['pathId']);hierarchy,anim_node,anim_id,av,ctrl=animator(source,go)
   for ph in row['poses']:
+   if ph.get('attachmentOverrides'):
+    rec['actors'].append(dict(componentPathId=ph['componentPathId'],status='unresolved',reason='body-specific attachment requires per-body actor conversion'))
+    continue
    actor=dict(componentPathId=ph['componentPathId'],animatorPathId=anim_id,animatorRootPath=hierarchy[anim_node]['path'],attachmentPoint=ph['attachmentPoint'],attachedOffset=ph['attachedOffset'],attachedRotation=ph['attachedRotation'],anchors={s:b[str(ph['attachmentPoint'])] for s,b in bodies.items()});rec['actors'].append(actor)
    try:
     clip,raw,evidence=resolve_clip(source,ctrl,ph,sources);actor.update(evidence);path=out/(clip['sha256']+'.clip.bin')

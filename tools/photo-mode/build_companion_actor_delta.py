@@ -152,6 +152,7 @@ def generate(a):
                 if 137 not in classes and {23,33}<=classes:
                     nodes,parts=rigid_meshes(src,root,resources[src.cab])
                 else:nodes,parts=meshes(src,root,base_pass_only=a.base_pass_only)
+                require(not pose.get("attachmentOverrides"),"body-specific attachment requires per-body actor conversion")
                 anchors={}
                 for body in BODY_TYPES:
                     e=row[body]["clip"];wpa=p.read(pf[e["sha256"]+".wpa"]);require(digest(wpa)==e["sha256"] and len(wpa)==e["bytes"],"player clip integrity")
