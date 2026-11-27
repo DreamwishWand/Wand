@@ -39,12 +39,17 @@ fn grid_changes(id:&str,grid:&Value,collection:&Value,allocating:bool)->Result<G
 /// each ordinary phase across all affected Grids and stock entries.
 pub fn preview_bulk_furniture(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkPlace<'_>])->Result<GridCoordinateDraft,PatchError>{
  let rows=places.iter().map(|p|BulkScenePlace{pose:BulkPlace{destination:p.destination,item_id:p.item_id,xy:p.xy,orientation:p.orientation,free_placement:p.free_placement},tree:None}).collect::<Vec<_>>();
- bulk_patch(source,pickups,&rows)
+ bulk_patch(source,pickups,&rows,false)
 }
 /// Mixed roots are allocated in input order, with a single global child
 /// allocator and a single stock balance across every destination.
-pub fn preview_bulk_scene_place(source:&str,places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{bulk_patch(source,&[],places)}
-fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_bulk_scene_place(source:&str,places:&[BulkScenePlace<'_>])->Result<GridCoordinateDraft,PatchError>{bulk_patch(source,&[],places,false)}
+// Only room_structure may authorize the known indoor floor geometry, after
+// validating the room's native Grid binding and the selected recovery roots.
+pub(super) fn preview_structural_room_pickup(source:&str,pickups:&[BulkPickup<'_>])->Result<GridCoordinateDraft,PatchError>{
+ bulk_patch(source,pickups,&[],true)
+}
+fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>],structural_room:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||pickups.is_empty()==places.is_empty()||pickups.len()+places.len()>LIMIT{return Err(BAD);}
  let mut root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(BAD)?;
@@ -74,7 +79,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
    v.get("ID").and_then(Value::as_u64)!=Some(u64::from(id))||v.get("ItemID").and_then(Value::as_u64)!=Some(t.item_id)||
    v.get("X").and_then(Value::as_i64)!=Some(i64::from(p.expected.0))||v.get("Y").and_then(Value::as_i64)!=Some(i64::from(p.expected.1))||
    v.get("Orientation").and_then(Value::as_str)!=Some(p.orientation)||
-   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)==Some(1)&&grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|super::saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).is_some_and(|scope|grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|path|outdoor_world_path(scope,path)))){return Err(BAD);}
+   !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)==Some(1)&&(structural_room&&grid["GridDefaultLayoutPath"].as_str()==Some("")&&grid["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room")&&p.ends_with("-GridData.json"))||grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|super::saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).is_some_and(|scope|grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|path|outdoor_world_path(scope,path))))){return Err(BAD);}
   *delta.entry(t.item_id).or_default()+=1;
  }
  for row in places{
