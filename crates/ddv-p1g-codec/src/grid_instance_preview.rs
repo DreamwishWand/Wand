@@ -2472,6 +2472,32 @@ mod tests{
     }
 
     #[test]
+    fn building_layout_count_changes_keep_identical_native_state(){
+        let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":0}});
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":20300001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":state}}}}}}});
+        let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+        let pose=serde_json::json!({"itemId":20300001,"x":1,"y":1,"orientation":2});
+        let other=serde_json::json!({"itemId":20300001,"x":2,"y":3,"orientation":1});
+        let add=serde_json::json!({"destination":dest,"before":[pose],"after":[pose,other],"freePlacement":true});
+        let result=building_layout_candidate_scoped(raw.to_string().as_bytes(),&[add.clone()],false).unwrap();
+        let v:Value=serde_json::from_str(&result).unwrap();
+        let g=&v["World"]["GridCollection"]["Grids"]["42"];
+        assert_eq!(g["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+        assert_eq!(g["Objects"]["5"]["State"],state);
+        assert_eq!(g["Objects"]["5"]["Orientation"],ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS[1]);
+        assert_eq!(g["NextGridObjectID"],6);assert_eq!(v["Player"],raw["Player"]);
+        let remove=serde_json::json!({"destination":dest,"before":[pose,other],"after":[pose],"freePlacement":true});
+        let reduced=building_layout_candidate_scoped(result.as_bytes(),&[remove.clone()],false).unwrap();
+        let v2:Value=serde_json::from_str(&reduced).unwrap();
+        assert_eq!(v2["World"]["GridCollection"]["Grids"]["42"]["Objects"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]);
+        let mut different=v.clone();different["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["State"]["BuildingWithSkinData"]["UpgradeState"]["Level"]=2.into();
+        assert!(building_layout_candidate_scoped(different.to_string().as_bytes(),&[remove],false).is_err());
+        let mut standard=add;standard.as_object_mut().unwrap().remove("freePlacement");
+        assert!(building_layout_candidate_scoped(raw.to_string().as_bytes(),&[standard],false).is_err());
+    }
+    #[test]
     fn world_building_layout_preserves_native_state_and_identity(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let entry=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="Village04").unwrap();
