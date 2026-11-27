@@ -9,7 +9,8 @@ from bundle_thumbnails import image_info, write_json, resize, POLICY, MAX_EDGE
 from extract_memory_sources import read_memory_rows
 from publish_bundle_thumbnails import census, publish, key, info, check, BUCKET
 
-def prepare(root, parts):
+def prepare(root, parts, ledger=None):
+    from source_image_ledger import verify_local_or_published
     doc=json.loads((root/"memory-source-report.json").read_bytes())
     source,rows=read_memory_rows(parts)
     check(doc["schema"]=="wand.media.private-memory-sources@1" and doc["complete"] is True and not doc["errors"],"Incomplete extraction")
@@ -29,9 +30,7 @@ def prepare(root, parts):
             k=key(meta["sha256"])
             check(k not in objects or objects[k]==meta,"Image metadata conflict")
             if k not in objects:
-                path=(root/k).resolve()
-                check(path.is_relative_to(root) and path.is_file(),"Missing extracted image: "+k)
-                check(image_info(path.read_bytes(),meta["sha256"])==meta,"Image verification failed")
+                verify_local_or_published(root,meta,ledger)
                 objects[k]=meta
             refs[guid][role]=meta["sha256"]
     check(len(objects)==doc["summary"]["uniqueOutputImages"],"Image count mismatch")
@@ -41,7 +40,7 @@ def prepare(root, parts):
            "references":refs,"images":{v["sha256"]:v for v in objects.values()}}
     return objects,index
 
-def add_thumbnails(root,objects,index):
+def add_thumbnails(root,objects,index,ledger=None):
     """Only resize completed images. Never resize the native masks or outlines."""
     cache_file=root/"memory-thumbnail-cache.json"
     cache={}
@@ -54,10 +53,11 @@ def add_thumbnails(root,objects,index):
     for n,sha in enumerate(originals,1):
         original=objects[key(sha)]
         cached=cache.get(sha)
-        thumb=None
+        from source_image_ledger import thumbnail as published_thumbnail
+        thumb=published_thumbnail(ledger,original)
         if max(original["width"],original["height"])<=MAX_EDGE:
             thumb=original
-        elif isinstance(cached,dict):
+        elif thumb is None and isinstance(cached,dict):
             candidate=info(cached)
             path=root/key(candidate["sha256"])
             if path.is_file() and max(candidate["width"],candidate["height"])<=MAX_EDGE and candidate["width"]<=original["width"] and candidate["height"]<=original["height"]:
@@ -79,6 +79,7 @@ def add_thumbnails(root,objects,index):
         if n%25==0 or n==len(originals):
             write_json(cache_file,{"policy":POLICY,"images":{**cache,**mapping}})
             print(f"  Memory thumbnails {n}/{len(originals)}",flush=True)
+    write_json(cache_file,{"policy":POLICY,"images":mapping})
     for refs in index["references"].values():
         if "Image" in refs:
             refs["Thumbnail"]=mapping[refs["Image"]]["sha256"]
@@ -106,12 +107,15 @@ def main():
     p.add_argument("--r2",action="store_true",help="Read public bucket and optionally publish missing images")
     p.add_argument("--max-new-uploads",type=int,default=576)
     p.add_argument("--max-new-bytes",type=int,default=500000000)
+    p.add_argument('--ledger',type=Path)
     a=p.parse_args()
+    from source_image_ledger import load, require_pending
+    ledger=load(json.loads(a.ledger.read_bytes())) if a.ledger else None
     root=a.root.resolve()
     check(not any((x/".git").exists() for x in [root,*root.parents]),"Private working directory required")
-    objects,index=prepare(root,a.db01)
+    objects,index=prepare(root,a.db01,ledger)
     original_count=len(objects)
-    thumbnail_count=add_thumbnails(root,objects,index)
+    thumbnail_count=add_thumbnails(root,objects,index,ledger)
     write_json(root/"memory-index-candidate.json",index)
     summary={"originalAndMaskImages":original_count,"uniqueThumbnails":thumbnail_count,"uniqueImages":len(objects),"totalBytes":sum(v["bytes"] for v in objects.values()),"publicationVerified":False}
     if not a.r2:
@@ -125,6 +129,7 @@ def main():
     check("IfNoneMatch" in s3.meta.service_model.operation_model("PutObject").input_shape.members,"Conditional PUT required")
     _,canonical,pages,_=census(s3)
     existing,pending=split(objects,canonical)
+    require_pending(root,pending)
     new_bytes=sum(v["bytes"] for v in pending.values())
     check(len(pending)<=a.max_new_uploads and new_bytes<=a.max_new_bytes,"Publication budget exceeded")
     summary.update(existing=len(existing),newUploads=len(pending),newBytes=new_bytes,

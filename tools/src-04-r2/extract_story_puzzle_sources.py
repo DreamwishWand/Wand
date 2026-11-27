@@ -70,6 +70,7 @@ def meta(row):
 def local_image(out, row):
     info = meta(row)
     path = out / "images" / (info["sha256"] + ".webp")
+    if row.get('reusedPublished'):return {**info,'sourcePixelSha256':row['sourcePixelSha256']}
     raw = Path(row["localSource"]).read_bytes()
     require(image_info(raw, info["sha256"]) == info, "Source image metadata mismatch")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,9 +79,13 @@ def local_image(out, row):
     else:
         with path.open("xb") as handle:
             handle.write(raw)
-    return info
+    return {**info,'sourcePixelSha256':row['sourcePixelSha256']} if row.get('sourcePixelSha256') else info
 
-def thumbnail(out, original, cache):
+def thumbnail(out, original, cache, ledger=None):
+    from source_image_ledger import thumbnail as published_thumbnail
+    original=meta(original)
+    prior=published_thumbnail(ledger,original)
+    if prior:return prior
     sha = original["sha256"]
     if max(original["width"], original["height"]) <= MAX_EDGE:
         return original
@@ -99,7 +104,7 @@ def thumbnail(out, original, cache):
             handle.write(raw)
     return result
 
-def run(parts, aa, root, out):
+def run(parts, aa, root, out, ledger=None):
     source, rows = read_story_rows(parts)
     version = verify_game_version(aa, source[0])
     roles = target_roles(rows)
@@ -131,11 +136,12 @@ def run(parts, aa, root, out):
         try:
             obj = refs["Image"]
             ident = object_identity(obj, bundles)[0]
-            if ident not in memo:
+            cache_key=(ident,'ImageAddress' in roles[guid])
+            if cache_key not in memo:
                 # Verify native RGBA even when reusing an existing source object.
-                m = materialize(obj, bundles, existing, out, True)
-                memo[ident] = local_image(out, m)
-            value = {"unityAssetId": identity, "original": memo[ident]}
+                m = materialize(obj, bundles, existing, out, True, ledger, 'story-puzzle-thumbnail-cache.json' if cache_key[1] else None)
+                memo[cache_key] = local_image(out, m)
+            value = {"unityAssetId": identity, "original": memo[cache_key]}
             prior = report["assets"].get(guid)
             if prior and prior["original"] != value["original"]:
                 raise ValueError("Conflicting exact catalog image objects")
@@ -162,13 +168,13 @@ def run(parts, aa, root, out):
     images = {}
     refs = {}
     for guid, a in sorted(report["assets"].items()):
-        orig = a["original"]
+        orig = meta(a["original"])
         images[orig["sha256"]] = orig
         r = {"original": orig["sha256"]}
         if "ImageAddress" in roles[guid]:
             sha = orig["sha256"]
             if sha not in cache:
-                cache[sha] = thumbnail(out, orig, previous)
+                cache[sha] = thumbnail(out, orig, previous, ledger)
             t = cache[sha]
             images[t["sha256"]] = t
             r["thumbnail"] = t["sha256"]
@@ -198,12 +204,15 @@ def main():
     p.add_argument("--aa", type=Path, required=True)
     p.add_argument("--existing-root", type=Path, default=DEFAULT_ROOT)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument('--ledger',type=Path)
     a = p.parse_args()
+    from source_image_ledger import load
+    ledger=load(json.loads(a.ledger.read_bytes())) if a.ledger else None
     out, aa, root = a.out.resolve(), a.aa.resolve(), a.existing_root.resolve()
     require(not any((x / ".git").exists() for x in (out, *out.parents))
             and not out.is_relative_to(aa) and not out.is_relative_to(root)
             and not root.is_relative_to(out), "Use a separate private output directory")
-    summary, complete = run(a.db01, aa, root, out)
+    summary, complete = run(a.db01, aa, root, out, ledger)
     print(json.dumps(summary, indent=2), flush=True)
     if not complete:
         raise SystemExit(2)
