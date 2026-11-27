@@ -1,0 +1,25 @@
+import {dragYaw,wrapYaw,fullTurn} from './orbit.js';
+import {CpuPoseDiagnostic} from './cpu-diagnostic.js';
+import {PosePlayback, poseSpeeds, type PoseSpeed} from './playback.js';
+import {combine,validateManifest,type Manifest} from './split-loader.js';
+const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
+const canvas=get<HTMLCanvasElement>('canvas'),files=get<HTMLInputElement>('files'),clips=get<HTMLSelectElement>('clips'),play=get<HTMLButtonElement>('play'),restart=get<HTMLButtonElement>('restart'),seek=get<HTMLInputElement>('seek'),speed=get<HTMLSelectElement>('speed'),loop=get<HTMLInputElement>('loop'),angle=get<HTMLInputElement>('angle'),zoom=get<HTMLInputElement>('zoom'),status=get<HTMLElement>('status');
+let clock:PosePlayback|undefined,model:ArrayBuffer|undefined,manifest:Manifest|undefined,assetFiles:Map<string,File>,renderer:CpuPoseDiagnostic|undefined,generation=0,last:number|undefined;
+for(const n of poseSpeeds){const opt=document.createElement('option');opt.value=String(n);opt.textContent=n+'×';speed.append(opt)}
+function enabled(value:boolean){for(const el of [play,restart,seek,speed,loop,angle,zoom])el.disabled=!value}
+function draw(t:number){renderer?.draw(canvas,0,t,Number(angle.value),Number(zoom.value))}
+function sync(){if(!clock)return;const s=clock.snapshot;seek.max=String(s.duration);seek.value=String(s.time);play.textContent=s.playing?'Pause':'Play';status.textContent=s.time.toFixed(2)+' / '+s.duration.toFixed(2)+' s'}
+async function selectClip(){const token=++generation;clock?.pause();clock=undefined;renderer=undefined;enabled(false);try{if(!manifest||!model)return;const m=manifest,entry=m.clips[Number(clips.value)];if(!entry)throw Error('Unknown clip');const file=assetFiles.get(entry.sha256+'.wpa');if(!file)throw Error('Missing clip file');const bytes=await combine(model,await file.arrayBuffer(),m,entry);if(token!==generation)return;renderer=new CpuPoseDiagnostic(bytes);clock=new PosePlayback(renderer.durations[0],{sample:draw,setVisible:()=>{throw Error('No independently verified actor in this diagnostic')}});clock.setLoop(loop.checked);clock.setSpeed(Number(speed.value) as PoseSpeed);last=undefined;enabled(true);sync()}catch(e){if(token===generation)status.textContent=String(e)}}
+files.onchange=async()=>{const token=++generation;clock?.pause();clock=undefined;renderer=undefined;model=undefined;manifest=undefined;clips.replaceChildren();clips.disabled=true;enabled(false);try{const selected=new Map(Array.from(files.files??[]).map(f=>[f.name,f]));const index=selected.get('index.json');if(!index)throw Error('Select a private package directory');const m=validateManifest(JSON.parse(await index.text()));const f=selected.get(m.model.sha256+'.glb');if(!f)throw Error('Missing model');const b=await f.arrayBuffer();if(token!==generation)return;assetFiles=selected;manifest=m;model=b;m.clips.forEach((c,i)=>{const opt=document.createElement('option');opt.value=String(i);opt.textContent=c.name;clips.append(opt)});clips.disabled=false;await selectClip()}catch(e){if(token===generation)status.textContent=String(e)}};
+clips.onchange=()=>void selectClip();play.onclick=()=>{if(!clock)return;clock.snapshot.playing?clock.pause():clock.play();last=undefined;sync()};restart.onclick=()=>{clock?.restart();last=undefined;sync()};seek.oninput=()=>{clock?.seek(Number(seek.value));sync()};speed.onchange=()=>{clock?.setSpeed(Number(speed.value) as PoseSpeed);last=undefined};loop.onchange=()=>clock?.setLoop(loop.checked);angle.oninput=zoom.oninput=()=>{if(clock)draw(clock.snapshot.time)};
+let pointer: {id:number;x:number}|undefined;
+angle.min='0';angle.max=String(fullTurn);angle.step='any';
+function setYaw(value:number){angle.value=String(wrapYaw(value));if(clock)draw(clock.snapshot.time)}
+canvas.style.touchAction='none';canvas.tabIndex=0;
+canvas.addEventListener('pointerdown',e=>{if(!clock||pointer||e.button!==0)return;pointer={id:e.pointerId,x:e.clientX};canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x;pointer.x=e.clientX;const width=canvas.getBoundingClientRect().width;if(width>0)setYaw(dragYaw(Number(angle.value),dx,width))});
+function endPointer(e:PointerEvent){if(pointer?.id===e.pointerId)pointer=undefined}
+for(const event of ['pointerup','pointercancel','lostpointercapture'] as const)canvas.addEventListener(event,endPointer);
+canvas.addEventListener('keydown',e=>{if(!clock||!['ArrowLeft','ArrowRight','Home'].includes(e.key))return;e.preventDefault();setYaw(e.key==='Home'?0:Number(angle.value)+(e.key==='ArrowRight'?1:-1)*Math.PI/12)});
+function frame(now:number){if(clock?.snapshot.playing){if(last!==undefined)clock.tick(Math.min(.1,(now-last)/1000));sync()}last=now;requestAnimationFrame(frame)}
+enabled(false);requestAnimationFrame(frame);
