@@ -7,9 +7,11 @@ const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf
 assert.equal(index.schema,'wand.photo-mode.pages-test@2');
 const byKind=kind=>Object.entries(index.items).find(([,row])=>row.male?.kind===kind&&row.female?.kind===kind)?.[0];
 const companionOnly=Object.entries(index.items).find(([,row])=>row.male?.kind==='player'&&row.male?.companionIncluded===false)?.[0];
-const ids=[byKind('player'),byKind('pair'),companionOnly];
+const attached=Object.entries(index.items).find(([,row])=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true)?.[0];
+const ids=[byKind('player'),byKind('pair'),companionOnly,attached];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,90);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,54);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,36);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
@@ -43,8 +45,8 @@ try{
       assert.equal(await preview.locator('select').inputValue(),'0.5');
       const t=await seek.inputValue();
       const toggle=preview.locator('input[type=checkbox]');
-      assert.equal(await toggle.count(),i===1?1:0);
-      if(i===1){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
+      assert.equal(await toggle.count(),i===1||i===3?1:0);
+      if(i===1||i===3){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}
       const canvas=preview.locator('canvas');
       await canvas.focus();await canvas.press('ArrowRight');
       assert.equal(await seek.inputValue(),t);
