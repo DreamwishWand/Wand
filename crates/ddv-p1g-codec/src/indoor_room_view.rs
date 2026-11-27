@@ -1155,4 +1155,32 @@ mod tests{
   let j:Value=serde_json::from_str(&project(raw).unwrap()).unwrap();
   for row in j["rooms"][0]["surfaces"].as_array().unwrap(){assert_eq!(row["gridStatus"],"shared");assert_eq!(row["items"],json!([]));}
  }
+ #[test]
+ fn building_restore_applies_ceiling_only_and_rejects_stale_or_unowned_finish(){
+  let mut grids=serde_json::Map::new();
+  let mut rooms=Vec::new();
+  let mut floor_rows=Vec::new();
+  for room in 0..2{
+   let base=42+room*5;
+   let mut rows=Vec::new();
+   for i in 0..5{
+    let path=if i==0{"GridData/Rooms/Room8x8-GridData.json"}else{"GridData/Rooms/Wall8x9-GridData.json"};
+    grids.insert((base+i).to_string(),json!({"ID":base+i,"GridDataPath":path,"TessellationFactor":1,"NextGridObjectID":1,"Objects":{}}));
+    rows.push(json!({"surfaceOrdinal":i+1,"sourcePath":path,"factor":1,"pickup":[],"place":[],"finish":null}));
+   }
+   rooms.push(json!({"roomOrdinal":room+1,"surfaces":rows,"ceiling":{"itemId":160100031,"expected":160100136}}));
+   floor_rows.push(json!({"Rooms":{"0":{"FloorGridID":base,"WallGridIDs":{"0":base+1,"1":base+2,"2":base+3,"3":base+4},"Ceiling":160100136,"Flooring":160100000,"Unknown":7}}}));
+  }
+  let raw=json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"4":{"ID":4,"CompatibleItemType":"ItemType_Trimming","Inventory":{"160100031":{"Amount":1}}}}},"World":{"PlayerHouses":[{"HouseItemID":20500000,"Floors":floor_rows}],"GridCollection":{"Grids":grids}}});
+  let mut plan=json!({"scope":"building","rooms":rooms});
+  let result=room_project_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+  let mut expected=raw.clone();
+  for i in 0..2{expected["World"]["PlayerHouses"][0]["Floors"][i]["Rooms"]["0"]["Ceiling"]=json!(160100031);}
+  assert_eq!(serde_json::from_str::<Value>(&result).unwrap(),expected);
+  plan["rooms"][1]["ceiling"]["expected"]=json!(160100000);
+  assert!(room_project_candidate(raw.to_string().as_bytes(),&plan.to_string()).is_err());
+  plan["rooms"][1]["ceiling"]=json!({"itemId":160100032,"expected":160100136});
+  assert!(room_project_candidate(raw.to_string().as_bytes(),&plan.to_string()).is_err());
+ }
+
 }
