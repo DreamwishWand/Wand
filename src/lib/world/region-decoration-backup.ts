@@ -1,4 +1,4 @@
-import {mainlandExtent,mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandExtent,mainlandMapAnchor,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {mainlandSavedInRect,type MainlandSavedObject} from './mainland-saved-objects.ts';
 import {validCaptureRegion,type CaptureRegion} from './scene-capture-region.ts';
 import {captureIslandDecoration,parseIslandDecoration,WORLD_DECORATION_FILE_LIMIT} from './island-decoration-preset.ts';
