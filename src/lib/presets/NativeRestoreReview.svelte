@@ -10,7 +10,7 @@
  export let entry:SessionPreset;
  export let source:File|null;
  export let locale:WandLanguage;
- type Receipt={contract:string;schemaMatches:boolean;targetReadable:boolean;matchingDesigns:number|null;existingDesignsForItem:number|null;allocatorConsistent:boolean|null;requiresNewId:boolean;writerAuthorized:false;activeSlots:number|null;legacySlotLimit:number|null;decorationTestCandidate:boolean;replacementSlots:{slot:number;name:string}[];positiveBaseStock:number|null;baseItemId:number|null};
+ type Receipt={contract:string;schemaMatches:boolean;targetReadable:boolean;matchingDesigns:number|null;existingDesignsForItem:number|null;allocatorConsistent:boolean|null;requiresNewId:boolean;writerAuthorized:false;activeSlots:number|null;legacySlotLimit:number|null;decorationTestCandidate:boolean;replacementSlots:{slot:number;name:string}[];positiveBaseStock:number|null;baseItemId:number|null;designCount:number|null;configuredDesignLimit:number|null;componentStock:{itemId:number;subtype:number;positiveStock:number|null}[];visualStructureVerified:boolean;tomTestCandidate:boolean;currentSlotLimitSourceVerified:boolean};
  let worker:Worker|null=null,result:Receipt|null=null,busy=false,error=false,rehearsed=false,rehearsalError=false;
  let convertWorker:Worker|null=null,geometryWorker:Worker|null=null,copyUrl:string|null=null,copyName='';
  $: testWords=testSaveWords[locale];
@@ -18,7 +18,9 @@
  let replaceSlot=0,dbIdentity:boolean|null=null,dbEpoch=0;
  $: void checkBase(result);
  async function checkBase(receipt:Receipt|null){const token=++dbEpoch;dbIdentity=null;if(!receipt?.baseItemId||!receipt.requiresNewId)return;
-  try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'}),[item]=await db.getItems([receipt.baseItemId]);if(token===dbEpoch)dbIdentity=!!item&&item.itemId===receipt.baseItemId&&item.itemType.code===(entry.kind==='tom-furniture'?4:5);}catch{if(token===dbEpoch)dbIdentity=null;}
+  try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'}),[item]=await db.getItems([receipt.baseItemId]);let valid=!!item&&item.itemId===receipt.baseItemId&&item.itemType.code===(entry.kind==='tom-furniture'?4:5);
+   for(let start=0;valid&&start<receipt.componentStock.length;start+=128){const expected=receipt.componentStock.slice(start,start+128),rows=await db.getItems(expected.map(v=>v.itemId));valid=rows.length===expected.length&&rows.every((v,i)=>!!v&&v.itemId===expected[i].itemId&&v.itemType.code===10&&v.itemType.subtypeCode===expected[i].subtype&&v.sourceClass===(expected[i].subtype===0?'DecalItemData':'TextureItemData'));}
+   if(token===dbEpoch)dbIdentity=valid;}catch{if(token===dbEpoch)dbIdentity=null;}
  }
  let previousFile:File|null=null,previousEntry:SessionPreset|null=null;
  $: w=nativeReviewWords[locale];
@@ -55,6 +57,17 @@
   };
   cv.postMessage({command:'convert',file:backup});
  }
+
+ function restoreTom(){
+  if(!testEnabled||!source||busy||!result?.tomTestCandidate||dbIdentity!==true||!window.confirm(testWords[1]))return;
+  if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl=null;
+  const save=source,backup=entry.file;busy=true;rehearsalError=false;
+  const own=new Worker(new URL('./native-preset.worker.ts',import.meta.url),{type:'module'});worker=own;
+  const finish=(v:any)=>{own.terminate();if(worker!==own||source!==save||entry.file!==backup){v?.bytes?.fill?.(0);return;}worker=null;busy=false;
+   try{if(v?.kind!=='tom-copy')throw Error('copy');const out=experimentalCopyDownload(v,save);copyUrl=out.url;copyName=out.name.replace('-world-test','-tom-test');}catch{rehearsalError=true;}
+  };own.onmessage=e=>finish(e.data);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);
+  own.postMessage({command:'tom-export',file:save,backup,base,allowExperimentalCopy:true});
+ }
  function rehearse(){
   if(!source||busy||!result?.schemaMatches||!result.targetReadable||result.allocatorConsistent!==true||result.matchingDesigns!==0||!result.requiresNewId)return;
   busy=true;rehearsed=false;rehearsalError=false;
@@ -85,7 +98,12 @@
    {#if result.requiresNewId}<small>{dbIdentity===true?w[15]:w[16]}</small><small>{result.positiveBaseStock!==null?w[17]+': '+result.positiveBaseStock:w[18]}</small><small>{result.allocatorConsistent===true?w[6]:w[7]}</small>{/if}
   {/if}
   {#if result.requiresNewId&&result.schemaMatches&&result.targetReadable&&result.allocatorConsistent===true&&result.matchingDesigns===0}<button type="button" disabled={busy} on:click={rehearse}>{w[11]}</button>{/if}
-  {#if result.activeSlots!==null&&result.legacySlotLimit!==null}<small>{result.activeSlots} / {result.legacySlotLimit} ({w[14]})</small>{/if}
+  {#if result.requiresNewId&&result.configuredDesignLimit!==null}<small>{result.designCount} / {result.configuredDesignLimit} · {w[21]}</small>
+   <small>{w[22]}: {result.componentStock.filter(v=>v.positiveStock!==null).length}/{result.componentStock.length}</small>
+   {#if !result.visualStructureVerified}<small>{w[23]}</small>{/if}
+  {/if}
+  {#if testEnabled&&result.tomTestCandidate&&dbIdentity===true}<small>{testWords[1]}</small><button type="button" disabled={busy} on:click={restoreTom}>{testWords[0]}</button>{/if}
+  {#if result.activeSlots!==null&&result.legacySlotLimit!==null}<small>{result.activeSlots} / {result.legacySlotLimit} ({result.currentSlotLimitSourceVerified?w[24]:w[14]})</small>{/if}
   {#if testEnabled&&result.decorationTestCandidate}<small>{testWords[1]}</small><button type="button" disabled={busy} on:click={()=>restoreDecoration()}>{testWords[0]}</button>{/if}
   {#if testEnabled&&result.replacementSlots.length}
     <label>{w[19]}<select bind:value={replaceSlot} disabled={busy}><option value={0}>—</option>{#each result.replacementSlots as target (target.slot)}<option value={target.slot}>{target.name} · {target.slot}</option>{/each}</select></label>
