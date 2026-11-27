@@ -306,3 +306,11 @@ test('occupied resize marks anchor-only options explicitly',()=>{
  assert.deepEqual(indoorRoomResizePlan(p,'6x8'),{roomOrdinal:1,expected:'6x6',size:'6x8'});
  assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,anchorOptions:['6x8']}}])));
 });
+
+test('shrink recovery requires explicit size and exact return count',()=>{
+ const r={...room,resize:{current:'6x6',options:[],recoveryOptions:[['3x3',2]]}};
+ const p=parseIndoorRooms(report([r]))[0];
+ assert.deepEqual(indoorRoomResizePlan(p,'3x3'),{roomOrdinal:1,expected:'6x6',size:'3x3',recoverCount:2});
+ assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,recoveryOptions:[['3x3',0]]}}])));
+ assert.throws(()=>parseIndoorRooms(report([{...r,resize:{...r.resize,options:['3x3']}}])));
+});

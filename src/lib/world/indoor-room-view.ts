@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true;protected?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[];anchorOptions?:string[]};ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;appendFloorCount?:number;addRoomSlots?:number[];addRoomSizes?:string[];removeKind?:'room'|'floor';resize?:{current:string;options:string[];anchorOptions?:string[];recoveryOptions?:[string,number][]};ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -41,7 +41,10 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
   const remove=room.removeKind;if(remove!==undefined&&(room.houseItemId!==20500000||!(remove==='floor'&&room.roomSlot===0&&typeof room.floor==='number'&&room.floor>1||remove==='room'&&integer(room.roomSlot,1,3))))throw Error('INDOOR_REMOVE_INVALID');
   const sizes=room.addRoomSizes;if((sizes===undefined)!==(room.addRoomSlots===undefined)||sizes!==undefined&&(!Array.isArray(sizes)||sizes.length<1||sizes.length>26||new Set(sizes).size!==sizes.length||sizes.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n))))throw Error('INDOOR_ADD_SIZE_INVALID');
   const slots=room.addRoomSlots;if(slots!==undefined&&(!Array.isArray(slots)||slots.length<1||slots.length>3||new Set(slots).size!==slots.length||slots.some(n=>!integer(n,1,3))||room.houseItemId!==20500000||room.roomSlot!==0))throw Error('INDOOR_ADD_ROOM_INVALID');
-  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).some(k=>!["current","options","anchorOptions"].includes(k))||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)||resize.anchorOptions!==undefined&&(!Array.isArray(resize.anchorOptions)||resize.anchorOptions.length<1||resize.anchorOptions.length+resize.options.length>26||new Set(resize.anchorOptions).size!==resize.anchorOptions.length||resize.anchorOptions.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current||(resize.options as unknown[]).includes(n)))))throw Error('INDOOR_RESIZE_INVALID');
+  const resize=room.resize;if(resize!==undefined&&(!record(resize)||Object.keys(resize).some(k=>!["current","options","anchorOptions","recoveryOptions"].includes(k))||typeof resize.current!=='string'||!/^\d{1,2}x\d{1,2}$/.test(resize.current)||!Array.isArray(resize.options)||resize.options.length>26||new Set(resize.options).size!==resize.options.length||resize.options.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current)||resize.anchorOptions!==undefined&&(!Array.isArray(resize.anchorOptions)||resize.anchorOptions.length<1||resize.anchorOptions.length+resize.options.length>26||new Set(resize.anchorOptions).size!==resize.anchorOptions.length||resize.anchorOptions.some(n=>typeof n!=='string'||!/^\d{1,2}x\d{1,2}$/.test(n)||n===resize.current||(resize.options as unknown[]).includes(n)))))throw Error('INDOOR_RESIZE_INVALID');
+  if(record(resize)&&resize.recoveryOptions!==undefined){
+   const a=resize.recoveryOptions;if(!Array.isArray(a)||a.length<1||a.length>26||a.some(v=>!Array.isArray(v)||v.length!==2||typeof v[0]!=='string'||!/^\d{1,2}x\d{1,2}$/.test(v[0])||v[0]===resize.current||!integer(v[1],1,2048)||(resize.options as unknown[]).includes(v[0])||Array.isArray(resize.anchorOptions)&&resize.anchorOptions.includes(v[0]))||new Set(a.map(v=>v[0])).size!==a.length||a.length+(resize.options as unknown[]).length+(Array.isArray(resize.anchorOptions)?resize.anchorOptions.length:0)>26)throw Error('INDOOR_RECOVER_INVALID');
+  }
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
    if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
@@ -505,6 +508,8 @@ export const roomRenameWords={
 
 export function indoorRoomResizePlan(room:IndoorRoom|null,size:string){
  if(!room?.resize)return null;
+ const recovery=room.resize.recoveryOptions?.find(v=>v[0]===size);
+ if(recovery)return {roomOrdinal:room.ordinal,expected:room.resize.current,size,recoverCount:recovery[1]};
  const free=room.resize.anchorOptions?.includes(size)===true;
  if(!room.resize.options.includes(size)&&!free)return null;
  return {roomOrdinal:room.ordinal,expected:room.resize.current,size,...(free?{preserveAnchors:true as const}:{})};
@@ -574,4 +579,15 @@ export const anchorResizeWords={
  'es-ES':['Colocación libre','Se conservan posiciones; no se verifican salientes ni solapamientos.'],
  'zh-CN':['自由摆放','保留家具坐标，不检查占地范围越界或重叠。'],
  'pt-BR':['Posicionamento livre','Posições preservadas; limites da área ocupada e sobreposições não verificados.']
+} as const;
+
+export const recoverResizeWords={
+ ja:['範囲外の家具を回収','個の家具を所持品に戻します。残る家具のフットプリントや重なりは未検証です。'],
+ en:['Recover outside furniture',' furniture objects will return to stock. Remaining footprints and overlap are not checked.'],
+ fr:['Récupérer les meubles hors limites',' meubles seront remis en stock. Empreintes et chevauchements restants non vérifiés.'],
+ it:['Recupera mobili fuori limite',' mobili saranno restituiti. Ingombri e sovrapposizioni residui non verificati.'],
+ de:['Möbel außerhalb zurücknehmen',' Möbel werden ins Inventar zurückgelegt. Überstände und Überlappungen bleiben ungeprüft.'],
+ 'es-ES':['Recoger muebles fuera del límite',' muebles volverán al inventario. No se comprueban las huellas ni los solapamientos restantes.'],
+ 'zh-CN':['收回范围外的家具','件家具将返回库存。其余家具占地及重叠未验证。'],
+ 'pt-BR':['Recolher móveis fora da área',' móveis retornarão ao estoque. Áreas ocupadas e sobreposições restantes não são verificadas.']
 } as const;
