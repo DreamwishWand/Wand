@@ -112,8 +112,8 @@
  }
 
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
- $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,editable,removable,new Set(roomSupports.map(p=>p.index))):null;
- $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y):null;
+ $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,freeEdit?freeEligible:editable,freeEdit?freeEligible:removable,new Set(roomSupports.map(p=>p.index)),freeEdit):null;
+ $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,freeEdit?freeEligible:removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y,freeEdit):null;
  $: clonePreview=placing&&cloneClip.length&&hoverCell?(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,hoverCell.x,hoverCell.y,mixedSources):null:linkedAxis?indoorLinkedPlacement(face,shapes,freeEdit?freeEligible:removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y,linkedAxis,freeEdit):indoorScenePlacement(face,shapes,freeEdit?freeEligible:removable,stock,cloneClip,sceneAnchor,hoverCell.x,hoverCell.y,freeEdit)):null;
  $: linkedStockPreview=placing&&linkedAxis&&!supportClone&&!cutSource&&!cloneClip.length&&hoverCell?indoorLinkedPlacement(face,shapes,freeEdit?freeEligible:removable,stock,[{itemId:stockId,dx:0,dy:0,orientation:(worldOrientationCode(stockOrientation)??-4)/4}],'corner',hoverCell.x,hoverCell.y,linkedAxis,freeEdit):null;
  $: cutGhost=transferDraft??cutPreview??clonePreview??placeDraft??symmetryPreview??linkedStockPreview;
@@ -303,7 +303,7 @@
   if(!tree||!roomSvg||editWorker||editCopy||editDraft||pickupDraft||placeDraft||transferDraft||stockOpen||e.detail===0)return;const p=point(e);if(!p)return;
   if(placing&&cutSource){
    if(cutSource!==$worldFurnitureCut||cutSource.file!==file){editError=true;return;}
-   const draft=indoorGroupTransfer(face,shapes,removable,cutSource.rows,cutClip,p.x,p.y);
+   const draft=indoorGroupTransfer(face,shapes,freeEdit?freeEligible:removable,cutSource.rows,cutClip,p.x,p.y,freeEdit);
    if(draft){transferDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;
   }
   if(placing&&cloneClip.length){const draft=(mixedDoc?mixedValid?indoorMixedPlacement(face,shapes,removable,stock,cloneClip,mixedDoc,sceneAnchor,p.x,p.y,mixedSources):null:placeClipAt(cloneClip,sceneAnchor,p.x,p.y));if(draft){placeDraft=draft;placing=false;hoverCell=null;editError=false;}else editError=true;return;}
@@ -316,7 +316,7 @@
   const source=file,edits=editDraft,pickup=pickupDraft,place=placeDraft,transfer=transferDraft,worker=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});editWorker=worker;editError=false;
   const done=(d:any)=>{worker.terminate();if(editWorker!==worker||file!==source||editDraft!==edits||pickupDraft!==pickup||placeDraft!==place||transferDraft!==transfer){d?.bytes?.fill(0);return;}editWorker=null;try{if(d?.kind!=='indoor-furniture-copy')throw Error('copy');editCopy=experimentalCopyDownload(d,source);}catch{editError=true;}};
   worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
-  worker.postMessage({command:'indoor-furniture-export',file:source,allowExperimentalCopy:true,plan:{roomOrdinal:room.ordinal,surfaceOrdinal:face.ordinal,...(freeEdit&&!transfer&&(place?place.every(p=>!p.supportSource&&!p.scene&&freeEligible.has(p.itemId)):pickup?pickup.every(p=>!p.includeSupport&&freeEligible.has(p.itemId)):edits?.every(p=>face?.positions[p.index]?.plain===true&&freeEligible.has(p.itemId)))?{freePlacement:true}:{}),...(transfer?{transfer}:place?{place}:pickup?{pickup}:pairedDraft?(pairedRotation?{pairedRotate:{mode:pairedDraft,edits}}:{paired:{mode:pairedDraft,edits}}):alignmentDraft?{align:edits}:{edits})}});
+  worker.postMessage({command:'indoor-furniture-export',file:source,allowExperimentalCopy:true,plan:{roomOrdinal:room.ordinal,surfaceOrdinal:face.ordinal,...(freeEdit&&(transfer?transfer.every(p=>!p.supportFactor&&freeEligible.has(p.itemId)):place?place.every(p=>!p.supportSource&&!p.scene&&freeEligible.has(p.itemId)):pickup?pickup.every(p=>!p.includeSupport&&freeEligible.has(p.itemId)):edits?.every(p=>face?.positions[p.index]?.plain===true&&freeEligible.has(p.itemId)))?{freePlacement:true}:{}),...(transfer?{transfer}:place?{place}:pickup?{pickup}:pairedDraft?(pairedRotation?{pairedRotate:{mode:pairedDraft,edits}}:{paired:{mode:pairedDraft,edits}}):alignmentDraft?{align:edits}:{edits})}});
  }
  function applyFurniture(){if(!testExport||blocked||!file||!editCopy||cutSource&&(cutSource!==$worldFurnitureCut||cutSource.file!==file)||!commitWorldCheckpoint(file,editCopy.file)){editError=true;return;}if(cutSource){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);}resetObject();}
  function applyFinishCopy(){if(!testExport||blocked||!file||!finishCopy||previewStatus!=='valid')return;if(!commitWorldCheckpoint(file,finishCopy.file)){previewStatus='error';return;}if(renameOpen||resizeOpen||appendFloorOpen||addRoomOpen||removeRoomOpen||ceilingOpen)finishOpen=false;cancelPreview();}
