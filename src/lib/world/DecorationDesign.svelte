@@ -313,7 +313,7 @@
  let inspectorOpen=false,placedSearchOpen=false,placedQuery='',focusedId:number|null=null;
  const inspectLabels={ja:['精密配置','配置済み家具を検索','対象を切り替える','対称側の家具を一意に移動できません。軸・配置・レイヤーを確認してください。'],en:['Precise placement','Find placed items','Cycle objects','Cannot move a unique symmetric counterpart. Check the axis, placement and layers.'],fr:['Placement précis','Rechercher les objets placés','Parcourir les objets','Impossible de déplacer le pendant symétrique. Vérifiez l’axe et les calques.'],it:['Posizionamento preciso','Cerca oggetti posizionati','Scorri gli oggetti','Impossibile spostare la controparte simmetrica. Verifica asse e livelli.'],de:['Präzise Platzierung','Platzierte Objekte suchen','Objekte durchgehen','Das symmetrische Gegenstück ist nicht eindeutig verschiebbar. Achse und Ebenen prüfen.'],'es-ES':['Colocación precisa','Buscar objetos colocados','Recorrer objetos','No se puede mover la contraparte simétrica. Comprueba el eje y las capas.'],'zh-CN':['精确放置','搜索已放置物品','切换物品','无法唯一移动对称物品，请检查轴线、位置及图层。'],'pt-BR':['Posicionamento preciso','Buscar objetos colocados','Percorrer objetos','Não foi possível mover o objeto simétrico. Verifique eixo e camadas.']} as const;
  $: inspectionWords=inspectLabels[locale]??inspectLabels.en;
- $: selectableObjects=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select'));
+ $: selectableObjects=objects.filter(o=>layerSelectable(layerState,o)&&(layer==='building'?o.nativeType==='Building':matchesSelectionLayer(o,layer))&&!nativeActionBlocked(o.editRestrictions,'select'));
  $: editableIds=new Set(selectableObjects.map(o=>o.localOrdinal));
  $: placedTerms=normalize(placedQuery).split(/\s+/).filter(Boolean);
  $: placedResults=selectableObjects.filter(o=>placedTerms.every(term=>normalize(worldObjectName(o,names)).includes(term)));
@@ -738,7 +738,7 @@
    }
    const hits=map?savedShapesAt(map,1,p.x,p.y):[];
    const ordered=mapPainterOrder(hits).reverse();
-   const id=ordered.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer))?.localOrdinal??null;
+   const id=ordered.find(o=>layerSelectable(layerState,o)&&(layer==='building'?o.nativeType==='Building':matchesSelectionLayer(o,layer)))?.localOrdinal??null;
    focusedId=id;
    if((e.ctrlKey||e.metaKey||e.shiftKey)&&id!==null){
      const ids=new Set(selectedIds);if(ids.has(id))ids.delete(id);else ids.add(id);
@@ -746,7 +746,7 @@
    }else{groupIds=[];selected=id;}
  }
  function hitAt(p:Cell){
-   return map?mapPainterOrder(savedShapesAt(map,1,p.x,p.y)).reverse().find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)):undefined;
+   return map?mapPainterOrder(savedShapesAt(map,1,p.x,p.y)).reverse().find(o=>layerSelectable(layerState,o)&&(layer==='building'?o.nativeType==='Building':matchesSelectionLayer(o,layer))):undefined;
  }
  function startDirect(e:PointerEvent){
    suppressDirectClick=false;
@@ -777,7 +777,7 @@
    if(!drag.moved)return;suppressDirectClick=true;
    const end=cell(e);if(!commit||!end)return;drag.end=end;
    if(drag.kind==='marquee'){
-     const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
+     const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>layerSelectable(layerState,o)&&(layer==='building'?o.nativeType==='Building':matchesSelectionLayer(o,layer))&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
      const list=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];groupIds=list.length>1?list:[];selected=list.length===1?list[0]:null;return;
    }
    const dx=drag.end.x-drag.start.x,dy=drag.end.y-drag.start.y;
@@ -800,7 +800,7 @@
    }
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
-   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
+   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&(layer==='building'?o.nativeType==='Building':matchesSelectionLayer(o,layer))&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
    if(action==='cancel'){e.preventDefault();if(roadDrag){roadDrag=null;return;}if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
    if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}else if(focusedId!==null&&!moveMode){e.preventDefault();focusPlaced(focusedId,true);}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
