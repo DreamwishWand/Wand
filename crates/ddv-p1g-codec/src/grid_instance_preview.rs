@@ -1874,7 +1874,11 @@ fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<S
     let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let expected=(int("expectedX")?,int("expectedY")?);
     let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
-    let target=resolve_grid_mixed_targets(profile,&[(ordinal,item,expected,"full".to_owned(),Some(orientation.to_owned()))])?.pop().ok_or(bad)?;
+    let target=if !remove&&character_house_exterior(item){
+        // Exact source identity + orientation/state/dependencies are checked by
+        // the copy-specific writer; a preserved navigation cache is permitted.
+        resolve_grid_coordinate_target(profile,ordinal,item,expected,"full")?
+    }else{resolve_grid_mixed_targets(profile,&[(ordinal,item,expected,"full".to_owned(),Some(orientation.to_owned()))])?.pop().ok_or(bad)?};
     if character_house_exterior(item){
         let draft=if remove{character_house_remove_candidate(profile,&root,&target,expected,orientation)?}else{
             let dest=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
@@ -3991,6 +3995,11 @@ mod terrain_session_tests{
         let visited_copy=character_house_copy_candidate(before.as_bytes(),&t,(1,2),&d,(8,9),"GridOrientation_Down","GridOrientation_Right",true).unwrap();
         let after:Value=serde_json::from_str(&visited_copy.patched_json).unwrap();
         assert_eq!(after["Player"],visited["Player"]);
+        let same_visited=group_paste_candidate(before.as_bytes(),&same.to_string()).unwrap();
+        let same_visited_root:Value=serde_json::from_str(&same_visited).unwrap();
+        assert_eq!(same_visited_root["Player"],visited["Player"]);
+        let mut stale=same.clone();stale["buildingDuplicate"]["orientation"]="GridOrientation_Left".into();
+        assert!(group_paste_candidate(before.as_bytes(),&stale.to_string()).is_err());
         let mut island_copy:Value=serde_json::from_str(&draft.patched_json).unwrap();
         let remove_island=serde_json::json!({"buildingRemove":{"localOrdinal":2,"itemId":"20000016","expectedX":8,"expectedY":9,"orientation":"GridOrientation_Right"}});
         assert!(group_paste_candidate(island_copy.to_string().as_bytes(),&remove_island.to_string()).is_err());
