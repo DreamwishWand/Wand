@@ -1996,8 +1996,10 @@ fn building_layout_candidate_scoped(profile:&[u8],rows:&[Value],whole_world:bool
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
  let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
  let mut scope=None::<String>;let mut count=0;let mut verified=HashSet::new();let mut edits=Vec::<GridMixedEdit>::new();
+ let mut clones=Vec::new();let mut removals=Vec::new();
  for row in rows{
-  let o=row.as_object().filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
+  let o=row.as_object().filter(|m|(m.len()==3||m.len()==4&&m.get("freePlacement").and_then(Value::as_bool)==Some(true))&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"|"freePlacement"))).ok_or(bad)?;
+  let free=o.get("freePlacement").and_then(Value::as_bool)==Some(true);
   let witness=&o["destination"];let (name,n)=world_grid_scope(witness)?;
   if scope.as_ref().is_some_and(|s|s!=&name){return Err(bad);}scope=Some(name.clone());count=n;
   let d=resolve_plain_grid_destination(profile,witness)?;
@@ -2013,24 +2015,58 @@ fn building_layout_candidate_scoped(profile:&[u8],rows:&[Value],whole_world:bool
    let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:oid.clone(),item_id:item};
    actual.push((target,(item,x,y,direction)));
   }
-  let mut observed=actual.iter().map(|(_,p)|*p).collect::<Vec<_>>();before.sort_unstable();observed.sort_unstable();if observed!=before||after.len()!=before.len(){return Err(bad);}
-  let mut pending=Vec::new();
-  for p in after{if let Some(i)=actual.iter().position(|(_,q)|q==&p){actual.remove(i);}else{pending.push(p);}}
-  for p in pending{
-   let matches=actual.iter().enumerate().filter(|(_,(_,q))|q.0==p.0).map(|(i,_)|i).collect::<Vec<_>>();
-   if matches.len()!=1{return Err(bad);}
-   let (target,old)=actual.remove(matches[0]);
-   validate_building_transform(profile,&target)?;
-   let (sx,sy)=building_transform_grid_size(&root,&d.grid_id)?;
-   let within=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx&&(y as u64)<sy;
-   if !within((old.1,old.2))||!within((p.1,p.2)){return Err(bad);}
-   edits.push(GridMixedEdit{target,expected:(old.1,old.2),position:((p.1,p.2)!=(old.1,old.2)).then_some((p.1,p.2)),orientation:(p.3!=old.3).then(||(DIR[old.3].to_owned(),DIR[p.3].to_owned()))});
+  let mut observed=actual.iter().map(|(_,p)|*p).collect::<Vec<_>>();before.sort_unstable();observed.sort_unstable();if observed!=before{return Err(bad);}
+  actual.sort_by_key(|(t,_)|key_id(&t.object_id));
+  let mut ids=families.iter().copied().collect::<Vec<_>>();ids.sort_unstable();
+  for id in ids{
+   let mut old=actual.iter().filter(|(_,p)|p.0==id).cloned().collect::<Vec<_>>();
+   let mut wanted=after.iter().filter(|p|p.0==id).copied().collect::<Vec<_>>();
+   wanted.sort_unstable();
+   if old.is_empty(){return Err(bad);}
+   let count_change=old.len()!=wanted.len();
+   let source=old[0].clone();
+   if count_change{
+    if !free{return Err(bad);}
+    let state=grids[&d.grid_id]["Objects"][&source.0.object_id].get("State");
+    // Count-changing layouts have no instance state in the preset. Only
+    // identical, clone-safe source families may gain or lose instances.
+    for (t,_) in &old{
+     validate_building_transform(profile,t)?;
+     let refs=grid_identity_dependencies(profile,t)?;
+     if refs.blocking()>0||refs.historical>0||grids[&d.grid_id]["Objects"][&t.object_id].get("State")!=state{return Err(bad);}
+    }
+    if !building_clone_state(id,state){return Err(bad);}
+   }
+   let mut pending=Vec::new();
+   for p in wanted{if let Some(k)=old.iter().position(|(_,q)|q==&p){old.remove(k);}else{pending.push(p);}}
+   if old.len()>1&&!pending.is_empty(){return Err(bad);}
+   for p in pending{
+    if let Some((target,previous))=old.pop(){
+     validate_building_transform(profile,&target)?;
+     let (sx,sy)=building_transform_grid_size(&root,&d.grid_id)?;
+     let within=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx&&(y as u64)<sy;
+     if !within((previous.1,previous.2))||!within((p.1,p.2)){return Err(bad);}
+     edits.push(GridMixedEdit{target,expected:(previous.1,previous.2),position:((p.1,p.2)!=(previous.1,previous.2)).then_some((p.1,p.2)),orientation:(p.3!=previous.3).then(||(DIR[previous.3].to_owned(),DIR[p.3].to_owned()))});
+    }else{
+     if !count_change{return Err(bad);}
+     clones.push((source.clone(),d.clone(),p));
+    }
+   }
+   if !old.is_empty()&&!count_change{return Err(bad);}
+   for entry in old{removals.push(entry);}
   }
-  if !actual.is_empty(){return Err(bad);}
  }
- if (whole_world&&verified.len()!=count)||scope.is_none()||edits.is_empty()||edits.len()>256{return Err(bad);}
+ if (whole_world&&verified.len()!=count)||scope.is_none()||edits.is_empty()&&clones.is_empty()&&removals.is_empty()||edits.len()+clones.len()+removals.len()>256{return Err(bad);}
  if whole_world&&grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+ for ((target,old),destination,new) in clones{
+  let mut copy=ddv_save_patch::preview_checked_building_duplicate_oriented(&working,&target,(old.1,old.2),&destination,(new.1,new.2),DIR[old.3],DIR[new.3]).map_err(|_|CodecError::Patch)?;
+  working.zeroize();*working=std::mem::take(&mut copy.patched_json);
+ }
+ for (target,old) in removals{
+  let mut copy=ddv_save_patch::preview_checked_building_remove(&working,&target,(old.1,old.2),DIR[old.3]).map_err(|_|CodecError::Patch)?;
+  working.zeroize();*working=std::mem::take(&mut copy.patched_json);
+ }
  for batch in edits.chunks(ddv_save_patch::MAX_GRID_MIXED_EDITS){
   let mut copy=ddv_save_patch::preview_existing_grid_mixed_batch(&working,batch).map_err(|_|CodecError::Patch)?;
   if !copy.changed||!copy.untouched_bytes_preserved||copy.writer_authorized||copy.export_authorized{return Err(bad);}
