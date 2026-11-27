@@ -10,3 +10,8 @@ test('source scene binding never borrows a different world or interprets missing
  assert.deepEqual([...explicitSavedPreviewStates(savedNativeAreaFlags('MapVillage04',[0,1],d))],[[0,false],[1,true]]);
  assert.equal(explicitSavedPreviewStates(savedNativeAreaFlags('MapVillage04',[0,0],d)),null);
 });
+
+test('underwater grid locks cannot be inferred from the village flag even with an explicit value',()=>{
+ const projection={schema:'wand.db05.saved-area-flags@1',runtimeLockPredicateVerified:false,scenes:{1540000225:{61:true,1:true,2:true,3:true,4:true}}};
+ for(const ids of [[61],[1,2,3,4]])assert.equal(explicitSavedPreviewStates(savedNativeAreaFlags('MapVillageExpansion4Underwater02',ids,projection)),null);
+});
