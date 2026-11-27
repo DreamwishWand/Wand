@@ -53,7 +53,7 @@ export function reviewBiomeDecoration(grid:MainlandGrid,grids:readonly MainlandG
  if(!furniture)return null;
  const removedFurniture=new Set(furniture.removed.map(o=>o.object.localOrdinal));
  const finalFurniture=objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!landscapeRemoved.includes(o));
- const addedFurniture=furniture.ghosts.map((g,i)=>ghostObject(g,1_000_000+i));
+ const addedFurniture=furniture.ghosts.flatMap((g,i)=>furniture.plan.add[i].freePlacement?[]:[ghostObject(g,1_000_000+i)]);
  // Keep the original networks for exact before/after matching, but inspect
  // fence collision against final furniture, not the furniture being removed.
  const landscape=incoming.landscape!==undefined?reviewLandscape(grid,grids,rasters,[...objects.filter(o=>!removedFurniture.has(o.object.localOrdinal)&&!deletedNetworkOrdinals.has(o.object.localOrdinal)),...addedFurniture],currentLandscape!,incoming.landscape,defs):null;
