@@ -11,6 +11,7 @@ import re
 import statistics
 import struct
 from pathlib import Path
+from native_map_render_graph import describe, classify
 
 class Reader:
     def __init__(self, data, endian="<"):
@@ -174,7 +175,7 @@ def extract(prefab,monoscripts):
     for root,root_rect in rects.items():
         if root_rect["parent"]:continue
         root_name=gos[root_rect["go"]][0]
-        rows=[]
+        rows=[];nodes=[]
         def walk(pid, parent_size=None,parent_pivot=None,parent_matrix=None,ancestors=(),active=True):
             check(pid not in visited,"Repeated transform or cycle")
             visited.add(pid)
@@ -188,6 +189,13 @@ def extract(prefab,monoscripts):
                 size,pivot,local=child_geometry(parent_size,parent_pivot,rect)
                 matrix=mul(parent_matrix,local)
             corners=[point(matrix,x,y) for x,y in [(-pivot[0]*size[0],(1-pivot[1])*size[1]),((1-pivot[0])*size[0],(1-pivot[1])*size[1]),(-pivot[0]*size[0],-pivot[1]*size[1])]]
+            fields=[]
+            for component in components:
+                m=monos.get(component)
+                if m and m[2]:
+                    d=describe(m[2][0],m[3],m[1],extern,cab)
+                    if d is not None:fields.append(dict(d,component=str(component)))
+            nodes.append({"hierarchy":path,"gameObject":str(rect["go"]),"rectTransform":str(pid),"parent":str(rect["parent"]),"activeSelf":self_active,"activeInPrefab":active,"rectTransformFields":rect["rect"],"localRotation":rect["rotation"],"localScale":rect["scale"],"rootLocalCorners":corners,"rootLocalMatrix":matrix,"role":classify(path,fields),"components":fields})
             for component in components:
                 m=monos.get(component)
                 if not m or not m[2] or m[2][0]!="Gameloft.UI.AsyncRawImage":continue
@@ -199,9 +207,9 @@ def extract(prefab,monoscripts):
                 check(rects[kid]["parent"]==pid,"Inconsistent parent")
                 walk(kid,size,pivot,matrix,(*ancestors,name),active)
         walk(root)
-        worlds.append({"prefab":root_name,"rootRectTransform":str(root),"rootRect":root_rect["rect"],"parts":rows})
+        worlds.append({"prefab":root_name,"rootRectTransform":str(root),"rootRect":root_rect["rect"],"parts":rows,"renderNodes":nodes})
     check(len(visited)==len(rects),"Unreachable RectTransforms")
-    return {"schema":"wand.src04.native-map-layout@1","unityVersion":unity,"prefabCab":cab,"prefabSha256":hashlib.sha256(prefab.read_bytes()).hexdigest(),"monoScriptCab":script_cab,"monoScriptSha256":hashlib.sha256(monoscripts.read_bytes()).hexdigest(),"coordinateSpace":"prefab-root-local-ui-y-up","worldPlacementVerified":False,"worlds":worlds}
+    return {"schema":"wand.src04.native-map-layout@1","unityVersion":unity,"prefabCab":cab,"prefabSha256":hashlib.sha256(prefab.read_bytes()).hexdigest(),"monoScriptCab":script_cab,"monoScriptSha256":hashlib.sha256(monoscripts.read_bytes()).hexdigest(),"coordinateSpace":"prefab-root-local-ui-y-up","renderGraphSchema":"wand.src04.native-map-render-graph@1","runtimeVisibilityVerified":False,"worldPlacementVerified":False,"worlds":worlds}
 
 def compare(native,report):
     check(report.get("schema")=="wand.src04.world-map-repair@3","Expected original repair@3 report")
