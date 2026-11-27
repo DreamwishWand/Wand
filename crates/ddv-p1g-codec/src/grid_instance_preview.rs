@@ -1176,6 +1176,21 @@ fn saved_db04_source_projection(
 /// All group ordinals resolve against the same immutable original. Only
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
+pub(super) fn player_house_candidate(profile:&[u8],plan:&str,destination:&str)->Result<String,CodecError>{
+ let bad=CodecError::Json;if plan.len()>4096||destination.len()>4096{return Err(bad);}
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|o|o.len()==7&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"))).ok_or(bad)?;
+ if o.get("action").and_then(Value::as_str)!=Some("duplicate"){return Err(bad);}
+ let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==205)).ok_or(bad)?;
+ let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+ let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+ let expected=(int("expectedX")?,int("expectedY")?);let target=resolve_grid_coordinate_target(profile,ordinal,item,expected,"full")?;
+ let witness:Value=serde_json::from_str(destination).map_err(|_|bad)?;
+ let dest=landscape_destination(profile,&witness)?;
+ let draft=ddv_save_patch::preview_player_house_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&dest,(int("x")?,int("y")?)).map_err(|_|bad)?;
+ if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+ Ok(draft.patched_json)
+}
 pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Result<String,CodecError>{
     use ddv_save_patch::{PlainGridStructureAction,preview_plain_grid_structure,preview_landscape_duplicate,preview_landscape_place};
     let bad=CodecError::Json;

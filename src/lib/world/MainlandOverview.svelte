@@ -232,7 +232,7 @@ $: cutWords=groupCutWords[locale];
  function loadNetworkCatalog(area:string){
   networkArea=area;networkLimit=60;networkRequest=0;networkStyles=[];roadError=false;
   if(!worker||!bound?.some(g=>g.key===area))return;
-  networkRequest=nextRequest();worker.postMessage({command:'network-catalog',requestId:networkRequest,key:area,locale});
+  networkRequest=nextRequest();worker.postMessage({command:'network-catalog',requestId:networkRequest,key:area,savedFactor:bound?.find(g=>g.key===area)?.factor,locale});
  }
  function openNetwork(){resetEditSymmetry();pasteTools?.cancel();
   if(!testExport||!furnitureReady||furnitureBlocked||!$localSaveSession.file||!bound?.length)return;
@@ -244,16 +244,16 @@ $: cutWords=groupCutWords[locale];
   networkOpen=false;networkRequest=0;networkStyles=[];networkSource=null;resetRoad();
   roadSeed=style;roadSource=$localSaveSession.file;roadBaseline=timeline;roadTool='brush';fenceFamilyVerified=false;fenceDiagonalVerified=false;
   fenceStyleOptions=[];fenceStyleTarget=0;fenceFamilyRequest=nextRequest();
-  worker.postMessage({command:style.kind==='fence'?'fence-family':'road-family',requestId:fenceFamilyRequest,key:style.area,itemId:style.itemId,locale});
+  worker.postMessage({command:style.kind==='fence'?'fence-family':'road-family',requestId:fenceFamilyRequest,key:style.area,savedFactor:style.factor,itemId:style.itemId,locale});
  }
  let fenceFamilyRequest=0,fenceFamilyVerified=false,fenceDiagonalVerified=false,fenceReplacement=0,fenceStyleTarget=0,fenceStyleOptions:{id:number;name:string}[]=[];
- function requestFenceStyle(){if(!roadSeed||isNetworkStyle(roadSeed)||!worker||!bound||!fenceFamilyVerified||roadWorker)return;const target=fenceStyleTarget;if(!fenceStyleOptions.some(f=>f.id===target))return;resetRoad();fenceReplacement=target;fenceFamilyRequest=nextRequest();worker.postMessage({command:'fence-family',requestId:fenceFamilyRequest,key:roadSeed.area,itemId:Number(roadSeed.object.itemId),replacement:target,locale});}
+ function requestFenceStyle(){if(!roadSeed||isNetworkStyle(roadSeed)||!worker||!bound||!fenceFamilyVerified||roadWorker)return;const target=fenceStyleTarget;if(!fenceStyleOptions.some(f=>f.id===target))return;resetRoad();fenceReplacement=target;fenceFamilyRequest=nextRequest();worker.postMessage({command:'fence-family',requestId:fenceFamilyRequest,key:roadSeed.area,savedFactor:roadSeed.factor,itemId:Number(roadSeed.object.itemId),replacement:target,locale});}
  $: roadCount=roadDraft?('nodes' in roadDraft.plan?roadDraft.plan.nodes.length:roadDraft.plan.cells.length):0;
  $: roadEraseDraft=roadDraft&&'erase' in roadDraft.plan&&roadDraft.plan.erase;
  $: if(roadSeed&&(!saveMode||roadSource!==$localSaveSession.file||roadBaseline!==timeline))closeRoad();
  function resetRoad(){roadPointer=null;roadTrail=[];roadTrailInvalid=false;roadWorker?.terminate();roadWorker=null;if(roadCopy)URL.revokeObjectURL(roadCopy.url);roadCopy=null;roadDraft=null;roadStart=null;roadError=false;}
  function closeRoad(){networkOpen=false;networkSource=null;networkRequest=0;networkStyles=[];resetRoad();roadSeed=null;roadSource=null;roadBaseline=null;fenceFamilyRequest=0;fenceFamilyVerified=false;fenceDiagonalVerified=false;fenceReplacement=0;fenceStyleOptions=[];fenceStyleTarget=0;}
- function beginRoad(){resetEditSymmetry();pasteTools?.cancel();if(!testExport||!chosen||(!roadSeedEligible(chosen)&&!fenceSeedEligible(chosen))||!furnitureReady||furnitureBlocked||!$localSaveSession.file)return;closeSupport();closeFurniture();clearGroup();stopMove();closeRoad();roadSeed=chosen;roadSource=$localSaveSession.file;roadBaseline=timeline;roadTool='line';if(!worker){roadError=true;return;}fenceFamilyRequest=nextRequest();worker.postMessage({command:fenceSeedEligible(chosen)?'fence-family':'road-family',requestId:fenceFamilyRequest,key:chosen.area,itemId:Number(chosen.object.itemId),locale});}
+ function beginRoad(){resetEditSymmetry();pasteTools?.cancel();if(!testExport||!chosen||(!roadSeedEligible(chosen)&&!fenceSeedEligible(chosen))||!furnitureReady||furnitureBlocked||!$localSaveSession.file)return;closeSupport();closeFurniture();clearGroup();stopMove();closeRoad();roadSeed=chosen;roadSource=$localSaveSession.file;roadBaseline=timeline;roadTool='line';if(!worker){roadError=true;return;}fenceFamilyRequest=nextRequest();worker.postMessage({command:fenceSeedEligible(chosen)?'fence-family':'road-family',requestId:fenceFamilyRequest,key:chosen.area,savedFactor:chosen.factor,itemId:Number(chosen.object.itemId),locale});}
  function roadPick(p:{x:number;y:number}){if(savedNetworkFreehand(roadTool))return;if(!roadSeed||!bound||roadWorker||fenceFamilyRequest||!fenceFamilyVerified||fenceSeedEligible(roadSeed)&&roadTool.startsWith('diagonal-')&&!fenceDiagonalVerified)return;if(!roadStart){resetRoad();roadStart=p;return;}const first=roadStart;resetRoad();roadDraft=fenceSeedEligible(roadSeed)?cardinalFenceCandidate(roadSeed,bound,rasters,projection.objects,first,p,roadTool):cardinalRoadCandidate(roadSeed,bound,rasters,projection.objects,first,p,roadTool,roadTool==='replace-road'?fenceStyleTarget:undefined);roadError=!roadDraft;}
  function beginRoadStroke(e:PointerEvent){
   if(!roadSeed||!bound||!savedNetworkFreehand(roadTool)||roadWorker||fenceFamilyRequest||!fenceFamilyVerified||e.button!==0||spacePan||e.shiftKey)return false;

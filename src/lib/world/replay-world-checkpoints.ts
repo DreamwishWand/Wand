@@ -38,7 +38,7 @@ async function replayStep(file:File,step:WorldReplayStep,signal:AbortSignal):Pro
     try{own.postMessage({command,format:file.name.toLowerCase().endsWith('.json')?'json':'auto',bytes,edits:step.plan,allowExperimentalCopy:true},[buffer]);}
     catch(e){if(bytes.byteLength)bytes.fill(0);end(e);}
    }).catch(end);
-   else try{own.postMessage({command,file,plan:step.plan,...((command==='furniture-stock-export'||command==='landscape-export')?{destination:step.destination??null}:{}),allowExperimentalCopy:true});}catch(e){end(e);}
+   else try{own.postMessage({command,file,plan:step.plan,...((command==='furniture-stock-export'||command==='landscape-export'||command==='house-duplicate-export')?{destination:step.destination??null}:{}),allowExperimentalCopy:true});}catch(e){end(e);}
   });
  }finally{own.terminate();}
 }

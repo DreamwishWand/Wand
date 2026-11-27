@@ -960,6 +960,42 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+/// Exact observed player-house exterior schema. The interior is referenced,
+/// not cloned; unknown state and non-player buildings are not eligible.
+pub fn player_house_state<'a>(root:&serde_json::Value,obj:&'a serde_json::Value,item:u64)->Option<&'a serde_json::Value>{
+ let o=obj.as_object()?;
+ if item/100_000!=205||o.len()!=6||o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||obj["ItemID"].as_u64()!=Some(item){return None;}
+ let state=obj.get("State")?;if state.as_object()?.len()!=1{return None;}
+ let h=state["HouseData"].as_object()?;
+ if h.len()!=3||h.get("Built")?.as_bool()!=Some(true){return None;}
+ let upgrade=h.get("UpgradeState")?;
+ if !upgrade.is_null()&&!upgrade.as_object().is_some_and(|v|v.len()==1&&v.get("Level").and_then(|n|n.as_u64()).is_some_and(|n|n<=u32::MAX as u64)){return None;}
+ let index=usize::try_from(h.get("PlayerHouseIndex")?.as_u64()?).ok()?;
+ let house=root["World"]["PlayerHouses"].as_array()?.get(index)?;
+ if house["HouseItemID"].as_u64()!=Some(item)||!house["Floors"].as_array().is_some_and(|a|!a.is_empty()){return None;}
+ Some(state)
+}
+pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32))->Result<GridCoordinateDraft,PatchError>{
+ let bad=PatchError::InvalidTarget;
+ if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let c=&root["World"]["GridCollection"];let grids=c["Grids"].as_object().ok_or(bad)?;
+ let from=grids.get(&target.grid_id).ok_or(bad)?;let to=grids.get(&d.grid_id).ok_or(bad)?;
+ let scope=saved_full_grid_scope(&root,&target.grid_id,from).ok_or(bad)?;
+ if full_grid_scope(&d.layout_path)!=Some(scope)||!from["GridDataPath"].as_str().is_some_and(|p|outdoor_world_path(scope,p))||!outdoor_world_path(scope,&d.data_path)||
+ !full_grid_source_matches(&root,&d.grid_id,to,&d.layout_path,&d.data_path)||
+ from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||to["ID"].as_u64()!=d.grid_id.parse::<u64>().ok()||
+ from["TessellationFactor"].as_u64()!=Some(u64::from(d.tessellation))||to["TessellationFactor"].as_u64()!=Some(u64::from(d.tessellation))||
+ c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&d.grid_id))){return Err(bad);}
+ let obj=from["Objects"].get(&target.object_id).ok_or(bad)?;
+ if obj["ID"].as_u64()!=target.object_id.parse::<u64>().ok()||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1)){return Err(bad);}
+ let state=player_house_state(&root,obj,target.item_id).ok_or(bad)?;
+ let orientation=obj["Orientation"].as_str().filter(|v|OBSERVED_CARDINAL_ORIENTATIONS.contains(v)).ok_or(bad)?;
+ let raw=serde_json::to_string(state).map_err(|_|bad)?;
+ insert_grid_record(source,d,target.item_id,xy,orientation,Some(&raw))
+}
+
 /// State-free landscape only, using an observed source record and a resolved outdoor
 /// destination. No inventory, ownership or collection mutation.
 pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{

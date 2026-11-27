@@ -414,7 +414,7 @@ scope.onmessage=async({data})=>{
       const landscapeSupports=landscapeCheck?await supportPaths:null;
       let runs=0;
       for(const itemId of ids as number[]){
-        const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition);
+        const definition=definitions.get(String(itemId)),building=data.allowBuildings===true&&buildingDesignEligible(itemId,definition,data.freePlacement===true);
         if(!building&&definition?.nativeType!=='Furniture')throw Error('item type');
         const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
         if(!item.shapeKey||!building&&item.layer==='other'||data.freePlacement!==true&&nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
