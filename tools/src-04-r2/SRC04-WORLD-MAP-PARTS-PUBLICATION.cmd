@@ -52,8 +52,8 @@ try {
     $out=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'DreamwishWand\WorldMapParts'
     $work=Join-Path $env:TEMP ('wand-world-map-parts-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work,$out -Force | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/e15c318b1eed90e179a40a5afa9993d44a2c5822/tools/src-04-r2/'
-    foreach ($name in @('world-map-source-steam-1.26.2.json','recover_world_map_parts.py','publish_world_map_parts.py','publish_bundle_thumbnails.py','bundle_thumbnails.py','resolve_shop_catalog.py','resolve_shop_objects.py','extract_memory_sources.py')) {
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/98e87b8e6a1a21e41b13424800b5ad3759272df4/tools/src-04-r2/'
+    foreach ($name in @('world-map-source-steam-1.26.2.json','recover_world_map_parts.py','publish_world_map_parts.py','publish_bundle_thumbnails.py','bundle_thumbnails.py','resolve_shop_catalog.py','resolve_shop_objects.py','extract_memory_sources.py','inspect_memory_rendering.py','inspect_world_map_ocean.py','world-map-ocean-source-steam-1.26.2.json')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
     $report=Join-Path $work 'world-map-source-steam-1.26.2.json'
@@ -76,6 +76,16 @@ try {
         $result=$LASTEXITCODE
     }
     if ($result -ne 0) { throw 'Original verification failed. No R2 changes.' }
+    # Optional private ocean evidence does not block original map publication.
+    $oceanOut=Join-Path $out 'world-map-ocean-shader-evidence.json'
+    if (-not (Test-Path -LiteralPath $oceanOut)) {
+        if (-not $aa) { $aa=FindGame }
+        if ($aa) {
+            Write-Host 'Inspect native ocean shader and seven SDF textures (local only).'
+            & py -3 -u (Join-Path $work 'inspect_world_map_ocean.py') --aa $aa --out $oceanOut
+            if ($LASTEXITCODE -ne 0) { Write-Host 'Ocean evidence unavailable; original map publication can continue.' -ForegroundColor Yellow }
+        }
+    }
     $pubOut=Join-Path $out 'publication'
     $common=@('--report',$report,'--source-root',$out,'--out',$pubOut)
     & py -3 -u $publish @common
