@@ -24,7 +24,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  return a.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}));
 }
 export type GroupGeometry=ReadonlyMap<number,ReadonlyMap<number,DesignItemGeometry>>;
-export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:EightWay;destination:StockDestination}
+export interface GroupPasteRow{itemId:string;x:number;y:number;orientation:EightWay;destination:StockDestination;freePlacement?:true}
 export interface GroupPasteCandidate{rows:GroupPasteRow[];ghosts:StockCandidate[]}
 export function groupStockAvailable(clip:readonly DesignClipItem[],counts:ReadonlyMap<number,number>):boolean{
  const used=new Map<number,number>();
