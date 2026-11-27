@@ -711,7 +711,10 @@ pub fn preview_plain_grid_structure(
     preview_grid_structure(source,target,expected,action,false)
 }
 fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),action:PlainGridStructureAction,support_parent:bool)->Result<GridCoordinateDraft,PatchError>{
-    if support_parent&&!matches!(&action,PlainGridStructureAction::Remove){return Err(PatchError::InvalidTarget);}
+ preview_grid_structure_mode(source,target,expected,action,support_parent,false)
+}
+fn preview_grid_structure_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),action:PlainGridStructureAction,support_parent:bool,storage:bool)->Result<GridCoordinateDraft,PatchError>{
+    if (support_parent||storage)&&!matches!(&action,PlainGridStructureAction::Remove){return Err(PatchError::InvalidTarget);}
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
        target.kind!=GridObjectKind::Full||!plain_furniture_id(target.item_id){
         return Err(PatchError::InvalidTarget);
@@ -735,7 +738,7 @@ fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32
     let old:serde_json::Value=serde_json::from_str(&source[object_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     let obj=old.as_object().ok_or(PatchError::InvalidTarget)?;
     let id=target.object_id.parse::<u32>().map_err(|_|PatchError::InvalidTarget)?;
-    let state_ok=if support_parent{obj.len()==6&&old.get("State").and_then(|v|v.as_object()).is_some_and(|s|s.len()==1&&s.get("SubGrid").and_then(|v|v.get("GridID")).and_then(|v|v.as_u64()).is_some_and(|n|n>0))}else{obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null())};
+    let state_ok=if storage{let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;obj.len()==6&&storage_pose(&root,&old)}else if support_parent{obj.len()==6&&old.get("State").and_then(|v|v.as_object()).is_some_and(|s|s.len()==1&&s.get("SubGrid").and_then(|v|v.get("GridID")).and_then(|v|v.as_u64()).is_some_and(|n|n>0))}else{obj.len()==5||obj.len()==6&&old.get("State").is_some_and(|v|v.is_null())};
     if id==0||!state_ok||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
        old.get("ID").and_then(|v|v.as_u64())!=Some(id as u64)||
        old.get("ItemID").and_then(|v|v.as_u64())!=Some(target.item_id){
@@ -747,7 +750,7 @@ fn preview_grid_structure(source:&str,target:&GridCoordinateTarget,expected:(i32
     }
     let original_orientation=old.get("Orientation").and_then(|v|v.as_str()).ok_or(PatchError::OrientationMismatch)?;
     if !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&original_orientation)||
-        !support_parent&&target.item_id/100_000==400&&matches!(&action,PlainGridStructureAction::Remove)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&original_orientation)){return Err(PatchError::OrientationMismatch);}
+        !support_parent&&!storage&&target.item_id/100_000==400&&matches!(&action,PlainGridStructureAction::Remove)&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&original_orientation)){return Err(PatchError::OrientationMismatch);}
     let map_range=span(&parent)?;
     let objects:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&source[map_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
     if objects.len()>100_000{return Err(PatchError::InvalidTarget);}
@@ -1840,6 +1843,40 @@ fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
  locator.capture.insert(path.clone(),None);locator.walk_complete()?;
  let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
  let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?;
+ insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
+}
+// A storage root may share a container with another native object. A
+// coordinate-only edit never reallocates, copies, or mutates that container.
+pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
+ let Some(state)=obj.get("State").and_then(serde_json::Value::as_object).filter(|s|s.len()==1)else{return false;};
+ let Some(s)=state.get("Storage").and_then(serde_json::Value::as_object)else{return false;};
+ if s.keys().any(|k|!matches!(k.as_str(),"ContainerInventoryID"|"DefaultContainerInventoryData"|"UnlockKeyItemID"|"UnlockLocId"|"DesignID"))||
+    s.get("DefaultContainerInventoryData").and_then(serde_json::Value::as_str).is_none_or(str::is_empty)||
+    s.get("UnlockKeyItemID").is_some_and(|v|v.as_u64().is_none())||
+    s.get("UnlockLocId").is_some_and(|v|v.as_str().is_none())||
+    s.get("DesignID").is_some_and(|v|!v.is_null()){return false;}
+ let Some(id)=s.get("ContainerInventoryID").and_then(serde_json::Value::as_u64).filter(|n|*n>0&&*n<=u32::MAX as u64)else{return false;};
+ let c=&root["Player"]["ContainerInventories"][id.to_string()];
+ c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
+ c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
+}
+/// Move a storage root only. Preserve the original lexical State and the
+/// entire Player container map, including any intentional native aliases.
+/// The codec resolves exclusive source/destination room or outdoor identities.
+pub fn preview_storage_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,to_room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+ if to_room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let from=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
+ let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
+ let layout=from["GridDefaultLayoutPath"].as_str().unwrap_or("");
+ if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||!(data.starts_with("GridData/Rooms/Room")&&data.ends_with("-GridData.json")&&!data.contains("..")||house_exterior_world(layout,data).is_some()){return Err(PatchError::InvalidTarget);}
+ let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
+ let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+ locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+ let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+ let removed=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,false,true)?;
  insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
 }
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
