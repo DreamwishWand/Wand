@@ -9,13 +9,14 @@ import {sanitizeSavedCollectionDiscovery,
 
 import {sanitizeSavedMemoryFlags,type SavedMemoryFlags} from '../media/saved-memory-flags.ts';
 
+import {sanitizeSavedAvatarAppearance,type SavedAvatarAppearance} from '../photo-mode/saved-avatar-appearance.ts';
 const MAX_PROFILE_JSON=128*1024*1024;
 let initializing:Promise<unknown>|null=null;
 
 /** A Rust-only, immutable, ID/boolean-only projection. No JS fallback. */
 export async function projectCollectionDiscoveryRust(
   decodedJson:string
-):Promise<SavedCollectionDiscoveryProjection & {memoryFlags:SavedMemoryFlags}>{
+):Promise<SavedCollectionDiscoveryProjection & {memoryFlags:SavedMemoryFlags;avatarAppearance:SavedAvatarAppearance}>{
   if(typeof decodedJson!=='string'||!decodedJson.length||
      decodedJson.length>MAX_PROFILE_JSON)
     throw new TypeError('SAVE_COLLECTION_DISCOVERY_INPUT_INVALID');
@@ -29,5 +30,5 @@ export async function projectCollectionDiscoveryRust(
   const result=JSON.parse(probe_collection_read_projections_json(decodedJson));
   // The Rust response is also sanitized at the UI boundary (in addition to
   // this Worker-side validation). Invalid or incomplete evidence fails closed.
-  return {...sanitizeSavedCollectionDiscovery(result.discovery),memoryFlags:sanitizeSavedMemoryFlags(result.memoryFlags)};
+  return {...sanitizeSavedCollectionDiscovery(result.discovery),memoryFlags:sanitizeSavedMemoryFlags(result.memoryFlags),avatarAppearance:sanitizeSavedAvatarAppearance(result.avatarAppearance)};
 }

@@ -16,10 +16,11 @@ import type {SavedCollectionDiscoveryProjection} from './saved-collection-discov
 import { projectPositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
 import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
 
+import type {SavedAvatarAppearance} from '../photo-mode/saved-avatar-appearance.ts';
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 export type SaveDiscoveryProjector=
-  (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection & {memoryFlags?:SavedMemoryFlags}>;
+  (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection & {memoryFlags?:SavedMemoryFlags;avatarAppearance?:SavedAvatarAppearance}>;
 
 export async function inspectEncryptedSavedStore(
   ciphertext: Uint8Array,
@@ -51,6 +52,7 @@ async function projectSavedRoot(
     collection: createSavedCollectionPresence(root),
     discovery: projectedDiscovery,
     ...(projectedDiscovery.memoryFlags?{memoryFlags:projectedDiscovery.memoryFlags}:{}),
+    ...(projectedDiscovery.avatarAppearance?{avatarAppearance:projectedDiscovery.avatarAppearance}:{}),
     positiveOwnership: projectPositiveListInventoryOwnership(root),
     gridFurniture: projectSavedGridFurnitureReferences(root)
   });

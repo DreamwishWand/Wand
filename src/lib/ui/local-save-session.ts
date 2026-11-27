@@ -1,5 +1,6 @@
 import {writable} from 'svelte/store';
 import type {SavedMemoryFlags} from '../media/saved-memory-flags.ts';
+import type {SavedAvatarAppearance} from '../photo-mode/saved-avatar-appearance.ts';
 import {readWandLanguage} from './preferences.ts';
 import {appendReplayStep,travelReplayStep,type CheckpointJournal} from '../world/checkpoint-journal.ts';
 import {checkpointWords} from '../world/world-checkpoint-words.ts';
@@ -12,6 +13,7 @@ export interface LocalSaveSession{
   readonly collectionStatus:LocalSaveReadStatus;
   readonly worldCheckpoint?:WorldCheckpointHistory;
   readonly memoryFlags?:SavedMemoryFlags;
+  readonly avatarAppearance?:SavedAvatarAppearance;
 }
 /** Explicitly applied, independently validated experimental copies. In-memory
  * only: preserve the original File and use a fresh revision for every change. */
@@ -86,6 +88,10 @@ export function updateCollectionMemoryFlags(revision:number,file:File,flags:Save
   if(!isCurrentLocalSaveSelection(revision,file))return;
   current={...current,memoryFlags:flags};
   state.set(current);
+}
+export function updateLocalAvatarAppearance(revision:number,file:File,appearance:SavedAvatarAppearance):void{
+  if(!isCurrentLocalSaveSelection(revision,file))return;
+  current={...current,avatarAppearance:appearance};state.set(current);
 }
 export function needsCollectionRead(revision:number):boolean{
   return revision>completedRevision;

@@ -7,7 +7,7 @@
   type BodyOption={id:string;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>};
   type Copy={play:string;pause:string;restart:string;loop:string;speed:string;time:string;zoom:string;resetView:string;orbit:string;loading:string;unavailable:string;bodyType:string};
   // The caller must provide verified native body icons and approved scene sources.
-  let {options,copy}:{options:readonly BodyOption[];copy:Copy}=$props();
+  let {options,copy,preferredBody}:{options:readonly BodyOption[];copy:Copy;preferredBody?:string}=$props();
   let canvas:HTMLCanvasElement;
   let session:PoseSceneSession|undefined;
   let selected=$state('');
@@ -41,7 +41,7 @@
   function up(e:PointerEvent){if(pointer?.id===e.pointerId)pointer=undefined}
   function key(e:KeyboardEvent){const r=canvas.getBoundingClientRect();if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home')act(s=>s.resetView());else if(r.width&&r.height)act(s=>s.move(e.key==='ArrowLeft'?-r.width/24:e.key==='ArrowRight'?r.width/24:0,e.key==='ArrowUp'?-r.height/24:e.key==='ArrowDown'?r.height/24:0,r.width,r.height))}
   function lost(e:Event){e.preventDefault();release();status='error'}
-  onMount(()=>{canvas.addEventListener('webglcontextlost',lost);const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);if(options.length)void choose(options[0]);else status='error';frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);release()}});
+  onMount(()=>{canvas.addEventListener('webglcontextlost',lost);const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);if(options.length)void choose(options.find(o=>o.id===preferredBody)??options[0]);else status='error';frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);release()}});
 </script>
 
 <section class="pose-preview" aria-label={copy.bodyType}>
