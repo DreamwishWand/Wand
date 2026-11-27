@@ -18,6 +18,7 @@ mod grid_instance_preview;
 mod indoor_room_view;
 #[cfg(feature="wasm")]
 mod native_preset_backup;
+mod native_tom_visual;
 mod native_preset_scene;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
@@ -1470,6 +1471,13 @@ mod browser_amount_preview {
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
             let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let patched=native_preset_backup::decoration_replace_candidate(original,backup,slot as usize).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
+        pub fn prepare_tom_restore_experimental_copy(&mut self,backup:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_TOM_TEST_COPY_REJECTED");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let original=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=native_preset_backup::tom_test_candidate(original,backup).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
         pub fn rehearse_tom_restore(&self,backup:&str)->Result<String,JsValue>{

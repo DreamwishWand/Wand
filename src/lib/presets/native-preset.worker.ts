@@ -1,4 +1,5 @@
 import {testSaveExportEnabled} from '../world/test-save-export.ts';
+import {openPublicItemMaster} from '../items/public-item-master.ts';
 import {readExperimentalCopy} from '../world/experimental-copy.ts';
 import {readPresetText} from './preset-file.ts';
 import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
@@ -8,11 +9,21 @@ const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMess
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
  try{
-  if(!['index','backup','review','rehearse','decoration-export','decoration-replace'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024)throw Error('request');
+  if(!['index','backup','review','rehearse','decoration-export','decoration-replace','tom-export'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024)throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
   wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
+  if(data.command==='tom-export'){
+   if(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true||!(data.backup instanceof File)||typeof data.base!=='string'||!/^\/?(?:[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)?$/.test(data.base))throw Error('test-only');
+   const raw=await readPresetText(data.backup),review=JSON.parse(wasm.review_native_preset_restore(raw));
+   if(review.tomTestCandidate!==true||!Number.isSafeInteger(review.baseItemId)||!Array.isArray(review.componentStock))throw Error('candidate');
+   const db=await openPublicItemMaster(data.base,fetch,{scope:'complete',gameVersion:'1.26.2'});
+   const expected=[{itemId:review.baseItemId,type:review.kind==='tom-furniture'?4:5,subtype:null},...review.componentStock.map((v:any)=>({itemId:v.itemId,type:10,subtype:v.subtype}))];
+   for(let start=0;start<expected.length;start+=128){const rows=expected.slice(start,start+128),found=await db.getItems(rows.map(v=>v.itemId));if(found.length!==rows.length||found.some((v,i)=>!v||v.itemId!==rows[i].itemId||v.itemType.code!==rows[i].type||rows[i].subtype!==null&&(v.itemType.subtypeCode!==rows[i].subtype||v.sourceClass!==(rows[i].subtype===0?'DecalItemData':'TextureItemData'))))throw Error('item identity');}
+   const copy=readExperimentalCopy(wasm.prepare_tom_restore_experimental_copy(raw,true),n=>wasm!.take_copy_chunk(n));
+   scope.postMessage({kind:'tom-copy',...copy},[copy.bytes.buffer]);return;
+  }
   if(data.command==='decoration-export'||data.command==='decoration-replace'){
    if(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true||!(data.backup instanceof File))throw Error('test-only');
    const raw=await readPresetText(data.backup);

@@ -95,7 +95,7 @@ fn validate_allocator(entries:&[Entry<'_>],kind:&str,next:u32)->Result<bool,Code
 }
 
 fn positive_base_stock(source:&[u8],kind:&str,base:u32)->Option<u32>{
- let (role,code,label)=match kind{"tom-furniture"=>(0,4,"Furniture"),"tom-clothing"=>(1,5,"Clothing"),_=>return None};
+ let (role,code,label)=match kind{"tom-furniture"=>(0,4,"Furniture"),"tom-clothing"=>(1,5,"Clothing"),"tom-component"=>(6,10,"TouchOfMagic"),_=>return None};
  if base/10_000_000!=code{return None;}
  let root:Map=serde_json::from_slice(source).ok()?;
  let player=obj(get(&root,"Player").ok()?).ok()?;
@@ -175,17 +175,26 @@ pub(super) fn review(source:&[u8],backup:&str)->Result<String,CodecError>{
    }
   }
  }
- let source_kind=if kind=="native-decoration"{None}else{fields.get("Source").and_then(|r|number(r).ok()).filter(|n|*n<=2)};
+ let design_json:Option<Value>=if kind=="native-decoration"{None}else{serde_json::from_str(payload.get()).ok()};
+ let source_kind=design_json.as_ref().and_then(|p|crate::native_tom_visual::source(&p["Source"]));
+ let visual=design_json.as_ref().map(crate::native_tom_visual::inspect);
+ let component_stock=visual.as_ref().map(|v|v.refs.iter().map(|(id,sub)|json!({"itemId":id,"subtype":sub,"positiveStock":positive_base_stock(source,"tom-component",*id)})).collect::<Vec<_>>()).unwrap_or_default();
+ // Exact current ProtoDB DesignData fields 1 ClothingLimit / 2 FurnitureLimit
+ // both 32. Count both clothing maps conservatively (native per-gender scope
+ // not yet runtime-verified), so a test copy never exceeds either bound.
+ let design_count=if kind=="tom-furniture"&&target_readable||kind=="tom-clothing"&&available("tom-clothing-female")&&available("tom-clothing-male"){Some(s.rows.iter().filter(|r|r.kind==kind).count())}else{None};
+ let configured_limit=if s.version==643&&design_count.is_some(){Some(32usize)}else{None};
  let slot_counts=if kind=="native-decoration"&&target_readable{decoration_slot_info(source).ok()}else{None};
  let decoration_candidate=kind=="native-decoration"&&version==s.version&&target_readable&&matches==0&&slot_counts.is_some_and(|(a,_)|a<LEGACY_ACTIVE_LIMIT)&&decoration_install_payload(backup).is_ok();
  let positive_stock=base.and_then(|id|positive_base_stock(source,&kind,id));
+ let tom_test_candidate=version==643&&s.version==643&&target_readable&&matches==0&&allocator==Some(true)&&positive_stock.is_some()&&source_kind.is_some_and(|n|n==1||n==2)&&design_count.is_some_and(|n|n<32)&&visual.as_ref().is_some_and(|v|v.complete)&&component_stock.iter().all(|v|v["positiveStock"].as_u64().is_some_and(|n|n>0));
  let replace_options=if kind=="native-decoration"&&version==s.version&&target_readable&&matches==0&&decoration_install_payload(backup).is_ok(){decoration_replacement_options(source,version).unwrap_or_default()}else{Vec::new()};
  let receipt=json!({"contract":"wand.native-preset-restore-review@1","kind":kind,"storage":storage,"baseItemId":base,
   "schemaMatches":version==s.version,"backupSchema":version,"targetSchema":s.version,"targetReadable":target_readable,
   "matchingDesigns":if target_readable{Some(matches)}else{None},
   "existingDesignsForItem":if target_readable{Some(target_count)}else{None},
   "allocatorConsistent":allocator,"designSource":source_kind,"requiresNewId":kind!="native-decoration",
-  "positiveBaseStock":positive_stock,"replacementSlots":replace_options,"activeSlots":slot_counts.map(|(a,_)|a),"legacySlotLimit":if slot_counts.is_some(){Some(LEGACY_ACTIVE_LIMIT)}else{None},"decorationTestCandidate":decoration_candidate,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
+  "positiveBaseStock":positive_stock,"designCount":design_count,"configuredDesignLimit":configured_limit,"componentStock":component_stock,"visualStructureVerified":visual.as_ref().is_some_and(|v|v.complete),"tomTestCandidate":tom_test_candidate,"replacementSlots":replace_options,"activeSlots":slot_counts.map(|(a,_)|a),"legacySlotLimit":if slot_counts.is_some(){Some(LEGACY_ACTIVE_LIMIT)}else{None},"currentSlotLimitSourceVerified":s.version==643&&slot_counts.is_some(),"decorationTestCandidate":decoration_candidate,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
  serde_json::to_string(&receipt).map_err(|_|BAD)
 }
 
@@ -263,13 +272,16 @@ pub(super) fn inspect_backup(raw:&str)->Result<String,CodecError>{
  let storage:String=serde_json::from_str(get(&doc,"storage")?.get()).map_err(|_|BAD)?;
  let base:Option<u32>=serde_json::from_str(get(&doc,"baseItemId")?.get()).map_err(|_|BAD)?;
  let payload=obj(get(&doc,"payload")?)?;
- let mut counts=BTreeMap::<u32,usize>::new();let mut creator=None;let mut decals=None;let mut textures=None;let mut name=None;let mut complete=true;
+ let mut counts=BTreeMap::<u32,usize>::new();let mut creator=None;let mut decals=None;let mut textures=None;let mut name=None;let mut complete=true;let mut visual_detail=None;
  match (kind.as_str(),storage.as_str(),base){
   ("tom-furniture","furniture",Some(id))|("tom-clothing","female",Some(id))|("tom-clothing","male",Some(id))=>{
    if id==0||number(get(&payload,"Item")?)?!=id||number(get(&payload,"Id")?)?>i32::MAX as u32{return Err(BAD);}
    counts.insert(id,1);creator=display_text(payload.get("CreatorDisplayName"),512);
    decals=payload.get("Decals").and_then(|r|serde_json::from_str::<Vec<&RawValue>>(r.get()).ok()).map(|a|a.len());
-   textures=payload.get("Textures").and_then(|r|serde_json::from_str::<Vec<&RawValue>>(r.get()).ok()).map(|a|a.len());
+   let v:Value=serde_json::from_str(get(&doc,"payload")?.get()).map_err(|_|BAD)?;
+   let visual=crate::native_tom_visual::inspect(&v);
+   textures=visual.detail["textureCount"].as_u64().map(|v|v as usize);
+   complete=visual.complete;visual_detail=Some(visual.detail);
   }
   ("native-decoration","decoration",None)=>{
    if number(get(&payload,"StateFlags")?)?&16!=0{return Err(BAD);}
@@ -289,7 +301,7 @@ pub(super) fn inspect_backup(raw:&str)->Result<String,CodecError>{
   _=>return Err(BAD)
  }
  let counts=counts.into_iter().collect::<Vec<_>>();
- serde_json::to_string(&json!({"contract":"wand.native-preset-detail@1","kind":kind,"storage":storage,"baseItemId":base,"creator":creator,"name":name,"decalCount":decals,"textureCount":textures,"items":counts,"complete":complete,"renderedAppearanceVerified":false})).map_err(|_|BAD)
+ serde_json::to_string(&json!({"contract":"wand.native-preset-detail@1","kind":kind,"storage":storage,"baseItemId":base,"creator":creator,"name":name,"decalCount":decals,"textureCount":textures,"visual":visual_detail,"items":counts,"complete":complete,"renderedAppearanceVerified":false})).map_err(|_|BAD)
 }
 
 
@@ -372,6 +384,12 @@ pub(super) fn decoration_replace_candidate(source:&[u8],backup:&str,slot:usize)-
  let new_rows:Vec<&RawValue>=serde_json::from_str(get(&w,"DecorationPresets")?.get()).map_err(|_|BAD)?;
  if rows.len()!=new_rows.len()||new_rows[index].get()!=payload.get()||rows.iter().zip(&new_rows).enumerate().any(|(i,(old,new))|i!=index&&old.get()!=new.get()){return Err(BAD);}
  Ok(candidate)
+}
+
+pub(super) fn tom_test_candidate(source:&[u8],backup:&str)->Result<String,CodecError>{
+ let receipt:Value=serde_json::from_str(&review(source,backup)?).map_err(|_|BAD)?;
+ if receipt["tomTestCandidate"]!=true{return Err(BAD);}
+ tom_restore_rehearsal(source,backup)
 }
 
 #[cfg(test)]
@@ -481,5 +499,15 @@ mod tests{
   let raw=br#"{"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"Furniture","Inventory":{"40000001":{"Amount":2},"40000002":{"Amount":0}}},"1":{"ID":1,"CompatibleItemType":"ItemType_Clothing","Inventory":{"50000001":{"Amount":1}}}}}}"#;
   assert_eq!(positive_base_stock(raw,"tom-furniture",40000001),Some(2));assert_eq!(positive_base_stock(raw,"tom-furniture",40000002),None);
   assert_eq!(positive_base_stock(raw,"tom-furniture",40000003),None);assert_eq!(positive_base_stock(raw,"tom-clothing",50000001),Some(1));
+ }
+
+ #[test]
+ fn tom_test_copy_requires_known_shape_positive_base_and_components(){
+  let target=br#"{"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"Furniture","Inventory":{"40000001":{"Amount":1}}},"6":{"ID":6,"CompatibleItemType":"TouchOfMagic","Inventory":{"100000775":{"Amount":1}}}},"FemaleClothingDesigns":{},"MaleClothingDesigns":{}},"World":{"FurnitureDesigns":{"Items":{},"NextDesignId":4},"DecorationPresets":[]}}"#;
+  let backup=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"tom-furniture","storage":"furniture","baseItemId":40000001,"payload":{"Id":1,"Item":40000001,"BaseColor":"#ff9933","Decals":[{"DecalItem":100000775,"Color":"#ffffff"}],"Textures":null,"Source":1}}"#;
+  let out=tom_test_candidate(target,backup).unwrap();assert!(out.contains("\"NextDesignId\":5"));assert!(out.contains("\"Id\":4"));
+  let bad=backup.replace("100000775","100000776");assert!(tom_test_candidate(target,&bad).is_err());
+  let bad=backup.replace("\"Textures\":null","\"Textures\":[]");assert!(tom_test_candidate(target,&bad).is_err());
+  let bad=backup.replace("\"Source\":1","\"Source\":0");assert!(tom_test_candidate(target,&bad).is_err());
  }
 }
