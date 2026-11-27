@@ -1031,9 +1031,13 @@ pub fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCo
 
 /// Duplicate an existing PlayerHouse exterior within the same outdoor world.
 pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_player_house_duplicate_oriented(source,target,expected,d,xy,orientation,orientation)
+}
+
+pub fn preview_player_house_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
-    if !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
+    if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&replacement_orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
        xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
     validate_json_without_edit(source)?;
     let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
@@ -1058,7 +1062,7 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
     let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
     locator.capture.insert(path.clone(),None);locator.walk_complete()?;
     let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
-    insert_grid_record(source,d,target.item_id,xy,orientation,Some(&source[range]))
+    insert_grid_record(source,d,target.item_id,xy,replacement_orientation,Some(&source[range]))
 }
 
 /// Atomic cross-Grid move of an existing player house exterior. The

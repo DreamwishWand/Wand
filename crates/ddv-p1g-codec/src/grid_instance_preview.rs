@@ -1660,8 +1660,8 @@ pub(super) fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,Codec
 }
 fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
-    let o=plan.as_object().filter(|o|o.len()==if remove{5}else{8}).ok_or(bad)?;
-    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"))){return Err(bad);}
+    let o=plan.as_object().filter(|o|if remove{o.len()==5}else{o.len()==8||o.len()==9&&o.contains_key("replacementOrientation")}).ok_or(bad)?;
+    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"|"replacementOrientation"))){return Err(bad);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
     let item=o.get("itemId").ok_or(bad)?.as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==205)).ok_or(bad)?;
@@ -1685,7 +1685,8 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
         if world_grid_scope(witness)?.0!=scope{return Err(bad);}
         let dest=resolve_plain_grid_destination(profile,witness)?;
         if player_house_grid_scope(&root,&dest.grid_id)?!=scope{return Err(bad);}
-        ddv_save_patch::preview_player_house_duplicate(json,target,expected,&dest,(int("x")?,int("y")?),orientation)
+        let replacement=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?};
+        ddv_save_patch::preview_player_house_duplicate_oriented(json,target,expected,&dest,(int("x")?,int("y")?),orientation,replacement)
     }.map_err(|_|CodecError::Patch)?;
     if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
     Ok(draft.patched_json)
@@ -1741,8 +1742,8 @@ fn building_clone_state(item:u64,state:Option<&Value>)->bool{
 }
 fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
-    let o=plan.as_object().filter(|o|o.len()==if remove{5}else{8}).ok_or(bad)?;
-    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"))){return Err(bad);}
+    let o=plan.as_object().filter(|o|if remove{o.len()==5}else{o.len()==8||o.len()==9&&o.contains_key("replacementOrientation")}).ok_or(bad)?;
+    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"|"replacementOrientation"))){return Err(bad);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
     let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&matches!(n/100_000,200..=203))).ok_or(bad)?;
@@ -1774,7 +1775,8 @@ fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<S
         if world_grid_scope(witness)?.0!=scope{return Err(bad);}
         let dest=resolve_plain_grid_destination(profile,witness)?;
         if player_house_grid_scope(&root,&dest.grid_id)?!=scope{return Err(bad);}
-        ddv_save_patch::preview_checked_building_duplicate(json,&target,expected,&dest,(int("x")?,int("y")?),orientation)
+        let replacement=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?};
+        ddv_save_patch::preview_checked_building_duplicate_oriented(json,&target,expected,&dest,(int("x")?,int("y")?),orientation,replacement)
     }.map_err(|_|CodecError::Patch)?;
     if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
     Ok(draft.patched_json)
@@ -2816,6 +2818,14 @@ mod tests{
         assert_eq!(patched["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
         assert_eq!(patched["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
         assert!(result.contains("\"Marker\":1e2"));
+        let mut rotated=plan.clone();rotated["playerHouseDuplicate"]["replacementOrientation"]="GridOrientation_Right".into();
+        let turned:Value=serde_json::from_str(&group_paste_candidate(raw,&rotated.to_string()).unwrap()).unwrap();
+        assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["Orientation"],"GridOrientation_Right");
+        assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+        assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(turned["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        rotated["playerHouseDuplicate"]["replacementOrientation"]="invalid".into();
+        assert!(group_paste_candidate(raw,&rotated.to_string()).is_err());
         let mut stale=original.clone();stale["World"]["PlayerHouses"][0]["HouseItemID"]=Value::from(20500002);
         assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
         let remove=serde_json::json!({"playerHouseRemove":{"localOrdinal":1,"itemId":"20500001","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down"}});
@@ -3619,6 +3629,12 @@ mod terrain_session_tests{
         assert_eq!(g["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
         assert_eq!(g["Objects"]["5"]["State"],state);assert_eq!(g["Objects"]["5"]["ID"],5);
         assert_eq!(g["NextGridObjectID"],6);assert_eq!(cloned["Player"],raw["Player"]);
+        let mut rotated=plan.clone();rotated["replacementOrientation"]="GridOrientation_Right".into();
+        let turned:Value=serde_json::from_str(&building_duplicate_candidate(&bytes,&rotated,false).unwrap()).unwrap();
+        assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["Orientation"],"GridOrientation_Right");
+        assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["State"],state);
+        rotated["replacementOrientation"]="invalid".into();
+        assert!(building_duplicate_candidate(&bytes,&rotated,false).is_err());
         let result=group_paste_candidate(copy.as_bytes(),&serde_json::json!({"buildingRemove":remove}).to_string()).unwrap();
         let after:Value=serde_json::from_str(&result).unwrap();
         assert!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());

@@ -8,7 +8,7 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignItemGeometry} from './design-layout.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export interface StockDestination{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number}
-export type StockPlan={action:'place';itemId:string;x:number;y:number;orientation:EightWay}|{action:'duplicate'|'remove';localOrdinal:number;itemId:string;expectedX:number;expectedY:number;x:number|null;y:number|null};
+export type StockPlan={action:'place';itemId:string;x:number;y:number;orientation:EightWay}|{action:'duplicate'|'remove';localOrdinal:number;itemId:string;expectedX:number;expectedY:number;x:number|null;y:number|null;replacementOrientation?:EightWay};
 export interface StockCandidate{area:string;x:number;y:number;factor:1|2;shape:SourceObjectShape;plan:StockPlan;destination:StockDestination|null}
 export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===400;
 export function stockSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
@@ -44,14 +44,19 @@ export function buildingPlacementSources(grids:readonly MainlandGrid[],objects:r
 export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
  return playerHouseSourceEligible(p)?buildingDuplicate(grids,rasters,p,wx,wy):null;
 }
-export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
+export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number,orientation?:EightWay,geometry?:ReadonlyMap<number,DesignItemGeometry>):StockCandidate|null{
  if(!buildingSourceEligible(p)||!p.shape||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandFreeHits(grids,rasters,wx,wy);
  const from=grids.find(g=>g.key===p.area);
  if(!from||!bindMainlandGrid(from)||hits.length!==1||sourceWorldScope(hits[0])!==sourceWorldScope(from)||hits[0].factor!==p.factor||!bindMainlandGrid(hits[0]))return null;
  const g=hits[0],x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
  if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
- return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape:p.shape,destination:witness(g),plan:{action:'duplicate',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x,y}};
+ const direction=orientation??p.object.orientation;
+ if(!isCardinal(direction))return null;
+ const def=geometry?.get(g.factor);
+ const shape=direction===p.object.orientation?p.shape:def?.nativeType==='Building'&&def.itemId===Number(p.object.itemId)?def.shapes[p.object.itemId+':'+worldOrientationCode(direction)]:null;
+ if(!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'duplicate',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x,y,...(direction===p.object.orientation?{}:{replacementOrientation:direction})}};
 }
 export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
  if(!playerHouseSourceEligible(p)||!p.shape||!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
