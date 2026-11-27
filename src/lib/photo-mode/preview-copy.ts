@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "secondaryPassOmitted": "発光・輪郭線などの追加描画効果は省略しています。",
     "prop": "小道具",
     "partialActor": "コンパニオン本体は一部の体型でのみ表示されます。",
     "pose": "ポーズ",
@@ -24,6 +25,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "secondaryPassOmitted": "Additional effects such as glow and outlines are omitted.",
     "prop": "Prop",
     "partialActor": "The companion is displayed for only one body type.",
     "pose": "Pose",
@@ -48,6 +50,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "secondaryPassOmitted": "Les effets supplémentaires, tels que la lueur et les contours, sont omis.",
     "prop": "Accessoire",
     "partialActor": "Le compagnon est affiché pour un seul type de morphologie.",
     "pose": "Pose",
@@ -72,6 +75,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "secondaryPassOmitted": "Gli effetti aggiuntivi, come bagliore e contorni, sono omessi.",
     "prop": "Accessorio",
     "partialActor": "Il compagno è visualizzato per un solo tipo di corporatura.",
     "pose": "Posa",
@@ -96,6 +100,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "secondaryPassOmitted": "Zusätzliche Effekte wie Leuchten und Konturen werden ausgelassen.",
     "prop": "Requisite",
     "partialActor": "Der Begleiter wird nur bei einem Körpertyp angezeigt.",
     "pose": "Pose",
@@ -120,6 +125,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "secondaryPassOmitted": "Se omiten efectos adicionales como el brillo y los contornos.",
     "prop": "Accesorio",
     "partialActor": "El compañero solo se muestra con un tipo de cuerpo.",
     "pose": "Pose",
@@ -144,6 +150,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "secondaryPassOmitted": "省略发光、描边等附加效果。",
     "prop": "道具",
     "partialActor": "伙伴模型仅支持一种体型。",
     "pose": "姿势",
@@ -168,6 +175,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "secondaryPassOmitted": "Efeitos adicionais, como brilho e contornos, foram omitidos.",
     "prop": "Acessório",
     "partialActor": "O companheiro é exibido para apenas um tipo de corpo.",
     "pose": "Pose",
