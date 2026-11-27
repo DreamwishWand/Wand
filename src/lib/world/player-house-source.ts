@@ -1,6 +1,6 @@
 import manifest from './player-house-source.json' with {type:'json'};
 export async function readLocalHouseTemplates(files:readonly File[]):Promise<Map<number,string>>{
- if(!files.length||files.length>5)throw Error('HOUSE_SOURCE_COUNT');
+ if(!files.length||files.length>manifest.templates.length)throw Error('HOUSE_SOURCE_COUNT');
  const result=new Map<number,string>();
  for(const file of files){
   if(file.size<1||file.size>8192)throw Error('HOUSE_SOURCE_SIZE');
