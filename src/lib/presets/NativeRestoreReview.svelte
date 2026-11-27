@@ -1,4 +1,7 @@
 <script lang="ts">
+ import {base} from '$app/paths';
+ import {testSaveExportEnabled,testSaveWords} from '../world/test-save-export.ts';
+ import {experimentalCopyDownload} from '../world/experimental-copy.ts';
  import {onDestroy} from 'svelte';
  import type {WandLanguage} from '$lib/ui/preferences';
  import {nativeReviewWords} from './native-review-words.ts';
@@ -6,13 +9,46 @@
  export let entry:SessionPreset;
  export let source:File|null;
  export let locale:WandLanguage;
- type Receipt={contract:string;schemaMatches:boolean;targetReadable:boolean;matchingDesigns:number|null;existingDesignsForItem:number|null;allocatorConsistent:boolean|null;requiresNewId:boolean;writerAuthorized:false};
+ type Receipt={contract:string;schemaMatches:boolean;targetReadable:boolean;matchingDesigns:number|null;existingDesignsForItem:number|null;allocatorConsistent:boolean|null;requiresNewId:boolean;writerAuthorized:false;activeSlots:number|null;legacySlotLimit:number|null;decorationTestCandidate:boolean};
  let worker:Worker|null=null,result:Receipt|null=null,busy=false,error=false,rehearsed=false,rehearsalError=false;
+ let convertWorker:Worker|null=null,geometryWorker:Worker|null=null,copyUrl:string|null=null,copyName='';
+ $: testWords=testSaveWords[locale];
+ const testEnabled=typeof window!=='undefined'&&testSaveExportEnabled(window.location);
  let previousFile:File|null=null,previousEntry:SessionPreset|null=null;
  $: w=nativeReviewWords[locale];
  $: if(previousFile!==source||previousEntry!==entry){previousFile=source;previousEntry=entry;clear();}
- function clear(){worker?.terminate();worker=null;result=null;busy=false;error=false;rehearsed=false;rehearsalError=false;}
+ function clear(){worker?.terminate();convertWorker?.terminate();geometryWorker?.terminate();worker=convertWorker=geometryWorker=null;if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl=null;copyName='';result=null;busy=false;error=false;rehearsed=false;rehearsalError=false;}
  onDestroy(clear);
+
+ function restoreDecoration(){
+  if(!testEnabled||!source||busy||!result?.decorationTestCandidate||entry.kind!=='native-decoration'||!window.confirm(testWords[1]))return;
+  if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl=null;
+  const save=source,backup=entry.file;busy=true;rehearsalError=false;
+  const cv=new Worker(new URL('./native-scene.worker.ts',import.meta.url),{type:'module'});convertWorker=cv;
+  const fail=()=>{if(source!==save||entry.file!==backup)return;convertWorker?.terminate();geometryWorker?.terminate();worker?.terminate();convertWorker=geometryWorker=worker=null;busy=false;rehearsalError=true;};
+  cv.onerror=fail;cv.onmessageerror=fail;
+  cv.onmessage=e=>{
+   cv.terminate();if(convertWorker!==cv||source!==save||entry.file!==backup)return;convertWorker=null;
+   if(e.data?.kind!=='native-scene'||typeof e.data.raw!=='string'){fail();return;}
+   const raw=e.data.raw,g=new Worker(new URL('../world/public-world-terrain.worker.ts',import.meta.url),{type:'module'});geometryWorker=g;
+   g.onerror=fail;g.onmessageerror=fail;
+   g.onmessage=event=>{
+    if(geometryWorker!==g||source!==save||entry.file!==backup)return;
+    const v=event.data;if(v?.requestId===1&&v.kind==='index'){g.postMessage({command:'native-scene-geometry',requestId:2,raw});return;}
+    if(v?.requestId!==2||v.kind!=='native-scene-geometry'||v.valid!==true){fail();return;}
+    g.terminate();geometryWorker=null;
+    const own=new Worker(new URL('./native-preset.worker.ts',import.meta.url),{type:'module'});worker=own;own.onerror=fail;own.onmessageerror=fail;
+    own.onmessage=event=>{
+     own.terminate();if(worker!==own||source!==save||entry.file!==backup){event.data?.bytes?.fill?.(0);return;}worker=null;busy=false;
+     try{if(event.data?.kind!=='decoration-copy')throw Error('copy');const out=experimentalCopyDownload(event.data,save);copyUrl=out.url;copyName=out.name.replace('-world-test','-preset-test');}
+     catch{rehearsalError=true;}
+    };
+    own.postMessage({command:'decoration-export',file:save,backup,allowExperimentalCopy:true});
+   };
+   g.postMessage({command:'open',requestId:1,base});
+  };
+  cv.postMessage({command:'convert',file:backup});
+ }
  function rehearse(){
   if(!source||busy||!result?.schemaMatches||!result.targetReadable||result.allocatorConsistent!==true||result.matchingDesigns!==0||!result.requiresNewId)return;
   busy=true;rehearsed=false;rehearsalError=false;
@@ -43,6 +79,9 @@
    {#if result.requiresNewId}<small>{result.allocatorConsistent===true?w[6]:w[7]}</small>{/if}
   {/if}
   {#if result.requiresNewId&&result.schemaMatches&&result.targetReadable&&result.allocatorConsistent===true&&result.matchingDesigns===0}<button type="button" disabled={busy} on:click={rehearse}>{w[11]}</button>{/if}
+  {#if result.activeSlots!==null&&result.legacySlotLimit!==null}<small>{result.activeSlots} / {result.legacySlotLimit} ({w[14]})</small>{/if}
+  {#if testEnabled&&result.decorationTestCandidate}<small>{testWords[1]}</small><button type="button" disabled={busy} on:click={restoreDecoration}>{testWords[0]}</button>{/if}
+  {#if copyUrl}<a href={copyUrl} download={copyName}>{testWords[2]}</a>{/if}
   {#if rehearsed}<small role="status">{w[12]}</small>{/if}{#if rehearsalError}<small role="alert">{w[13]}</small>{/if}
   <small>{w[8]}</small><button type="button" on:click={clear}>{w[9]}</button>
  </div>{/if}

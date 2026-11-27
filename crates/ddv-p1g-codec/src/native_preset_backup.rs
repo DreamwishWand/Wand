@@ -141,12 +141,14 @@ pub(super) fn review(source:&[u8],backup:&str)->Result<String,CodecError>{
   }
  }
  let source_kind=if kind=="native-decoration"{None}else{fields.get("Source").and_then(|r|number(r).ok()).filter(|n|*n<=2)};
+ let slot_counts=if kind=="native-decoration"&&target_readable{decoration_slot_info(source).ok()}else{None};
+ let decoration_candidate=kind=="native-decoration"&&version==s.version&&target_readable&&matches==0&&slot_counts.is_some_and(|(a,_)|a<LEGACY_ACTIVE_LIMIT)&&decoration_install_payload(backup).is_ok();
  let receipt=json!({"contract":"wand.native-preset-restore-review@1","kind":kind,"storage":storage,"baseItemId":base,
   "schemaMatches":version==s.version,"backupSchema":version,"targetSchema":s.version,"targetReadable":target_readable,
   "matchingDesigns":if target_readable{Some(matches)}else{None},
   "existingDesignsForItem":if target_readable{Some(target_count)}else{None},
   "allocatorConsistent":allocator,"designSource":source_kind,"requiresNewId":kind!="native-decoration",
-  "capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
+  "activeSlots":slot_counts.map(|(a,_)|a),"legacySlotLimit":if slot_counts.is_some(){Some(LEGACY_ACTIVE_LIMIT)}else{None},"decorationTestCandidate":decoration_candidate,"capacityVerified":false,"ownershipVerified":false,"runtimeVerified":false,"writerAuthorized":false});
  serde_json::to_string(&receipt).map_err(|_|BAD)
 }
 
@@ -253,6 +255,66 @@ pub(super) fn inspect_backup(raw:&str)->Result<String,CodecError>{
  serde_json::to_string(&json!({"contract":"wand.native-preset-detail@1","kind":kind,"storage":storage,"baseItemId":base,"creator":creator,"name":name,"decalCount":decals,"textureCount":textures,"items":counts,"complete":complete,"renderedAppearanceVerified":false})).map_err(|_|BAD)
 }
 
+
+// v1.25 native runtime accepted the root-first serialized subset. Retain the
+// original payload byte order (native placement uses the first Grid entry).
+// Current-version game runtime is not yet proven: test copy only.
+const LEGACY_ACTIVE_LIMIT:usize=20;
+fn decoration_slot_info(source:&[u8])->Result<(usize,usize),CodecError>{
+ let root:Map=serde_json::from_slice(source).map_err(|_|BAD)?;
+ let w=obj(get(&root,"World")?)?;
+ let slots=get(&w,"DecorationPresets")?;
+ let rows:Vec<&RawValue>=serde_json::from_str(slots.get()).map_err(|_|BAD)?;
+ if rows.len()>=MAX_ROWS{return Err(CodecError::Bounds);}
+ let active=decorations(slots)?.len();
+ Ok((active,rows.len()))
+}
+fn decoration_install_payload(backup:&str)->Result<&RawValue,CodecError>{
+ // The converter rejects unsupported state, cycles, invalid counters,
+ // orphan Grids and non-cardinal geometry. Current geometry is checked
+ // by the existing terrain worker before the UI requests a test copy.
+ crate::native_preset_scene::convert(backup)?;
+ let doc:Map=serde_json::from_str(backup).map_err(|_|BAD)?;
+ let raw=get(&doc,"payload")?;let p=obj(raw)?;
+ if p.keys().any(|k|!matches!(k.as_str(),"GridCollection"|"PresetName"|"ThumbnailItems"|"ShareInfo"|"StateFlags"))||
+ number(get(&p,"StateFlags")?)?!=0||get(&p,"ShareInfo")?.get()!="null"{return Err(BAD);}
+ let name:String=serde_json::from_str(get(&p,"PresetName")?.get()).map_err(|_|BAD)?;
+ if name.trim().is_empty()||name.len()>1024||name.chars().any(char::is_control){return Err(BAD);}
+ let thumbs:Vec<u32>=serde_json::from_str(get(&p,"ThumbnailItems")?.get()).map_err(|_|BAD)?;
+ if thumbs.len()>200||thumbs.contains(&0){return Err(BAD);}
+ let c=obj(get(&p,"GridCollection")?)?;
+ if c.keys().any(|k|!matches!(k.as_str(),"Grids"|"DiffGrids"|"NextGridID")){return Err(BAD);}
+ let grids=get(&c,"Grids")?;
+ // Do not re-serialize a BTreeMap: its ordering is not the game contract.
+ if !grids.get().trim_start().strip_prefix('{').is_some_and(|s|s.trim_start().starts_with("\"0\"")){return Err(BAD);}
+ for (_,g) in obj(grids)?{
+  let g=obj(g)?;
+  if g.keys().any(|k|!matches!(k.as_str(),"ID"|"GridDataPath"|"GridDefaultLayoutPath"|"TessellationFactor"|"NextGridObjectID"|"Objects")){return Err(BAD);}
+ }
+ Ok(raw)
+}
+pub(super) fn decoration_restore_candidate(source:&[u8],backup:&str)->Result<String,CodecError>{
+ let src=std::str::from_utf8(source).map_err(|_|BAD)?;
+ if backup.len()>MAX_FILE||ddv_save_patch::validate_json_without_edit(src).is_err()||ddv_save_patch::validate_json_without_edit(backup).is_err(){return Err(BAD);}
+ let check:Value=serde_json::from_str(&review(source,backup)?).map_err(|_|BAD)?;
+ if check["schemaMatches"]!=true||check["targetReadable"]!=true||check["kind"]!="native-decoration"||check["matchingDesigns"]!=0{return Err(BAD);}
+ let (active,physical)=decoration_slot_info(source)?;
+ if active>=LEGACY_ACTIVE_LIMIT{return Err(BAD);}
+ let payload=decoration_install_payload(backup)?;
+ let root:Map=serde_json::from_str(src).map_err(|_|BAD)?;
+ let w=obj(get(&root,"World")?)?;let slots=get(&w,"DecorationPresets")?;
+ let (_,end)=span(src,slots)?;
+ if src.as_bytes().get(end-1)!=Some(&b']'){return Err(BAD);}
+ let insertion=RawEdit{start:end-1,end:end-1,replacement:format!("{}{}",if physical==0{""}else{","},payload.get())};
+ let candidate=patch(src,vec![insertion])?;
+ if decoration_slot_info(candidate.as_bytes())? != (active+1,physical+1){return Err(BAD);}
+ let after:Map=serde_json::from_str(&candidate).map_err(|_|BAD)?;
+ let w=obj(get(&after,"World")?)?;
+ let rows:Vec<&RawValue>=serde_json::from_str(get(&w,"DecorationPresets")?.get()).map_err(|_|BAD)?;
+ if rows.last().is_none_or(|v|v.get()!=payload.get()){return Err(BAD);}
+ Ok(candidate)
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
@@ -324,5 +386,21 @@ mod tests{
   let result=inspect_backup(raw).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["items"],json!([[40000001,1]]));assert_eq!(v["decalCount"],1);assert_eq!(v["creator"],"Creator");assert!(!result.contains("PRIVATE"));assert!(!result.contains("never"));
   let raw=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"native-decoration","storage":"decoration","baseItemId":null,"payload":{"PresetName":"Test","StateFlags":0,"ShareInfo":{"Code":"PRIVATE"},"GridCollection":{"Grids":{"0":{"ID":0,"Objects":{"1":{"ID":1,"ItemID":40000001}}},"2":{"ID":2,"Objects":{"3":{"ID":3,"ItemID":40000001},"4":{"ID":4,"ItemID":40000002}}}}}}}"#;
   let result=inspect_backup(raw).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["items"],json!([[40000001,2],[40000002,1]]));assert!(!result.contains("PRIVATE"));
+ }
+
+ #[test]
+ fn decoration_restore_appends_after_tombstones_and_preserves_raw_order(){
+  let target=br#"{"GameInfo":{"Version":643},"Player":{"Unknown":1e-17},"World":{"DecorationPresets":[{"PresetName":"Deleted","StateFlags":16}]},"Other":18446744073709551615}"#;
+  let backup=r#"{"schema":"wand.preset.native-backup@1","gameSchema":643,"kind":"native-decoration","storage":"decoration","baseItemId":null,"payload":{"PresetName":"Scene","ThumbnailItems":[40000001],"StateFlags":0,"ShareInfo":null,"GridCollection":{"NextGridID":1,"DiffGrids":{},"Grids":{"0":{"ID":0,"GridDataPath":"","GridDefaultLayoutPath":"","TessellationFactor":2,"NextGridObjectID":1,"Objects":{"0":{"ID":0,"ItemID":40000001,"X":0,"Y":0,"Orientation":"GridOrientation_Up","State":null}}}}}}}"#;
+  let copy=decoration_restore_candidate(target,backup).unwrap();
+  assert!(copy.contains("\"Unknown\":1e-17"));assert!(copy.contains("18446744073709551615"));
+  assert!(copy.contains("\"PresetName\":\"Deleted\",\"StateFlags\":16"));
+  assert_eq!(decoration_slot_info(copy.as_bytes()).unwrap(),(1,2));
+  assert!(decoration_restore_candidate(copy.as_bytes(),backup).is_err());
+  assert!(decoration_restore_candidate(target,&backup.replace("\"ShareInfo\":null","\"ShareInfo\":{\"Code\":\"private\"}")).is_err());
+  assert!(decoration_restore_candidate(target,&backup.replace("\"gameSchema\":643","\"gameSchema\":624")).is_err());
+  let payload:Value=serde_json::from_str(backup).unwrap();
+  let many=json!({"GameInfo":{"Version":643},"Player":{},"World":{"DecorationPresets":vec![payload["payload"].clone();20]}});
+  assert!(decoration_restore_candidate(many.to_string().as_bytes(),&backup.replace("Scene","Different")).is_err());
  }
 }
