@@ -83,7 +83,7 @@ export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],
  const v=JSON.parse(text),r=v?.region;
  if(!v||Object.keys(v).length!==3||v.schema!=='wand.preset.region-decoration@1'||!r||Object.keys(r).length!==4||!['x','y','w','h'].every(k=>typeof r[k]==='number')||!validCaptureRegion(r,mainlandExtent(grids)))throw Error('REGION_SCOPE');
  if(!Object.hasOwn(v,world?'world':'island'))throw Error('REGION_SCOPE');
- const incoming=parseIslandDecoration(JSON.stringify(world?v.world:v.island),grids,world);if([...incoming.values()].some(a=>!a.supports))throw Error('REGION_SUPPORT');
+ const incoming=parseIslandDecoration(JSON.stringify(world?v.world:v.island),grids,world);if([...incoming.values()].some(a=>!a.supports||a.houses!==undefined))throw Error('REGION_SUPPORT');
  return {region:{x:r.x,y:r.y,w:r.w,h:r.h},incoming};
 }
 /** Merge only selected cells into the exact current full-world document.
