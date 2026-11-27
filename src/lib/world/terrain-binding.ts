@@ -13,14 +13,15 @@ export interface TerrainWarningRun{readonly x:number;readonly y:number;readonly 
 const rec=(x:unknown):x is Record<string,unknown>=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const uint=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>=0&&x<=0xffffffff;
 const int=(x:unknown):x is number=>typeof x==='number'&&Number.isInteger(x)&&x>=-2147483648&&x<=2147483647;
-export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[];readonly completeGridOrdinal?:number}
+export interface TerrainScopeReceipt{readonly receipt:SavedGridSourceCandidates;readonly verifiedGridOrdinals:readonly number[];readonly completeGridOrdinal?:number;readonly savedFactor?:1|2}
 export function projectTerrainSession(value:unknown,scopes:readonly {key:string;witness:SourceGridWitness}[]):TerrainScopeReceipt[]{
   if(!rec(value)||value.contract!=='wand.db05.db04-terrain-session@1'||!Array.isArray(value.rows)||value.rows.length>20000||
     !Array.isArray(value.bindings)||value.bindings.length>value.rows.length||value.sourceCoverageComplete!==false||
     value.effectivePlacementVerified!==false||value.worldCoordinatesVerified!==false||value.placementLegalityVerified!==false||value.saveWritingAuthorized!==false)
     throw Error('DB04_TERRAIN_SESSION_INVALID');
   const points:SavedNumericPoint[][]=scopes.map(()=>[]),matched=scopes.map(()=>0),missing=scopes.map(()=>0),outside=scopes.map(()=>0);
-  const eligible=scopes.map(()=>new Set<number>()),seen=new Set<number>();
+  const eligible=scopes.map(()=>new Set<number>()),seen=new Set<number>(),factors=new Map<number,1|2>();
+  function setFactor(i:number,f:unknown,verified:boolean){if((f!==1&&f!==2)||(f!==scopes[i].witness.tessellationFactor&&!verified)||(factors.has(i)&&factors.get(i)!==f))throw Error('DB04_TERRAIN_FACTOR_MISMATCH');factors.set(i,f);}
   for(const b of value.bindings){
     if(!rec(b)||!uint(b.localOrdinal)||b.localOrdinal<1||b.localOrdinal>value.rows.length||seen.has(b.localOrdinal)||
        !uint(b.sourceRefIndex)||b.sourceRefIndex>=scopes.length||typeof b.sourceLocalCoordinateMappingVerified!=='boolean'||
@@ -32,13 +33,13 @@ export function projectTerrainSession(value:unknown,scopes:readonly {key:string;
        typeof row.coordinatesObserved!=='boolean'||(row.orientation!==null&&(typeof row.orientation!=='string'||row.orientation.length>32)))
        throw Error('DB04_TERRAIN_ROW_INVALID');
     if(b.sourceLocalCoordinateMappingVerified){
-      if(b.savedFactor!==w.tessellationFactor||!(b.savedFactor===1||b.savedFactor===2)||w.nativeSizeX===null||w.nativeSizeY===null)throw Error('DB04_TERRAIN_FACTOR_MISMATCH');
+      if(w.nativeSizeX===null||w.nativeSizeY===null)throw Error('DB04_TERRAIN_FACTOR_MISMATCH');setFactor(i,b.savedFactor,b.nativeSaveFactorVerified===true);
       eligible[i].add(row.localGridOrdinal);
     }
     if(!row.coordinatesObserved){missing[i]++;continue;}
     if(!int(row.x)||!int(row.y))throw Error('DB04_TERRAIN_COORD_INVALID');
     matched[i]++;
-    const factor=w.tessellationFactor;
+    const factor=factors.get(i)??w.tessellationFactor;
     if(w.nativeSizeX!==null&&w.nativeSizeY!==null&&(factor===1||factor===2)&&
       (row.x<0||row.y<0||row.x>=w.nativeSizeX*factor||row.y>=w.nativeSizeY*factor))outside[i]++;
     // A complete per-scope projection, no silent 1200-row truncation.
@@ -50,12 +51,12 @@ export function projectTerrainSession(value:unknown,scopes:readonly {key:string;
     if(!Array.isArray(value.gridBindings)||value.gridBindings.length>scopes.length)throw Error('DB04_GRID_BINDING_INVALID');
     for(const g of value.gridBindings){
       if(!rec(g)||!uint(g.sourceRefIndex)||g.sourceRefIndex>=scopes.length||complete.has(g.sourceRefIndex)||!uint(g.localGridOrdinal)||g.localGridOrdinal<1||nativeOrdinals.has(g.localGridOrdinal)||!uint(g.objectCount))throw Error('DB04_GRID_BINDING_INVALID');
-      const i=g.sourceRefIndex;
+      const i=g.sourceRefIndex;if(g.savedFactor!==undefined)setFactor(i,g.savedFactor,g.nativeSaveFactorVerified===true);
       if(g.objectCount!==matched[i]+missing[i]||points[i].some(p=>p.localGridOrdinal!==g.localGridOrdinal)||eligible[i].size>1||g.objectCount>0&&!eligible[i].has(g.localGridOrdinal))throw Error('DB04_GRID_BINDING_MISMATCH');
       nativeOrdinals.add(g.localGridOrdinal);complete.set(i,g.localGridOrdinal);eligible[i].add(g.localGridOrdinal);
     }
   }
-  return scopes.map((s,i)=>({verifiedGridOrdinals:[...eligible[i]],...(complete.has(i)?{completeGridOrdinal:complete.get(i)}:{}),receipt:{
+  return scopes.map((s,i)=>({verifiedGridOrdinals:[...eligible[i]],...(factors.has(i)&&factors.get(i)!==s.witness.tessellationFactor?{savedFactor:factors.get(i)}:{}),...(complete.has(i)?{completeGridOrdinal:complete.get(i)}:{}),receipt:{
     contract:'wand.db04.saved-source-numeric-candidates@1',status:matched[i]?'full_path_pair_numeric_candidates':'no_full_path_pair_candidates',
     viewKey:s.key,nativeGridId:s.witness.nativeGridId,matchedRecordCount:matched[i],displayedCount:points[i].length,
     outsideSourceNumericEnvelopeCount:outside[i],rowsWithoutCoordinates:missing[i],otherOrAmbiguousSaveRecords:0,sourceReferenceCount:1,
@@ -88,3 +89,5 @@ export function terrainWarnings(binding:TerrainBinding,shape:SourceObjectShape,x
   }
   return runs;
 }
+
+export function effectiveSaveGrid<T extends {key:string;factor:1|2}>(grid:T,sessions:readonly TerrainScopeReceipt[]):T{const matches=sessions.filter(s=>s.receipt.viewKey===grid.key&&s.verifiedGridOrdinals.length===1);const factor=matches.length===1?matches[0].savedFactor:undefined;return factor&&factor!==grid.factor?{...grid,factor}:grid;}

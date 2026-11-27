@@ -144,7 +144,7 @@
   const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!areaScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
   const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>();
-  for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId});}
+  for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,savedFactor:g.factor,itemIds:ids,requestId});}
   pending=new Map(pending);for(const id of (areaDoc?[...new Set([...ids,...areaSceneCounts(areaDoc.items).keys()])]:supportDoc?[...mixedSceneCounts(supportDoc.items).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;
  }

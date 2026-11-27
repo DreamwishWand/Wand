@@ -56,7 +56,7 @@
   const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);stockState='ready';}catch{counts=null;stockState='error';}};
   own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file:f});
  }
- function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean){catalogLocale=l;catalogMode=landscape;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,locale:l,requestId:catalogRequest,landscapeOnly:landscape,freePlacement});}
+ function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean){catalogLocale=l;catalogMode=landscape;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,savedFactor:g.factor,locale:l,requestId:catalogRequest,landscapeOnly:landscape,freePlacement});}
  function setLandscapeMode(value:boolean){cancel();landscapeMode=value;query='';limit=80;}
  function receive(e:MessageEvent){const d=e.data;
   if(d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='design-catalog'&&Array.isArray(d.items)){catalog=d.items;catalogState='ready';limit=80;}else catalogState='error';return;}
@@ -69,7 +69,7 @@
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
   if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate,freePlacement)||!freePlacement&&duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
   cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
-  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement});}shapeRequests=new Map(shapeRequests);
+  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,savedFactor:g.factor,itemId:id,requestId,freePlacement});}shapeRequests=new Map(shapeRequests);
  }
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}

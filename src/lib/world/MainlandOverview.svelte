@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {effectiveSaveGrid} from './terrain-binding';
  import {regionBackupWords} from './region-decoration-backup.ts';
  import {captureRegionBounds,validCaptureRegion,resizeCaptureRegion,captureRegionPlan,captureRegionWords,type CaptureRegion,type CaptureOptions} from './scene-capture-region.ts';
  import {onDestroy} from 'svelte';
@@ -59,7 +60,7 @@
  export let grids:readonly PublicTerrainGridRef[];
  export let independent=false;
  export let sourceGrids:readonly PublicTerrainGridRef[]=[];
- $: islandGrids=independent?islandSaveGrids(grids[0]??null,sourceGrids):[];
+ $: islandGrids=independent?islandSaveGrids(grids[0]??null,sourceGrids).map(g=>saveMode?effectiveSaveGrid(g,sessions):g):[];
  $: isw=islandSaveWords[locale];
  export let areaOptions:readonly {key:string;label:string}[]=[];
  export let onAreaChange:(key:string)=>void=()=>{};
@@ -497,7 +498,8 @@ $: cutWords=groupCutWords[locale];
  } as const;
  $: words=copy[locale]??copy.en;
  $: independentBinding=independent&&grids.length===1?bindFloatingIslandGrid(grids[0]):null;
- $: bound=independent?(independentBinding?[independentBinding]:null):bindMainland(grids);
+ $: originalBound=independent?(independentBinding?[independentBinding]:null):bindMainland(grids);
+ $: bound=originalBound?.map(g=>saveMode?effectiveSaveGrid(g,sessions):g)??null;
  $: extent=mainlandExtent(bound??[]);
  $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
  let camera=defaultMapCamera(),svg:SVGSVGElement;

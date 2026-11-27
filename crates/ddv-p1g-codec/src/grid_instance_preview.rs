@@ -447,6 +447,10 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
 }
 
 /// Resolve a transfer destination without exposing native Save IDs.
+fn catalog_grid_match(layout:&str,data:&str,size:(u32,u32))->bool{
+ let Ok(c)=serde_json::from_str::<Value>(include_str!("../../../static/ddv/world/steam-1.26.2/index.json"))else{return false;};
+ c["entries"].as_array().into_iter().flatten().flat_map(|e|e["grids"].as_array().into_iter().flatten()).filter(|g|g["layoutId"].as_str()==Some(layout)&&g["gridDataPath"].as_str()==Some(data)&&g["sizeX"].as_u64()==Some(u64::from(size.0))&&g["sizeY"].as_u64()==Some(u64::from(size.1))).count()==1
+}
 pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
     let o=witness.as_object().ok_or(CodecError::Json)?;
     if o.len()!=5||o.keys().any(|k|!matches!(k.as_str(),"layoutId"|"gridDataPath"|"factor"|"sizeX"|"sizeY")){return Err(CodecError::Json);}
@@ -460,7 +464,7 @@ pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Resu
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(CodecError::Json)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
-    let mut candidates=grids.iter().filter(|(_,v)|v.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&v.get("GridDataPath").and_then(Value::as_str)==Some(data));
+    let catalog_verified=catalog_grid_match(layout,data,(sx,sy));let mut candidates=grids.iter().filter(|(id,v)|ddv_save_patch::full_grid_source_matches(&root,id,v,layout,data)&&(v["GridDefaultLayoutPath"].as_str()!=Some("")||catalog_verified));
     let (id,grid)=candidates.next().ok_or(CodecError::Json)?;
     if candidates.next().is_some()||valid_grid(id,grid).is_none()||
        grid.get("ID").and_then(Value::as_u64)!=key_id(id)||
@@ -947,7 +951,7 @@ fn saved_db04_source_projection(
         data:String,
         native_id:u32,
         size:Option<(u32,u32)>,
-        tessellation:Option<u32>
+        tessellation:Option<u32>,catalog_verified:bool
     }
     let valid_path=|p:&str,prefix:&str|{
         p.len()>prefix.len()+5&&p.len()<=512&&
@@ -1001,7 +1005,7 @@ fn saved_db04_source_projection(
         };
         sources.push(SourceRef{
             layout:layout.to_owned(),data:data.to_owned(),native_id,
-            size:x.zip(y),tessellation
+            size:x.zip(y),tessellation,catalog_verified:terrain_session&&x.zip(y).is_some_and(|size|catalog_grid_match(layout,data,size))
         });
     }
     let (scan,_)=scan_grid_instances(profile)?;
@@ -1032,10 +1036,10 @@ fn saved_db04_source_projection(
             grid.and_then(|g|g.get(name)).and_then(Value::as_i64)
                 .is_some_and(|v|v>=i32::MIN as i64&&v<=i32::MAX as i64)
         };
+        let native_scope=if terrain_session&&layout==Some(""){data.and_then(|d|ddv_save_patch::native_village_grid_scope(&root,&target.grid_id,d))}else{None};
         let metadata_valid=match target.kind{
             GridObjectKind::Full=>
-                layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))&&
-                data.is_some_and(|v|valid_path(v,"GridData/")),
+                (layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))||native_scope.is_some())&&data.is_some_and(|v|valid_path(v,"GridData/")),
             GridObjectKind::DiffModified=>
                 layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))&&
                 diff_id.is_some()&&
@@ -1046,7 +1050,7 @@ fn saved_db04_source_projection(
                 hash("DefaultGridHashCode")&&hash("DefaultGridDataHashCode")
         };
         let matches=sources.iter().filter(|ref_row|metadata_valid&&
-            layout==Some(ref_row.layout.as_str())&&match target.kind{
+            (layout==Some(ref_row.layout.as_str())||ref_row.catalog_verified&&native_scope.is_some()&&native_scope==ref_row.layout.split('/').nth(1))&&match target.kind{
                 GridObjectKind::Full=>data==Some(ref_row.data.as_str()),
                 GridObjectKind::DiffModified=>diff_id==Some(ref_row.native_id)
             }).collect::<Vec<_>>();
@@ -1075,11 +1079,12 @@ fn saved_db04_source_projection(
                         None=>Some(1u32), // native constructor default
                         Some(v)=>v.as_u64().and_then(|v|u32::try_from(v).ok())
                     };
-                    let aligned=matches!(factor,Some(1|2))&&factor==source.tessellation&&source.size.is_some();
+                    let native_factor_verified=root["GameInfo"]["Version"].as_u64()==Some(643)&&source.catalog_verified;
+                    let aligned=matches!(factor,Some(1|2))&&(factor==source.tessellation||native_factor_verified)&&source.size.is_some();
                     bindings.push(serde_json::json!({
                         "localOrdinal":i+1,
                         "sourceRefIndex":witness_index,
-                        "savedFactor":factor,
+                        "savedFactor":factor,"nativeSaveFactorVerified":native_factor_verified,
                         "sourceLocalCoordinateMappingVerified":aligned,
                         "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id)
                     }));
@@ -1133,14 +1138,14 @@ fn saved_db04_source_projection(
                 if grid.get("ID").and_then(Value::as_u64)!=key_id(key)||
                    collection.and_then(|c|c.get("DiffGrids")).is_some_and(|d|d.as_object().is_none_or(|m|m.contains_key(key)))||
                    grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==layout&&g.get("GridDataPath").and_then(Value::as_str)==data).count()!=1{continue;}
-                let matches=sources.iter().enumerate().filter(|(_,r)|layout==Some(r.layout.as_str())&&data==Some(r.data.as_str())).collect::<Vec<_>>();
+                let matches=sources.iter().enumerate().filter(|(_,r)|ddv_save_patch::full_grid_source_matches(&root,key,grid,&r.layout,&r.data)&&(layout!=Some("")||r.catalog_verified)).collect::<Vec<_>>();
                 if matches.len()!=1{continue;}
                 let (source_index,source)=matches[0];
-                if !matches!(factor,Some(1|2))||factor!=source.tessellation.map(u64::from)||source.size.is_none(){continue;}
+                let native_factor_verified=root["GameInfo"]["Version"].as_u64()==Some(643)&&source.catalog_verified;if !matches!(factor,Some(1|2))||factor!=source.tessellation.map(u64::from)&&!native_factor_verified||source.size.is_none(){continue;}
                 let ordinal=i+1;
                 let projected=scan.rows.iter().filter(|r|r.get("localGridOrdinal").and_then(Value::as_u64)==Some(ordinal as u64)).count();
                 if projected!=objects.len(){continue;}
-                grid_bindings.push(serde_json::json!({"sourceRefIndex":source_index,"localGridOrdinal":ordinal,"objectCount":objects.len()}));
+                grid_bindings.push(serde_json::json!({"sourceRefIndex":source_index,"localGridOrdinal":ordinal,"objectCount":objects.len(),"savedFactor":factor,"nativeSaveFactorVerified":native_factor_verified}));
             }
         }
         return serde_json::to_string(&serde_json::json!({
@@ -1199,7 +1204,7 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
     if refs.blocking()>0||refs.historical>0{return Err(bad);}
     let grid=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
     let layout=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
-    let scope=layout.strip_prefix("SceneLayouts/").and_then(|s|s.split_once('/')).map(|(s,_)|s).ok_or(bad)?;
+    let scope=if layout.is_empty(){ddv_save_patch::native_village_grid_scope(&root,&target.grid_id,grid["GridDataPath"].as_str().ok_or(bad)?).ok_or(bad)?}else{layout.strip_prefix("SceneLayouts/").and_then(|s|s.split_once('/')).map(|(s,_)|s).ok_or(bad)?};
     if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|s.starts_with("GridData/Villages/")&&s.ends_with(".json")&&!s.contains("..")){return Err(bad);}
     let json=std::str::from_utf8(profile).map_err(|_|bad)?;
     let draft=match o.get("action").and_then(Value::as_str){
@@ -2809,7 +2814,7 @@ fn landscape_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::P
  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
  let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
  let grids=entry["grids"].as_array().ok_or(bad)?;
- if grids.iter().filter(|g|["layoutId","gridDataPath","sizeX","sizeY","factor"].iter().all(|k|g[*k]==witness[*k])).count()!=1{return Err(bad);}
+ if grids.iter().filter(|g|["layoutId","gridDataPath","sizeX","sizeY"].iter().all(|k|g[*k]==witness[*k])).count()!=1{return Err(bad);}
  resolve_plain_grid_destination(profile,witness)
 }
 pub(super) fn inspect_area_landscape(profile:&[u8],witness:&str)->Result<String,CodecError>{

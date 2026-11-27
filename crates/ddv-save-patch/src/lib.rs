@@ -808,6 +808,24 @@ pub struct PlainGridDestination {
     pub tessellation:u32,
     pub size:(u32,u32),
 }
+pub fn native_village_grid_scope(root:&serde_json::Value,grid_id:&str,data:&str)->Option<&'static str>{
+ let id=grid_id.parse::<u64>().ok()?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return None;}
+ let mut owner=None;
+ for village in root["World"]["Villages"].as_array()?{
+  for area in village["Areas"].as_object()?.values(){
+   let count=area["GridIDs"].as_array()?.iter().filter(|n|n.as_u64()==Some(id)).count();
+   if count==0{continue;} if count!=1||owner.is_some(){return None;}
+   owner=Some(match village["SceneItemId"].as_u64()?{1540000000=>"Village04",1540000101=>"VillageExpansion01",1540000119=>"VillageExpansion02",1540000162=>"VillageExpansion03",1540000209=>"VillageExpansion04",1540000210=>"VillageWinnieDLC",_=>return None});
+  }
+ }
+ owner.filter(|scope|outdoor_world_path(scope,data))
+}
+pub fn full_grid_source_matches(root:&serde_json::Value,id:&str,g:&serde_json::Value,layout:&str,data:&str)->bool{
+ if g["GridDataPath"].as_str()!=Some(data){return false;}
+ match g["GridDefaultLayoutPath"].as_str(){Some("")=>native_village_grid_scope(root,id,data).is_some_and(|scope|full_grid_scope(layout)==Some(scope)),Some(actual)=>actual==layout,None=>false}
+}
+fn saved_full_grid_scope<'a>(root:&serde_json::Value,id:&str,g:&'a serde_json::Value)->Option<&'a str>{let layout=g["GridDefaultLayoutPath"].as_str()?;if layout.is_empty(){native_village_grid_scope(root,id,g["GridDataPath"].as_str()?)}else{full_grid_scope(layout)}}
 fn full_grid_scope(layout:&str)->Option<&str>{
     let (scope,leaf)=layout.strip_prefix("SceneLayouts/")?.split_once('/')?;
     (!scope.is_empty()&&!leaf.is_empty()&&leaf.ends_with(".json")&&!layout.contains("..")&&!layout.contains('\\')).then_some(scope)
@@ -882,7 +900,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
        !destination.data_path.starts_with("GridData/")||
        !destination.data_path.ends_with(".json")||destination.data_path.contains("..")||destination.data_path.contains('\\')||
        (from_layout==destination.layout_path&&from.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str()))||
-       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       !full_grid_source_matches(&root,&destination.grid_id,to,&destination.layout_path,&destination.data_path)||
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
        to.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(destination.tessellation as u64)||
@@ -956,14 +974,14 @@ pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expe
     let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
     let to=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
-    let scope=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).and_then(full_grid_scope).ok_or(PatchError::InvalidTarget)?;
+    let scope=saved_full_grid_scope(&root,&target.grid_id,from).ok_or(PatchError::InvalidTarget)?;
     if full_grid_scope(&destination.layout_path)!=Some(scope)||
        !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|p|outdoor_world_path(scope,p))||
        !outdoor_world_path(scope,&destination.data_path)||
        from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
        to.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(u64::from(destination.tessellation))||
        to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
-       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       !full_grid_source_matches(&root,&destination.grid_id,to,&destination.layout_path,&destination.data_path)||
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&destination.grid_id)))||
@@ -991,7 +1009,7 @@ pub fn preview_landscape_place(source:&str,d:&PlainGridDestination,item:u64,xy:(
  let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grid=collection.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
  if grid.get("ID").and_then(|v|v.as_u64())!=d.grid_id.parse::<u64>().ok()||
-    grid.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(d.layout_path.as_str())||
+    !full_grid_source_matches(&root,&d.grid_id,grid,&d.layout_path,&d.data_path)||
     grid.get("GridDataPath").and_then(|v|v.as_str())!=Some(d.data_path.as_str())||
     grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
     collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id)))||
@@ -1309,8 +1327,8 @@ fn validate_plain_grid_destination(source:&str,destination:&PlainGridDestination
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
     let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let grid=grids.get(&destination.grid_id).ok_or(PatchError::MissingTarget)?;
-    let matches_path=|v:&serde_json::Value|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(destination.layout_path.as_str())&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str());
-    if !matches_path(grid)||grids.values().filter(|v|matches_path(v)).count()!=1||
+    let matches_path=|id:&str,v:&serde_json::Value|full_grid_source_matches(&root,id,v,&destination.layout_path,&destination.data_path);
+    if !matches_path(&destination.grid_id,grid)||grids.iter().filter(|(id,v)|matches_path(id,v)).count()!=1||
        grid.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
        grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation))||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&destination.grid_id))){
