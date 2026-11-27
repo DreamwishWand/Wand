@@ -1728,8 +1728,9 @@ fn building_initial_candidate(profile:&[u8],plan:&Value)->Result<String,CodecErr
     if collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.values().any(|g|g["GridDefaultLayoutPath"].as_str().and_then(|p|p.split('/').nth(1))==Some(scope.as_str())))){return Err(bad);}
     let int=|k:&str|o[k].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let orientation=o["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
-    let level=templates["template"]["upgradeLevel"].as_u64().ok_or(bad)?;
-    let skin=templates["template"]["skinItemId"].as_u64().ok_or(bad)?;
+    let template=templates["scopeTemplates"].get(&scope).unwrap_or(&templates["template"]);
+    let level=if template.get("withoutUpgrade").and_then(Value::as_array).is_some_and(|a|a.iter().any(|v|v.as_u64()==Some(item))){None}else{Some(template["upgradeLevel"].as_u64().ok_or(bad)?)};
+    let skin=template["skinItemId"].as_u64().ok_or(bad)?;
     let draft=ddv_save_patch::preview_checked_building_initial(std::str::from_utf8(profile).map_err(|_|bad)?,&d,item,(int("x")?,int("y")?),orientation,level,skin).map_err(|_|CodecError::Patch)?;
     if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
     Ok(draft.patched_json)
@@ -2572,6 +2573,31 @@ mod tests{
         let mut standard=add;standard.as_object_mut().unwrap().remove("freePlacement");
         assert!(building_layout_candidate_scoped(raw.to_string().as_bytes(),&[standard],false).is_err());
     }
+    #[test]
+    fn initial_wells_cover_six_original_worlds_and_distinct_native_states(){
+        let templates:Value=serde_json::from_str(include_str!("../../../src/lib/world/building-initial-templates.json")).unwrap();
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let mut seen=HashSet::new();
+        for (scope,items) in templates["scopes"].as_object().unwrap(){
+            let d=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"].as_str()==Some(scope.as_str())).unwrap()["grids"].as_array().unwrap().iter().find(|g|g["gridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Villages/"))).unwrap();
+            for item in items.as_array().unwrap(){
+                let item=item.as_u64().unwrap();assert!(seen.insert(item));
+                let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":d["layoutId"],"GridDataPath":d["gridDataPath"],"TessellationFactor":d["factor"],"NextGridObjectID":5,"Objects":{}}}}}});
+                let plan=serde_json::json!({"buildingInitial":{"itemId":item.to_string(),"destination":{"layoutId":d["layoutId"],"gridDataPath":d["gridDataPath"],"factor":d["factor"],"sizeX":d["sizeX"],"sizeY":d["sizeY"]},"x":1,"y":1,"orientation":"GridOrientation_Down"}});
+                let output=group_paste_candidate(raw.to_string().as_bytes(),&plan.to_string()).unwrap();
+                let out:Value=serde_json::from_str(&output).unwrap();
+                let g=&out["World"]["GridCollection"]["Grids"]["42"];
+                let state=&g["Objects"]["5"]["State"]["BuildingWithSkinData"];
+                let level=if matches!(item,20300093|20300097){Value::Null}else{serde_json::json!({"Level":if scope=="VillageExpansion04"{0}else{1}})};
+                assert_eq!(state["UpgradeState"],level);
+                assert_eq!(state["CurrentSkinItemID"],if matches!(scope.as_str(),"VillageExpansion04"|"VillageWinnieDLC"){0}else{170200005});
+                assert_eq!(g["NextGridObjectID"],6);
+                assert_eq!(out["Player"],raw["Player"]);
+            }
+        }
+        assert_eq!(seen.len(),47);
+    }
+
     #[test]
     fn initial_well_requires_pinned_scope_template_and_absent_native_instance(){
         let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
