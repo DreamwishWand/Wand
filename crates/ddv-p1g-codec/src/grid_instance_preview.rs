@@ -371,13 +371,13 @@ fn outdoor_catalog_identity(grid:&Value)->Result<(String,String,u64,u64,u64),Cod
     let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
     let data=grid["GridDataPath"].as_str().ok_or(bad)?;
     let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
-    if !data.starts_with("GridData/Villages/"){return Err(bad);}
+    if !data.starts_with("GridData/Villages/")&&!data.starts_with("GridData/FloatingIslands/"){return Err(bad);}
     static CATALOG:std::sync::OnceLock<Value>=std::sync::OnceLock::new();
     let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap_or(Value::Null));
     let mut found=None;
     for e in catalog["entries"].as_array().ok_or(bad)?{
         let scope=e["scope"].as_str().ok_or(bad)?;
-        if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){continue;}
+        if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"|"FloatingIslands"){continue;}
         for g in e["grids"].as_array().ok_or(bad)?{
             if g["gridDataPath"].as_str()!=Some(data){continue;}
             let native_layout=g["layoutId"].as_str().ok_or(bad)?;
@@ -759,7 +759,7 @@ pub(super) fn resolve_outdoor_support_cut_target(profile:&[u8],ordinal:usize,ite
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
  let g=c.get("Grids").and_then(|v|v.get(&t.grid_id)).ok_or(bad)?;
- if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/"))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
+ if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/")&&(v!=""||outdoor_identity(&root,&t.grid_id).is_err()))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
  subgrid_tree(c,&t.grid_id,&t.object_id)?;
  let refs=grid_identity_dependencies(profile,t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
  Ok(t.clone())
@@ -1618,7 +1618,9 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
 }
 /// An explicit exterior-only operation, not a generic Building placement.
 pub(super) fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,CodecError>{
-    Ok(outdoor_identity(root,gid)?.0)
+    let scope=outdoor_identity(root,gid)?.0;
+    if scope=="FloatingIslands"{return Err(CodecError::Json);}
+    Ok(scope)
 }
 fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
@@ -2230,7 +2232,12 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  if grids.len()!=expected_grids||!houses.is_empty()&&houses.len()!=rows.len()||!buildings.is_empty()&&buildings.len()!=rows.len(){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let full=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
- if full.iter().filter(|(_,g)|{let layout=g.get("GridDefaultLayoutPath").and_then(Value::as_str);if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}}).any(|(key,_)|!grids.contains(key)){return Err(bad);}
+ if full.iter().filter(|(_,g)|{
+     let raw=g.get("GridDefaultLayoutPath").and_then(Value::as_str);
+     let recovered=if raw==Some(""){outdoor_catalog_identity(g).ok()}else{None};
+     let layout=recovered.as_ref().map(|v|v.1.as_str()).or(raw);
+     if world_mode==Some(true){layout.and_then(|l|l.split('/').nth(1))==layout_id.as_deref()}else{layout==layout_id.as_deref()}
+ }).any(|(key,_)|!grids.contains(key)){return Err(bad);}
  if remove.is_empty()&&add.is_empty()&&networks.is_empty()&&landscapes.is_empty()&&houses.is_empty()&&buildings.is_empty()||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  if decoration{check_area_support_change_count(profile,&remove,&add)?;}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
@@ -2330,14 +2337,16 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let mut same_trees=Vec::new();
     for (((target,selection),(key,xy,orientation)),factor) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
-        let layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+        let raw_layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
+        let recovered;
+        let layout=if raw_layout.is_empty(){recovered=outdoor_identity(&root,&target.grid_id)?.1;recovered.as_str()}else{raw_layout};
         let data=source.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
         let d=destinations.get(key).ok_or(bad)?;
         let scope=|s:&str|s.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).map(str::to_owned);
         if scope(layout).is_none()||scope(&d.layout_path).is_none()||!data.starts_with("GridData/")||
            source.get("ID").and_then(Value::as_u64)!=key_id(&target.grid_id)||
            collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)))||
-           grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout)&&g.get("GridDataPath").and_then(Value::as_str)==Some(data)).count()!=1{return Err(bad);}
+           grids.values().filter(|g|g.get("GridDataPath").and_then(Value::as_str)==Some(data)&&(raw_layout.is_empty()||g.get("GridDefaultLayoutPath").and_then(Value::as_str)==Some(layout))).count()!=1{return Err(bad);}
         let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
