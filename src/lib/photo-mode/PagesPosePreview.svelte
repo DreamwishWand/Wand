@@ -39,7 +39,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic} {#if itemId===70200029}{copy.playerOnly}{/if}{/if}</p>
+      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic} {#if itemId===70200029}{copy.playerOnly}{/if}{/if}</p>
       {#if poses.length>1}
         <div class="pose-variants" aria-label={copy.pose}>
           {#each poses as _,i}
