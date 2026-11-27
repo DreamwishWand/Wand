@@ -18,7 +18,8 @@
       return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal)}]:[];
     });
   });
-  let playerOnly=$derived(!!row&&bodyTypes.some(b=>row[b]?.kind==='player'));
+  let playerOnly=$derived(!!row&&bodyTypes.some(b=>row[b]?.kind==='player'&&row[b]?.companionIncluded!==false));
+  let companionOnly=$derived(!!row&&bodyTypes.some(b=>row[b]?.kind==='player'&&row[b]?.companionIncluded===false));
   let related=$derived(index?relatedPoseItems(index,itemId):[]);
   let names=$derived(expanded&&getRelatedName?Promise.all(related.map(async id=>({id,name:await getRelatedName!(id,locale).catch(()=>null)}))):Promise.resolve([]));
   onMount(()=>{
@@ -31,7 +32,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if}</p>
+      <p>{copy.note} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if companionOnly}{copy.companionOnly}{/if}</p>
       <PosePreview {options} {copy}/>
       {#await names then items}
         {@const found=items.filter(x=>x.name)}

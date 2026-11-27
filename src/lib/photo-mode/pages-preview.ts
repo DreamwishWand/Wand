@@ -4,7 +4,7 @@ import type {PoseScene} from './scene-session.ts';
 export const bodyTypes=['male','female'] as const;
 export type BodyType=typeof bodyTypes[number];
 export type PairOption={kind:'pair';sourceSha256:string;asset:BlobEntry};
-export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry;accessoryIncluded:false};
+export type PlayerOption={kind:'player';sourceSha256:string;clip:ClipEntry;accessoryIncluded:false;companionIncluded?:false};
 export type PreviewOption=PairOption|PlayerOption;
 export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,Partial<Record<BodyType,PreviewOption>>>};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
@@ -18,7 +18,7 @@ export function loadPagesPoseIndex(base:string){
     check((m.schema==='wand.photo-mode.pages-test@1'||m.schema==='wand.photo-mode.pages-test@2')&&m.publicationAuthorized===true&&m.testOnly===true&&m.fullPoseVerified===false,'Invalid approved test manifest');
     check(bodyTypes.every(b=>validEntry(m.bodyIcons[b])),'Invalid body icons');
     if(m.schema==='wand.photo-mode.pages-test@2')check(m.models&&bodyTypes.every(b=>validEntry(m.models![b])),'Invalid models');
-    for(const [id,options] of Object.entries(m.items)){check(/^[1-9][0-9]{0,14}$/.test(id)&&Number.isSafeInteger(Number(id)),'Invalid item');for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&o.accessoryIncluded===false,'Invalid player scene')}}}
+    for(const [id,options] of Object.entries(m.items)){check(/^[1-9][0-9]{0,14}$/.test(id)&&Number.isSafeInteger(Number(id)),'Invalid item');for(const b of bodyTypes){const o=options[b];if(o){check(/^[a-f0-9]{64}$/.test(o.sourceSha256),'Invalid source');if(o.kind==='pair')check(validEntry(o.asset),'Invalid pair');else check(o.kind==='player'&&m.models&&validEntry(o.clip)&&o.clip.sourceSha256===o.sourceSha256&&typeof o.clip.name==='string'&&o.accessoryIncluded===false&&(o.companionIncluded===undefined||o.companionIncluded===false),'Invalid player scene')}}}
     return m;
   })();void request.catch(()=>{request=undefined})}
   return request;
