@@ -3,7 +3,7 @@ import {bindMainlandGrid,sourceWorldScope,type MainlandGrid} from './mainland-wo
 import type {StockDestination} from './save-furniture-placement.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 export interface BuildingPose{itemId:number;x:number;y:number;orientation:number}
-export interface BuildingAreaPlan{destination:StockDestination;before:BuildingPose[];after:BuildingPose[]}
+export interface BuildingAreaPlan{destination:StockDestination;before:BuildingPose[];after:BuildingPose[];freePlacement?:true}
 export const BUILDING_LAYOUT_LIMIT=256;
 const buildingId=(id:number)=>Number.isSafeInteger(id)&&[200,201,202,203].includes(Math.floor(id/100000));
 const key=(p:BuildingPose)=>[p.itemId,p.x,p.y,p.orientation].join(':');
@@ -19,7 +19,7 @@ export function captureBuildingPoses(g:MainlandGrid,objects:readonly MainlandSav
 }
 export function reviewBuildingLayout(grids:readonly MainlandGrid[],objects:ReadonlyMap<string,readonly MainlandSavedObject[]>,incoming:ReadonlyMap<string,{buildings?:readonly BuildingPose[]}>,free:boolean){
  if(!grids.length||grids.some(g=>!bindMainlandGrid(g)||sourceWorldScope(g)!==sourceWorldScope(grids[0]))||incoming.size!==grids.length)return null;
- const plans=new Map<string,BuildingAreaPlan>();let moved=0,retained=0;
+ const plans=new Map<string,BuildingAreaPlan>();let moved=0,retained=0,added=0,removed=0;
  for(const g of grids){
   const rows=objects.get(g.key),wanted=incoming.get(g.key)?.buildings;if(!rows||!wanted)return null;
   const before=captureBuildingPoses(g,rows);if(!before)return null;
@@ -29,14 +29,17 @@ export function reviewBuildingLayout(grids:readonly MainlandGrid[],objects:Reado
   const ids=new Set(after.map(p=>p.itemId)),old=before.filter(p=>ids.has(p.itemId));
   for(const id of ids){
    const a=old.filter(p=>p.itemId===id).map(key),b=after.filter(p=>p.itemId===id).map(key);
-   if(a.length!==b.length)return null;
-   for(const k of b){const i=a.indexOf(k);if(i>=0){a.splice(i,1);retained++;}}
-   if(a.length>1)return null; // never guess which stateful instance should move
-   moved+=a.length;
+   if(!a.length)return null; // no native source record
+   if(a.length!==b.length&&!free)return null;
+   const missing:string[]=[];
+   for(const k of b){const i=a.indexOf(k);if(i>=0){a.splice(i,1);retained++;}else missing.push(k);}
+   if(a.length>1&&missing.length)return null; // never guess which stateful instance should move
+   const moves=Math.min(a.length,missing.length);
+   moved+=moves;added+=missing.length-moves;removed+=a.length-moves;
   }
-  plans.set(g.key,{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},before:old,after});
+  plans.set(g.key,{destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},before:old,after,...(free?{freePlacement:true as const}:{})});
  }
- if(moved>BUILDING_LAYOUT_LIMIT||!free&&moved)return null;
- return {plans,moved,retained,changed:moved>0};
+ if(moved+added+removed>BUILDING_LAYOUT_LIMIT||!free&&(moved||added||removed))return null;
+ return {plans,moved,retained,added,removed,changed:moved+added+removed>0};
 }
 export const buildingBackupWords={ja:'既存建物の位置・方向（状態保持）',en:'Existing building poses (state retained)',fr:'Positions des bâtiments (état conservé)',it:'Posizioni edifici (stato conservato)',de:'Gebäudepositionen (Zustand bleibt)', 'es-ES':'Posiciones de edificios (estado conservado)','zh-CN':'现有建筑位置和方向（保留状态）','pt-BR':'Posições de edifícios (estado mantido)'} as const;
