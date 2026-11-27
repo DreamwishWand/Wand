@@ -135,5 +135,14 @@ test('free room-to-world cut accepts diagonal pose but excludes support and ordi
  assert.equal(groupCutPlan(cut,candidate),null);
  assert.deepEqual(groupCutPlan(cut,candidate,true)[0].roomSource,{roomOrdinal:1,index:0});
  assert.equal(groupCutPlan([{...cut[0],supportFactor:1}],candidate,true),null);
- assert.equal(groupCutPlan([{...cut[0],roomSource:undefined,localOrdinal:1}],candidate,true),null);
+ assert.equal(groupCutPlan([{...cut[0],roomSource:undefined,localOrdinal:1}],candidate,true)[0].localOrdinal,1);
+});
+
+test('free outdoor cut preserves exact diagonal witness and checks visible source pose',()=>{
+ const p=saved(1,2,-3);p.object.orientation='GridOrientation_DownLeft';p.object.orientationCode=10;
+ assert.equal(captureCutWitness([p]),null);
+ const rows=captureCutWitness([p],true);assert.equal(rows[0].expectedOrientation,'GridOrientation_DownLeft');
+ assert.equal(cutWitnessMatches(rows,[p],true),true);
+ assert.equal(cutWitnessMatches(rows,[p]),false);
+ assert.equal(cutWitnessMatches(rows,[{...p,object:{...p.object,x:9}}],true),false);
 });
