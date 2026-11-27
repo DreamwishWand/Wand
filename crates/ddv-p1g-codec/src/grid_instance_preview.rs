@@ -2250,6 +2250,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
     }
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&poses.iter().any(|(_,item,..)|crate::storage_source::is_storage(*item)){return Err(bad);}
     if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         use ddv_save_patch::bulk_furniture::{BulkPlace,preview_bulk_furniture};
         let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
@@ -2258,9 +2259,15 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         return Ok(draft.patched_json);
     }
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
-    for (key,item,xy,orientation,_) in poses{
+    for (key,item,xy,orientation,row_free) in poses{
         let amount=&mut counts.get_mut(&item).ok_or(bad)?.0;
-        let mut draft=preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:destinations.get(&key).ok_or(bad)?,item_id:item,xy,orientation:&orientation}).map_err(|_|CodecError::Patch)?;
+        let dest=destinations.get(&key).ok_or(bad)?;
+        let mut draft=if crate::storage_source::is_storage(item){
+            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&dest.grid_id)?;
+            if layout!=dest.layout_path||factor!=u64::from(dest.tessellation)||sx!=u64::from(dest.size.0)||sy!=u64::from(dest.size.1){return Err(bad);}
+            let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or(bad)?;
+            ddv_save_patch::preview_initial_storage(&working,dest,item,xy,&orientation,*amount,template,capacity,false,row_free)
+        }else{preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:dest,item_id:item,xy,orientation:&orientation})}.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
         working.zeroize();*working=draft.patched_json;*amount-=1;
     }

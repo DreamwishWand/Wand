@@ -10,8 +10,9 @@ pub(super) fn is_storage(id:u64)->bool{id==40001680||rows().get(id.to_string()).
 pub(super) fn initial_storage_template(id:u64)->Option<(&'static str,u32)>{
  let row=rows().get(id.to_string());
  if id==40001680{
-  // The original player-house template independently proves this Item ID.
-  if row.is_none(){return Some(("Chest_48Slot",48));}
+  // The original player-house template independently proves this Item ID,
+  // including the unlocked state and the 48-slot template initialization.
+  if row.and_then(|r|r.get("DefaultContainerInventoryData")).is_none_or(|v|v.as_str()==Some("Chest_48Slot")){return Some(("Chest_48Slot",48));}
  }
  let m=row?.as_object()?;
  if m.keys().any(|k|!matches!(k.as_str(),"DefaultContainerInventoryData"|"UnlockKeyItemID"|"UnlockLocId"))||
