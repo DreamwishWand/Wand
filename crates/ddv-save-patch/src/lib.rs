@@ -1136,13 +1136,13 @@ pub fn preview_checked_building_duplicate(source:&str,target:&GridCoordinateTarg
 }
 
 pub fn preview_checked_building_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
-    checked_building_duplicate_mode(source,target,expected,d,xy,orientation,replacement_orientation,false)
+    checked_building_duplicate_mode(source,target,expected,d,xy,orientation,replacement_orientation,false,false)
 }
 
 /// Explicit cross-world experimental edit of a native building. The caller
 /// validates the supported state, both catalog grids and identity dependencies.
 pub fn preview_checked_building_world_change(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,duplicate:bool)->Result<GridCoordinateDraft,PatchError>{
-    let mut draft=checked_building_duplicate_mode(source,target,expected,d,xy,orientation,orientation,true)?;
+    let mut draft=checked_building_duplicate_mode(source,target,expected,d,xy,orientation,orientation,true,false)?;
     if !duplicate{
         let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
         draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
@@ -1151,7 +1151,12 @@ pub fn preview_checked_building_world_change(source:&str,target:&GridCoordinateT
     Ok(draft)
 }
 
-fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str,world_change:bool)->Result<GridCoordinateDraft,PatchError>{
+/// Exterior-only experiment: preserve the original entrance and all character
+/// presence/quest/scene data. Codec must prove the original Character.House relation.
+pub fn preview_character_house_exterior_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    checked_building_duplicate_mode(source,target,expected,d,xy,orientation,replacement_orientation,false,true)
+}
+fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str,world_change:bool,character_only:bool)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||
@@ -1163,11 +1168,16 @@ fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expe
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let from=grids.get(&target.grid_id).ok_or(bad)?;
     let to=grids.get(&d.grid_id).ok_or(bad)?;
-    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    let from_scope=from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
-    if (from_scope!=scope)!=world_change||world_change&&target.grid_id==d.grid_id||
-       !from.get("GridDataPath").and_then(Value::as_str).is_some_and(|p|outdoor_world_path(from_scope,p))||!outdoor_world_path(scope,&d.data_path)||
-       from.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
+    if character_only{
+        if target.item_id/100_000!=200||house_exterior_world(from["GridDefaultLayoutPath"].as_str().ok_or(bad)?,from["GridDataPath"].as_str().ok_or(bad)?).is_none()||
+           house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}
+    }else{
+        let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
+        let from_scope=from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
+        if (from_scope!=scope)!=world_change||world_change&&target.grid_id==d.grid_id||
+           !from.get("GridDataPath").and_then(Value::as_str).is_some_and(|p|outdoor_world_path(from_scope,p))||!outdoor_world_path(scope,&d.data_path){return Err(bad);}
+    }
+    if from.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
        to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
        !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)||
        to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
@@ -1178,6 +1188,14 @@ fn checked_building_duplicate_mode(source:&str,target:&GridCoordinateTarget,expe
        o.get("ID").and_then(Value::as_u64)!=target.object_id.parse::<u64>().ok()||o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id)||
        o.get("X").and_then(Value::as_i64)!=Some(i64::from(expected.0))||o.get("Y").and_then(Value::as_i64)!=Some(i64::from(expected.1))||
        o.get("Orientation").and_then(Value::as_str)!=Some(orientation){return Err(bad);}
+    if character_only{
+        let state=o.get("State").and_then(Value::as_object).filter(|m|m.len()==1).ok_or(bad)?;
+        let h=state.get("HouseData").and_then(Value::as_object).ok_or(bad)?;
+        if h.get("Built").and_then(Value::as_bool)!=Some(true)||
+           h.keys().any(|k|!matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))||
+           !h.get("PlayerHouseIndex").is_none_or(|v|matches!(v.as_i64(),Some(-1|0)))||
+           !h.get("UpgradeState").is_none_or(|v|v.is_null()||v.as_object().is_some_and(|m|m.len()==1&&m.get("Level").and_then(Value::as_u64).is_some())){return Err(bad);}
+    }
     let state=if o.contains_key("State"){
         let mut locator=JsonLocator::grid_axis(source,target,"X")?;
         locator.signed_path=None;locator.item_path=None;

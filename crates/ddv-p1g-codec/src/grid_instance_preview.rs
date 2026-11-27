@@ -1759,6 +1759,37 @@ fn building_clone_state(item:u64,state:Option<&Value>)->bool{
         _=>false
     }
 }
+/// The shared DB projection is generated from the reviewed Character.House
+/// field. No inference from translated names or the 200-family alone.
+pub(super) fn character_house_exterior(item:u64)->bool{
+    static IDS:std::sync::OnceLock<HashSet<u64>>=std::sync::OnceLock::new();
+    IDS.get_or_init(||{
+        let v:Value=serde_json::from_str(include_str!("../../../src/lib/world/character-house-exteriors.json")).unwrap_or(Value::Null);
+        if v["gameVersion"]!="1.26.2"||v["sourceField"]!="Character.House@int"{return HashSet::new();}
+        v["itemIds"].as_array().into_iter().flatten().filter_map(Value::as_u64).filter(|n|n/100_000==200).collect()
+    }).contains(&item)
+}
+pub(super) fn character_house_copy_candidate(profile:&[u8],target:&GridCoordinateTarget,expected:(i32,i32),dest:&ddv_save_patch::PlainGridDestination,xy:(i32,i32),orientation:&str,replacement:&str,cross:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+    let bad=CodecError::Json;
+    if !character_house_exterior(target.item_id){return Err(bad);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+    let from=house_exterior_identity(&root,&target.grid_id)?;
+    let to=house_exterior_identity(&root,&dest.grid_id)?;
+    if (from.0!=to.0)!=cross||from.2!=to.2||to.1!=dest.layout_path||to.2!=u64::from(dest.tessellation)||to.3!=u64::from(dest.size.0)||to.4!=u64::from(dest.size.1)||
+       expected.0<0||expected.1<0||expected.0 as u64>=from.2*from.3||expected.1 as u64>=from.2*from.4{return Err(bad);}
+    let grids=&root["World"]["GridCollection"]["Grids"];
+    let object=&grids[&target.grid_id]["Objects"][&target.object_id];
+    let state=object.get("State").filter(|s|s.get("HouseData").is_some()).ok_or(bad)?;
+    if !building_clone_state(target.item_id,Some(state)){return Err(bad);}
+    let refs=grid_identity_dependencies(profile,target)?;
+    if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    let next=grids[&dest.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+    let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.to_string()])?;
+    if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    ddv_save_patch::preview_character_house_exterior_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,target,expected,dest,xy,orientation,replacement).map_err(|_|CodecError::Patch)
+}
+
 fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let o=plan.as_object().filter(|o|if remove{o.len()==5}else{o.len()==8||o.len()==9&&o.contains_key("replacementOrientation")}).ok_or(bad)?;
@@ -1771,6 +1802,13 @@ fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<S
     let expected=(int("expectedX")?,int("expectedY")?);
     let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
     let target=resolve_grid_mixed_targets(profile,&[(ordinal,item,expected,"full".to_owned(),Some(orientation.to_owned()))])?.pop().ok_or(bad)?;
+    if !remove&&character_house_exterior(item){
+        let dest=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
+        let replacement=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?};
+        let draft=character_house_copy_candidate(profile,&target,expected,&dest,(int("x")?,int("y")?),orientation,replacement,false)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+        return Ok(draft.patched_json);
+    }
     let scope=player_house_grid_scope(&root,&target.grid_id)?;
     let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;
     if expected.0<0||expected.1<0||expected.0 as u64>=sx||expected.1 as u64>=sy{return Err(bad);}
@@ -3843,6 +3881,32 @@ mod terrain_session_tests{
         primary["World"]["PlayerHouses"].as_array_mut().unwrap().swap(0,1);
         primary["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]["HouseData"]["PlayerHouseIndex"]=0.into();
         assert!(ddv_save_patch::preview_player_house_world_change(&primary.to_string(),&t,(1,2),&d,(3,4),"GridOrientation_Down",true).is_err());
+    }
+    #[test]
+    fn character_house_copy_preserves_original_presence_and_interior_scene_state(){
+        let data="GridData/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachGrid-GridData.json";
+        let layout="SceneLayouts/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachLayout.json";
+        let state=serde_json::json!({"HouseData":{"Built":true,"UpgradeState":{"Level":0},"PlayerHouseIndex":0}});
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":100},"World":{"Villages":[{"CharacterStates":{"10000001":{"Presence":1}}}],"FloatingIslands":{"1":{"CharacterStates":{}}},"PlayerHouses":[],"GridCollection":{"Grids":{
+         "10":{"ID":10,"GridDefaultLayoutPath":"","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":20000016,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":state}}},
+         "11":{"ID":11,"GridDefaultLayoutPath":"","GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":7,"Objects":{}}
+        }}}});
+        let json=raw.to_string();
+        let t=resolve_grid_mixed_targets(json.as_bytes(),&[(1,20000016,(1,2),"full".to_owned(),Some("GridOrientation_Down".to_owned()))]).unwrap().pop().unwrap();
+        let d=resolve_plain_grid_destination(json.as_bytes(),&serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":200,"sizeY":200})).unwrap();
+        let draft=character_house_copy_candidate(json.as_bytes(),&t,(1,2),&d,(8,9),"GridOrientation_Down","GridOrientation_Right",true).unwrap();
+        let mut out:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["11"]["Objects"]["7"]["State"],state);
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["11"]["Objects"]["7"]["Orientation"],"GridOrientation_Right");
+        out["World"]["GridCollection"]["Grids"]["11"]=raw["World"]["GridCollection"]["Grids"]["11"].clone();
+        assert_eq!(out,raw);
+        assert!(character_house_copy_candidate(json.as_bytes(),&t,(1,2),&d,(8,9),"GridOrientation_Down","GridOrientation_Right",false).is_err());
+        let mut broken=raw.clone();broken["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]["HouseData"]["PlayerHouseIndex"]=1.into();
+        assert!(character_house_copy_candidate(broken.to_string().as_bytes(),&t,(1,2),&d,(8,9),"GridOrientation_Down","GridOrientation_Right",true).is_err());
+        let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":11,"GridObjectID":7}]);
+        assert!(character_house_copy_candidate(linked.to_string().as_bytes(),&t,(1,2),&d,(8,9),"GridOrientation_Down","GridOrientation_Right",true).is_err());
+        let same=serde_json::json!({"buildingDuplicate":{"localOrdinal":1,"itemId":"20000016","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down","destination":{"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100},"x":8,"y":9}});
+        assert!(group_paste_candidate(json.as_bytes(),&same.to_string()).is_ok());
     }
     #[test]
     fn cross_world_building_move_and_duplicate_preserve_native_state(){
