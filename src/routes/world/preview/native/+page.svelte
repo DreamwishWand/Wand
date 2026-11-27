@@ -3,8 +3,9 @@
  import {openNativePreviewPack} from '$lib/media/native-cdn-preview.ts';
  import {browser} from '$app/environment';
  import {nativePreviewSession} from '$lib/media/native-preview-session.ts';
- import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
+ import {nativeEditorExtent,editorViewToNativeCanvas,nativeMapSourceScope,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
+ import NativeCalibrationOverlay from '$lib/world/NativeCalibrationOverlay.svelte';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
  const initial=browser?nativePreviewSession.get():null;
@@ -13,6 +14,8 @@
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
  let points:{x:number;y:number}[]=[];
+ let showTerrain=false,terrainOpacity=.35,terrainStatus:'loading'|'ready'|'error'='loading';
+ $: terrainScope=map?nativeMapSourceScope(map.id):null;
  const maxZoom=64,gesture=createMapPanGesture();
  $: map=maps.find(m=>m.id===selected)??null;
  $: extent=map?nativeEditorExtent(map):{x:0,y:0,w:1,h:1};
@@ -56,6 +59,9 @@
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
    <label><input type="checkbox" bind:checked={locked}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
+   {#if terrainScope}<label><input type="checkbox" bind:checked={showTerrain}/> 原本地形を重ねる</label>
+    {#if showTerrain}<label>地形の濃さ <input type="range" min="0" max="1" step=".05" bind:value={terrainOpacity}/></label>{/if}
+   {/if}
   {/if}
  </div>
  {#if error}<p role="alert">{error}</p>{/if}
@@ -69,12 +75,14 @@
      on:pointerup={endPan} on:pointercancel={endPan} on:lostpointercapture={e=>gesture.end(e)} on:pointerleave={()=>gesture.leave()}
      on:click={mark}>
     <rect x={viewport.x} y={viewport.y} width={viewport.w} height={viewport.h} fill="transparent" pointer-events="all"/>
+    {#if showTerrain&&terrainScope}{#key terrainScope}<NativeCalibrationOverlay scope={terrainScope} opacity={terrainOpacity} onStatus={s=>terrainStatus=s}/>{/key}{/if}
     {#if status==='ready'}
      {#each points as p}<rect x={p.x} y={p.y} width="1" height="1" fill="#ffd84d" fill-opacity=".5" stroke="white" vector-effect="non-scaling-stroke" stroke-width="1" pointer-events="none"/>{/each}
     {/if}
    </svg>
    <MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={v=>camera=zoomMapCamera(camera,v,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
   </div>
+  {#if showTerrain&&terrainScope}<p role="status">{terrainStatus==='loading'?'原本地形を読み込み中…':terrainStatus==='error'?'原本地形の読み込みに失敗しました':'原本地形を表示中（設置可否・座標校正は未確定）'}</p>{/if}
   <p role="status">{status==='drawing'?'描画中…':status==='error'?'描画エラー':'描画済み'}。クリックで半ワールド単位の検証マーカーを表示します。</p>
  {:else}
   <p>ローカル検証ZIPを展開し、manifest.json と全画像を選択してください。CDN照合済みの場合は manifest.json のみ選択します。</p>
