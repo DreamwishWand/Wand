@@ -30,7 +30,7 @@
  import {cardinalRoadCandidate,roadSeedEligible,cardinalRoadWords,cardinalFenceCandidate,fenceSeedEligible,isolatedFenceWords,fenceReplacementCandidate,fenceMutationWords,diagonalFenceWords,diagonalMutationWords,roadMutationWords,savedNetworkFreehand,appendSavedStroke,savedBrushWords,networkPaletteWords,isNetworkStyle,networkItemId,type NetworkSource,type NetworkStyle,ROAD_COPY_LIMIT,FENCE_COPY_LIMIT,type CardinalRoadTool,type CardinalRoadCandidate,type CardinalFenceCandidate} from './cardinal-road-save.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {localSaveSession,commitWorldCheckpoint,travelWorldCheckpoint} from '../ui/local-save-session';
- import {projectMainlandSaved,mainlandSavedAt,mainlandSavedInRect,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,crossWorldBuildingCandidate,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {projectMainlandSaved,mainlandSavedAt,mainlandSavedInRect,visibleMainlandSaved,mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible,mainlandSavedDraft,mainlandSavedCell,mainlandSavedDraftAtCell,mainlandSavedGroupDraft,mainlandSavedAdvancedDraft,mainlandGroupFactor,mainlandTransferCandidate,crossWorldBuildingCandidate,exteriorWorldKey,type MainlandTransferPlan,type MainlandSavedObject} from './mainland-saved-objects.ts';
  import {currentWorldEdits,emptyWorldTimeline,travelWorldTimeline,WORLD_BATCH_LIMIT,type WorldEditTimeline} from './saved-map-batch.ts';
  import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {TerrainScopeReceipt} from './terrain-binding.ts';
@@ -211,8 +211,12 @@ $: cutWords=groupCutWords[locale];
  $: crossText=crossWords[locale];
  let crossOpen=false,crossKey='',crossX:number|undefined=0,crossY:number|undefined=0,crossSelection:number|null=null;
  $: if(selected!==crossSelection){crossSelection=selected;crossOpen=false;crossKey='';}
- $: crossEligible=!!chosen&&testExport&&freePlacement&&furnitureReady&&!furnitureBlocked&&chosen.object.nativeType==='Building'&&[200,201,202,203].includes(Math.floor(Number(chosen.object.itemId)/100000))&&!chosen.object.subgrid&&!chosen.object.surfaceCapable&&!!chosen.shape&&isCardinal(chosen.object.orientation);
- $: crossDestinations=chosen&&bound?sourceGrids.flatMap(g=>{const b=bindMainlandGrid(g);return b&&b.factor===chosen!.factor&&sourceWorldScope(b)!==worldKey?[b]:[];}):[];
+ $: crossEligible=!!chosen&&testExport&&freePlacement&&furnitureReady&&!furnitureBlocked&&chosen.object.nativeType==='Building'&&[200,201,202,203,205].includes(Math.floor(Number(chosen.object.itemId)/100000))&&!chosen.object.subgrid&&!chosen.object.surfaceCapable&&!!chosen.shape&&isCardinal(chosen.object.orientation);
+ $: crossDestinations=chosen&&bound?sourceGrids.flatMap(g=>{
+   const house=Math.floor(Number(chosen!.object.itemId)/100000)===205;
+   const b=bindMainlandGrid(g)??(house?bindFloatingIslandGrid(g):null),from=bound!.find(g=>g.key===chosen!.area);
+   return from&&b&&b.factor===chosen!.factor&&exteriorWorldKey(b)!==exteriorWorldKey(from)?[b]:[];
+ }):[];
  $: crossGrid=crossDestinations.find(g=>g.layoutId+'|'+g.gridDataPath===crossKey);
  function setCrossGrid(key:string){crossKey=key;const g=crossDestinations.find(b=>b.layoutId+'|'+b.gridDataPath===key);crossX=g?Math.floor(g.sizeX*g.factor/2):0;crossY=g?Math.floor(g.sizeY*g.factor/2):0;}
  function offerCrossWorld(mode:'move'|'duplicate'){

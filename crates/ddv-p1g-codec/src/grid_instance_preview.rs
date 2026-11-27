@@ -1658,6 +1658,15 @@ pub(super) fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,Codec
     if scope=="FloatingIslands"{return Err(CodecError::Json);}
     Ok(scope)
 }
+pub(super) fn house_exterior_identity(root:&Value,gid:&str)->Result<(String,String,u64,u64,u64),CodecError>{
+    let mut identity=outdoor_identity(root,gid)?;
+    if identity.0=="FloatingIslands"{
+        let data=root["World"]["GridCollection"]["Grids"][gid]["GridDataPath"].as_str().ok_or(CodecError::Json)?;
+        island_scope(&serde_json::json!({"layoutId":identity.1,"gridDataPath":data}))?;
+        identity.0=identity.1.clone();
+    }
+    Ok(identity)
+}
 fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let o=plan.as_object().filter(|o|if remove{o.len()==5}else{o.len()==8||o.len()==9&&o.contains_key("replacementOrientation")}).ok_or(bad)?;
@@ -3730,6 +3739,35 @@ mod terrain_session_tests{
         assert!(building_duplicate_candidate(&serde_json::to_vec(&linked).unwrap(),&plan,false).is_err());
     }
 
+    #[test]
+    fn standard_house_entrance_can_share_interior_between_mainland_and_floating_island(){
+        let data="GridData/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachGrid-GridData.json";
+        let layout="SceneLayouts/FloatingIslands/FloatingIsland_Beach/FloatingIsland_BeachLayout.json";
+        let state=serde_json::json!({"HouseData":{"Built":true,"UpgradeState":{"Level":1},"PlayerHouseIndex":1}});
+        let original=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":100},"World":{"PlayerHouses":[{"HouseItemID":20500001,"Floors":[]},{"HouseItemID":20500002,"Floors":[{"Rooms":{"0":{"FloorGridID":90}}}]}],"GridCollection":{"Grids":{
+            "10":{"ID":10,"GridDefaultLayoutPath":"","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":20500002,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":state}}},
+            "11":{"ID":11,"GridDefaultLayoutPath":"","GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":7,"Objects":{}},
+            "90":{"ID":90,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","NextGridObjectID":1,"Objects":{}}
+        }}}});
+        let raw=original.to_string();
+        let t=resolve_grid_coordinate_target(raw.as_bytes(),1,20500002,(1,2),"full").unwrap();
+        let d=resolve_plain_grid_destination(raw.as_bytes(),&serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":200,"sizeY":200})).unwrap();
+        assert_eq!(house_exterior_identity(&original,"11").unwrap().0,layout);
+        for duplicate in [true,false]{
+            let draft=ddv_save_patch::preview_player_house_world_change(&raw,&t,(1,2),&d,(3,4),"GridOrientation_Down",duplicate).unwrap();
+            let out:Value=serde_json::from_str(&draft.patched_json).unwrap();
+            let grids=&out["World"]["GridCollection"]["Grids"];
+            assert_eq!(grids["10"]["Objects"].get("1").is_some(),duplicate);
+            assert_eq!(grids["11"]["Objects"]["7"]["State"],state);
+            assert_eq!(grids["90"],original["World"]["GridCollection"]["Grids"]["90"]);
+            assert_eq!(out["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+            assert_eq!(out["Player"],original["Player"]);
+        }
+        let mut primary=original.clone();
+        primary["World"]["PlayerHouses"].as_array_mut().unwrap().swap(0,1);
+        primary["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]["HouseData"]["PlayerHouseIndex"]=0.into();
+        assert!(ddv_save_patch::preview_player_house_world_change(&primary.to_string(),&t,(1,2),&d,(3,4),"GridOrientation_Down",true).is_err());
+    }
     #[test]
     fn cross_world_building_move_and_duplicate_preserve_native_state(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
