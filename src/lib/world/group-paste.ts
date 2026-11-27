@@ -16,7 +16,7 @@ export type {GroupGeometry,GroupPasteCandidate,GroupPasteRow,WorldGroupPose,Worl
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
 export const ROOM_CUT_LIMIT=32;
 export type RoomCutSource={roomOrdinal:number;index:number};
-type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2};
+type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2;storage?:true};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
