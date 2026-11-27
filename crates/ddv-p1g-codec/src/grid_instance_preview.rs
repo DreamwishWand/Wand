@@ -3401,6 +3401,29 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
 mod biome_decoration_tests{
  use super::*;
  #[test]
+ fn free_landscape_placement_and_duplication_allow_shared_anchor_without_stock_changes(){
+  let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+  let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":7},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40200001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+  let bytes=serde_json::to_vec(&raw).unwrap();
+  let mut place=serde_json::json!({"action":"place","itemId":"40200002","x":1,"y":1,"orientation":"GridOrientation_Down"});
+  assert!(landscape_candidate(&bytes,&place.to_string(),&dest.to_string()).is_err());
+  place["freePlacement"]=true.into();
+  let placed:Value=serde_json::from_str(&landscape_candidate(&bytes,&place.to_string(),&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(placed["Player"],raw["Player"]);
+  assert_eq!(placed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(placed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40200002);
+  let mut dup=serde_json::json!({"action":"duplicate","itemId":"40200001","localOrdinal":1,"expectedX":1,"expectedY":1,"x":1,"y":1});
+  assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
+  dup["freePlacement"]=true.into();
+  let copied:Value=serde_json::from_str(&landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(copied["Player"],raw["Player"]);assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40200001);
+  assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],6);
+  dup["x"]=196.into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
+  dup["x"]=1.into();dup["freePlacement"]="true".into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
+ }
+ #[test]
  fn floating_landscape_uses_exact_source_grid_and_preserves_other_island_planes(){
   let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
   let data="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
