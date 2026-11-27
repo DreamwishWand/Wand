@@ -1458,9 +1458,24 @@ fn area_scene_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
  Ok(std::mem::take(&mut *working))
 }
 /// An explicit exterior-only operation, not a generic Building placement.
-fn player_house_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>{
+fn player_house_grid_scope(root:&Value,gid:&str)->Result<String,CodecError>{
     let bad=CodecError::Json;
-    let o=plan.as_object().filter(|o|o.len()==8&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation"|"destination"|"x"|"y"))).ok_or(bad)?;
+    let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
+    let grid=grids.get(gid).ok_or(bad)?;
+    let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
+    let data=grid["GridDataPath"].as_str().ok_or(bad)?;
+    let scope=layout.split('/').nth(1).filter(|s|matches!(*s,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC")).ok_or(bad)?;
+    let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).map_err(|_|bad)?;
+    let entry=catalog["entries"].as_array().ok_or(bad)?.iter().find(|e|e["scope"].as_str()==Some(scope)).ok_or(bad)?;
+    let factor=grid.get("TessellationFactor").map_or(Some(1),Value::as_u64).ok_or(bad)?;
+    if entry["grids"].as_array().ok_or(bad)?.iter().filter(|g|g["layoutId"].as_str()==Some(layout)&&g["gridDataPath"].as_str()==Some(data)&&g["factor"].as_u64()==Some(factor)).count()!=1||
+       grids.values().filter(|g|g["GridDefaultLayoutPath"].as_str()==Some(layout)&&g["GridDataPath"].as_str()==Some(data)).count()!=1{return Err(bad);}
+    Ok(scope.to_owned())
+}
+fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
+    let bad=CodecError::Json;
+    let o=plan.as_object().filter(|o|o.len()==if remove{5}else{8}).ok_or(bad)?;
+    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"))){return Err(bad);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
     if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
     let item=o.get("itemId").ok_or(bad)?.as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==205)).ok_or(bad)?;
@@ -1468,16 +1483,23 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value)->Result<String,Co
     let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
     let expected=(int("expectedX")?,int("expectedY")?);
     let orientation=o.get("orientation").ok_or(bad)?.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
-    let witness=o.get("destination").ok_or(bad)?;
-    world_grid_scope(witness)?;
-    let dest=resolve_plain_grid_destination(profile,witness)?;
     let (scan,_)=scan_grid_instances(profile)?;
     if scan.sampled||scan.invalid>0||scan.subgrid_parents.contains(&ordinal){return Err(bad);}
     let (target,xy)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
-    if target.kind!=GridObjectKind::Full||target.item_id!=item||target.grid_id!=dest.grid_id||*xy!=Some(expected){return Err(bad);}
+    if target.kind!=GridObjectKind::Full||target.item_id!=item||*xy!=Some(expected){return Err(bad);}
+    let scope=player_house_grid_scope(&root,&target.grid_id)?;
     let refs=grid_identity_dependencies(profile,target)?;
-    if refs.active>0||refs.related>0||refs.unknown>0{return Err(bad);}
-    let draft=ddv_save_patch::preview_player_house_duplicate(std::str::from_utf8(profile).map_err(|_|bad)?,target,expected,&dest,(int("x")?,int("y")?),orientation).map_err(|_|CodecError::Patch)?;
+    if refs.active>0||refs.related>0||refs.unknown>0||remove&&refs.blocking()>0{return Err(bad);}
+    let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+    let draft=if remove{
+        ddv_save_patch::preview_player_house_remove(json,target,expected,orientation)
+    }else{
+        let witness=o.get("destination").ok_or(bad)?;
+        if world_grid_scope(witness)?.0!=scope{return Err(bad);}
+        let dest=resolve_plain_grid_destination(profile,witness)?;
+        if player_house_grid_scope(&root,&dest.grid_id)?!=scope{return Err(bad);}
+        ddv_save_patch::preview_player_house_duplicate(json,target,expected,&dest,(int("x")?,int("y")?),orientation)
+    }.map_err(|_|CodecError::Patch)?;
     if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
     Ok(draft.patched_json)
 }
@@ -1486,7 +1508,7 @@ pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,Code
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
-        if o.len()==1&&o.contains_key("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,o.get("playerHouseDuplicate").ok_or(CodecError::Json)?);}
+        if o.len()==1{if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
@@ -2116,6 +2138,23 @@ mod tests{
         assert!(result.contains("\"Marker\":1e2"));
         let mut stale=original.clone();stale["World"]["PlayerHouses"][0]["HouseItemID"]=Value::from(20500002);
         assert!(group_paste_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
+        let remove=serde_json::json!({"playerHouseRemove":{"localOrdinal":1,"itemId":"20500001","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down"}});
+        assert!(group_paste_candidate(raw,&remove.to_string()).is_err());
+        let removed=group_paste_candidate(result.as_bytes(),&remove.to_string()).unwrap();
+        let removed:Value=serde_json::from_str(&removed).unwrap();
+        assert!(removed["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+        assert_eq!(removed["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        assert_eq!(removed["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
+        let mut expanded=original.clone();
+        expanded["World"]["GridCollection"]["Grids"]["43"]=serde_json::json!({"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":1,"Objects":{}});
+        let mut cross=plan.clone();
+        cross["playerHouseDuplicate"]["destination"]=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100});
+        let cross_result=group_paste_candidate(&serde_json::to_vec(&expanded).unwrap(),&cross.to_string()).unwrap();
+        let cross_value:Value=serde_json::from_str(&cross_result).unwrap();
+        assert_eq!(cross_value["World"]["GridCollection"]["Grids"]["43"]["Objects"]["1"]["State"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(cross_value["World"]["GridCollection"]["Grids"]["42"],original["World"]["GridCollection"]["Grids"]["42"]);
+        assert_eq!(cross_value["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+        assert!(group_paste_candidate(cross_result.as_bytes(),&remove.to_string()).is_ok());
         plan["playerHouseDuplicate"]["x"]=Value::from(400);
         assert!(group_paste_candidate(raw,&plan.to_string()).is_err());
     }
