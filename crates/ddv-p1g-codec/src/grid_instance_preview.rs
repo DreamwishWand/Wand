@@ -1975,7 +1975,15 @@ fn detached_player_house_indices(profile:&[u8])->Result<HashMap<u64,usize>,Codec
 }
 pub(super) fn detached_player_houses_json(profile:&[u8])->Result<String,CodecError>{
     let mut ids:Vec<_>=detached_player_house_indices(profile)?.into_keys().collect();ids.sort_unstable();
-    Ok(serde_json::json!({"contract":"wand.db05.detached-player-houses@1","itemIds":ids,"writerAuthorized":false}).to_string())
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    let houses=root["World"]["PlayerHouses"].as_array().ok_or(CodecError::Json)?;
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.invalid>0||scan.sampled{return Err(CodecError::Json);}
+    let mut existing:HashSet<u64>=scan.private_targets.iter().map(|(t,_)|t.item_id).collect();
+    existing.extend(houses.iter().filter_map(|h|h["HouseItemID"].as_u64()));
+    let manifest:Value=serde_json::from_str(include_str!("../../../src/lib/world/player-house-source.json")).map_err(|_|CodecError::Json)?;
+    let new_ids:Vec<u64>=manifest["templates"].as_array().ok_or(CodecError::Json)?.iter().flat_map(|t|t["itemIds"].as_array().into_iter().flatten()).filter_map(Value::as_u64).filter(|id|houses.len()<128&&!houses.is_empty()&&!existing.contains(id)).collect();
+    Ok(serde_json::json!({"contract":"wand.db05.detached-player-houses@1","itemIds":ids,"newItemIds":new_ids,"writerAuthorized":false}).to_string())
 }
 
 /// Source-pinned experimental initial placement. No arbitrary State is accepted
