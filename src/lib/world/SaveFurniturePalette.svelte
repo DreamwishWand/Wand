@@ -9,7 +9,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,buildingSourceEligible,buildingDuplicate,buildingPickup,buildingPlacementSources,initialBuildingEligible,initialBuildingPlacement,type StockCandidate} from './save-furniture-placement.ts';
- import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,type EightWay} from './saved-map-transform.ts';
+ import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -56,7 +56,7 @@
  $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):o.layer==='furniture'&&ordinaryFurniture(o.itemId)&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
  $: visible=items.slice(0,limit);
  $: if(open)loadArtwork(visible);
- $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
+ $: ghost=candidate??(placing&&point?(freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,point.x,point.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y):stockPlacement(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement)):null);
  function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;counts=null;stockState='idle';seenFile=next;}
  function loadArtwork(rows:readonly DesignCatalogItem[]){for(const row of rows){if(asked.has(row.itemId))continue;asked.add(row.itemId);void worldArtwork(base,row.itemId).then(url=>{if(url)artwork=new Map(artwork).set(row.itemId,url);}).catch(()=>{});}}
  function loadStock(f:File){stockState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownStock=own;
@@ -87,6 +87,7 @@
  function beginHouse(p:MainlandSavedObject|null=chosen){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file||!buildingSourceEligible(p))return;
   cancel();onBegin();itemId=Number(p.object.itemId);source=p;orientation=p.object.orientation as EightWay;placing=true;
+  if(worker){const g=grids.find(g=>g.key===p.area);if(g){const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});shapeRequests=new Map(shapeRequests);worker.postMessage({command:'design-shape',key:g.key,itemId,requestId,freePlacement:true,allowBuildings:true});}}
  }
  function pickupHouse(){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file)return;
@@ -96,20 +97,20 @@
  function pickup(){if(blocked||!canStart||!chosen||!(testExport&&landscapeSourceEligible(chosen,freePlacement))&&(!stockSourceEligible(chosen,freePlacement)||!counts?.has(Number(chosen.object.itemId))))return;const q=stockPickup(chosen,freePlacement);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
  export function pick(p:{x:number;y:number}){if(!placing||blocked||!canStart||shapeRequests.size||status==='working')return;
-  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
+  const q=freePlacement&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,p.x,p.y,orientation,definitions):freePlacement&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y):stockPlacement(grids,rasters,definitions,itemId,orientation,p.x,p.y,source,freePlacement);if(!q||!freePlacement&&landscapeId(itemId)&&(stockFootprintFeedback(q,objects,omitted).overlaps>0||stockFootprintFeedback(q,objects,omitted).unknown)){status='error';return;}
   clearCopy();candidate=q;point=p;status='idle';stockChange=null;
  }
  $: rotationAllowed=definitions.size>0&&(freePlacement||[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional'));
- export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';const def=definitions.get(1),eight=freePlacement&&testExport&&ordinaryFurniture(itemId)&&!!def&&!def.surfaceCapable&&!def.supportPath;
+ export function turn(delta:number){if(!placing||(source&&!buildingSourceEligible(source))||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';const def=definitions.get(1),eight=freePlacement&&testExport&&ordinaryFurniture(itemId)&&!!def&&!def.surfaceCapable&&!def.supportPath;
   const choices:readonly EightWay[]=eight?EIGHT_WAY_ORIENTATIONS:CARDINAL_ORIENTATIONS;
-  const supported=choices.filter(o=>!eight||def?.shapes[itemId+':'+EIGHT_WAY_ORIENTATIONS.indexOf(o)*2]);if(!supported.length)return;
+  const supported=choices.filter(o=>source&&buildingSourceEligible(source)?o===source.object.orientation||!!definitions.get(source.factor)?.shapes[itemId+':'+worldOrientationCode(o)]:!eight||def?.shapes[itemId+':'+EIGHT_WAY_ORIENTATIONS.indexOf(o)*2]);if(!supported.length)return;
   const i=supported.indexOf(orientation);orientation=supported[(Math.max(0,i)+delta+supported.length)%supported.length];}
  export function validate(){if(houseCandidate){if(!testExport||!freePlacement)return;run(true,false,true);}else if(candidate&&landscapeId(Number(candidate.plan.itemId))){if(!testExport)return;run(true,true);}else run(false);}
  function run(exporting:boolean,landscape=false,house=false){
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&!house&&(status!=='valid'||!stockChange)))return;
   const q=candidate,f=file;
   const command=house?'group-paste-export':landscape?'landscape-export':exporting?'furniture-stock-export':'furniture-stock-preview';
-  const plan=house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):landscape&&freePlacement&&q.plan.action!=='remove'?{...q.plan,freePlacement:true}:q.plan;
+  const plan=house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,...(q.plan.replacementOrientation?{replacementOrientation:q.plan.replacementOrientation}:{})}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):landscape&&freePlacement&&q.plan.action!=='remove'?{...q.plan,freePlacement:true}:q.plan;
   ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
   const finish=(data:unknown)=>{
@@ -141,7 +142,7 @@
     <div class="palette-actions"><button type="button" disabled={!duplicateEligible} on:click={()=>begin(Number(chosen!.object.itemId),chosen)}>{w[4]}</button><button type="button" disabled={!counts?.has(Number(chosen.object.itemId))} on:click={pickup}>{w[5]}</button></div>
    {/if}
    {#if placing||candidate}
-    <div class="palette-actions">{#if placing&&!source}<button type="button" aria-label={w[14]} disabled={!rotationAllowed} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} disabled={!rotationAllowed} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
+    <div class="palette-actions">{#if placing&&(!source||buildingSourceEligible(source))}<button type="button" aria-label={w[14]} disabled={!rotationAllowed} on:click={()=>turn(-1)}>⟲</button><button type="button" aria-label={w[15]} disabled={!rotationAllowed} on:click={()=>turn(1)}>⟳</button>{/if}<button type="button" on:click={cancel}>{w[7]}</button></div>
     {#if candidate&&candidate.plan.action!=='remove'}<button type="button" disabled={status==='working'} on:click={validate}>{houseCandidate?(candidate.plan.action==='place'?w[3]:hw[0]):landscapeCandidate&&candidate.plan.action==='duplicate'?lw[1]:candidate.plan.action==='duplicate'?w[4]:w[3]}</button>{:else if placing}<small>{w[6]}</small>{/if}
    {/if}
    {#if footprint}<div class="footprint-feedback" role="status">{#if footprint.overlaps}<strong>{ow[0]}: {footprint.overlaps}</strong>{:else if !footprint.unknown}<span>{ow[2]}</span>{/if}{#if footprint.unknown}<span>{ow[1]}</span>{/if}<small>{ow[3]}</small></div>{/if}
