@@ -2406,6 +2406,12 @@ mod tests{
         let partial=building_layout_candidate_scoped(raw.as_bytes(),std::slice::from_ref(&plan[i]),false).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&partial).unwrap(),v);
         assert!(building_layout_candidate(raw.as_bytes(),std::slice::from_ref(&plan[i])).is_err());
+        let dest=plan[i]["destination"].clone();
+        let mut biome=serde_json::json!({"furniture":{"destination":dest,"remove":[],"add":[]},"network":{"destination":dest,"before":[],"after":[]},"buildings":plan[i].clone()});
+        let output=biome_decoration_candidate(raw.as_bytes(),&biome.to_string()).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&output).unwrap(),v);
+        biome["buildings"]["destination"]["sizeX"]=1.into();
+        assert!(biome_decoration_candidate(raw.as_bytes(),&biome.to_string()).is_err());
         plan[i]["after"][0]["itemId"]=serde_json::json!(20300001);
         assert!(building_layout_candidate(raw.as_bytes(),&plan).is_err());
         plan[i]["after"][0]["itemId"]=serde_json::json!(20100001);
