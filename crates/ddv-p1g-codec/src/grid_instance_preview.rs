@@ -1492,7 +1492,8 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
     if refs.active>0||refs.related>0||refs.unknown>0||remove&&refs.blocking()>0{return Err(bad);}
     let json=std::str::from_utf8(profile).map_err(|_|bad)?;
     let draft=if remove{
-        ddv_save_patch::preview_player_house_remove(json,target,expected,orientation)
+        let verified_grids:HashSet<String>=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?.iter().filter(|(_,g)|g.get("Objects").and_then(Value::as_object).is_some_and(|m|m.values().any(|v|v.get("ItemID").and_then(Value::as_u64)==Some(item)))).filter_map(|(id,_)|player_house_grid_scope(&root,id).ok().filter(|s|s==&scope).map(|_|id.clone())).collect();
+        ddv_save_patch::preview_player_house_remove(json,target,expected,orientation,&verified_grids)
     }else{
         let witness=o.get("destination").ok_or(bad)?;
         if world_grid_scope(witness)?.0!=scope{return Err(bad);}
