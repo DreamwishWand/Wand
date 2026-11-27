@@ -5,9 +5,12 @@ const LIMIT=80*1024*1024;
 const ORIGIN='https://media.dreamwishwand.com';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function check(ok:unknown,msg:string):asserts ok{if(!ok)throw Error(msg);}
-/** Private test manifest containing source-pixel-checked CDN images. Not placement or publication authority. */
+/** Private test manifest with source-pixel-checked CDN or R2 images. Each browser fetch still verifies bytes. Not placement or manifest publication authority. */
 export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch):LocalNativePreviewPack{
- check(record(doc)&&doc.schema==='wand.media.native-cdn-preview@1'&&doc.cdnVerified===true&&doc.sourcePixelsVerified===true&&record(doc.images),'Invalid CDN preview receipt');
+ check(record(doc)&&doc.sourcePixelsVerified===true&&record(doc.images),'Invalid map preview receipt');
+ const verifiedCdn=doc.schema==='wand.media.native-cdn-preview@1'&&doc.cdnVerified===true;
+ const verifiedR2=doc.schema==='wand.media.native-r2-preview@1'&&doc.canonicalMetadataVerified===true&&doc.cdnVerified===false;
+ check(verifiedCdn||verifiedR2,'Unverified image delivery receipt');
  const maps=parseLocalNativePreview({...doc,schema:'wand.media.native-local-preview@1'});
  const required=requiredLocalImages(maps),images=new Map<string,number>();
  check(Object.keys(doc.images).length===required.size,'CDN image coverage mismatch');
@@ -36,7 +39,7 @@ export async function openNativePreviewPack(files:readonly File[]):Promise<Local
  const manifests=files.filter(f=>f.name==='manifest.json');
  check(manifests.length===1&&manifests[0].size<=4*1024*1024,'Select one manifest.json');
  const doc:unknown=JSON.parse(await manifests[0].text());
- if(record(doc)&&doc.schema==='wand.media.native-cdn-preview@1'){
+ if(record(doc)&&(doc.schema==='wand.media.native-cdn-preview@1'||doc.schema==='wand.media.native-r2-preview@1')){
   check(files.length===1,'Select CDN manifest only');return parseNativeCdnPreview(doc);
  }
  return openLocalNativePreview(files);
