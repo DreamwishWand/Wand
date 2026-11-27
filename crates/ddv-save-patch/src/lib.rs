@@ -995,8 +995,26 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
        to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
        to.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
        c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id))){return Err(bad);}
-    let state_json=serde_json::to_string(state).map_err(|_|bad)?;
-    insert_grid_record(source,d,target.item_id,xy,orientation,Some(&state_json))
+    // Preserve original State bytes even in the new exterior.
+    let _=state;
+    let mut locator=JsonLocator::grid_axis(source,target,"X")?;
+    locator.signed_path=None;locator.item_path=None;
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+    locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+    let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
+    insert_grid_record(source,d,target.item_id,xy,orientation,Some(&source[range]))
+}
+
+/// Atomic cross-Grid move of an existing player house exterior. The
+/// destination allocates a fresh Grid-local ID; interior identity remains.
+pub fn preview_player_house_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
+    // Reuse the same exact state, scope, allocator and anchor validation as duplication.
+    let mut draft=preview_player_house_duplicate(source,target,expected,d,xy,orientation)?;
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+    draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
+    validate_json_without_edit(&draft.patched_json)?;
+    Ok(draft)
 }
 
 /// Remove only an exterior when another exact exterior in the same world
