@@ -22,6 +22,8 @@ mod indoor_room_view;
 mod native_preset_backup;
 mod native_tom_visual;
 mod native_preset_scene;
+#[cfg(feature="wasm")]
+mod saved_area_flags;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -1396,6 +1398,14 @@ mod browser_amount_preview {
             };
             grid_instance_preview::saved_grid_instances_json(profile)
                 .map_err(|_|fail("DB05_GRID_INSTANCE_READ_INVALID"))
+        }
+        pub fn list_saved_area_flags(&self)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"));}
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_AREA_FLAGS_SESSION_NOT_OPEN"))?.profile.as_slice()
+            };
+            super::saved_area_flags::saved_area_flags(profile).map_err(|_|fail("DB05_AREA_FLAGS_INVALID"))
         }
         pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
