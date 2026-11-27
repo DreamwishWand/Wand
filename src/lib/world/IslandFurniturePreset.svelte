@@ -1,4 +1,6 @@
 <script lang="ts">
+ import RestoreStockReview from './RestoreStockReview.svelte';
+ import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
@@ -36,6 +38,7 @@
  $: rg=regionBackupWords[locale];$: ww=worldDecorationWords[locale];$: w=islandSaveWords[locale];$: sw=supportAreaWords[locale];$: selectedSnapshot=includeSupport?supportSnapshot:networkSnapshot;$: dw=islandDecorationWords[locale];$: bw2=biomeDecorationWords[locale];$: bw=biomeFurnitureWords[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: regionCapture=region&&snapshot&&supportTrees&&supportSnapshot?reviewRegionCapture(region,grids,snapshot,networks,supportTrees,world):null;
  $: result=includeNetworks?decorationReview:review;
+ $: stockRows=decorationReview&&includeNetworks?restoreStockRows([...decorationReview.reviews.values()].map(r=>r.furniture),decorationReview.missing):review&&!includeNetworks?restoreStockRows([...review.reviews.values()],review.missing):[];
  $: ghosts=world?[...(result?.reviews.values()??[])].flatMap(r=>r.ghosts):result?.reviews.get(activeKey)?.ghosts??[];$: removed=world?[...(result?.reviews.values()??[])].flatMap(r=>r.removed):result?.reviews.get(activeKey)?.removed??[];
  $: busy=reading||!!writeWorker;
  $: if(source&&(file!==source||sessions!==sourceSessions||blocked))onClose();
@@ -188,6 +191,7 @@
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}
   {#if decorationReview&&includeNetworks}{#each [...decorationReview.reviews] as [key,r] (key)}<small>{label(key)} · {bw2[4]} {bw[4]} {r.furniture.retained.length} · {bw[5]} {r.furniture.removed.length} · {bw[6]} {r.furniture.ghosts.length}</small><small>{bw2[5]} · {bw[4]} {r.network.retained} · {bw[5]} {r.network.removed.length} · {bw[6]} {r.network.ghosts.length}</small>{/each}{:else if review}{#each [...review.reviews] as [key,r] (key)}<small>{label(key)} · {bw[4]} {r.retained.length} · {bw[5]} {r.removed.length} · {bw[6]} {r.plan.add.length}</small>{/each}{/if}
+  <RestoreStockReview rows={stockRows} {locale}/>
   {#if result.missing.length}<small role="alert">{bw[8]} · {result.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}
   {#if !result.changed}<small>{bw[13]}</small>{/if}
   {#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!result.missing.length} on:click={validate}>{bw[9]}</button>{/if}
