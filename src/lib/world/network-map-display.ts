@@ -41,13 +41,13 @@ export function buildNetworkMap(grids:readonly MainlandGrid[],objects:readonly M
   for(const [id,part] of local)parts.set(id,part);
   for(const group of groups.values()){
    const first=group[0].network;if(first.kind!=='fence')continue;
-   const family=fenceFamily(first.base);if(!family)continue;
+   const base=first.base,diagonal=first.diagonal,family=fenceFamily(base);if(!family)continue;
    const q=g.factor,posts=new Set(group.filter(r=>r.itemId===first.base).map(r=>anchor(r.x,r.y)));
    const occupied=new Set(posts),groupEdges:NetworkMapEdge[]=[],seen=new Set<string>();let validGroup=true;
    function add(ax:number,ay:number,bx:number,by:number){
     const k=anchor(ax,ay)+'>'+anchor(bx,by);if(seen.has(k))return;seen.add(k);
     const a=mainlandMapAnchor(g,ax+q/2,ay+q/2),b=mainlandMapAnchor(g,bx+q/2,by+q/2);
-    groupEdges.push({key:g.key+':'+first.base+':'+first.diagonal+':'+k,base:first.base,x1:a.x,y1:a.y,x2:b.x,y2:b.y});
+    groupEdges.push({key:g.key+':'+base+':'+diagonal+':'+k,base,x1:a.x,y1:a.y,x2:b.x,y2:b.y});
    }
    // Same endpoint convention as ddv-save-patch fence_topology::part_endpoints.
    for(const r of group){if(r.itemId===first.base)continue;
