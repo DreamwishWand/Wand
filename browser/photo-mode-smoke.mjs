@@ -10,17 +10,20 @@ const companionOnly=Object.entries(index.items).find(([,row])=>row.male?.kind===
 const attached=Object.entries(index.items).find(([,row])=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true)?.[0];
 const expansion='120000009';
 assert.ok(index.items[expansion]?.male?.kind==='player'&&index.items[expansion]?.female?.kind==='player','new companion scene');
-const multi='120000197';
+const multi='120000227';
 assert.equal(Object.keys(index.variants).length,4);
 assert.equal(index.variants[multi].length,1);
 assert.notEqual(index.items[multi].male.sourceSha256,index.variants[multi][0].male.sourceSha256);
 const expandedActor='120000238';
 assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.items[expandedActor]?.female?.companionIncluded===true,'new actor scene');
-const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor])];
+const bindActor='120000005';
+assert.ok(index.items[bindActor]?.male?.companionIncluded===true&&index.items[bindActor]?.female?.companionIncluded===true,'native-bind actor scene');
+assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,2);
+const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,128);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,51);
 assert.equal(Object.keys(index.items).length,255);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,110);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,187);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
@@ -78,6 +81,9 @@ try{
       await body.nth(1).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(1).getAttribute('aria-pressed'),'true');
+      const toggle=preview.locator('input[type=checkbox]');
+      assert.equal(await toggle.count(),1);
+      const t=await seek.inputValue();await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t);
       console.log('Native alternate pose ready:',id,'both body types');
     }
     console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
