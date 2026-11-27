@@ -9,7 +9,7 @@
  import {worldArtwork} from './world-artwork.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,stockPlacement,playerHouseSourceEligible,playerHouseDuplicate,playerHousePickup,type StockCandidate} from './save-furniture-placement.ts';
- import {CARDINAL_ORIENTATIONS,type Cardinal} from './saved-map-transform.ts';
+ import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,type EightWay} from './saved-map-transform.ts';
  import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -25,7 +25,7 @@
  let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
  let ownStock:Worker|null=null,ownPreview:Worker|null=null,seenFile:File|null=null,subscribed:Worker|null=null,catalogRequest=0,catalogLocale:WandLanguage|null=null;
- let shapeRequests=new Map<number,{factor:1|2;key:string}>(),definitions=new Map<number,DesignItemGeometry>(),itemId=0,source:MainlandSavedObject|null=null,orientation:Cardinal='GridOrientation_Down';
+ let shapeRequests=new Map<number,{factor:1|2;key:string}>(),definitions=new Map<number,DesignItemGeometry>(),itemId=0,source:MainlandSavedObject|null=null,orientation:EightWay='GridOrientation_Down';
  let point:{x:number;y:number}|null=null,candidate:StockCandidate|null=null,status:'idle'|'working'|'valid'|'error'='idle',stockChange:{before:number;after:number}|null=null;
  let artwork=new Map<number,string>(),asked=new Set<number>();
  const testExport=browser&&testSaveExportEnabled(window.location);
@@ -72,12 +72,12 @@
  export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
   if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate,freePlacement)||!freePlacement&&duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
-  cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
+  cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&isEightWay(duplicate.object.orientation)&&(freePlacement||isCardinal(duplicate.object.orientation))?duplicate.object.orientation:'GridOrientation_Down';placing=true;
   const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement});}shapeRequests=new Map(shapeRequests);
  }
  function beginHouse(){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file||!playerHouseSourceEligible(chosen))return;
-  const p=chosen;cancel();onBegin();itemId=Number(p.object.itemId);source=p;orientation=p.object.orientation as Cardinal;placing=true;
+  const p=chosen;cancel();onBegin();itemId=Number(p.object.itemId);source=p;orientation=p.object.orientation as EightWay;placing=true;
  }
  function pickupHouse(){
   if(!testExport||!freePlacement||blocked||!canStart||!open||!file)return;
@@ -91,7 +91,10 @@
   clearCopy();candidate=q;point=p;status='idle';stockChange=null;
  }
  $: rotationAllowed=definitions.size>0&&(freePlacement||[...definitions.values()].every(g=>g.editRestrictions?.rotate!=='denied'&&g.editRestrictions?.rotate!=='conditional'));
- export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(orientation)+delta+4)%4];}
+ export function turn(delta:number){if(!placing||source||status==='working'||!rotationAllowed)return;clearCopy();candidate=null;stockChange=null;status='idle';const def=definitions.get(1),eight=freePlacement&&testExport&&ordinaryFurniture(itemId)&&!!def&&!def.surfaceCapable&&!def.supportPath;
+  const choices:readonly EightWay[]=eight?EIGHT_WAY_ORIENTATIONS:CARDINAL_ORIENTATIONS;
+  const supported=choices.filter(o=>!eight||def?.shapes[itemId+':'+EIGHT_WAY_ORIENTATIONS.indexOf(o)*2]);if(!supported.length)return;
+  const i=supported.indexOf(orientation);orientation=supported[(Math.max(0,i)+delta+supported.length)%supported.length];}
  export function validate(){if(houseCandidate){if(!testExport||!freePlacement)return;run(true,false,true);}else if(candidate&&landscapeId(Number(candidate.plan.itemId))){if(!testExport)return;run(true,true);}else run(false);}
  function run(exporting:boolean,landscape=false,house=false){
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&!house&&(status!=='valid'||!stockChange)))return;
