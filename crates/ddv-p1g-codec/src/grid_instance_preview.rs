@@ -1620,6 +1620,13 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
 
 /// Only clone state whose observed fields do not embed another native identity.
 /// The last stateful instance is not removed until its game-level lifecycle is known.
+/// Cross-world references outside the object cannot be inferred from item
+/// category. Start with state-free objects and verified simple skin state.
+pub(super) fn cross_world_building_state(item:u64,state:Option<&Value>)->bool{
+    if !matches!(item/100_000,200..=203){return false;}
+    if state.is_none_or(|v|v.is_null()||v.as_object().is_some_and(|m|m.is_empty())){return true;}
+    item/100_000==203&&state.is_some_and(|v|v.get("BuildingWithSkinData").is_some())&&building_clone_state(item,state)
+}
 fn building_clone_state(item:u64,state:Option<&Value>)->bool{
     let Some(v)=state.filter(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty())) else{return true;};
     let Some(m)=v.as_object().filter(|m|m.len()==1) else{return false;};
