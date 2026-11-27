@@ -108,6 +108,71 @@ fn resize_door_changes(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next
 }
 /// A strict option has no unverified ordinary geometry change. Free options
 /// preserve all ordinary anchors and are separately identified to the user.
+// Compute the exact ordinary objects whose anchors are outside the new
+// raster. Recovery never deletes a stateful or unrecognized record.
+fn shrink_pickups(root:&Value,ids:&[u32],old:&Shape,next:&Shape)->Option<Vec<(GridCoordinateTarget,(i32,i32),String)>>{
+ let mut rows=Vec::new();
+ let mut counts=std::collections::HashMap::<u64,u64>::new();
+ for (i,gid) in ids.iter().enumerate(){
+  if old.paths[i]==next.paths[i]{continue;}
+  let g=&root["World"]["GridCollection"]["Grids"][gid.to_string()];
+  let factor=g["TessellationFactor"].as_i64()?;
+  let (ox,oy)=*terrain_dimensions().get(&old.paths[i])?;
+  let (nx,ny)=*terrain_dimensions().get(&next.paths[i])?;
+  if nx>=ox&&ny>=oy{continue;}
+  room_grid_next_object_id(g).ok()?;
+  for (key,o) in g["Objects"].as_object()?{
+   let item=o["ItemID"].as_u64()?;
+   // Structural doors are handled independently by the native resizer.
+   if item/100000==403{continue;}
+   let (x,y)=(o["X"].as_i64()?,o["Y"].as_i64()?);
+   if x<0||y<0||x>=ox*factor||y>=oy*factor{return None;}
+   if x<nx*factor&&y<ny*factor{continue;}
+   let oid=key.parse::<u32>().ok()?;
+   let orientation=o["Orientation"].as_str()?;
+   if oid==0||item/100000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||o.get("State").is_some_and(|v|!v.is_null())||
+      o.as_object()?.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")){return None;}
+   let count=counts.entry(item).or_default();*count+=1;
+   let stock=root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64()?;
+   if stock.checked_add(*count)?>i32::MAX as u64{return None;}
+   rows.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.to_string(),object_id:key.clone(),item_id:item},(i32::try_from(x).ok()?,i32::try_from(y).ok()?),orientation.to_owned()));
+   if rows.len()>2048{return None;}
+  }
+ }
+ if rows.is_empty(){None}else{Some(rows)}
+}
+fn recovery_candidate(root:&Value,t:RoomFinishTarget,ids:&[u32],old:&Shape,next:&Shape)->Option<usize>{
+ let rows=shrink_pickups(root,ids,old,next)?;
+ let mut staged=root.clone();
+ for (target,_,_) in &rows{staged["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"].as_object_mut()?.remove(&target.object_id)?;}
+ resize_door_changes(&staged,t,ids,old,next,true)?;
+ Some(rows.len())
+}
+pub fn room_resize_recovery_options(root:&Value,t:RoomFinishTarget)->Vec<(String,usize)>{
+ let Ok(shapes)=shapes()else{return vec![];};let Ok((old,ids))=room_geometry(root,t,shapes)else{return vec![];};
+ if !available(&shapes[old]){return vec![];}
+ shapes.iter().enumerate().filter(|(i,s)|*i!=old&&available(s)).filter_map(|(_,s)|recovery_candidate(root,t,&ids,&shapes[old],s).map(|n|(s.name.clone(),n))).collect()
+}
+pub fn preview_room_resize_recover(source:&str,t:RoomFinishTarget,expected:&str,replacement:&str,expected_count:usize)->Result<GridCoordinateDraft,PatchError>{
+ use crate::bulk_furniture::{BulkPickup,preview_bulk_furniture};
+ validate_json_without_edit(source)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
+ let shapes=shapes()?;let (old,ids)=room_geometry(&root,t,shapes)?;
+ let next=shapes.iter().find(|s|s.name==replacement&&available(s)).ok_or(BAD)?;
+ if !available(&shapes[old])||shapes[old].name!=expected||expected==replacement{return Err(BAD);}
+ // Exclude every external reference to the affected room grids before any
+ // object recovery. The final resize performs the same independent check.
+ let mut refs=root.clone();
+ let r=refs.pointer_mut(&format!("/World/PlayerHouses/{}/Floors/{}/Rooms/{}",t.house_index,t.floor_index,t.room_slot)).and_then(Value::as_object_mut).ok_or(BAD)?;
+ r.remove("FloorGridID");r.remove("WallGridIDs");
+ if existing_grid_reference(&refs,&ids.iter().copied().collect(),false){return Err(BAD);}
+ let rows=shrink_pickups(&root,&ids,&shapes[old],next).ok_or(BAD)?;
+ if rows.len()!=expected_count{return Err(BAD);}
+ let pickups=rows.iter().map(|(target,xy,orientation)|BulkPickup{target,expected:*xy,orientation}).collect::<Vec<_>>();
+ let recovered=preview_bulk_furniture(source,&pickups,&[])?;
+ // The intermediate result is never exported. Both stages must succeed.
+ preview_room_resize_mode(&recovered.patched_json,t,expected,replacement,true)
+}
 pub fn room_resize_choices(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<String>,Vec<String>)>{
  let shapes=shapes().ok()?;let (old,ids)=room_geometry(root,t,shapes).ok()?;
  if !available(&shapes[old]){return None;}
@@ -117,7 +182,7 @@ pub fn room_resize_choices(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<S
   if resize_door_changes(root,t,&ids,&shapes[old],s,false).is_some(){strict.push(s.name.clone());}
   else if resize_door_changes(root,t,&ids,&shapes[old],s,true).is_some(){free.push(s.name.clone());}
  }
- if strict.is_empty()&&free.is_empty(){return None;}
+ if strict.is_empty()&&free.is_empty()&&room_resize_recovery_options(root,t).is_empty(){return None;}
  Some((shapes[old].name.clone(),strict,free))
 }
 pub fn room_resize_options(root:&Value,t:RoomFinishTarget)->Option<(String,Vec<String>)>{
@@ -613,5 +678,23 @@ mod tests{
   assert!(preview_room_resize_mode(&raw.to_string(),t,"6x6","3x3",true).is_err());
   raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["ItemID"]=json!(40300001);
   assert!(preview_room_resize_mode(&raw.to_string(),t,"6x6","12x12",true).is_err());
+ }
+ #[test]fn recover_shrink_returns_only_outside_plain_furniture_and_preserves_other_objects(){
+  let shape=shapes().unwrap().iter().find(|s|s.name=="6x6").unwrap();
+  let grids:serde_json::Map<String,Value>=shape.paths.iter().enumerate().map(|(i,p)|((10+i).to_string(),json!({"ID":10+i,"GridDataPath":p,"GridDefaultLayoutPath":"","TessellationFactor":2,"NextGridObjectID":0,"Objects":{}}))).collect();
+  let mut raw=json!({"GameInfo":{"Version":643},"World":{"PlayerHouses":[{"HouseItemID":20500000,"InitialRoomGridLayoutPath":"","Floors":[{"Rooms":{"0":{"Name":"Center","FloorGridID":10,"WallGridIDs":{"0":11,"1":12,"2":13,"3":14},"RoomPrefabAddress":shape.prefab}}}]}],"GridCollection":{"NextGridID":90,"Grids":grids}},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40001039":{"Amount":2}}}}}});
+  let g=&mut raw["World"]["GridCollection"]["Grids"]["10"];
+  g["Objects"]=json!({"1":{"ID":1,"ItemID":40001039,"X":14,"Y":7,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40001039,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":null}});
+  g["NextGridObjectID"]=json!(3);
+  let t=RoomFinishTarget{house_index:0,house_item_id:20500000,floor_index:0,room_slot:0};
+  assert!(room_resize_recovery_options(&raw,t).contains(&("3x3".into(),1)));
+  let d=preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",1).unwrap();
+  let v:Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001039"]["Amount"],3);
+  assert!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("1").is_none());
+  assert_eq!(v["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"],raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]);
+  assert!(preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",2).is_err());
+  raw["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]=json!({"Unknown":true});
+  assert!(preview_room_resize_recover(&raw.to_string(),t,"6x6","3x3",1).is_err());
  }
 }
