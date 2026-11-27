@@ -70,7 +70,7 @@
      const finish=(d:any)=>{read.terminate();if(stockWorker!==read||epoch!==token)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
      read.onmessage=e=>finish(e.data);read.onerror=()=>finish(null);read.onmessageerror=()=>finish(null);read.postMessage({command:'read-furniture-stock',file:f});
     }
-    const ids=[...new Set([...incoming,...(incomingFurniture??[]),...(incomingLandscape??[])].map(p=>p.itemId))];if(ids.length){requestId=nextRequest();worker.postMessage({command:'design-shapes',requestId,key:g.key,itemIds:ids});}
+    const ids=[...new Set([...incoming,...(incomingFurniture??[]),...(incomingLandscape??[])].map(p=>p.itemId))];if(ids.length){requestId=nextRequest();worker.postMessage({command:'design-shapes',requestId,key:g.key,itemIds:ids,eightWay:(incomingFurniture??[]).some(p=>!Number.isInteger(p.orientation))});}
    }catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
   };
   job.onmessage=e=>void done(e.data);job.onerror=()=>void done(null);job.onmessageerror=()=>void done(null);job.postMessage({command:'inspect-area-network',file:f,plan:dest,includeLandscape:full});
