@@ -19,11 +19,13 @@ assert.ok(index.items[expandedActor]?.male?.companionIncluded===true&&index.item
 const bindActor='120000005';
 assert.ok(index.items[bindActor]?.male?.companionIncluded===true&&index.items[bindActor]?.female?.companionIncluded===true,'native-bind actor scene');
 assert.equal(Object.values(index.variants).flat().filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,2);
-const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor])];
+const curveActor='120000264';
+assert.ok(index.items[curveActor]?.male?.companionIncluded===true&&index.items[curveActor]?.female?.companionIncluded===true,'quality-flag actor scene');
+const ids=[...new Set([byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,51);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,40);
 assert.equal(Object.keys(index.items).length,255);
-assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,187);
+assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===true&&row.female?.companionIncluded===true).length,198);
 const base='http://127.0.0.1:4191/Wand';
 const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4191'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
 let browser;
