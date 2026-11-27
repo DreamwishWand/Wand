@@ -42,37 +42,52 @@ def png_bindings(plan, folders):
     return bindings
 
 
-def reuse_index(roots, witnesses):
-    """Explicit local directories only; no R2 scans or network access."""
+def reuse_candidates(roots):
+    """Read image headers in explicit original-image directories, including the old SHA shards."""
     by_size = {}
-    for source, meta in witnesses.items():
-        by_size.setdefault((meta['width'], meta['height']), []).append((source, meta))
-    found = {}
     for root in roots:
         root = private_path(root)
         check(root.is_dir(), 'Missing reuse directory')
-        for p in sorted(set(root.glob('*.webp')) | set((root/'images').glob('*.webp'))):
-            if not p.is_file() or not 20 <= p.stat().st_size <= LIMIT:
+        bases = (root, root/'images', root/'images/maps/original')
+        paths = set()
+        for base in bases:
+            paths.update(base.glob('*.webp'))
+            for shard in base.glob('[0-9a-f][0-9a-f]'):
+                if shard.is_dir() and not shard.is_symlink():
+                    paths.update(shard.glob('*.webp'))
+        for p in sorted(paths):
+            if p.is_symlink() or not p.is_file() or not p.resolve().is_relative_to(root):
                 continue
-            raw = p.read_bytes()
-            sha = digest(raw)
+            if not 20 <= p.stat().st_size <= LIMIT:
+                continue
             try:
-                with Image.open(io.BytesIO(raw)) as im:
-                    if im.format != 'WEBP' or getattr(im, 'is_animated', False):
-                        continue
-                    candidates = by_size.get(im.size, [])
-                    hashes = {}
-                    for source, meta in candidates:
-                        if meta['kind'] not in hashes:
-                            hashes[meta['kind']] = pixels(im, meta['kind'])
-                        if hashes[meta['kind']] == meta['pixelSha256']:
-                            found.setdefault(source, (p, sha))
+                with Image.open(p) as im:
+                    if im.format == 'WEBP' and not getattr(im,'is_animated',False):
+                        by_size.setdefault(im.size, []).append(p)
             except OSError:
                 continue
-    return found
+    return by_size
 
 
-def encode_one(source, png, meta, root, reusable=None):
+def match_reuse(candidates, meta):
+    for p in candidates.get((meta['width'],meta['height']), []):
+        try:
+            raw = p.read_bytes()
+            sha = digest(raw)
+            verify_bytes(sha, meta, raw)
+            return p, sha
+        except (ValueError, OSError):
+            continue
+    return None
+
+
+def reuse_index(roots, witnesses):
+    candidates = reuse_candidates(roots)
+    return {source:found for source,meta in witnesses.items()
+            if (found := match_reuse(candidates, meta)) is not None}
+
+
+def encode_one(source, png, meta, root, reusable=None, *, decoded=None):
     check(SHA.fullmatch(source), 'Invalid source identity')
     receipt = root/'receipts'/(source+'.json')
     if receipt.is_file():
@@ -88,13 +103,16 @@ def encode_one(source, png, meta, root, reusable=None):
         verify_bytes(expected, meta, raw)
         reused = True
     else:
-        original = png.read_bytes()
-        check(digest(original)+'.png' == png.name, 'Source PNG hash changed')
-        with Image.open(io.BytesIO(original)) as im:
-            check(im.format == 'PNG' and not getattr(im,'is_animated',False)
-                  and im.size == (meta['width'],meta['height'])
-                  and pixels(im, meta['kind']) == meta['pixelSha256'], 'Source pixels changed')
-            rgba = im.convert('RGBA')
+        if decoded is None:
+            original = png.read_bytes()
+            check(digest(original)+'.png' == png.name, 'Source PNG hash changed')
+            with Image.open(io.BytesIO(original)) as im:
+                check(im.format == 'PNG' and not getattr(im,'is_animated',False), 'Invalid source PNG')
+                rgba = im.convert('RGBA')
+        else:
+            rgba = decoded.convert('RGBA')
+        check(rgba.size == (meta['width'],meta['height'])
+              and pixels(rgba, meta['kind']) == meta['pixelSha256'], 'Source pixels changed')
         buf = io.BytesIO()
         rgba.save(buf, format='WEBP', lossless=True, quality=100, method=6, exact=True)
         raw = buf.getvalue()
@@ -169,6 +187,10 @@ def run(plan, folders, out, roots, workers):
         for source, row in pool.map(task, sorted(bindings)):
             rows[source] = row
             print(f"Verified {len(rows)}/{len(bindings)}: {row['sha256']} ({row['bytes']} bytes)", flush=True)
+    return finish(audit, rows, out)
+
+
+def finish(audit, rows, out):
     rebound = rebind(audit, rows)
     unique = {row['sha256']:row['bytes'] for row in rows.values()}
     summary = {'schema':'wand.src04.native-map-lossless-plan@1','gameVersion':'1.26.2',

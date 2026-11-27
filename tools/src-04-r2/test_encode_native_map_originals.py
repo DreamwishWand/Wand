@@ -58,6 +58,22 @@ class TestNativeMapOriginals(unittest.TestCase):
         wrong = {**self.meta,'pixelSha256':'0'*64}
         self.assertEqual(reuse_index([old],{self.a:wrong}),{})
 
+    def test_legacy_sharded_reuse_and_direct_encoding(self):
+        old = self.root/'shared-ui-media'
+        shard = old/'images/maps/original/ab'
+        shard.mkdir(parents=True)
+        path = shard/('ab'+'0'*62+'.webp')
+        self.im.save(path,format='WEBP',lossless=True,quality=100,method=4,exact=True)
+        reuse = reuse_index([old],{self.a:self.meta})
+        self.assertEqual(reuse[self.a][0],path)
+        self.png.unlink()
+        reused = encode_one(self.a,None,self.meta,self.root,reuse[self.a],decoded=self.im)
+        self.assertTrue(reused['reusedLocal'])
+        row = encode_one(self.b,None,self.meta,self.root,decoded=self.im)
+        self.assertFalse(row['reusedLocal'])
+        with Image.open(self.root/'images'/(row['sha256']+'.webp')) as im:
+            self.assertEqual(im.convert('RGBA').tobytes(),self.im.tobytes())
+
     def test_sdf_red_only_reuse(self):
         old = self.root/'prior'
         old.mkdir()
