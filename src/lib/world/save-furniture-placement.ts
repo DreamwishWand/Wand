@@ -2,16 +2,16 @@
 import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindFloatingIslandGrid,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
-import {CARDINAL_ORIENTATIONS,isCardinal,type Cardinal} from './saved-map-transform.ts';
+import {isCardinal,isEightWay,worldOrientationCode,type EightWay} from './saved-map-transform.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignItemGeometry} from './design-layout.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export interface StockDestination{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number}
-export type StockPlan={action:'place';itemId:string;x:number;y:number;orientation:Cardinal}|{action:'duplicate'|'remove';localOrdinal:number;itemId:string;expectedX:number;expectedY:number;x:number|null;y:number|null};
+export type StockPlan={action:'place';itemId:string;x:number;y:number;orientation:EightWay}|{action:'duplicate'|'remove';localOrdinal:number;itemId:string;expectedX:number;expectedY:number;x:number|null;y:number|null};
 export interface StockCandidate{area:string;x:number;y:number;factor:1|2;shape:SourceObjectShape;plan:StockPlan;destination:StockDestination|null}
 export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===400;
 export function stockSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
- return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&isCardinal(p.object.orientation)&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
+ return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&(isCardinal(p.object.orientation)||free&&p.factor===1&&isEightWay(p.object.orientation))&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
 }
 export const landscapeId=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===402;
 export function landscapePlacementEligible(g:DesignItemGeometry,free=false){return landscapeId(g.itemId)&&g.layer==='landscape'&&!g.surfaceCapable&&!g.supportPath&&(free||g.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(g.editRestrictions,'select'));}
@@ -41,11 +41,12 @@ export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidat
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
-export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:Cardinal,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false):StockCandidate|null{
+export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false):StockCandidate|null{
  const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
- if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
+ if(!isEightWay(orientation)||!isCardinal(orientation)&&(!free||landscape)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
- const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
+ if(!isCardinal(orientation)&&(g.factor!==1||!bindMainlandGrid(g)||def?.surfaceCapable||def?.supportPath))return null;
  if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
  if(landscape){if(!landscapePlacementEligible(def,free)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&!free&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
  const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
