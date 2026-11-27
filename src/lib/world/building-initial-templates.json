@@ -1,0 +1,32 @@
+{
+  "schema": "wand.db05.experimental-building-template@1",
+  "gameVersion": "1.26.2",
+  "saveVersion": 643,
+  "source": {
+    "buildingSha256": "e8ee2f1637518b9f233c2e0b667493a44eee11ad5f137e182bc555f797c5f6e0",
+    "skinSha256": "c557b76c8a762afb3d6cdd66e9c6ced22e7d863ff3dc7426f8f9aff3939e6371"
+  },
+  "template": {
+    "kind": "well",
+    "upgradeLevel": 1,
+    "skinItemId": 170200005,
+    "runtimeCreationVerified": false
+  },
+  "scopes": {
+    "Village04": [
+      20300002,
+      20300003,
+      20300004,
+      20300005,
+      20300006,
+      20300007,
+      20300008
+    ],
+    "VillageExpansion01": [
+      20300029,
+      20300030,
+      20300031,
+      20300036
+    ]
+  }
+}
