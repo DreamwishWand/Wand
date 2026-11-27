@@ -256,12 +256,13 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
   let faces=room["surfaces"].as_array().ok_or(bad)?;
   let surfaces=row["surfaces"].as_array().filter(|s|s.len()==faces.len()&&s.len()<=9).ok_or(bad)?;
   for (s,face) in surfaces.iter().zip(faces){
-   if s.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"pickup"|"place"|"finish")))||s["surfaceOrdinal"]!=face["ordinal"]||s["factor"]!=face["factor"]||s["sourcePath"]!=face["terrain"]["sourcePath"]||face["gridStatus"]!="full"||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
+   if s.as_object().is_none_or(|m|(m.len()!=6&&! (m.len()==7&&m.get("freePlacement").and_then(Value::as_bool)==Some(true)))||m.keys().any(|k|!matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"pickup"|"place"|"finish"|"freePlacement"))||m.contains_key("freePlacement")&&m.get("freePlacement").and_then(Value::as_bool)!=Some(true))||s["surfaceOrdinal"]!=face["ordinal"]||s["factor"]!=face["factor"]||s["sourcePath"]!=face["terrain"]["sourcePath"]||face["gridStatus"]!="full"||face["missingPositions"].as_u64()!=Some(0)||face.get("terrain").is_none(){return Err(bad);}
    let pickup=s["pickup"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
    let place=s["place"].as_array().filter(|a|a.len()<=32).ok_or(bad)?;
    roots=roots.checked_add(pickup.len()+place.len()).ok_or(CodecError::Bounds)?;if roots>4096{return Err(CodecError::Bounds);}
    if !pickup.is_empty(){
-    let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":pickup}).to_string())?;
+    let mut plan=json!({"roomOrdinal":row["roomOrdinal"],"surfaceOrdinal":s["surfaceOrdinal"],"pickup":pickup});if s.get("freePlacement").and_then(Value::as_bool)==Some(true){plan["freePlacement"]=Value::Bool(true);}
+    let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
     if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
     working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
    }
@@ -271,7 +272,7 @@ fn indoor_scope_restore(source:&[u8],v:&Value)->Result<String,CodecError>{
   let mut surfaces=Vec::new();
   for s in row["surfaces"].as_array().ok_or(bad)?{
    if s["place"].as_array().is_none_or(Vec::is_empty)&&s["finish"].is_null(){continue;}
-   surfaces.push(json!({"surfaceOrdinal":s["surfaceOrdinal"],"sourcePath":s["sourcePath"],"factor":s["factor"],"place":s["place"],"finish":s["finish"]}));
+   let mut face=json!({"surfaceOrdinal":s["surfaceOrdinal"],"sourcePath":s["sourcePath"],"factor":s["factor"],"place":s["place"],"finish":s["finish"]});if s.get("freePlacement").and_then(Value::as_bool)==Some(true){face["freePlacement"]=Value::Bool(true);}surfaces.push(face);
   }
   if !surfaces.is_empty(){
    let next=room_project_candidate(working.as_bytes(),&json!({"roomOrdinal":row["roomOrdinal"],"surfaces":surfaces}).to_string())?;
@@ -306,7 +307,7 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
  let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
  let mut changed=false;
  for row in rows{
-  let o=row.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"place"|"finish"))).ok_or(bad)?;
+  let o=row.as_object().filter(|o|(o.len()==5&&!o.contains_key("freePlacement")||o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true))&&o.keys().all(|k|matches!(k.as_str(),"surfaceOrdinal"|"sourcePath"|"factor"|"place"|"finish"|"freePlacement"))).ok_or(bad)?;
   let s=o["surfaceOrdinal"].as_u64().filter(|n|*n>0&&*n<=65).ok_or(bad)? as usize;
   if !used.insert(s){return Err(bad);}
   let face=faces.get(s-1).ok_or(bad)?;
@@ -327,7 +328,8 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
    total=total.checked_add(count).ok_or(CodecError::Bounds)?;if total>256{return Err(CodecError::Bounds);}
   }
   if !places.is_empty(){
-   let mut d=furniture_candidate(working.as_bytes(),&json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":places}).to_string())?;
+   let mut plan=json!({"roomOrdinal":ordinal,"surfaceOrdinal":s,"place":places});if o.get("freePlacement").and_then(Value::as_bool)==Some(true){plan["freePlacement"]=Value::Bool(true);}
+   let mut d=furniture_candidate(working.as_bytes(),&plan.to_string())?;
    if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(CodecError::Patch);}
    working.zeroize();*working=std::mem::take(&mut d.patched_json);changed=true;
   }
