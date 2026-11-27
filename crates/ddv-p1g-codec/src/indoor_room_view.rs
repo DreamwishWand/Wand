@@ -813,6 +813,22 @@ mod tests{
   assert!(furniture_candidate(invalid.to_string().as_bytes(),&plan.to_string()).is_err());
  }
  #[test]
+ fn free_room_group_turn_is_atomic_and_preserves_diagonal_objects(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_DownLeft"},"2":{"ID":2,"ItemID":40000001,"X":3,"Y":1,"Orientation":"GridOrientation_Down"},"3":{"ID":3,"ItemID":40000002,"X":1,"Y":3,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_DownLeft","x":1,"y":1,"orientation":"GridOrientation_DownRight"},{"index":1,"itemId":40000001,"expectedX":3,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":1,"y":3,"orientation":"GridOrientation_Right"}]});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();
+  let mut expected:Value=serde_json::from_slice(raw).unwrap();
+  let objs=&mut expected["World"]["GridCollection"]["Grids"]["42"]["Objects"];
+  objs["1"]["Orientation"]=json!("GridOrientation_DownRight");
+  objs["2"]["Orientation"]=json!("GridOrientation_Right");objs["2"]["X"]=1.into();objs["2"]["Y"]=3.into();
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);
+  assert!(d.patched_json.contains("1e2"));
+  plan["edits"][1]["orientation"]=json!("GridOrientation_Left");assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  plan["edits"][1]["orientation"]=json!("GridOrientation_Right");plan["edits"][1]["x"]=999.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
+  plan["edits"][1]["x"]=1.into();let mut stateful:Value=serde_json::from_slice(raw).unwrap();stateful["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"Unknown":1});
+  assert!(furniture_candidate(stateful.to_string().as_bytes(),&plan.to_string()).is_err());
+ }
+ #[test]
  fn linked_room_move_requires_mirrored_deltas_and_exact_native_targets(){
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":6,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}}"#;
   let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"paired":{"mode":"vertical","edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":2,"y":3,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40000001,"expectedX":6,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":5,"y":3,"orientation":"GridOrientation_Down"}]}});
