@@ -2,12 +2,27 @@
 import {readFileSync,writeFileSync,existsSync} from 'node:fs';
 import {resolve,dirname,join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {inflateSync} from 'node:zlib';
+import {inflateSync,deflateSync} from 'node:zlib';
 import {bindMainland} from '../../src/lib/world/mainland-world-coordinates.ts';
 const scopes={Village04:'MapVillage04',VillageExpansion01:'MapVillageExpansion1',VillageExpansion02:'MapVillageExpansion2',VillageExpansion03:'MapVillageExpansion3',VillageExpansion04:'MapVillageExpansion4',VillageWinnieDLC:'MapVillageWinnieDLCMini01'};
 const check=(ok,msg)=>{if(!ok)throw Error(msg)};
 const hash=b=>createHash('sha256').update(b).digest('hex');
-export function auditGrid(g,m,width,height){
+/** Diagnostic classification only: water bit vs other nonzero floor flags.
+ * Spawn-suppression-only cells are excluded; this is not a placement mask.
+ */
+export function createDiagnosticMask(width,height,longEdge){
+ check(Number.isFinite(width)&&Number.isFinite(height)&&width>0&&height>0&&Number.isSafeInteger(longEdge)&&longEdge>=64&&longEdge<=4096,'Invalid diagnostic extent');
+ const w=Math.max(1,Math.round(longEdge*width/Math.max(width,height))),h=Math.max(1,Math.round(longEdge*height/Math.max(width,height)));
+ return {width:w,height:h,values:new Uint8Array(w*h)};
+}
+function rasterCell(mask,width,height,left,top,right,bottom,value){
+ if(!mask||value===0||value===262144)return;
+ const flag=(value&512)!==0?2:1;
+ const x0=Math.max(0,Math.ceil(left/width*mask.width-.5)),x1=Math.min(mask.width,Math.ceil(right/width*mask.width-.5));
+ const y0=Math.max(0,Math.ceil(top/height*mask.height-.5)),y1=Math.min(mask.height,Math.ceil(bottom/height*mask.height-.5));
+ for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++)mask.values[y*mask.width+x]|=flag;
+}
+export function auditGrid(g,m,width,height,mask){
  const [a,b,c,d,e,f]=m;
  check(m.length===6&&m.every(Number.isFinite)&&a>0&&d>0&&b===0&&c===0,'Unsupported candidate axes');
  check(Number.isSafeInteger(g.sizeX)&&Number.isSafeInteger(g.sizeY)&&g.sizeX>0&&g.sizeY>0&&g.sizeX*g.sizeY<=250000,'Invalid dimensions');
@@ -25,6 +40,7 @@ export function auditGrid(g,m,width,height){
   if(left<0||right>width||top<0||bottom>height)row.outsideEdge++;
   const cx=(left+right)/2,cy=(top+bottom)/2;
   if(cx<0||cx>width||cy<0||cy>height)row.outsideCenter++;
+  rasterCell(mask,width,height,left,top,right,bottom,row.value);
  }
  check(rows.every((r,i)=>r.total===g.counts[i]),'Terrain histogram mismatch');
  // 262144 is the source GridFloorType.BlockAutomaticSpawning flag, not a terrain class.
@@ -34,8 +50,8 @@ export function auditGrid(g,m,width,height){
   otherFloorFlagsOutside:rows.filter(r=>r.value!==0&&r.value!==262144).reduce((n,r)=>n+r.outsideEdge,0)};
 }
 function main(){
- const [registrationPath,geometryPath,terrainDir,outPath]=process.argv.slice(2);
- check(outPath,'Usage: node --experimental-strip-types audit_native_map_terrain_extent.mjs REGISTRATION GEOMETRY TERRAIN_DIR PRIVATE_OUT');
+ const [registrationPath,geometryPath,terrainDir,outPath,diagnosticResolution]=process.argv.slice(2);
+ check(outPath,'Usage: node --experimental-strip-types audit_native_map_terrain_extent.mjs REGISTRATION GEOMETRY TERRAIN_DIR PRIVATE_OUT [DIAGNOSTIC_LONG_EDGE]');
  const out=resolve(outPath);
  for(let p=dirname(out);;p=dirname(p)){check(!existsSync(join(p,'.git')),'Private output outside Git required');if(dirname(p)===p)break;}
  const read=p=>JSON.parse(readFileSync(p,'utf8'));
@@ -51,8 +67,10 @@ function main(){
   const bundle=JSON.parse(raw);check(bundle.schema==='wand.db04.terrain-projection@1'&&bundle.platform==='Steam'&&bundle.gameVersion==='1.26.2'&&bundle.coordinateBasis==='source_grid_local_y_major','Terrain format changed');
   check(bundle.grids.length===entry.gridCount&&bundle.grids.every((r,i)=>['key','layoutId','gridDataPath','gridIdNative','sizeX','sizeY','factor'].every(k=>r[k]===entry.grids[i][k])),'Terrain index mismatch');
   const bound=bindMainland(bundle.grids);check(bound,'Unresolved source Grid origin');
-  const rows=bound.map((r,i)=>auditGrid({...bundle.grids[i],...r},m.halfWorldTicksToCanvasCandidate,g.width,g.height));
-  maps.push({scope,prefab,width:g.width,height:g.height,rows});
+  const mask=diagnosticResolution===undefined?undefined:createDiagnosticMask(g.width,g.height,Number(diagnosticResolution));
+  const rows=bound.map((r,i)=>auditGrid({...bundle.grids[i],...r},m.halfWorldTicksToCanvasCandidate,g.width,g.height,mask));
+  const diagnosticMask=mask?{width:mask.width,height:mask.height,encoding:'zlib-u8-center-sampled-y-major',sha256:hash(mask.values),data:deflateSync(mask.values).toString('base64')}:undefined;
+  maps.push({scope,prefab,width:g.width,height:g.height,rows,...(diagnosticMask?{diagnosticMask}:{})});
  }
  const rows=maps.flatMap(m=>m.rows);
  const totals={grids:rows.length,nonzeroOutside:rows.reduce((n,r)=>n+r.nonzeroOutside,0),spawnFlagOnlyOutside:rows.reduce((n,r)=>n+r.spawnFlagOnlyOutside,0),otherFloorFlagsOutside:rows.reduce((n,r)=>n+r.otherFloorFlagsOutside,0)};
