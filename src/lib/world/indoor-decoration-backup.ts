@@ -7,6 +7,7 @@ import {roomApplyMatches,type RoomApplyRow,type RoomApplySurfaceGeometry} from '
 import {indoorGroupPickup,indoorGroupPlace,type IndoorRoom,type IndoorSurface,type IndoorPickup} from './indoor-room-view.ts';
 import {supportSceneRootCounts} from './support-scene.ts';
 import {parseReplayStep} from './checkpoint-journal.ts';
+import {addRestoreQuantity} from './restore-stock-review.ts';
 export type IndoorBackupScope='room'|'floor'|'building';
 export const INDOOR_BACKUP_LIMIT=16_000_000;
 export interface IndoorBackupRoom{room:IndoorRoom;surfaces:RoomProjectSurface[]}
@@ -42,6 +43,7 @@ export interface IndoorRestoreInput{room:IndoorRoom;before:readonly RoomProjectS
 export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly IndoorRestoreInput[],stock:ReadonlyMap<number,number>,owned:ReadonlySet<number>){
  if(!inputs.length||inputs.length>2048)return null;
  const balances=new Map(stock),plan:IndoorRestorePlan={scope,rooms:[]},work:{face:IndoorSurface;row:IndoorRestoreRow;desired:DesignPlacement[];geometry:RoomApplySurfaceGeometry}[]=[];
+ const returned=new Map<number,number>(),required=new Map<number,number>(),finishItems=new Map<number,number>();
  let removed=0,added=0,retained=0,finishes=0;
  for(const input of inputs){
   const {room,before,after,geometry}=input;if(before.length!==room.surfaces.length||after.length!==before.length)return null;
@@ -57,14 +59,21 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
    if(drop.length>32||desired.length>32)return null;
    const pickup=drop.length?indoorGroupPickup(face,drop,g.allowed,balances,new Set(drop.filter(j=>!!old[j].attachment))):[];
    if(!pickup)return null;
-   for(const j of drop){for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return null;balances.set(id,value+n);removed+=n;}}
+   for(const j of drop){for(const [id,n] of need(old[j])){const value=balances.get(id);if(value===undefined||value+n>2147483647)return null;balances.set(id,value+n);addRestoreQuantity(returned,id,n);removed+=n;}}
    const kept=face.positions.filter((_,j)=>keep.has(j)),quantities=new Map<number,number>();for(const p of kept)quantities.set(p.itemId,(quantities.get(p.itemId)??0)+1);
    let finish:RoomApplyRow['finish']=null;
-   if(a.finish!==face.finish){if(!a.finish||!roomFinishIdValid(a.finish,face.kind)||!owned.has(a.finish)||room.surfaces.length!==5||!room.surfaces.slice(1).every((f,j)=>f.wallPosition===j)||face.kind==='floor'&&face.finish===null)return null;finish={itemId:a.finish,expected:face.finish};finishes++;}
+   if(a.finish!==face.finish){if(!a.finish||!roomFinishIdValid(a.finish,face.kind)||!owned.has(a.finish)||room.surfaces.length!==5||!room.surfaces.slice(1).every((f,j)=>f.wallPosition===j)||face.kind==='floor'&&face.finish===null)return null;finish={itemId:a.finish,expected:face.finish};addRestoreQuantity(finishItems,a.finish,1);finishes++;}
    const row:IndoorRestoreRow={surfaceOrdinal:face.ordinal,sourcePath:a.template.grid.gridDataPath,factor:face.factor,pickup,place:[],finish};
    rows.push(row);work.push({face:{...face,positions:kept,items:[...quantities].map(([itemId,quantity])=>({itemId,quantity}))},row,desired,geometry:g});
   }
  }
+ // Aggregate requirements before any placement. A shortage review is not
+ // a writable plan: actual placement validation still requires real stock.
+ for(const {desired} of work)for(const p of desired)for(const [id,n] of need(p))addRestoreQuantity(required,id,n);
+ const missing=[...required].filter(([id,n])=>(balances.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(balances.get(itemId)??0)}));
+ const requested=[...required.values()].reduce((a,b)=>a+b,0);
+ if(removed+requested>4096)return null;
+ if(missing.length)return {plan:null,removed,added:requested,retained,finishes,returned,required,finishItems,missing,changed:true};
  // All returns precede any placement; even different rooms can reuse stock.
  for(const {face,row,desired,geometry:g} of work){
   const clip=desired.map(p=>({itemId:p.itemId,dx:p.x,dy:p.y,orientation:p.orientation}));
@@ -79,7 +88,7 @@ export function buildIndoorRestore(scope:IndoorBackupScope,inputs:readonly Indoo
  }
  if(removed+added>4096||JSON.stringify(plan).length>120*1024)return null;
  try{parseReplayStep({command:'indoor-room-project-export',plan});}catch{return null;}
- return {plan,removed,added,retained,finishes,changed:removed+added+finishes>0};
+ return {plan,removed,added,retained,finishes,returned,required,finishItems,missing,changed:removed+added+finishes>0};
 }
 export const indoorBackupWords={
  ja:['装飾バックアップ','部屋','階','建物','バックアップを保存','リストア','撤去','追加','維持','仕上げ変更','検証済みコピーを作成','編集済みコピーを適用','変更なし','範囲・在庫・地形・保存状態が一致しないか、対応上限を超えています。','選択範囲を復元します。テスト環境専用。','取消'],

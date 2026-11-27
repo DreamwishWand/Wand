@@ -26,5 +26,7 @@ test('restore returns stock in one room before placing in another',()=>{
  const inputs=[{room:rooms[0],before:[blank],after:[placed],geometry},{room:occupied,before:[placed],after:[blank],geometry}];
  const q=buildIndoorRestore('floor',inputs,new Map([[id,0]]),new Set());
  assert.ok(q);assert.equal(q.removed,1);assert.equal(q.added,1);assert.equal(q.plan.rooms[0].surfaces[0].place[0].expectedStock,1);assert.equal(q.plan.rooms[1].surfaces[0].pickup[0].expectedStock,0);
+ assert.equal(q.returned.get(id),1);assert.equal(q.required.get(id),1);assert.deepEqual(q.missing,[]);
+ const shortage=buildIndoorRestore('room',[inputs[0]],new Map([[id,0]]),new Set());assert.ok(shortage);assert.equal(shortage.plan,null);assert.deepEqual(shortage.missing,[{itemId:id,quantity:1}]);assert.equal(shortage.required.get(id),1);
  assert.equal(buildIndoorRestore('floor',inputs,new Map(),new Set()),null);
 });

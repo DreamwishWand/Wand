@@ -1,4 +1,6 @@
 <script lang="ts">
+ import RestoreStockReview from './RestoreStockReview.svelte';
+ import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
@@ -68,6 +70,7 @@
  {#if busy}<small role="status">{w[14]}</small>{/if}
  {#if result}
   <small>{w[4]} {result.retained.length} · {w[5]} {result.removed.length} · {w[6]} {result.plan.add.length} · {w[7]} {result.protectedObjects.length}</small>
+  <RestoreStockReview rows={restoreStockRows([result],result.missing)} {locale}/>
   {#if result.missing.length}<small role="alert">{w[8]} · {result.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}
   {#if !result.changed}<small>{w[13]}</small>{/if}
   {#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!result.missing.length} on:click={validate}>{w[9]}</button>{/if}

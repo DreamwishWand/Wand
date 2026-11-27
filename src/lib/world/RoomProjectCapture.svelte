@@ -1,4 +1,6 @@
 <script lang="ts">
+ import RestoreStockReview from './RestoreStockReview.svelte';
+ import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile,rememberPreset} from './preset-session.ts';
@@ -100,7 +102,7 @@
  }
  function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)openBackup(f);}
  function openBackup(f:File){if(busy||blocked||copy)return;if(f.size>INDOOR_BACKUP_LIMIT){error=true;return;}void run('restore',f);}
- function validate(){if(!testExport||blocked||busy||!review?.changed||copy)return;
+ function validate(){if(!testExport||blocked||busy||!review?.changed||!review.plan||review.missing.length||copy)return;
   busy=true;const source=file,target=room,plan=review.plan,own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});writer=own;
   const done=(d:any)=>{own.terminate();if(writer!==own)return;writer=null;busy=false;if(!alive||file!==source||room!==target||blocked){d?.bytes?.fill(0);return;}try{if(d?.kind!=='indoor-room-project-copy')throw Error('receipt');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'indoor-room-project-export',file:source,plan,allowExperimentalCopy:true});
@@ -112,7 +114,7 @@
  <label>{bw[0]} <select bind:value={scope} disabled={busy||blocked||!!copy} on:change={reset}><option value="room">{bw[1]}</option><option value="floor">{bw[2]}</option><option value="building">{bw[3]}</option></select></label>
  <button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>run('backup')}>{bw[4]}</button>
  {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/>{/if}
- {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small>{#if !review.changed}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
+ {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small><RestoreStockReview rows={restoreStockRows([review],review.missing,review.finishItems)} {locale}/>{#if review.missing.length}<small role="alert">{bw[13]}</small>{/if}{#if !review.changed}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy||!review.plan||!!review.missing.length} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
  {#if error}<small role="alert">{bw[13]}</small>{/if}
 </div>
 <style>.indoor-backup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.indoor-backup section{display:flex;flex-direction:column;gap:4px;border:1px solid var(--wand-line);padding:5px}</style>
