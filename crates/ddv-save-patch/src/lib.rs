@@ -1752,8 +1752,14 @@ pub fn preview_free_indoor_grid_stock_place(source:&str,d:&PlainGridDestination,
 }
 /// Move one ordinary outdoor furniture record to a codec-resolved owned room floor.
 pub fn preview_outdoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ outdoor_to_indoor_transfer_mode(source,target,expected,d,xy,orientation,false)
+}
+pub fn preview_free_outdoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ outdoor_to_indoor_transfer_mode(source,target,expected,d,xy,orientation,true)
+}
+fn outdoor_to_indoor_transfer_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
- validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let grids=c.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
@@ -1777,6 +1783,14 @@ pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarg
 pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
+/// Free transfer between codec-resolved exclusive room floors. The source
+/// leaf removal keeps all unrelated records and does not touch stock.
+pub fn preview_free_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
+ validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",true)?;
  let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
  insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
 }
