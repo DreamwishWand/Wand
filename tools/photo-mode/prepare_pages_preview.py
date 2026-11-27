@@ -62,10 +62,11 @@ if __name__=='__main__':
     p.add_argument('--player-complete',type=Path,help='Local copy of the remaining player poses')
     p.add_argument('--actor-expansion',type=Path,help='Local copy of the second actor overlay')
     p.add_argument('--actor-bind',type=Path,help='Local copy of the native-bind actor overlay')
+    p.add_argument('--actor-curve',type=Path,help='Local copy of the curve-flag actor overlay')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -82,3 +83,5 @@ if __name__=='__main__':
         apply_actor_expansion(a.actor_expansion.read_bytes() if a.actor_expansion else download_actor_expansion(), a.dest)
         from prepare_actor_bind import download_bind, apply_bind
         apply_bind(a.actor_bind.read_bytes() if a.actor_bind else download_bind(), a.dest)
+        from prepare_actor_curve import download_curve, apply_curve
+        apply_curve(a.actor_curve.read_bytes() if a.actor_curve else download_curve(), a.dest)

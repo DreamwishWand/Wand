@@ -17,10 +17,16 @@ def floats(r, count):
 def array(r, size):
     return r.take(r.count(size)*size)
 
+def validate_curve_header(r):
+    flags = r.take(4)
+    require(flags in (bytes(4), bytes((0,0,1,0))) and r.unpack('7i') == (0,)*7,
+            'unsupported explicit curve layout')
+    return bool(flags[2])
+
 def decode(data):
     r = Reader(data)
     name = r.string()
-    require(r.take(4) == bytes(4) and r.unpack('7i') == (0,)*7, 'unsupported explicit curve layout')
+    high_quality_curve = validate_curve_header(r)
     rate, wrap = r.unpack('fi'); r.take(24); muscle_size, = r.unpack('I')
     require(isfinite(rate) and rate > 0 and muscle_size > 0, 'invalid clip header')
     r.take(68); array(r, 64)
@@ -64,7 +70,7 @@ def decode(data):
         t, = floats(r, 1); fn = r.string(); param = r.string(); ref = r.unpack('iq'); value, = floats(r, 1); integer, options = r.unpack('ii')
         events.append({'time':t,'function':fn,'parameter':param,'objectRef':ref,'float':value,'int':integer,'options':options})
     require(r.pos == len(data), 'unparsed clip tail')
-    return {'name':name,'sha256':digest(data),'sampleRate':rate,'start':start,'end':end,'loop':bool(flags[1]),'stream':curves,'dense':dense,'denseCount':dense_count,'denseFrames':frames,'denseRate':dense_rate,'denseBegin':begin,'constants':constant,'bindings':bindings,'events':events,'rootFlags':list(root_flags),'mappingCount':len(mappings)//12}
+    return {'name':name,'sha256':digest(data),'sampleRate':rate,'highQualityCurve':high_quality_curve,'start':start,'end':end,'loop':bool(flags[1]),'stream':curves,'dense':dense,'denseCount':dense_count,'denseFrames':frames,'denseRate':dense_rate,'denseBegin':begin,'constants':constant,'bindings':bindings,'events':events,'rootFlags':list(root_flags),'mappingCount':len(mappings)//12}
 
 def sample(clip, seconds):
     require(isfinite(seconds), 'invalid sample time')

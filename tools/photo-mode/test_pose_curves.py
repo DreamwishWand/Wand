@@ -1,8 +1,18 @@
 import unittest
-from pose_curves import sample
+from pose_curves import sample, validate_curve_header
+from resolve_animation_bundle import Reader
 from pose_rig import bind
 
 class PoseTests(unittest.TestCase):
+    def test_empty_explicit_curves_support_both_observed_quality_flags(self):
+        for flag in (0,1):
+            r=Reader(bytes((0,0,flag,0))+bytes(28))
+            self.assertEqual(validate_curve_header(r),bool(flag))
+            self.assertEqual(r.pos,32)
+        for header in (bytes((1,0,0,0)),bytes((0,1,0,0)),bytes((0,0,2,0)),bytes((0,0,1,1))):
+            with self.assertRaises(ValueError): validate_curve_header(Reader(header+bytes(28)))
+        with self.assertRaises(ValueError): validate_curve_header(Reader(bytes(4)+bytes((1,))+bytes(27)))
+
     def test_sample_combined_stream_dense_and_constant(self):
         clip={'start':0.,'end':2.,'stream':[[(-3.402823466e38,(0,0,0,0)),(0.,(0,0,2,1)),(1.,(0,0,1,3))]],'denseCount':1,'denseFrames':3,'denseRate':1.,'denseBegin':0.,'dense':(0.,10.,20.),'constants':(7.,)}
         self.assertEqual(sample(clip,.5),[2.,5.,7.])
