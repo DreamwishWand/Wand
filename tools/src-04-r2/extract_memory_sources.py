@@ -226,7 +226,7 @@ def exact_objects(aa, locations):
             except Exception as exc:
                 yield guid,None,type(exc).__name__+": "+str(exc)[:200]
 
-def materialize(obj, bundles, existing, output, mask=False, ledger=None):
+def materialize(obj, bundles, existing, output, mask=False, ledger=None, thumbnail_cache=None):
     from source_image_ledger import original as published_original
     from PIL import Image
     identity,_=object_identity(obj,bundles)
@@ -236,6 +236,9 @@ def materialize(obj, bundles, existing, output, mask=False, ledger=None):
     witness=hashlib.sha256(native.tobytes()).hexdigest()
     prior=published_original(ledger,witness,*native.size)
     if prior:
+        if thumbnail_cache:
+            from source_image_ledger import stage_missing_thumbnail
+            stage_missing_thumbnail(output,native,prior,ledger,thumbnail_cache)
         return {**prior,'sourcePixelSha256':witness,'unityAssetId':identity,'reused':True,'reusedPublished':True}
     for path,v in existing.get(identity,()):
         raw=path.read_bytes()
@@ -301,7 +304,7 @@ def run(parts,aa,root,out,index_only=False,ledger=None):
                 for k,v in refs.items():
                     cache_key=(object_identity(v,bundles)[0],k!="Image")
                     if cache_key not in materialized:
-                        materialized[cache_key]=materialize(v,bundles,existing,out,k!="Image",ledger)
+                        materialized[cache_key]=materialize(v,bundles,existing,out,k!="Image",ledger,"memory-thumbnail-cache.json" if k=="Image" else None)
                     assets[k]=materialized[cache_key]
                     m=assets[k]
                     if not m.get('reusedPublished'):
