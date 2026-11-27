@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {parsePublicTerrainRelease} from '../src/lib/world/public-terrain-projection.ts';
-import {bindMainland,mainlandExtent} from '../src/lib/world/mainland-world-coordinates.ts';
+import {bindMainland,bindFloatingIslandGrid,mainlandExtent} from '../src/lib/world/mainland-world-coordinates.ts';
 import {captureIslandDecoration,parseIslandDecoration} from '../src/lib/world/island-decoration-preset.ts';
 import {captureRegionDecoration,parseRegionDecoration,mergeRegionDecoration,reviewRegionCapture,regionNetworkContactIndex} from '../src/lib/world/region-decoration-backup.ts';
 const catalog=parsePublicTerrainRelease(JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/index.json',import.meta.url),'utf8'))),grids=bindMainland(catalog.entries.find(e=>e.scope==='Village04').grids);
@@ -36,4 +36,21 @@ test('spatial boundary contact agrees with conservative cross-grid comparison',(
  assert.equal(regionNetworkContactIndex([road])({...road,area:'B',x:0,y:0}),true);
  assert.equal(regionNetworkContactIndex([road])({...road,x:.5}),false);
  assert.equal(regionNetworkContactIndex([road])({...road,itemId:40100002}),false);
+});
+
+test('floating island region identifies a single exact native coordinate surface',()=>{
+ const islands=catalog.entries.flatMap(e=>e.grids).map(bindFloatingIslandGrid).filter(Boolean);
+ assert.ok(islands.length>1);
+ const g=islands[0],other=islands.find(x=>x.key!==g.key);
+ const scope=[g],r={x:g.bounds.x,y:g.bounds.y,w:1,h:1};
+ const sn={objects:new Map([[g.key,[]]]),summaries:[],text:''},net=new Map([[g.key,[]]]),geometry=new Map([[g.key,new Map()]]);
+ const raw=captureRegionDecoration(r,scope,sn,net,supports,false);assert.ok(raw);
+ assert.ok(JSON.parse(raw).island);assert.equal(JSON.parse(raw).world,undefined);
+ const doc=parseRegionDecoration(raw,scope,false);assert.deepEqual(doc.region,r);
+ assert.throws(()=>parseRegionDecoration(raw,[other],false));
+ assert.throws(()=>parseRegionDecoration(raw,[g,other],false));
+ assert.throws(()=>parseRegionDecoration(raw,scope));
+ const current=parseIslandDecoration(captureIslandDecoration(scope,sn,net,supports,false).text,scope,false);
+ assert.ok(mergeRegionDecoration(r,scope,sn,net,supports,current,doc.incoming,geometry,false));
+ assert.equal(captureRegionDecoration(r,[g,other],sn,net,supports,false),null);
 });

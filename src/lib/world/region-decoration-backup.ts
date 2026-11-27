@@ -1,4 +1,4 @@
-import {mainlandExtent,mainlandMapAnchor,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandExtent,mainlandMapAnchor,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {mainlandSavedInRect,type MainlandSavedObject} from './mainland-saved-objects.ts';
 import {validCaptureRegion,type CaptureRegion} from './scene-capture-region.ts';
 import {captureIslandDecoration,parseIslandDecoration,WORLD_DECORATION_FILE_LIMIT} from './island-decoration-preset.ts';
@@ -63,29 +63,35 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
  if(insideNet.some(outsideContact))return null;
  return {snapshot:{...snapshot,objects},networks:rows,outsideContact};
 }
-export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees){
+// Independent island surfaces have separate local coordinate bases.
+ // Never interpret coincident coordinates on two surfaces as the same area.
+ const validRegionScope=(grids:readonly MainlandGrid[],world:boolean)=>world?grids.length>0:grids.length===1&&!!bindFloatingIslandGrid(grids[0]);
+export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true){
+ if(!validRegionScope(grids,world))return null;
  const part=split(region,grids,snapshot,networks);if(!part)return null;
- const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,true);if(!doc)return null;
- const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,world:JSON.parse(doc.text)});
+ const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world);if(!doc)return null;
+ const text=JSON.stringify({schema:'wand.preset.region-decoration@1',region,...(world?{world:JSON.parse(doc.text)}:{island:JSON.parse(doc.text)})});
  return text.length<=WORLD_DECORATION_FILE_LIMIT?{text,summaries:doc.summaries}:null;
 }
-export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees):string|null{
- return reviewRegionCapture(region,grids,snapshot,networks,supports)?.text??null;
+export function captureRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true):string|null{
+ return reviewRegionCapture(region,grids,snapshot,networks,supports,world)?.text??null;
 }
-export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[]):{region:CaptureRegion;incoming:Incoming}{
- if(text.length>WORLD_DECORATION_FILE_LIMIT)throw Error('REGION_LIMIT');
+export function parseRegionDecoration(text:string,grids:readonly MainlandGrid[],world=true):{region:CaptureRegion;incoming:Incoming}{
+ if(text.length>WORLD_DECORATION_FILE_LIMIT||!validRegionScope(grids,world))throw Error('REGION_LIMIT');
  const v=JSON.parse(text),r=v?.region;
  if(!v||Object.keys(v).length!==3||v.schema!=='wand.preset.region-decoration@1'||!r||Object.keys(r).length!==4||!['x','y','w','h'].every(k=>typeof r[k]==='number')||!validCaptureRegion(r,mainlandExtent(grids)))throw Error('REGION_SCOPE');
- const incoming=parseIslandDecoration(JSON.stringify(v.world),grids,true);if([...incoming.values()].some(a=>!a.supports))throw Error('REGION_SUPPORT');
+ if(!Object.hasOwn(v,world?'world':'island'))throw Error('REGION_SCOPE');
+ const incoming=parseIslandDecoration(JSON.stringify(world?v.world:v.island),grids,world);if([...incoming.values()].some(a=>!a.supports))throw Error('REGION_SUPPORT');
  return {region:{x:r.x,y:r.y,w:r.w,h:r.h},incoming};
 }
 /** Merge only selected cells into the exact current full-world document.
  * All outside objects, support trees and networks are retained. Untrusted
  * incoming rows must fit entirely inside the chosen rectangle. */
-export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>):Incoming|null{
+export function mergeRegionDecoration(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,current:Incoming,incoming:Incoming,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,world=true):Incoming|null{
+ if(!validRegionScope(grids,world))return null;
  const part=split(region,grids,snapshot,networks);if(!part)return null;
- const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,true);if(!captured)return null;
- let old:Incoming;try{old=parseIslandDecoration(captured.text,grids,true);}catch{return null;}
+ const captured=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world);if(!captured)return null;
+ let old:Incoming;try{old=parseIslandDecoration(captured.text,grids,world);}catch{return null;}
  const result:Incoming=new Map();
  for(const g of grids){
   const before=current.get(g.key),replaced=old.get(g.key),next=incoming.get(g.key),geometry=defs.get(g.key);if(!before?.supports||!replaced||!next?.supports||!geometry)return null;
