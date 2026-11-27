@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {
-  saveItemMediaUrl,fetchVerifiedSaveItemWebp
+  saveItemMediaUrl,fetchVerifiedSaveItemWebp,fetchCurrentSaveItemWebp
 } from '../src/lib/save/verified-save-item-webp.ts';
 
 const data=new Uint8Array(20);
@@ -43,7 +43,7 @@ test('wrong hash, wrong content type, missing bytes or malformed WebP fails clos
   assert.equal(await fetchVerifiedSaveItemWebp('',media,async()=>{throw Error('offline');}),null);
 });
 
-test('media fetch never follows Item ID paths, traversal or external URLs',async()=>{
+test('legacy media fetch never follows Item ID paths, traversal or arbitrary external URLs',async()=>{
   for(const invalid of [
     {...media,path:'https://example.com/tracker.webp'},
     {...media,path:'ddv/item-images/../foo.webp'},
@@ -60,4 +60,38 @@ test('media fetch never follows Item ID paths, traversal or external URLs',async
   }
   assert.equal(saveItemMediaUrl('//other',media),null);
   assert.equal(saveItemMediaUrl('/Wand/../x',media),null);
+});
+
+const context={itemId:'30000031',match:'current_db00',media:null};
+const publicImage={url:'https://media.dreamwishwand.com/images/'+digest+'.webp',sha256:digest,width:128,height:64};
+test('current catalog uses shared public hash-addressed thumbnail, without credentials or referrer',async()=>{
+  const calls=[];
+  const result=await fetchCurrentSaveItemWebp('/Wand',context,'1.26.2',async(url,opts)=>{
+    calls.push({url,credentials:opts.credentials,redirect:opts.redirect,referrerPolicy:opts.referrerPolicy});return reply();
+  },undefined,async id=>{assert.equal(id,30000031);return publicImage;});
+  assert.equal(Buffer.from(result).toString('hex'),Buffer.from(data).toString('hex'));
+  assert.deepEqual(calls,[{url:publicImage.url,credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'}]);
+});
+test('unknown, unsafe or mismatched catalog IDs never request current media',async()=>{
+  for(const [row,version] of [[{...context,match:'not_in_db00_snapshot'},'1.26.2'],[{...context,itemId:'030000031'},'1.26.2'],[context,'1.27.0'],[context,null]]){
+    assert.equal(await fetchCurrentSaveItemWebp('',row,version,async()=>{throw Error('network');},undefined,async()=>{throw Error('lookup');}),null);
+  }
+});
+test('invalid public URL, bad bytes, or aborted image does not reach the renderer',async()=>{
+  let calls=0;
+  const fetcher=async()=>{calls++;return reply();};
+  for(const image of [{...publicImage,url:'https://evil.test/images/'+digest+'.webp'},{...publicImage,width:513}]){
+    assert.equal(await fetchCurrentSaveItemWebp('',context,'1.26.2',fetcher,undefined,async()=>image),null);
+  }
+  assert.equal(calls,0);
+  assert.equal(await fetchCurrentSaveItemWebp('',context,'1.26.2',async()=>reply(new Uint8Array(20)),undefined,async()=>publicImage),null);
+  const controller=new AbortController();controller.abort();
+  assert.equal(await fetchCurrentSaveItemWebp('',context,'1.26.2',fetcher,controller.signal,async()=>publicImage),null);
+  assert.equal(calls,0);
+});
+test('retain previously verified same-release fallback when shared media fails',async()=>{
+  const result=await fetchCurrentSaveItemWebp('/Wand',{...context,media},'1.26.2',async(url)=>{
+    assert.equal(url,'/Wand/'+path);return reply();
+  },undefined,async()=>null);
+  assert.equal(Buffer.from(result).toString('hex'),Buffer.from(data).toString('hex'));
 });
