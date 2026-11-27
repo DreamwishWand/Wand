@@ -3,7 +3,7 @@
  * equate a subgrid with a mainland root or invent placement for unresolved
  * objects. Projection is read-only; existing local Rust edit route remains
  * authoritative. */
-import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindMainlandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,sourceWorldScope,bindMainlandGrid,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {projectWorldEdits,stageWorldEdit,currentWorldEdits,WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,stageWorldTargets,groupTargets,type GroupTarget,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
@@ -219,9 +219,12 @@ export interface MainlandTransferPlan{
  readonly area:string;readonly x:number;readonly y:number;readonly factor:1|2;readonly shape:SourceObjectShape;
  readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string;crossWorld?:'move'|'duplicate'};
 }
+export function exteriorWorldKey(g:MainlandGrid):string{return sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);}
 export function crossWorldBuildingCandidate(p:MainlandSavedObject|null,from:MainlandGrid|undefined,g:MainlandGrid|undefined,timeline:WorldEditTimeline,x:number,y:number,mode:'move'|'duplicate'):MainlandTransferPlan|null{
- if(!p||!from||!g||p.area!==from.key||!bindMainlandGrid(from)||!bindMainlandGrid(g)||sourceWorldScope(from)===sourceWorldScope(g)||g.factor!==from.factor||g.factor!==p.factor||
-  currentWorldEdits(timeline).length||!p.shape||p.shape.cellCount<1||p.shape.cellCount>65536||p.object.nativeType!=='Building'||![200,201,202,203].includes(Math.floor(Number(p.object.itemId)/100000))||
+ const house=Math.floor(Number(p?.object.itemId)/100000)===205;
+ const bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(house?bindFloatingIslandGrid(g):null);
+ if(!p||!from||!g||p.area!==from.key||!bound(from)||!bound(g)||exteriorWorldKey(from)===exteriorWorldKey(g)||g.factor!==from.factor||g.factor!==p.factor||
+  currentWorldEdits(timeline).length||!p.shape||p.shape.cellCount<1||p.shape.cellCount>65536||p.object.nativeType!=='Building'||![200,201,202,203,205].includes(Math.floor(Number(p.object.itemId)/100000))||
   p.object.subgrid||p.object.surfaceCapable||!isCardinal(p.object.orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape:p.shape,plan:{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},x,y,orientation:p.object.orientation,crossWorld:mode}};
 }

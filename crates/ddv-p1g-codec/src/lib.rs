@@ -1783,7 +1783,7 @@ mod browser_amount_preview {
             };
             let house=item/100_000==205;
             let building=matches!(item/100_000,200..=203);
-            if world_change.is_some()&&!building{return Err(invalid());}
+            if world_change.is_some()&&!building&&!house{return Err(invalid());}
             let target=if house{
                 grid_instance_preview::resolve_grid_coordinate_target(original,ordinal,item,expected,"full")
                     .map_err(|_|fail("DB05_GRID_TRANSFER_STALE"))?
@@ -1800,15 +1800,20 @@ mod browser_amount_preview {
             let landscape=item/100_000==402;
             let mut draft=if house||building||landscape{
                 let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
-                let source_scope=grid_instance_preview::player_house_grid_scope(&root,&target.grid_id).map_err(|_|invalid())?;
-                let dest_scope=grid_instance_preview::player_house_grid_scope(&root,&dest.grid_id).map_err(|_|invalid())?;
+                let (source_scope,dest_scope)=if house&&world_change.is_some(){
+                    let from=grid_instance_preview::house_exterior_identity(&root,&target.grid_id).map_err(|_|invalid())?;
+                    let to=grid_instance_preview::house_exterior_identity(&root,&dest.grid_id).map_err(|_|invalid())?;
+                    if to.1!=dest.layout_path||from.2!=to.2||to.2!=u64::from(dest.tessellation){return Err(invalid());}
+                    (from.0,to.0)
+                }else{(grid_instance_preview::player_house_grid_scope(&root,&target.grid_id).map_err(|_|invalid())?,
+                     grid_instance_preview::player_house_grid_scope(&root,&dest.grid_id).map_err(|_|invalid())?)};
                 if root["GameInfo"]["Version"].as_u64()!=Some(643)||text("expectedOrientation")?!=text("orientation")?||(source_scope!=dest_scope)!=world_change.is_some(){return Err(invalid());}
-                if world_change.is_some()&&!grid_instance_preview::cross_world_building_state(item,root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id].get("State")){return Err(invalid());}
+                if world_change.is_some()&&!house&&!grid_instance_preview::cross_world_building_state(item,root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id].get("State")){return Err(invalid());}
                 let source_size=grid_instance_preview::building_transform_grid_size(&root,&target.grid_id).map_err(|_|invalid())?;
                 let dest_size=grid_instance_preview::building_transform_grid_size(&root,&dest.grid_id).map_err(|_|invalid())?;
                 if expected.0<0||expected.1<0||expected.0 as u64>=source_size.0||expected.1 as u64>=source_size.1||
                    dest_size!=(u64::from(dest.size.0)*u64::from(dest.tessellation),u64::from(dest.size.1)*u64::from(dest.tessellation)){return Err(invalid());}
-                if let Some(mode)=world_change{ddv_save_patch::preview_checked_building_world_change(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?,mode=="duplicate")}else if house{ddv_save_patch::preview_player_house_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else if building{ddv_save_patch::preview_checked_building_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
+                if let Some(mode)=world_change{if house{ddv_save_patch::preview_player_house_world_change(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?,mode=="duplicate")}else{ddv_save_patch::preview_checked_building_world_change(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?,mode=="duplicate")}}else if house{ddv_save_patch::preview_player_house_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else if building{ddv_save_patch::preview_checked_building_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
             }else{ddv_save_patch::preview_plain_grid_transfer(json,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}
                 .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
             if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized||validate_profile(draft.patched_json.as_bytes()).is_err(){

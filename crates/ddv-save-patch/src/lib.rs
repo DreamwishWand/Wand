@@ -1010,15 +1010,28 @@ fn insert_grid_record(intermediate:&str,destination:&PlainGridDestination,item_i
 }
 
 /// Verify the existing exterior and its shared interior without modifying it.
+fn house_exterior_world(layout:&str,data:&str)->Option<String>{
+    if let Some(scope)=saved_outdoor_scope(layout,data).filter(|scope|outdoor_world_path(scope,data)){return Some(scope.to_owned());}
+    let folder=data.strip_prefix("GridData/FloatingIslands/")?.split('/').next()?;
+    let family=if folder=="FloatingIlsnad_Desert"{"FloatingIsland_Desert"}else{folder};
+    let expected=format!("SceneLayouts/FloatingIslands/{family}/{family}Layout.json");
+    if (layout.is_empty()||layout==expected)&&saved_layout_matches(Some(""),&expected,data){Some(expected)}else{None}
+}
 pub fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<&'a serde_json::Map<String,serde_json::Value>,PatchError>{
+    checked_player_house_state_mode(world,target,expected,orientation,false)
+}
+fn checked_player_house_state_mode<'a>(world:&'a serde_json::Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,world_change:bool)->Result<&'a serde_json::Map<String,serde_json::Value>,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if target.kind!=GridObjectKind::Full||target.item_id/100_000!=205||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
     let c=world.get("GridCollection").ok_or(bad)?;
     let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
-    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,grid["GridDataPath"].as_str().unwrap_or(""))).ok_or(bad)?;
+    let layout=grid["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
+    let data=grid["GridDataPath"].as_str().ok_or(bad)?;
+    if world_change{house_exterior_world(layout,data).ok_or(bad)?;}else{
+        if !saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data)){return Err(bad);}
+    }
     if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||
-       !grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s))||
        c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
     let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
     if o.len()!=6||o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
@@ -1033,6 +1046,7 @@ pub fn checked_player_house_state<'a>(world:&'a serde_json::Value,target:&GridCo
        house.get("UpgradeState").is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.keys().all(|k|k=="Level")&&m.get("Level").and_then(Value::as_u64).is_some())){return Err(bad);}
     let idx=house.get("PlayerHouseIndex").and_then(Value::as_u64).and_then(|v|usize::try_from(v).ok()).ok_or(bad)?;
     let interiors=world.get("PlayerHouses").and_then(Value::as_array).ok_or(bad)?;
+    if world_change&&idx==0{return Err(bad);}
     let interior=interiors.get(idx).ok_or(bad)?;
     if interior.get("HouseItemID").and_then(Value::as_u64)!=Some(target.item_id)||
        interiors.iter().filter(|h|h.get("HouseItemID").and_then(Value::as_u64)==Some(target.item_id)).count()!=1||
@@ -1046,6 +1060,18 @@ pub fn preview_player_house_duplicate(source:&str,target:&GridCoordinateTarget,e
 }
 
 pub fn preview_player_house_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    player_house_duplicate_mode(source,target,expected,d,xy,orientation,replacement_orientation,false)
+}
+pub fn preview_player_house_world_change(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,duplicate:bool)->Result<GridCoordinateDraft,PatchError>{
+    let mut draft=player_house_duplicate_mode(source,target,expected,d,xy,orientation,orientation,true)?;
+    if !duplicate{
+        let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+        draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
+        validate_json_without_edit(&draft.patched_json)?;
+    }
+    Ok(draft)
+}
+fn player_house_duplicate_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,replacement_orientation:&str,world_change:bool)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
     if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&replacement_orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
@@ -1053,15 +1079,21 @@ pub fn preview_player_house_duplicate_oriented(source:&str,target:&GridCoordinat
     validate_json_without_edit(source)?;
     let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
     let world=root.get("World").ok_or(bad)?;
-    let state=checked_player_house_state(world,target,expected,orientation)?;
+    let state=checked_player_house_state_mode(world,target,expected,orientation,world_change)?;
     let c=world.get("GridCollection").ok_or(bad)?;
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let from=grids.get(&target.grid_id).ok_or(bad)?;
     let to=grids.get(&d.grid_id).ok_or(bad)?;
-    let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
-    if from.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(|l|saved_outdoor_scope(l,from["GridDataPath"].as_str().unwrap_or("")))!=Some(scope)||
-       from.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
-       !outdoor_world_path(scope,&d.data_path)||to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
+    let old_layout=from["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
+    let old_data=from["GridDataPath"].as_str().ok_or(bad)?;
+    if world_change{
+        if target.grid_id==d.grid_id||house_exterior_world(old_layout,old_data).ok_or(bad)?==house_exterior_world(&d.layout_path,&d.data_path).ok_or(bad)?{return Err(bad);}
+    }else{
+        let scope=full_grid_scope(&d.layout_path).ok_or(bad)?;
+        if saved_outdoor_scope(old_layout,old_data)!=Some(scope)||!outdoor_world_path(scope,&d.data_path){return Err(bad);}
+    }
+    if from.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
+       to.get("ID").and_then(Value::as_u64)!=d.grid_id.parse::<u64>().ok()||
        !saved_layout_matches(to.get("GridDefaultLayoutPath").and_then(Value::as_str),&d.layout_path,&d.data_path)||
        to.get("GridDataPath").and_then(Value::as_str)!=Some(d.data_path.as_str())||
        to.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation))||
