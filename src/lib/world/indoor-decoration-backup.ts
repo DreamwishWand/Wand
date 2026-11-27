@@ -11,18 +11,19 @@ import {addRestoreQuantity} from './restore-stock-review.ts';
 export type IndoorBackupScope='room'|'floor'|'building';
 export const INDOOR_BACKUP_LIMIT=16_000_000;
 export interface IndoorBackupRoom{room:IndoorRoom;surfaces:RoomProjectSurface[]}
-export interface IndoorBackupEntry{floor:number;room:number;wallPositions:(number|null)[];surfaces:RoomProjectSurface[]}
+export interface IndoorBackupEntry{floor:number;room:number;slot?:number;wallPositions:(number|null)[];surfaces:RoomProjectSurface[]}
 export interface IndoorRestoreRow extends RoomApplyRow{pickup:IndoorPickup[];freePlacement?:true}
 export interface IndoorRestorePlan{scope:IndoorBackupScope;rooms:{roomOrdinal:number;surfaces:IndoorRestoreRow[]}[]}
 export function indoorBackupRooms(scope:IndoorBackupScope,selected:IndoorRoom,rooms:readonly IndoorRoom[]):IndoorRoom[]{
  return rooms.filter(r=>r.house===selected.house&&(scope==='building'||r.floor===selected.floor&&(scope==='floor'||r.ordinal===selected.ordinal))).sort((a,b)=>a.floor-b.floor||a.ordinal-b.ordinal);
 }
 function addresses(scope:IndoorBackupScope,rooms:readonly IndoorRoom[]){
- const counts=new Map<number,number>();return rooms.map(r=>{const floor=scope==='building'?r.floor:1,room=(counts.get(floor)??0)+1;counts.set(floor,room);return {floor,room};});
+ const counts=new Map<number,number>();return rooms.map(r=>{const floor=scope==='building'?r.floor:1,room=(counts.get(floor)??0)+1;counts.set(floor,room);return {floor,room,...(scope!=='room'&&r.roomSlot!==undefined?{slot:r.roomSlot}:{})};});
 }
 export function serializeIndoorBackup(scope:IndoorBackupScope,entries:readonly IndoorBackupRoom[],templates:readonly RoomDesignTemplate[]):string{
  if(!entries.length||entries.length>2048)throw Error('INDOOR_BACKUP_SCOPE');
  const addressesForRooms=addresses(scope,entries.map(e=>e.room));
+ if(scope!=='room'&&addressesForRooms.some(r=>r.slot!==undefined)&&addressesForRooms.some(r=>r.slot===undefined))throw Error('INDOOR_BACKUP_ADDRESS');
  const raw=JSON.stringify({schema:'wand.preset.indoor-decoration@1',gameVersion:'1.26.2',scope,rooms:entries.map((e,i)=>({...addressesForRooms[i],wallPositions:e.room.surfaces.map(s=>s.wallPosition),design:JSON.parse(serializeRoomProject(e.surfaces,e.surfaces[0].id))}))});
  parseIndoorBackup(raw,scope,entries.map(e=>e.room),templates);return raw;
 }
@@ -30,8 +31,10 @@ export function parseIndoorBackup(raw:string,scope:IndoorBackupScope,targets:rea
  if(raw.length>INDOOR_BACKUP_LIMIT||!targets.length||targets.length>2048)throw Error('INDOOR_BACKUP_SIZE');
  const v=JSON.parse(raw),keys=addresses(scope,targets);
  if(!v||Object.keys(v).length!==4||v.schema!=='wand.preset.indoor-decoration@1'||v.gameVersion!=='1.26.2'||v.scope!==scope||!Array.isArray(v.rooms)||v.rooms.length!==targets.length)throw Error('INDOOR_BACKUP_SCOPE');
+ const tagged=v.rooms.some((e:any)=>e&&Object.hasOwn(e,'slot'));
+ if(tagged&&(scope==='room'||v.rooms.some((e:any)=>!e||!Number.isSafeInteger(e.slot)||e.slot<0||e.slot>3)))throw Error('INDOOR_BACKUP_ADDRESS');
  return v.rooms.map((e:any,i:number)=>{
-  const t=targets[i],k=keys[i];if(!e||Object.keys(e).length!==4||e.floor!==k.floor||e.room!==k.room||!Array.isArray(e.wallPositions)||e.wallPositions.length!==t.surfaces.length||e.wallPositions.some((p:unknown,j:number)=>p!==t.surfaces[j].wallPosition))throw Error('INDOOR_BACKUP_ADDRESS');
+  const t=targets[i],k=keys[i];if(!e||Object.keys(e).length!==(tagged?5:4)||e.floor!==k.floor||e.room!==k.room||tagged&&e.slot!==k.slot||!tagged&&k.slot!==undefined&&k.slot!==k.room-1||!Array.isArray(e.wallPositions)||e.wallPositions.length!==t.surfaces.length||e.wallPositions.some((p:unknown,j:number)=>p!==t.surfaces[j].wallPosition))throw Error('INDOOR_BACKUP_ADDRESS');
   const doc=parseRoomProject(JSON.stringify(e.design),templates,true);
   if(doc.surfaces.length!==t.surfaces.length||doc.surfaces.some((s,j)=>s.id!==t.surfaces[j].ordinal||!roomApplyMatches(s,t.surfaces[j])))throw Error('INDOOR_BACKUP_TERRAIN');
   return {...k,wallPositions:e.wallPositions,surfaces:doc.surfaces};

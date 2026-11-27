@@ -13,7 +13,7 @@ import {supportChildEdits,supportFreeEdit,supportPlacementFits,type SupportTree,
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|2|4|6|8|10|12|14|null;plain?:true}
 import type {TerrainRaster} from './terrain-binding.ts';
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number;terrain?:TerrainRaster;sourcePath?:string}
-export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
+export interface IndoorRoom{ordinal:number;house:number;houseItemId?:number;floor:number;roomSlot?:number;name:string;nameEditable?:true;ceiling:number|null;surfaces:IndoorSurface[]}
 export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  const grouped=new Map<number,{house:number;itemId?:number;firstIndex:number;roomCount:number}>();
  for(let i=0;i<rooms.length;i++){
@@ -23,14 +23,20 @@ export function indoorHouseGroups(rooms:readonly IndoorRoom[]){
  }
  return [...grouped.values()];
 }
+export function indoorFloorGroups(rooms:readonly IndoorRoom[],house:number){
+ const groups=new Map<number,{floor:number;firstIndex:number;rooms:{r:IndoorRoom;i:number}[]}>();
+ for(const [i,r] of rooms.entries()){if(r.house!==house)continue;const g=groups.get(r.floor);if(g)g.rooms.push({r,i});else groups.set(r.floor,{floor:r.floor,firstIndex:i,rooms:[{r,i}]});}
+ return [...groups.values()].sort((a,b)=>a.floor-b.floor);
+}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
 const finish=(v:unknown):v is number|null=>v===null||integer(v,0,2147483647);
 export function parseIndoorRooms(value:unknown):IndoorRoom[]{
  if(!record(value)||value.contract!=='wand.db05.indoor-rooms@1'||value.geometryVerified!==false||value.writerAuthorized!==false||!Array.isArray(value.rooms)||value.rooms.length>2048)throw Error('INDOOR_REPORT_INVALID');
- let total=0;
+ let total=0;const roomSlots=new Set<string>();
  return value.rooms.map((room,i)=>{
-  if(!record(room)||!(Object.keys(room).length===6||Object.keys(room).length===7&&integer(room.houseItemId,20500000,20599999))||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','name','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(!record(room)||room.nameEditable!==undefined&&room.nameEditable!==true||room.roomSlot!==undefined&&!integer(room.roomSlot,0,3)||Object.keys(room).some(k=>!['ordinal','house','houseItemId','floor','roomSlot','name','nameEditable','ceiling','surfaces'].includes(k))||room.houseItemId!==undefined&&!integer(room.houseItemId,20500000,20599999)||room.ordinal!==i+1||!integer(room.house,1,128)||!integer(room.floor,1,128)||typeof room.name!=='string'||[...room.name].length>128||!finish(room.ceiling)||!Array.isArray(room.surfaces)||room.surfaces.length<1||room.surfaces.length>65)throw Error('INDOOR_ROOM_INVALID');
+  if(typeof room.roomSlot==='number'){const address=room.house+':'+room.floor+':'+room.roomSlot;if(roomSlots.has(address))throw Error('INDOOR_ROOM_ADDRESS');roomSlots.add(address);}
   const surfaces:IndoorSurface[]=room.surfaces.map((s,j)=>{
    if(!record(s)||!([9,10].includes(Object.keys(s).length))||Object.keys(s).length===10&&s.terrain===undefined||s.ordinal!==j+1||s.kind!==(j===0?'floor':'wall')||!(j===0?s.wallPosition===null:integer(s.wallPosition,-2147483648,2147483647))||!finish(s.finish)||!['full','unresolved','shared','diff'].includes(String(s.gridStatus))||!Array.isArray(s.items)||s.items.length>100000||s.gridStatus!=='full'&&s.items.length||!Array.isArray(s.positions)||s.positions.length>100000||!integer(s.missingPositions,0,100000)||!(s.factor===null||s.factor===1||s.factor===2))throw Error('INDOOR_SURFACE_INVALID');
    const seen=new Set<number>();
@@ -46,7 +52,7 @@ export function parseIndoorRooms(value:unknown):IndoorRoom[]{
    }
    return {kind:s.kind as 'floor'|'wall',ordinal:j+1,wallPosition:s.wallPosition as number|null,finish:s.finish,gridStatus:s.gridStatus as IndoorGridStatus,items,positions,factor:s.factor as 1|2|null,missingPositions:s.missingPositions,...(terrain?{terrain}:{}),...(sourcePath?{sourcePath}:{})};
   });
-  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,name:room.name,ceiling:room.ceiling,surfaces};
+  return {ordinal:i+1,house:room.house,...(typeof room.houseItemId==='number'?{houseItemId:room.houseItemId}:{}),floor:room.floor,...(typeof room.roomSlot==='number'?{roomSlot:room.roomSlot}:{}),name:room.name,...(room.nameEditable===true?{nameEditable:true as const}:{}),ceiling:room.ceiling,surfaces};
  });
 }
 export const indoorWords={
@@ -476,3 +482,18 @@ export function rotateIndoorCut(clip:readonly DesignClipItem[],factor:1|2|null,s
  }
  return rotateFurnitureGroup(clip,defs,delta);
 }
+
+export function indoorRoomRenamePlan(room:IndoorRoom|null,name:string){
+ if(!room?.nameEditable||name===room.name||[...name].length>128||/[\p{Cc}\p{Cs}]/u.test(name))return null;
+ return {roomOrdinal:room.ordinal,expected:room.name,name};
+}
+export const roomRenameWords={
+ ja:['部屋名を変更','部屋名','変更','取消'],
+ en:['Rename room','Room name','Change','Cancel'],
+ fr:['Renommer la pièce','Nom de la pièce','Modifier','Annuler'],
+ it:['Rinomina stanza','Nome stanza','Modifica','Annulla'],
+ de:['Raum umbenennen','Raumname','Ändern','Abbrechen'],
+ 'es-ES':['Renombrar habitación','Nombre de habitación','Cambiar','Cancelar'],
+ 'zh-CN':['重命名房间','房间名称','更改','取消'],
+ 'pt-BR':['Renomear cômodo','Nome do cômodo','Alterar','Cancelar']
+} as const;

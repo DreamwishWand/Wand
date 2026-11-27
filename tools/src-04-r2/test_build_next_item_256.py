@@ -17,19 +17,19 @@ class Next256BuildTests(unittest.TestCase):
         self.addCleanup(self.fx.temp.cleanup)
         self.fx.write_next_proof(updater.digest(b"bundle0"))
 
-    def build(self):
+    def build(self,cdn_ledger=None):
         f=self.fx
         return next256.build_next(f.old,f.old_scan,f.next_scan,f.next_items,
                                   f.proofs,f.next_game,f.out,
                                   base_items_sha=updater.file_digest(f.old/"source-items"/"items.jsonl"),
-                                  base_overlay_sha=updater.file_digest(f.old_index/"manifest.json"))
+                                  base_overlay_sha=updater.file_digest(f.old_index/"manifest.json"),cdn_ledger=cdn_ledger)
 
-    def check_resume(self,report):
+    def check_resume(self,report,published=None):
         f=self.fx
         out=f.out/"item-thumbnails-256"
         objects,paths,summary=resume(f.out,out,version="1.26.3",
             source_sha=report["sourceItemsSha256"],
-            overlay_sha=report["privateOverlayManifestSha256"])
+            overlay_sha=report["privateOverlayManifestSha256"],published=published)
         self.assertEqual(len(objects),summary["uniqueImages"])
         self.assertEqual(set(objects),set(paths))
         return summary
@@ -79,6 +79,23 @@ class Next256BuildTests(unittest.TestCase):
         self.assertEqual(index["items"]["1"],[o["sha256"],t["sha256"]])
         self.assertEqual(max(index["images"][t["sha256"]]["width"],index["images"][t["sha256"]]["height"]),256)
 
+    def test_published_original_without_local_bytes(self):
+        from item_cdn_ledger import SCHEMA
+        from migrate_item_thumbnails_256 import key, BUCKET
+        f=self.fx
+        row=json.loads((f.old_index/"id/01.json").read_text())["rows"][0]["image"]
+        o=row["original"]
+        published={key(o["sha256"]):o["bytes"]}
+        ledger=f.old/"verified.json"
+        write_json(ledger,{"schema":SCHEMA,"bucket":BUCKET,"verified":published})
+        (f.old/o["path"]).unlink()
+        with patch.object(Image.Image,"save",side_effect=AssertionError("unexpected encoding")):
+            report=self.build(ledger)
+            summary=self.check_resume(report,published)
+        self.assertEqual(report["decodedGuidCount"],0)
+        self.assertEqual(report["publishedObjectsReferenced"],1)
+        self.assertFalse((f.out/o["path"]).exists())
+        self.assertEqual(summary["uniqueImages"],1)
 
 if __name__=="__main__":
     unittest.main()

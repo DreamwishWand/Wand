@@ -49,7 +49,8 @@ def copy_verified(source, target, info, *, link=False):
     verify_local(target,info)
 
 
-def create_images(base_root, target_root, plan_doc, target_scan, game_root):
+def create_images(base_root, target_root, plan_doc, target_scan, game_root, *, published=None):
+    published=published or {}
     prior_root=base_root/"item-thumbnails-256"
     output=target_root/"item-thumbnails-256"
     output.mkdir()
@@ -75,8 +76,14 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
     copied=set()
     decoded_env=[None,None]
 
+    def is_published(variant):
+        return published.get(key(variant['sha256']))==variant['bytes']
+
     def keep_original(variant):
         path=variant["path"]
+        if is_published(variant):
+            counts['publishedOriginalReused']+=1
+            return variant
         if path not in copied:
             core.checked_copy_variant(base_root,target_root,variant)
             copied.add(path)
@@ -94,7 +101,10 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
                     and max(old_thumb["width"],old_thumb["height"])==EDGE
                     and old_thumb["width"]<=o["width"] and old_thumb["height"]<=o["height"]):
                 source=prior_root/key(old_thumb["sha256"])
-                if source.is_file():
+                if is_published(old_thumb):
+                    counts['cachedThumbnailReused']+=1
+                    counts['publishedThumbnailReused']+=1
+                elif source.is_file():
                     core.require(source.resolve().is_relative_to(prior_root.resolve()) and not source.is_symlink(),"THUMB_CACHE_PATH")
                     copy_verified(source,output/key(old_thumb["sha256"]),old_thumb)
                     counts["cachedThumbnailReused"]+=1
@@ -102,7 +112,16 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
                     old_thumb=None
             else:
                 old_thumb=None
-            t=make_thumbnail(target_root/original["path"],o,output,old_thumb)
+            if max(o['width'],o['height'])<=EDGE:
+                t=o
+            elif old_thumb and is_published(old_thumb):
+                t=old_thumb
+            else:
+                # A new thumbnail needs original pixels, even when the original is already published.
+                path=target_root/original['path']
+                if not path.is_file():
+                    core.checked_copy_variant(base_root,target_root,original)
+                t=make_thumbnail(path,o,output,old_thumb)
             if t!=o and old_thumb!=t:
                 counts["newlyGeneratedThumbnails"]+=1
             thumbnails[sha]=t
@@ -111,7 +130,7 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
         # without re-encoding a small original or duplicating it in R2.
         rel=f"images-v2/thumbnail/{pixel[:2]}/{pixel}.webp"
         dest=target_root/rel
-        if rel not in copied:
+        if rel not in copied and not is_published(t):
             source=target_root/original["path"] if t==o else output/key(t["sha256"])
             copy_verified(source,dest,t,link=True)
             copied.add(rel)
@@ -187,14 +206,19 @@ def finalize(root, target_items, images, version, counts):
         "originalsReusedAsThumbnail":sum(sha==t["sha256"] for sha,t in thumbs.items()),
         "newlyGeneratedThumbnails":counts["newlyGeneratedThumbnails"],
         "cachedThumbnailsReused":counts["cachedThumbnailReused"],
+        "publishedOriginalReused":counts['publishedOriginalReused'],
+        "publishedThumbnailReused":counts['publishedThumbnailReused'],
         "uniqueThumbnails":len(unique_thumbs),"uniqueImages":len(all_images),
         "originalBytes":sum(v["bytes"] for v in originals.values()),
         "thumbnailBytes":sum(v["bytes"] for v in unique_thumbs.values()),
         "totalBytes":sum(v["bytes"] for v in all_images.values()),"publicationVerified":False})
 
 
-def build_next(*args,**kwargs):
-    return core.build(*args,**kwargs,image_builder=create_images,
+def build_next(*args,cdn_ledger=None,**kwargs):
+    from item_cdn_ledger import ledger_objects
+    published=ledger_objects(json.loads(cdn_ledger.read_bytes())) if cdn_ledger else {}
+    def builder(*args):return create_images(*args,published=published)
+    return core.build(*args,**kwargs,image_builder=builder,published=published,
                       variant_policy=VARIANT_POLICY_256,finalize=finalize)
 
 
