@@ -6,7 +6,7 @@
  import {worldArtwork} from '../world/world-artwork.ts';
  import {presetPickerWords} from '../world/preset-picker-words.ts';
  import {serviceWords} from './service-words.ts';
- type Summary={baseColor:string|null;motifIds:number[];textureIds:number[];decalCount:number|null;textureCount:number|null};
+ type Summary={baseColor:string|null;motifIds:number[];textureIds:number[];searchItemIds:number[];decalCount:number|null;textureCount:number|null};
  type NativeCardRow={ordinal:number;kind:'tom-furniture'|'tom-clothing'|'native-decoration';storage:string;baseItemId:number|null;name:string|null;active:boolean;visual?:Summary|null};
  export let rows:readonly NativeCardRow[];
  export let locale:WandLanguage;
@@ -19,13 +19,13 @@
  let observer:IntersectionObserver|null=null;
  $: p=presetPickerWords[locale];$: w=serviceWords[locale];
  $: if(lastRows!==rows||lastLocale!==locale){lastRows=rows;lastLocale=locale;limit=60;void labels(rows,locale);}
- $: filtered=rows.filter(row=>!query.trim()||[row.name,names.get(row.baseItemId??0),p[kinds[row.kind]],...(row.visual?.motifIds??[]).map(id=>names.get(id)),...(row.visual?.textureIds??[]).map(id=>names.get(id))].some(value=>value?.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale))));
+ $: filtered=rows.filter(row=>!query.trim()||[row.name,names.get(row.baseItemId??0),p[kinds[row.kind]],...(row.visual?.searchItemIds??[]).map(id=>names.get(id))].some(value=>value?.toLocaleLowerCase(locale).includes(query.trim().toLocaleLowerCase(locale))));
  $: visible=filtered.slice(0,limit);
  $: void pictures(visible);
  function sentinel(node:HTMLElement){observer?.disconnect();observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))limit=Math.min(filtered.length,limit+60);},{rootMargin:'160px'});observer.observe(node);return{destroy(){observer?.disconnect();observer=null;}};}
  onDestroy(()=>{epoch++;observer?.disconnect();});
  async function labels(input:readonly NativeCardRow[],language:WandLanguage){const token=++epoch;names=new Map();if(!input.length)return;
-  const wanted=new Set(input.flatMap(r=>[...(r.baseItemId?[r.baseItemId]:[]),...(r.visual?.motifIds??[]),...(r.visual?.textureIds??[])]));
+  const wanted=new Set(input.flatMap(r=>[...(r.baseItemId?[r.baseItemId]:[]),...(r.visual?.searchItemIds??[])]));
   if(!wanted.size)return;
   try{const db=await openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'}),all=await db.getBrowseNames(language);if(token===epoch)names=new Map(all.filter(([id])=>wanted.has(id)));}catch{}
  }
