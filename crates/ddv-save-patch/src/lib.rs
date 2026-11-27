@@ -1058,6 +1058,9 @@ pub fn preview_player_house_remove(source:&str,target:&GridCoordinateTarget,expe
 /// State-free landscape only, using an observed source record and a resolved outdoor
 /// destination. No inventory, ownership or collection mutation.
 pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_landscape_duplicate_with_mode(source,target,expected,destination,replacement,orientation,false)
+}
+pub fn preview_landscape_duplicate_with_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
     if target.item_id/100_000!=402||!matches!(destination.tessellation,1|2)||destination.size.0==0||destination.size.1==0||
        destination.size.0>65536||destination.size.1>65536||replacement.0<0||replacement.1<0||
        replacement.0 as u32>=destination.size.0*destination.tessellation||replacement.1 as u32>=destination.size.1*destination.tessellation||
@@ -1080,7 +1083,7 @@ pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expe
        to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&destination.grid_id)))||
-       to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::InvalidTarget);}
+       to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|!free&&m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::InvalidTarget);}
     insert_plain_grid_record(source,destination,target.item_id,replacement,orientation)
 }
 
@@ -1097,6 +1100,9 @@ fn landscape_grid_path(layout:&str,data:&str)->bool{
 
 /// Restore a source-validated landscape pose without touching inventory.
 pub fn preview_landscape_place(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ preview_landscape_place_with_mode(source,d,item,xy,orientation,false)
+}
+pub fn preview_landscape_place_with_mode(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
  if item/100_000!=402||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
     xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
  if !landscape_grid_path(&d.layout_path,&d.data_path){return Err(PatchError::InvalidTarget);}
@@ -1108,7 +1114,7 @@ pub fn preview_landscape_place(source:&str,d:&PlainGridDestination,item:u64,xy:(
     grid.get("GridDataPath").and_then(|v|v.as_str())!=Some(d.data_path.as_str())||
     grid.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation))||
     collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&d.grid_id)))||
-    grid.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_some_and(|id|id/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::InvalidTarget);}
+    grid.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|!free&&m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_some_and(|id|id/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::InvalidTarget);}
  insert_plain_grid_record(source,d,item,xy,orientation)
 }
 
