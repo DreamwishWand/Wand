@@ -46,7 +46,7 @@ assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagn
 assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
 const residualActors=['120000072','120000145','120000176','120000239','120000251'];
 assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');
-const ids=[...new Set([residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const ids=[...new Set([lucky,'120000197','120000208',residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),companionOnly,attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds and player-only companion must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,0);
 for(const id of ['120000197','120000198']){const rows=[index.items[id],...index.variants[id]];assert.equal(rows.length,2);for(const row of rows)for(const body of ['male','female']){const o=row[body];assert.equal(o.companionIncluded,true);assert.ok(o.nativeLoops.player<o.nativeLoops.companion);}}
@@ -101,7 +101,7 @@ try{
       await page.waitForTimeout(100);
       assert.equal(await seek.inputValue(),paused,'pause holds playback position');
     }
-    if(id===multi||id===maxDog){
+    if(id===multi||id===maxDog||id==='120000197'){
       const variants=detail.locator('.pose-variants button');
       assert.equal(await variants.count(),2);
       await variants.nth(1).click();
