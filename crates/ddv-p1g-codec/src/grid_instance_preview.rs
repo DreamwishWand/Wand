@@ -1872,7 +1872,7 @@ fn player_house_layout_candidate(profile:&[u8],rows:&[Value])->Result<String,Cod
   let mut actual=Vec::<(GridCoordinateTarget,HouseLayoutPose)>::new();
   for (oid,v) in grids[&d.grid_id]["Objects"].as_object().ok_or(bad)?{
    let item=v["ItemID"].as_u64().ok_or(bad)?;if item/100_000!=205{continue;}
-   let (x,y)=observed_coordinates(v).ok_or(bad)?;
+   let (x,y)=observed_coordinates(v.as_object().ok_or(bad)?).ok_or(bad)?;
    let direction=v["Orientation"].as_str().and_then(|s|DIR.iter().position(|n|*n==s)).ok_or(bad)?;
    let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:oid.clone(),item_id:item};
    let state=ddv_save_patch::checked_player_house_state(world,&target,(x,y),DIR[direction]).map_err(|_|bad)?;
