@@ -21,7 +21,7 @@ type SceneNode={name:string;children?:number[];mesh?:number;skin?:number;extras?
 type SceneMesh={primitives:{attributes:Record<string,number>;indices:number;material:number}[]};
 type SceneMaterial={pbrMetallicRoughness:{baseColorFactor:number[];baseColorTexture?:{index:number}}};
 type SceneAnimation=Animation & {extras:Animation['extras']&{companionItemId?:number;companionClipSha256?:string}};
-type SceneDocument=Model & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:{extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean}}};
+type SceneDocument=Omit<Model,'nodes'|'animations'|'asset'> & {nodes:SceneNode[];meshes:SceneMesh[];skins:{joints:number[];inverseBindMatrices:number;skeleton?:number}[];materials:SceneMaterial[];textures?:{source:number}[];images?:{bufferView:number;mimeType:string}[];scenes:{nodes:number[]}[];scene:number;animations:SceneAnimation[];asset:Model['asset'] & {extras:{companionActorDiagnostic?:boolean;attachedPairDiagnostic?:boolean}}};
 function checkedIndex(n:number,size:number){check(Number.isSafeInteger(n)&&n>=0&&n<size,'Actor index out of range');return n}
 function appendBuffer(doc:SceneDocument,bin:Uint8Array,other:SceneDocument,otherBin:Uint8Array){
   const bo=(bin.length+3)&~3,vo=doc.bufferViews.length,ao=doc.accessors.length;
