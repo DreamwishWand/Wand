@@ -1927,6 +1927,10 @@ fn building_layout_poses(v:&Value,d:&ddv_save_patch::PlainGridDestination)->Resu
 /// Restore only the unambiguous unmatched existing building of each ItemID
 /// family, never allocate, delete, transfer, or reconstruct its native State.
 fn building_layout_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
+ building_layout_candidate_scoped(profile,rows,true)
+}
+fn building_layout_candidate_scoped(profile:&[u8],rows:&[Value],whole_world:bool)->Result<String,CodecError>{
+ if !whole_world&&rows.len()!=1{return Err(CodecError::Json);}
  use ddv_save_patch::{GridMixedEdit,OBSERVED_CARDINAL_ORIENTATIONS as DIR};
  use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
@@ -1966,8 +1970,8 @@ fn building_layout_candidate(profile:&[u8],rows:&[Value])->Result<String,CodecEr
   }
   if !actual.is_empty(){return Err(bad);}
  }
- if verified.len()!=count||scope.is_none()||edits.is_empty()||edits.len()>256{return Err(bad);}
- if grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
+ if (whole_world&&verified.len()!=count)||scope.is_none()||edits.is_empty()||edits.len()>256{return Err(bad);}
+ if whole_world&&grids.iter().any(|(k,g)|g["GridDefaultLayoutPath"].as_str().and_then(|s|s.split('/').nth(1))==scope.as_deref()&&!verified.contains(k)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  for batch in edits.chunks(ddv_save_patch::MAX_GRID_MIXED_EDITS){
   let mut copy=ddv_save_patch::preview_existing_grid_mixed_batch(&working,batch).map_err(|_|CodecError::Patch)?;
@@ -2399,6 +2403,9 @@ mod tests{
         assert_eq!(g["Objects"]["1"]["X"],9);assert_eq!(g["Objects"]["2"]["X"],9);assert_eq!(g["Objects"]["2"]["Orientation"],"GridOrientation_Left");
         assert_eq!(g["NextGridObjectID"],3);assert_eq!(v["World"]["Shops"],original["World"]["Shops"]);assert!(result.contains("1e2"));
         let i=plan.iter().position(|r|r["before"].as_array().unwrap().len()==2).unwrap();
+        let partial=building_layout_candidate_scoped(raw.as_bytes(),std::slice::from_ref(&plan[i]),false).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&partial).unwrap(),v);
+        assert!(building_layout_candidate(raw.as_bytes(),std::slice::from_ref(&plan[i])).is_err());
         plan[i]["after"][0]["itemId"]=serde_json::json!(20300001);
         assert!(building_layout_candidate(raw.as_bytes(),&plan).is_err());
         plan[i]["after"][0]["itemId"]=serde_json::json!(20100001);
@@ -3357,7 +3364,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  let bad=CodecError::Json;
  if plan.len()>2_000_000{return Err(CodecError::Bounds);}
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
- let o=v.as_object().filter(|o|o.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"))).ok_or(bad)?;
+ let o=v.as_object().filter(|o|o.keys().all(|k|matches!(k.as_str(),"furniture"|"network"|"landscape"|"buildings"))).ok_or(bad)?;
  let f=o.get("furniture").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
  let n=o.get("network").and_then(Value::as_object).filter(|m|m.len()==3&&m.keys().all(|k|matches!(k.as_str(),"destination"|"before"|"after"))).ok_or(bad)?;
  let witness=f.get("destination").ok_or(bad)?;
@@ -3376,7 +3383,8 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
  ddv_save_patch::validate_area_network(&dest,&before).map_err(|_|bad)?;
  ddv_save_patch::validate_area_network(&dest,&after).map_err(|_|bad)?;
  let landscape=o.get("landscape");if landscape.is_some_and(|l|l.get("destination")!=Some(witness)){return Err(bad);}
- if old==desired&&remove.is_empty()&&add.is_empty()&&landscape.is_none_or(|l|l["before"]==l["after"]){return Err(bad);}
+ let buildings=o.get("buildings");if buildings.is_some_and(|l|l.get("destination")!=Some(witness)){return Err(bad);}
+ if old==desired&&remove.is_empty()&&add.is_empty()&&landscape.is_none_or(|l|l["before"]==l["after"])&&buildings.is_none(){return Err(bad);}
  check_area_support_change_count(profile,remove,add)?;
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
@@ -3384,6 +3392,7 @@ pub(super) fn biome_decoration_candidate(profile:&[u8],plan:&str)->Result<String
   working.zeroize();*working=next;
  }
  if let Some(l)=landscape{let next=landscape_area_candidate(working.as_bytes(),l)?;working.zeroize();*working=next;}
+ if let Some(b)=buildings{let next=building_layout_candidate_scoped(working.as_bytes(),std::slice::from_ref(b),false)?;working.zeroize();*working=next;}
  if old!=desired{
   let next=biome_network_candidate(working.as_bytes(),&serde_json::to_string(n).map_err(|_|bad)?)?;
   working.zeroize();*working=next;
