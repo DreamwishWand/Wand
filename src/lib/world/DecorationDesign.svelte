@@ -38,6 +38,8 @@
  import WorldLayerControls from './WorldLayerControls.svelte';
  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
+ import SupportContentsMarker from './SupportContentsMarker.svelte';
+ import {supportMapChildren} from './support-map-preview.ts';
  import WorldSymmetryControls from './WorldSymmetryControls.svelte';
  import {symmetricDesignItems,symmetryPlan,commitSymmetry,symmetricMoveTargets,symmetricMoveDesign,symmetricRotateDesign,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
@@ -619,6 +621,7 @@
  $: displayViewport=mapViewportBounds(camera,extent);
  $: viewport=worldFrame?{...displayViewport,y:height-displayViewport.y-displayViewport.h}:displayViewport;
  $: visible=map?visibleSavedObjects(objects.filter(o=>layerVisible(layerState,o)),map.shapes,viewport,selected):[];
+ $: if(layerVisible(layerState,{layer:'surface'})&&cellPixels>=5)loadImages([...new Set(visible.flatMap(o=>placementById.get(o.localOrdinal)?.attachment?.scene.tree.objects.slice(0,4).map(c=>c.itemId)??[]))].map(itemId=>({itemId})));
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: if(active&&map)loadImages(visibleWorldArtworkIds(visible,map.shapes,cellPixels).map(itemId=>({itemId})));
  $: if(active&&placing)loadImages([{itemId:placing.itemId}]);
@@ -902,7 +905,7 @@
        <g class="design-object" data-design-id={o.localOrdinal} data-item-id={o.itemId} transform={'translate('+o.x+' '+o.y+')'}>
         <path class="design-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={focusedId===o.localOrdinal?'#f5cf70':selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width={focusedId===o.localOrdinal?2:1} vector-effect="non-scaling-stroke"/>
         {#if showWorldArtwork(o,shape,cellPixels)&&images.has(Number(o.itemId))}<WorldObjectArtwork href={images.get(Number(o.itemId))!} width={shape.width} height={shape.height} flipY={Boolean(worldFrame)}/>{/if}
-        {#if placementById.get(o.localOrdinal)?.attachment}<circle cx={shape.width-.35} cy=".35" r=".3" fill="#4bddcd" stroke="#27313a" stroke-width=".06" pointer-events="none"/>{/if}
+        {#if layerVisible(layerState,{layer:'surface'})&&placementById.get(o.localOrdinal)?.attachment}<SupportContentsMarker ordinal={o.localOrdinal} x={shape.width/2} y={shape.height/2} pixels={cellPixels} contents={supportMapChildren(placementById.get(o.localOrdinal)!.attachment!.scene.tree)} {images} {locale} flip={Boolean(worldFrame)}/>{/if}
         {#if o.orientationCode!==null&&cellPixels>=5&&o.layer!=='ground'&&o.layer!=='fence'}<path class="design-orientation" d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff" stroke="#28333c" stroke-width=".035" pointer-events="none"/>{/if}
        </g>
       {/if}
