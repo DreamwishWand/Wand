@@ -18,6 +18,7 @@
   import {base} from '$app/paths';
   import {onDestroy} from 'svelte';
   import type {ItemMasterLocale,CompleteItemMasterRecord} from '$lib/items/public-item-master';
+  import LocalPoseDiagnostic from '../../../tools/photo-mode/LocalPoseDiagnostic.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
 
   export let itemId:number;
@@ -65,6 +66,9 @@
 </script>
 
 {#if record}
+  {#if import.meta.env.DEV && (record.sourceClass?.endsWith('AvatarEmotePoseItemData') || record.sourceClass?.endsWith('PetItemData'))}
+    {#key itemId}<LocalPoseDiagnostic {itemId} {locale}/>{/key}
+  {/if}
   <div class="collection-item-master" data-item-id={itemId}>
     {#if nativeType}
       <div class="master-type"><WandIcon name="info" size={13}/><span>{nativeType}</span></div>
