@@ -1604,11 +1604,67 @@ fn player_house_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Resu
     Ok(draft.patched_json)
 }
 
+/// Only clone state whose observed fields do not embed another native identity.
+/// The last stateful instance is not removed until its game-level lifecycle is known.
+fn building_clone_state(item:u64,state:Option<&Value>)->bool{
+    let Some(v)=state.filter(|v|!v.is_null()&&!v.as_object().is_some_and(|o|o.is_empty())) else{return true;};
+    let Some(m)=v.as_object().filter(|m|m.len()==1) else{return false;};
+    let upgrade=|v:&Value|v.is_null()||v.as_object().is_some_and(|o|o.keys().all(|k|k=="Level")&&o.get("Level").and_then(Value::as_u64).is_some());
+    let skin=|v:&Value|v.as_i64().is_some();
+    match item/100_000{
+        200=>m.get("HouseData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"Built"|"UpgradeState"|"PlayerHouseIndex"))&&h.get("Built").and_then(Value::as_bool)==Some(true)&&h.get("UpgradeState").is_none_or(upgrade)&&h.get("PlayerHouseIndex").is_none_or(|v|v.as_i64()==Some(-1))),
+        201=>m.get("StallData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"ShopData"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(skin)&&h.get("ShopData").and_then(Value::as_object).is_some_and(|o|o.is_empty())),
+        202=>m.get("GardenData").and_then(Value::as_object).is_some_and(|h|h.len()==1&&h.get("Slots").and_then(Value::as_array).is_some_and(|a|a.is_empty())),
+        203=>m.get("BuildingWithSkinData").and_then(Value::as_object).is_some_and(|h|h.keys().all(|k|matches!(k.as_str(),"UpgradeState"|"CurrentSkinItemID"))&&h.get("UpgradeState").is_some_and(upgrade)&&h.get("CurrentSkinItemID").is_none_or(skin)),
+        _=>false
+    }
+}
+fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
+    let bad=CodecError::Json;
+    let o=plan.as_object().filter(|o|o.len()==if remove{5}else{8}).ok_or(bad)?;
+    if o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"orientation")&&(remove||!matches!(k.as_str(),"destination"|"x"|"y"))){return Err(bad);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+    let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&matches!(n/100_000,200..=203))).ok_or(bad)?;
+    let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+    let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+    let expected=(int("expectedX")?,int("expectedY")?);
+    let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    let target=resolve_grid_mixed_targets(profile,&[(ordinal,item,expected,"full".to_owned(),Some(orientation.to_owned()))])?.pop().ok_or(bad)?;
+    let scope=player_house_grid_scope(&root,&target.grid_id)?;
+    let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;
+    if expected.0<0||expected.1<0||expected.0 as u64>=sx||expected.1 as u64>=sy{return Err(bad);}
+    let refs=grid_identity_dependencies(profile,&target)?;
+    if refs.blocking()>0||refs.historical>0{return Err(bad);}
+    let grids=root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?;
+    let obj=&grids[&target.grid_id]["Objects"][&target.object_id];
+    let state=obj.get("State");
+    if !building_clone_state(item,state){return Err(bad);}
+    let json=std::str::from_utf8(profile).map_err(|_|bad)?;
+    let draft=if remove{
+        if state.is_some_and(|v|!v.is_null()&&!v.as_object().is_some_and(|m|m.is_empty())){
+            let survivor=grids.iter().any(|(gid,g)|player_house_grid_scope(&root,gid).is_ok_and(|s|s==scope)&&
+                !root["World"]["GridCollection"].get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(gid)))&&
+                g["Objects"].as_object().is_some_and(|m|m.iter().any(|(oid,v)|(gid!=&target.grid_id||oid!=&target.object_id)&&v["ID"].as_u64()==key_id(oid)&&v["ItemID"].as_u64()==Some(item)&&v.get("State")==state)));
+            if !survivor{return Err(bad);}
+        }
+        ddv_save_patch::preview_checked_building_remove(json,&target,expected,orientation)
+    }else{
+        let witness=o.get("destination").ok_or(bad)?;
+        if world_grid_scope(witness)?.0!=scope{return Err(bad);}
+        let dest=resolve_plain_grid_destination(profile,witness)?;
+        if player_house_grid_scope(&root,&dest.grid_id)?!=scope{return Err(bad);}
+        ddv_save_patch::preview_checked_building_duplicate(json,&target,expected,&dest,(int("x")?,int("y")?),orientation)
+    }.map_err(|_|CodecError::Patch)?;
+    if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+    Ok(draft.patched_json)
+}
+
 pub(super) fn group_paste_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     if plan.len()>120*1024{return Err(CodecError::Bounds);}
     let value:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     if let Some(o)=value.as_object(){
-        if o.len()==1{if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}}
+        if o.len()==1{if let Some(p)=o.get("playerHouseDuplicate"){return player_house_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("playerHouseRemove"){return player_house_duplicate_candidate(profile,p,true);}if let Some(p)=o.get("buildingDuplicate"){return building_duplicate_candidate(profile,p,false);}if let Some(p)=o.get("buildingRemove"){return building_duplicate_candidate(profile,p,true);}}
         if o.len()!=2||o.get("freePlacement").and_then(Value::as_bool)!=Some(true){return Err(CodecError::Json);}
         let rows=o.get("rows").and_then(Value::as_array).ok_or(CodecError::Json)?;
         return plain_group_paste_with_mode(profile,&serde_json::to_string(rows).map_err(|_|CodecError::Json)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,true);
@@ -3147,6 +3203,35 @@ mod terrain_session_tests{
         wrong["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]["State"]=serde_json::json!({"SubGrid":{"GridID":90}});
         assert!(validate_oblique_grid_edits(&serde_json::to_vec(&wrong).unwrap(),&edits).is_err());
     }
+    #[test]
+    fn building_clone_and_remove_preserve_state_and_reject_last_stateful_instance(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let state=serde_json::json!({"BuildingWithSkinData":{"UpgradeState":{"Level":1},"CurrentSkinItemID":20300002}});
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Keep":7},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":20300001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":state}}}}}}});
+        let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+        let plan=serde_json::json!({"localOrdinal":1,"itemId":"20300001","expectedX":1,"expectedY":1,"orientation":"GridOrientation_Down","destination":dest,"x":1,"y":1});
+        let remove=serde_json::json!({"localOrdinal":1,"itemId":"20300001","expectedX":1,"expectedY":1,"orientation":"GridOrientation_Down"});
+        let bytes=serde_json::to_vec(&raw).unwrap();
+        assert!(building_duplicate_candidate(&bytes,&remove,true).is_err());
+        let copy=group_paste_candidate(&bytes,&serde_json::json!({"buildingDuplicate":plan}).to_string()).unwrap();
+        let cloned:Value=serde_json::from_str(&copy).unwrap();
+        let g=&cloned["World"]["GridCollection"]["Grids"]["42"];
+        assert_eq!(g["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+        assert_eq!(g["Objects"]["5"]["State"],state);assert_eq!(g["Objects"]["5"]["ID"],5);
+        assert_eq!(g["NextGridObjectID"],6);assert_eq!(cloned["Player"],raw["Player"]);
+        let result=group_paste_candidate(copy.as_bytes(),&serde_json::json!({"buildingRemove":remove}).to_string()).unwrap();
+        let after:Value=serde_json::from_str(&result).unwrap();
+        assert!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"],g["Objects"]["5"]);
+        let mut plain=raw.clone();plain["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=Value::Null;
+        assert!(building_duplicate_candidate(&serde_json::to_vec(&plain).unwrap(),&remove,true).is_ok());
+        let mut unsafe_state=raw.clone();unsafe_state["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["BuildingWithSkinData"]["UpgradeState"]["GridID"]=7.into();
+        assert!(building_duplicate_candidate(&serde_json::to_vec(&unsafe_state).unwrap(),&plan,false).is_err());
+        let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+        assert!(building_duplicate_candidate(&serde_json::to_vec(&linked).unwrap(),&plan,false).is_err());
+    }
+
     #[test]
     fn checked_building_transfer_retains_state_and_allocates_destination_identity(){
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":20100001,"X":8,"Y":9,"Orientation":"GridOrientation_Down","State":{"StallData":{"UpgradeState":{"Level":1},"ShopData":{"Marker":1e2},"CurrentSkinItemID":0}}}}},"11":{"ID":11,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;

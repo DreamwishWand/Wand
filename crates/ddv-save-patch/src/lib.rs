@@ -1028,9 +1028,19 @@ pub fn preview_player_house_transfer(source:&str,target:&GridCoordinateTarget,ex
 /// Transfer an existing on-grid building after the codec has validated its
 /// typed state and proved the absence of dependencies. Retain State bytes.
 pub fn preview_checked_building_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
+    let mut draft=preview_checked_building_duplicate(source,target,expected,d,xy,orientation)?;
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+    draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
+    validate_json_without_edit(&draft.patched_json)?;
+    Ok(draft)
+}
+
+/// Caller must additionally validate clone-specific native state and dependencies.
+pub fn preview_checked_building_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     use serde_json::Value;
     let bad=PatchError::InvalidTarget;
-    if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||target.grid_id==d.grid_id||
+    if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||
        !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||
        xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation{return Err(bad);}
     validate_json_without_edit(source)?;
@@ -1061,11 +1071,30 @@ pub fn preview_checked_building_transfer(source:&str,target:&GridCoordinateTarge
         let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
         Some(&source[range])
     }else{None};
-    let mut draft=insert_grid_record(source,d,target.item_id,xy,orientation,state)?;
+    insert_grid_record(source,d,target.item_id,xy,orientation,state)
+}
+
+/// Caller has validated the exact existing building, state and identity references.
+pub fn preview_checked_building_remove(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    use serde_json::Value;
+    let bad=PatchError::InvalidTarget;
+    if target.kind!=GridObjectKind::Full||!matches!(target.item_id/100_000,200..=203)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+    validate_json_without_edit(source)?;
+    let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let c=root.get("World").and_then(|w|w.get("GridCollection")).ok_or(bad)?;
+    if c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id))){return Err(bad);}
+    let grid=c.get("Grids").and_then(|v|v.get(&target.grid_id)).ok_or(bad)?;
+    let scope=grid.get("GridDefaultLayoutPath").and_then(Value::as_str).and_then(full_grid_scope).ok_or(bad)?;
+    if grid.get("ID").and_then(Value::as_u64)!=target.grid_id.parse::<u64>().ok()||!grid.get("GridDataPath").and_then(Value::as_str).is_some_and(|s|outdoor_world_path(scope,s)){return Err(bad);}
+    let o=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
+    if o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+       o.get("ID").and_then(Value::as_u64)!=target.object_id.parse::<u64>().ok()||o.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id)||
+       o.get("X").and_then(Value::as_i64)!=Some(i64::from(expected.0))||o.get("Y").and_then(Value::as_i64)!=Some(i64::from(expected.1))||
+       o.get("Orientation").and_then(Value::as_str)!=Some(orientation){return Err(bad);}
     let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
-    draft.patched_json=room_lexical_map_edit(&draft.patched_json,path,&target.object_id,None)?;
-    validate_json_without_edit(&draft.patched_json)?;
-    Ok(draft)
+    let candidate=room_lexical_map_edit(source,path,&target.object_id,None)?;
+    validate_json_without_edit(&candidate)?;
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
 /// Remove only an exterior when another exact exterior in the same world

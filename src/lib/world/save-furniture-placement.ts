@@ -21,10 +21,30 @@ export function landscapeSourceEligible(p:MainlandSavedObject|null,free=false):p
 export function playerHouseSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
  return !!p?.shape&&p.object.nativeType==='Building'&&Math.floor(Number(p.object.itemId)/100000)===205&&!p.object.subgrid&&isCardinal(p.object.orientation);
 }
+export function generalBuildingSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
+ return !!p?.shape&&p.object.nativeType==='Building'&&[200,201,202,203].includes(Math.floor(Number(p.object.itemId)/100000))&&!p.object.subgrid&&isCardinal(p.object.orientation);
+}
+export function buildingSourceEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{return playerHouseSourceEligible(p)||generalBuildingSourceEligible(p);}
+/** Existing source records only; no default building state is synthesized. */
+export function buildingPlacementSources(grids:readonly MainlandGrid[],objects:readonly MainlandSavedObject[]):Map<number,MainlandSavedObject>{
+ const byGrid=new Map(grids.filter(g=>!!bindMainlandGrid(g)).map(g=>[g.key,g]));
+ const sources=new Map<number,MainlandSavedObject>();
+ for(const p of objects){
+  if(!buildingSourceEligible(p)||!p.shape?.cellCount||p.shape.cellCount>65536)continue;
+  const g=byGrid.get(p.area);
+  if(!g||g.factor!==p.factor||p.object.x<0||p.object.y<0||p.object.x>=g.sizeX*g.factor||p.object.y>=g.sizeY*g.factor)continue;
+  const id=Number(p.object.itemId),old=sources.get(id);
+  if(!old||p.object.localOrdinal<old.object.localOrdinal)sources.set(id,p);
+ }
+ return sources;
+}
 /** Exterior-only, same source world. The Rust writer verifies the native
  * HouseData and matching existing interior before generating a copy. */
 export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
- if(!playerHouseSourceEligible(p)||!p.shape)return null;
+ return playerHouseSourceEligible(p)?buildingDuplicate(grids,rasters,p,wx,wy):null;
+}
+export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number):StockCandidate|null{
+ if(!buildingSourceEligible(p)||!p.shape||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandFreeHits(grids,rasters,wx,wy);
  const from=grids.find(g=>g.key===p.area);
  if(!from||!bindMainlandGrid(from)||hits.length!==1||sourceWorldScope(hits[0])!==sourceWorldScope(from)||hits[0].factor!==p.factor||!bindMainlandGrid(hits[0]))return null;
@@ -34,6 +54,11 @@ export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:Reado
 }
 export function playerHousePickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
  if(!playerHouseSourceEligible(p)||!p.shape||!objects.some(o=>o.object.localOrdinal!==p.object.localOrdinal&&o.object.itemId===p.object.itemId&&playerHouseSourceEligible(o)))return null;
+ return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
+}
+export function buildingPickup(p:MainlandSavedObject|null,objects:readonly MainlandSavedObject[]):StockCandidate|null{
+ if(!buildingSourceEligible(p)||!p.shape)return null;
+ if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects);
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
