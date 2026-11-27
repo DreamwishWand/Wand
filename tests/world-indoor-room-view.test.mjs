@@ -278,11 +278,14 @@ test('append floor uses exact primary house and current floor count',()=>{
 });
 
 test('room addition only offers source-confirmed slots and sizes',()=>{
- const r={...room,houseItemId:20500000,roomSlot:0,addRoomSlots:[1,3]};
+ const r={...room,houseItemId:20500000,roomSlot:0,addRoomSlots:[1,3],addRoomSizes:['3x3','8x8','12x12']};
  const p=parseIndoorRooms(report([r]))[0];
  assert.deepEqual(indoorAddRoomPlan(p,3,'12x12'),{house:1,houseItemId:20500000,floor:1,slot:3,size:'12x12'});
  assert.equal(indoorAddRoomPlan(p,2,'12x12'),null);
- assert.equal(indoorAddRoomPlan(p,1,'8x8'),null);
+ assert.equal(indoorAddRoomPlan(p,1,'8x8').size,'8x8');
+ assert.equal(indoorAddRoomPlan(p,1,'8x3'),null);
+ assert.throws(()=>parseIndoorRooms(report([{...r,addRoomSizes:undefined}])));
+ assert.throws(()=>parseIndoorRooms(report([{...r,addRoomSizes:['3x3','3x3']}])));
  assert.throws(()=>parseIndoorRooms(report([{...r,addRoomSlots:[0]}])));
 });
 
