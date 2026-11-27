@@ -1,8 +1,9 @@
 <svelte:options namespace="svg"/>
 <script lang="ts">
-  import {visibleMapParts,type LoadedMapPart} from '../media/world-map-parts.ts';
+  import {visibleMapParts} from '../media/world-map-parts.ts';
+  import type {RenderableMapPart} from '../media/public-world-map-parts.ts';
   import type {MapExtent} from './map-camera.ts';
-  export let parts:readonly LoadedMapPart[]=[];
+  export let parts:readonly RenderableMapPart[]=[];
   export let viewport:MapExtent;
   $: visible=visibleMapParts(parts,viewport);
 </script>
