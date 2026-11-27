@@ -4,6 +4,7 @@ export type Layer={kind:'fill'|'texture'|'sdf';unitQuadToCanvas:Affine;rgba:Colo
 export type View={x:number;y:number;width:number;height:number};
 export type ImageLayer=Layer&{kind:'texture'|'sdf';imageSha256:string;size:readonly [number,number];wrap:readonly [number,number]};
 export type MaskSpec={kind:'rect';overlayToMaskUv:Affine}|{kind:'alpha';overlayToMaskUv:Affine;image:ImageLayer};
+export type NativeMapProgress={done:number;total:number};
 export type ImageSource=(layer:ImageLayer,signal?:AbortSignal)=>Promise<ImageBitmap>;
 const vertex=`#version 300 es
 precision highp float;
@@ -90,7 +91,7 @@ export class NativeMapRenderer{
   const vao=g.createVertexArray();check(vao,'Vertex array allocation');this.vao=vao;
   for(const n of ['a','b','c','origin','span','kind','tint','tex','maskTex','maskKind','maskA','maskB','maskC']){const loc=g.getUniformLocation(this.program,n);check(loc,'Missing uniform '+n);this.uniforms[n]=loc;}
  }
- async render(layers:readonly Layer[],view:View,source:ImageSource,signal?:AbortSignal):Promise<{drawn:number;skipped:number}>{
+ async render(layers:readonly Layer[],view:View,source:ImageSource,signal?:AbortSignal,onProgress?:(progress:NativeMapProgress)=>void):Promise<{drawn:number;skipped:number}>{
   check(!this.busy&&!this.disposed,'Renderer unavailable');check([view.x,view.y,view.width,view.height].every(Number.isFinite)&&view.width>0&&view.height>0,'Invalid viewport');
   layers.forEach(validateLayer);this.busy=true;const g=this.gl;const u=this.uniforms;let drawn=0,skipped=0;
   if(this.source!==source){this.clearTextures();this.source=source;}
@@ -99,6 +100,8 @@ export class NativeMapRenderer{
    g.disable(g.DEPTH_TEST);g.disable(g.CULL_FACE);g.disable(g.SCISSOR_TEST);g.disable(g.STENCIL_TEST);g.disable(g.DITHER);g.colorMask(true,true,true,true);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);
    g.enable(g.BLEND);g.blendEquation(g.FUNC_ADD);g.blendFunc(g.SRC_ALPHA,g.ONE_MINUS_SRC_ALPHA);
    g.uniform2f(u.origin,view.x,view.y);g.uniform2f(u.span,view.width,view.height);g.uniform1i(u.tex,0);g.uniform1i(u.maskTex,1);
+   const total=layers.filter(l=>intersects(l.unitQuadToCanvas,view)).length;
+   onProgress?.({done:0,total});
    for(const l of layers){
     signal?.throwIfAborted();check(!this.disposed&&!g.isContextLost(),'Renderer lost');if(!intersects(l.unitQuadToCanvas,view)){skipped++;continue;}
     const [a,b,c,d,x,y]=l.unitQuadToCanvas;g.uniform2f(u.a,a,b);g.uniform2f(u.b,c,d);g.uniform2f(u.c,x,y);g.uniform4f(u.tint,...l.rgba);g.uniform1i(u.kind,l.kind==='fill'?0:l.kind==='texture'?1:2);
@@ -111,7 +114,7 @@ export class NativeMapRenderer{
      g.activeTexture(g.TEXTURE1);g.bindTexture(g.TEXTURE_2D,mask);
      g.uniform1i(u.maskKind,l.mask?.kind==='alpha'?2:l.mask?1:0);
      if(l.mask){const [a,b,c,d,x,y]=l.mask.overlayToMaskUv;g.uniform2f(u.maskA,a,b);g.uniform2f(u.maskB,c,d);g.uniform2f(u.maskC,x,y);}
-     g.drawArrays(g.TRIANGLE_STRIP,0,4);check(g.getError()===g.NO_ERROR,'WebGL draw failed');drawn++;
+     g.drawArrays(g.TRIANGLE_STRIP,0,4);check(g.getError()===g.NO_ERROR,'WebGL draw failed');drawn++;onProgress?.({done:drawn,total});
     }finally{for(const t of temporary)g.deleteTexture(t);}
    }
    g.flush();return {drawn,skipped};

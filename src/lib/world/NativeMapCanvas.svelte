@@ -1,16 +1,23 @@
 <script lang="ts">
  import {onMount} from 'svelte';
+ import NativeMapLoading from './NativeMapLoading.svelte';
+ import type {WandLanguage} from '../ui/preferences';
  import {nativeFrameRect} from '../media/native-frame-rect.ts';
- import {NativeMapRenderer,type Layer,type View,type ImageSource} from '../media/native-map-renderer.ts';
+ import {NativeMapRenderer,type Layer,type View,type ImageSource,type NativeMapProgress} from '../media/native-map-renderer.ts';
  export let layers:readonly Layer[];
  export let view:View;
  export let source:ImageSource;
  export let activeKey:string;
+ export let locale:WandLanguage='ja';
+ export let showLoading=true;
+ export let onProgress:(progress:NativeMapProgress|null)=>void=()=>{};
  export let onStatus:(status:'drawing'|'ready'|'error')=>void=()=>{};
  let host:HTMLDivElement,canvas:HTMLCanvasElement;
  let renderer:NativeMapRenderer|null=null;
  let stage:HTMLCanvasElement|null=null;
- let ready=false,closed=false,error='';
+ let ready=false,closed=false,error='',loading=true;
+ let progress:NativeMapProgress|null=null;
+ function reportProgress(value:NativeMapProgress|null){progress=value;onProgress(value);}
  let pixelWidth=1,pixelHeight=1,hostWidth=1,hostHeight=1;
  let drawnView:View|null=null;
  $: rect=drawnView?nativeFrameRect(view,drawnView,hostWidth,hostHeight):null;
@@ -21,7 +28,7 @@
  onMount(()=>{
   stage=document.createElement('canvas');
   try{renderer=new NativeMapRenderer(stage);}
-  catch(e){error=e instanceof Error?e.message:'WebGL 2 unavailable';onStatus('error');}
+  catch(e){loading=false;error=e instanceof Error?e.message:'WebGL 2 unavailable';onStatus('error');}
   const resize=()=>{
    const rect=host.getBoundingClientRect(),ratio=Math.min(2,devicePixelRatio||1);
    hostWidth=rect.width;hostHeight=rect.height;
@@ -39,7 +46,7 @@
   const changed=key!==currentKey||src!==currentSource;
   if(changed){currentKey=key;currentSource=src;active?.abort();drawnView=null;canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height);}
   pending={id:++revision,layers:ls,view:v,source:src,key,w:Math.max(1,Math.round(v.width*scale)),h:Math.max(1,Math.round(v.height*scale))};
-  error='';onStatus('drawing');void drain();
+  error='';loading=true;reportProgress(null);onStatus('drawing');void drain();
  }
  async function drain(){
   if(busy||!renderer||!stage)return;
@@ -51,13 +58,13 @@
     if(!r||!buffer)break;
     try{
      buffer.width=job.w;buffer.height=job.h;
-     await r.render(job.layers,job.view,job.source,controller.signal);
+     await r.render(job.layers,job.view,job.source,controller.signal,p=>{if(!closed&&!controller.signal.aborted&&job.id===revision)reportProgress(p);});
      if(closed||controller.signal.aborted||job.id!==revision)continue;
      canvas.width=job.w;canvas.height=job.h;
      const context=canvas.getContext('2d');if(!context)throw Error('Canvas unavailable');
-     context.drawImage(buffer,0,0);drawnView=job.view;onStatus('ready');
+     context.drawImage(buffer,0,0);drawnView=job.view;loading=false;onStatus('ready');
     }catch(e){
-     if(!closed&&!controller.signal.aborted&&job.id===revision){error=e instanceof Error?e.message:'Rendering failed';onStatus('error');}
+     if(!closed&&!controller.signal.aborted&&job.id===revision){loading=false;error=e instanceof Error?e.message:'Rendering failed';onStatus('error');}
     }finally{if(active===controller)active=null;}
    }
   }finally{busy=false;}
@@ -68,6 +75,7 @@
   style:left={rect?rect.left+'px':'0px'} style:top={rect?rect.top+'px':'0px'}
   style:width={rect?rect.width+'px':'0px'} style:height={rect?rect.height+'px':'0px'}
   style:visibility={rect?'visible':'hidden'}></canvas>
+ {#if showLoading&&loading&&!error}<NativeMapLoading {locale} {progress} compact={drawnView!==null}/>{/if}
  {#if error}<div class="error" role="alert">{error}</div>{/if}
 </div>
 <style>

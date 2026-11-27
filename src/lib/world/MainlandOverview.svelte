@@ -52,6 +52,8 @@
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import NativeMapCanvas from './NativeMapCanvas.svelte';
+ import NativeMapLoading from './NativeMapLoading.svelte';
+ import type {NativeMapProgress} from '../media/native-map-renderer.ts';
  import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
  import {nativePreviewSession} from '../media/native-preview-session.ts';
  import {nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
@@ -233,6 +235,7 @@ $: cutWords=groupCutWords[locale];
  const testExport=browser&&testSaveExportEnabled(window.location);
  const nativePreviewEnabled=testExport&&new URLSearchParams(window.location.search).get('native-map')==='1';
  let nativePanel=false,nativePack:LocalNativePreviewPack|null=nativePreviewEnabled?nativePreviewSession.get():null,nativeVisible=true,nativeFrameId='',nativeError='',nativeTicket=0,nativeTerrainOpacity=.3;
+ let nativeLoading=false,nativeProgress:NativeMapProgress|null=null;
  const nativeLabels={
  ja:['原本背景（検証）','素材を選択','背景を表示','地形レイヤーの濃さ','座標未校正・検証用背景','このワールドの素材がありません','原本背景の読み込み・描画に失敗しました','素材を解除'],
  en:['Original background (test)','Choose files','Show background','Terrain opacity','Uncalibrated background preview','No assets for this world','Background load or render failed','Clear assets'],
@@ -258,6 +261,7 @@ $: cutWords=groupCutWords[locale];
  }
  function clearNativeBackground(){nativeTicket++;nativePreviewSession.clear();nativePack=null;nativeFrameId='';nativeError='';}
  function nativeStatus(status:'drawing'|'ready'|'error',id:string){
+  nativeLoading=status==='drawing';
   if(status==='ready'){nativeFrameId=id;nativeError='';}
   if(status==='error'){nativeFrameId='';nativeError=nativeWords[6];}
  }
@@ -611,9 +615,10 @@ $: cutWords=groupCutWords[locale];
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  {#if nativeMap&&nativePack&&nativeVisible}
   {#key nativePack}
-   <div class="native-editor-background"><NativeMapCanvas layers={nativeMap.unlocked} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeMap.id} onStatus={s=>nativeStatus(s,nativeMap?.id??'')}/></div>
+   <div class="native-editor-background"><NativeMapCanvas layers={nativeMap.unlocked} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeMap.id} {locale} showLoading={false} onProgress={p=>nativeProgress=p} onStatus={s=>nativeStatus(s,nativeMap?.id??'')}/></div>
   {/key}
  {/if}
+ {#if nativeMap&&nativePack&&nativeVisible&&nativeLoading}<NativeMapLoading {locale} progress={nativeProgress} compact={nativeActive}/>{/if}
  <button class="mainland-map" class:native-preview-backed={nativeActive} type="button" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} aria-label={words[5]} on:click={click} on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
  on:pointerdown={startPointer} on:pointermove={follow}
  on:pointerup={e=>finishPointer(e,true)} on:pointercancel={e=>finishPointer(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;furnitureTools?.hover(null);supportInspector?.hoverParent(null);}}>
