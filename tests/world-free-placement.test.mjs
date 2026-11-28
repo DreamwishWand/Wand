@@ -226,3 +226,16 @@ test('free duplicate previews a new orientation without changing the source pose
   assert.equal(stockPlacement([g],rasters,defs,id,'GridOrientation_Left',x,y,source,false),null);
  }
 });
+
+import {mainlandSavedMoveEligible,mainlandSavedGroupMoveEligible,mainlandSavedRotateEligible} from '../src/lib/world/mainland-saved-objects.ts';
+test('surface-class furniture uses the same native edit eligibility in free placement',()=>{
+ const p={shape:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]},factor:1,object:{...o,layer:'surface'}};
+ assert.equal(mainlandSavedMoveEligible(p),false);
+ assert.equal(mainlandSavedMoveEligible(p,true),true);
+ assert.equal(mainlandSavedGroupMoveEligible(p,true),true);
+ assert.equal(mainlandSavedRotateEligible(p,true),true);
+ assert.equal(stockSourceEligible(p,true),true);
+ assert.equal(stockSourceEligible(p),false);
+ assert.equal(mainlandSavedMoveEligible({...p,object:{...p.object,storageKnown:true,storage:false}},true),false);
+ assert.equal(mainlandSavedMoveEligible({...p,object:{...p.object,subgrid:{status:'unresolved'}}},true),false);
+});
