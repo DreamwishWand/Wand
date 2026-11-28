@@ -48,6 +48,7 @@ const mermaidTextures=new Set();for(const id of mermaids)for(const b of ['male',
 const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male','female']){avatarKeys.add(index.models[b].sha256);for(const row of [...Object.values(index.items),...Object.values(index.variants).flat()]){const o=row[b];if(o?.kind==='pair')avatarKeys.add(o.asset.sha256);else if(o?.kind==='mermaid')avatarKeys.add(o.model.sha256)}}assert.equal(Object.keys(index.avatarMaterials).length,avatarKeys.size);for(const key of avatarKeys){const slots=index.avatarMaterials[key];assert.ok(slots.some(s=>s.role==='face')&&slots.some(s=>s.role==='eyes')&&slots.some(s=>s.role==='body'||s.role==='mermaidBody'));for(const s of slots){assert.equal(s.uv.bytes,s.vertices*8);avatarTextures.add(s.texture.sha256)}}assert.equal(avatarTextures.size,5);
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
 assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
+assert.deepEqual(Object.keys(index.faceMorphs).sort(),['female','male']);for(const b of ['male','female']){const f=index.faceMorphs[b];assert.ok(index.avatarMaterials[index.models[b].sha256].filter(s=>s.role==='face').every(s=>s.vertices===f.vertices));const raw=await readFile('build/photo-mode-preview/'+f.asset.sha256+'.wfm');assert.equal(raw.length,f.asset.bytes);assert.equal(raw.subarray(0,4).toString(),'WFM1')}
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
 const limboRows=Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true);
@@ -144,4 +145,27 @@ try{
   assert.equal(await linked.locator('.pose-variants button').nth(1).getAttribute('aria-pressed'),'true');
   await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
   console.log('Exact native alternate pose permalink ready:',maxDog);
+  // Exercise the actual shared local save reader and the built renderer, not a
+  // mocked appearance store. No private game save is used.
+  const avatar=(skin,eye,nose,mouth,jaw)=>({SkinColorIndex:skin,FaceType:{'1':nose,'2':mouth,'3':jaw},Eyeball:{EyeballItemID:eye,ColorIndex1:4,ColorIndex2:42,ColorIndex3:45}});
+  const profile={GameInfo:{Version:643},Player:{AvatarIsMale:false,FemaleAvatar:avatar(2,70000010,2,3,7),MaleAvatar:avatar(3,70000012,1,2,4),ListInventories:{},ContainerInventories:{},CollectionSets:[]},World:{GridCollection:{Grids:{},DiffGrids:{}}}};
+  const saveInput=page.locator('input[aria-hidden="true"][accept*=".profile"]');
+  const asset=entry=>base+'/photo-mode-preview/'+entry.sha256;
+  const requested=new Set();
+  page.on('response',r=>{if(r.ok())requested.add(r.url())});
+  await saveInput.setInputFiles({name:'synthetic-avatar.profile',mimeType:'application/octet-stream',buffer:Buffer.from(JSON.stringify(profile))});
+  const controls=linked.locator('.pose-preview .body-options button');
+  const faceSeek=linked.locator('input.seek');
+  async function expectAppearance(body,skin,eye){
+    const urls=[asset(index.faceMorphs[body].asset)+'.wfm',asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
+    for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
+    await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+    assert.equal(await controls.nth(body==='male'?0:1).getAttribute('aria-pressed'),'true');
+  }
+  await expectAppearance('female',2,70000010);
+  await controls.nth(0).click();
+  await expectAppearance('male',3,70000012);
+  assert.ok(Number(await faceSeek.getAttribute('max'))>0);
+  console.log('Local synthetic save: both body branches load actual native skin, eye and face assets');
+
 }finally{await browser?.close();server.kill('SIGTERM')}

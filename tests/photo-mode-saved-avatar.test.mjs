@@ -34,3 +34,15 @@ test('eye mask selection uses the exact item ID and matching form; invalid color
  assert.equal(selectEyeMaterial(p,appearance,'male',false).texture,items[70000001].texture);assert.notEqual(eyeMaterialKey(land),eyeMaterialKey(water));
  const mask=new Uint8ClampedArray([255,0,0,255,0,128,0,255,0,0,255,255,0,0,0,255]);projectEyeMask(mask,[[.5,0,0,1],[0,1,0,1],[0,0,.25,1]]);assert.deepEqual([...mask],[128,0,0,255,0,128,0,255,0,0,64,255,0,0,0,255]);
 });
+import {savedFaceChoices,hasFaceMorph,applyFaceMorphs,validFaceMorphs} from '../src/lib/photo-mode/face-morph.ts';
+test('face choices select independent native parts for the same saved form',()=>{
+ const a=sanitizeSavedAvatarAppearance({...value,avatars:{female:{FaceType:{'0':7,'1':2,'2':3,'3':-1}},femaleMermaid:{FaceType:{'1':4,'3':7}}}});
+ assert.deepEqual(savedFaceChoices(a,'female',false),[2,3,0]);assert.deepEqual(savedFaceChoices(a,'female',true),[4,0,7]);assert.deepEqual(savedFaceChoices(a,'male',false),[0,0,0]);
+ assert.equal(hasFaceMorph(savedFaceChoices(a,'male',true)),false);
+ const row={vertices:2,asset:{sha256:'a'.repeat(64),bytes:140}};assert.equal(validFaceMorphs({male:row,female:row}),true);assert.equal(validFaceMorphs({male:row}),false);
+});
+test('independent position morphs combine without mutating cached geometry',()=>{
+ const bytes=new ArrayBuffer(8+21*4+3*16),v=new DataView(bytes);v.setUint32(0,0x314d4657,true);v.setUint32(4,2,true);let off=8;
+ for(let i=0;i<21;i++){const active=[1,9,20].includes(i);v.setUint32(off,Number(active),true);off+=4;if(active){v.setUint32(off,i===20?1:0,true);v.setFloat32(off+4,i===1?.25:i===9?.5:1,true);off+=16}}
+ const base=new Float32Array([0,0,0,1,0,0]);assert.deepEqual([...applyFaceMorphs(bytes,base,[2,3,7])],[.75,0,0,2,0,0]);assert.deepEqual([...base],[0,0,0,1,0,0]);assert.throws(()=>applyFaceMorphs(bytes.slice(0,-1),base,[2,3,7]));assert.throws(()=>applyFaceMorphs(bytes,base,[8,0,0]));
+});
