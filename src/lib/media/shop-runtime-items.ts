@@ -41,6 +41,10 @@ export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:reado
       continue;
    }
    if(cls==='CharacterSkinItemData')return finish('quest');
+   // NotableCompanionRewardItemViewModel.Create 0x6F5C7D6..0x6F5C7E3:
+   // a PetItemData with IsNotable=false returns null before reading friendship.
+   // Do not treat missing or unindexed source fields as a proven false.
+   if(cls==='PetItemData'&&row.values['source.IsNotable']===false)continue;
    if(cls==='PetItemData'||cls==='CritterItemData')return finish('companion_reward');
    if(typeof cls!=='string'||!ordinary.has(cls))return finish('unknown_item');
  }
@@ -69,7 +73,7 @@ export async function readShopRuntimePrefix(revision:PremiumBundleRevision,db:Pi
  if(revision.gameVersion!=='1.26.2'||db.release.target.gameVersion!==revision.gameVersion)return buildShopRuntimePrefix({...revision,gameVersion:'unsupported'},[],false);
  const fields=new Set((await db.getFieldCatalog()).map(f=>f.field));
  const has=fields.has('acquisition.evolutionChain');
- const rows=fields.has('sourceClass')?await db.getItemFields(revision.components.map(c=>c.itemId),has?['sourceClass','acquisition.evolutionChain']:['sourceClass']):[];
+ const rows=fields.has('sourceClass')?await db.getItemFields(revision.components.map(c=>c.itemId),['sourceClass','acquisition.evolutionChain','source.IsNotable'].filter(f=>fields.has(f))):[];
  const targetIds=new Set<number>();
  if(has&&fields.has('acquisition.evolutionSource'))for(const row of rows){
    const chain=row?.values['acquisition.evolutionChain'];

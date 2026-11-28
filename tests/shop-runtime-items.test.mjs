@@ -27,3 +27,9 @@ test('native evolution steps append in configuration order, quantity one, no inh
  assert.equal(buildShopRuntimePrefix(v,rows,true,new Map([[42,targets.get(42)]])).blockedBy,'evolution');
  assert.equal(buildShopRuntimePrefix(v,rows,true,new Map([[42,targets.get(42)],[41,row(41,'ClothingItemData',{'acquisition.evolutionSource':chain[1]})]])).blockedBy,'evolution');
 });
+
+test('explicit non-notable Pet skips the friendship reward; missing or true is unresolved',()=>{
+ const first=row(1,'FurnitureItemData'),last=row(1,'FurnitureItemData');
+ assert.equal(buildShopRuntimePrefix(v,[first,row(2,'PetItemData',{'source.IsNotable':false}),last],true).complete,true);
+ for(const val of [true,null,undefined])assert.equal(buildShopRuntimePrefix(v,[first,row(2,'PetItemData',val===undefined?{}:{'source.IsNotable':val}),last],true).blockedBy,'companion_reward');
+});
