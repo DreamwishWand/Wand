@@ -6,9 +6,9 @@ const LIMIT:usize=4*1024*1024;
 const SCHEMA:&str="wand.private.storage-contents@2";
 const OLD_SCHEMA:&str="wand.private.storage-contents@1";
 fn id(v:&Value)->Option<u32>{v.as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0)}
-fn simple_inventory(v:&Value)->bool{
+fn bounded_inventory(v:&Value)->bool{
  v.as_array().is_some_and(|a|a.len()<=8192&&a.iter().all(|s|s.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
- s["ItemID"].as_u64().is_some_and(|n|n<=u32::MAX as u64)&&s["Amount"].as_u64().is_some_and(|n|n<=i32::MAX as u64)&&s.get("State").is_none_or(Value::is_null)))
+ s["ItemID"].as_u64().is_some_and(|n|n<=u32::MAX as u64)&&s["Amount"].as_u64().is_some_and(|n|n<=i32::MAX as u64)&&s.get("State").is_none_or(|s|s.is_null()||s.is_object())))
 }
 fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
  match v{
@@ -53,7 +53,7 @@ fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError
   if !scoped.contains(&n){continue;}
   if witnesses.iter().any(|w|!in_scope(scope,w["grid"].as_str().unwrap_or(""),w["object"].as_str().unwrap_or("")))||rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
     c.as_object().is_none_or(|m|m.len()!=7||m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))||
-    c["BlockMoveTo"].as_bool()!=Some(false)||c["ExtraSize"].as_u64().is_none()||!simple_inventory(&c["Inventory"]){skipped+=1;continue;}
+    c["BlockMoveTo"].as_bool()!=Some(false)||c["ExtraSize"].as_u64().is_none()||!bounded_inventory(&c["Inventory"]){skipped+=1;continue;}
   witnesses.sort_by_cached_key(Value::to_string);
   let mut metadata=c.clone();metadata.as_object_mut().ok_or(BAD)?.remove("Inventory");
   rows.push(json!({"id":n,"metadata":metadata,"roots":witnesses,"inventory":c["Inventory"]}));
@@ -105,7 +105,7 @@ pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>
  let mut changes=Vec::new();let mut seen=HashSet::new();let mut destination_ids=HashSet::new();
  for r in b["rows"].as_array().filter(|a|(allow_noop||!a.is_empty())&&a.len()<=8192).ok_or(BAD)?{
   let n=id(&r["id"]).filter(|n|seen.insert(*n)).ok_or(BAD)?;
-  if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!simple_inventory(&r["inventory"]){return Err(BAD);}
+  if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!bounded_inventory(&r["inventory"]){return Err(BAD);}
   let c=if let Some(c)=available.get(&n){
    if r["metadata"]!=c["metadata"]||identity_roots(r).ok_or(BAD)?!=identity_roots(c).ok_or(BAD)?||strict_pose&&(schema!=SCHEMA||r["roots"]!=c["roots"]){return Err(BAD);}
    *c
@@ -120,6 +120,15 @@ pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>
   };
   let dest=id(&c["id"]).filter(|id|destination_ids.insert(*id)).ok_or(BAD)?;
   if r["inventory"]==c["inventory"]{continue;}
+  // Opaque native item state is preserved only when its exact slot remains
+  // unchanged. Ordinary stacks in the same container can still be restored.
+  let old=c["inventory"].as_array().ok_or(BAD)?;
+  let next=r["inventory"].as_array().ok_or(BAD)?;
+  for i in 0..old.len().max(next.len()){
+   let a=old.get(i);let b=next.get(i);
+   let stateful=|v:Option<&Value>|v.is_some_and(|v|v.get("State").is_some_and(|s|!s.is_null()));
+   if (stateful(a)||stateful(b))&&a!=b{return Err(BAD);}
+  }
   let p=vec![k("Player"),k("ContainerInventories"),k(&dest.to_string()),k("Inventory")];
   locator.capture.insert(p.clone(),None);changes.push((p,r["inventory"].to_string()));
  }
@@ -175,6 +184,14 @@ mod tests{
   assert!(restore(&unknown,&backup).is_err());
   let extra=changed.replace("\"Marker\":1e2","\"OtherContainerInventoryID\":9,\"Marker\":1e2");
   assert!(restore(&extra,&backup).is_err());
-  let v:Value=serde_json::from_str(&export(&unknown).unwrap()).unwrap();assert_eq!(v["skipped"],1);assert_eq!(v["rows"],json!([]));
+  let v:Value=serde_json::from_str(&export(&unknown).unwrap()).unwrap();assert_eq!(v["skipped"],0);assert_eq!(v["rows"][0]["inventory"][0]["State"],json!({"Unknown":1}));
+  // Capture state losslessly, without accepting changed or newly inserted
+  // opaque state. An ordinary stack beside it remains independently editable.
+  let mixed=unknown.replace(r#""Inventory":["#,r#""Inventory":[{"ItemID":30000002,"Amount":7},"#);
+  let mix_backup=export(&mixed).unwrap();
+  let mix_changed=mixed.replace("\"Amount\":7","\"Amount\":4");
+  let recovered=restore(&mix_changed,&mix_backup).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&recovered).unwrap(),serde_json::from_str::<Value>(&mixed).unwrap());
+  assert!(restore(&mix_changed.replace("\"Unknown\":1","\"Unknown\":2"),&mix_backup).is_err());
  }
 }
