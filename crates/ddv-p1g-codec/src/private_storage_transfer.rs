@@ -66,8 +66,8 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
  // the destination selection. The existing snapshot checks all aliases.
  let mut current_scope=scope.clone();
  for (gid,g) in root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?{
-  if let Some(objects)=g["Objects"].as_object(){for o in objects.values(){
-   if o["State"]["Storage"]["ContainerInventoryID"].as_u64().is_some_and(|n|ids.contains(&n)){current_scope.insert(gid.clone());}
+  if let Some(objects)=g["Objects"].as_object(){for (oid,o) in objects{
+   if o["State"]["Storage"]["ContainerInventoryID"].as_u64().is_some_and(|n|ids.contains(&n)){current_scope.insert(format!("{gid}:{oid}"));}
   }}
  }
  let current_raw=Zeroizing::new(ddv_save_patch::storage_backup::export_scoped(source,Some(&current_scope)).map_err(|_|bad)?);
@@ -96,7 +96,8 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
  }
  if transfers.is_empty(){return crate::private_storage_pose::restore(source,backup,scope);}
  {
-  let _check=Zeroizing::new(ddv_save_patch::storage_backup::restore_scoped_mode(source,&preflight.to_string(),Some(&current_scope),true,false).map_err(|_|bad)?);
+  let raw=Zeroizing::new(preflight.to_string());
+  let _check=Zeroizing::new(ddv_save_patch::storage_backup::restore_scoped_mode(source,&raw,Some(&current_scope),true,false).map_err(|_|bad)?);
  }
  let mut working=Zeroizing::new(source.to_owned());
  for (i,id,from,to,a,z) in transfers{
