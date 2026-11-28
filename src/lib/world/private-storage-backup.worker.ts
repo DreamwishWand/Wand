@@ -7,13 +7,20 @@ const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMess
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
  try{
-  const restore=data?.command==='restore';
-  if(!['backup','restore'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||restore&&(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true||!(data.backup instanceof File)||data.backup.size<1||data.backup.size>4*1024*1024))throw Error('request');
+  const stage=data?.command==='stage-decoration',restore=data?.command==='restore'||stage;
+  if(!['backup','restore','stage-decoration'].includes(data?.command)||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||restore&&(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true||!(data.backup instanceof File)||data.backup.size<1||data.backup.size>4*1024*1024))throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   if(restore){
    const raw=await data.backup.text(),target=typeof data.scope==='string'?data.scope:'null';
+   if(stage){
+    const staged=JSON.parse(wasm.stage_private_decoration(raw,target,true));
+    if(!Number.isSafeInteger(staged.length)||staged.length<0||typeof staged.storage!=='string'||staged.storage.length>4*1024*1024)throw Error('stage');
+    if(staged.length===0){scope.postMessage({kind:'staged-decoration',storage:staged.storage});return;}
+    const copy=readExperimentalCopy(staged.length,n=>wasm!.take_copy_chunk(n));
+    scope.postMessage({kind:'staged-decoration',storage:staged.storage,...copy},[copy.bytes.buffer]);return;
+   }
    const copy=readExperimentalCopy(data.restorePose===true?wasm.prepare_private_storage_pose_copy(raw,target,true):wasm.prepare_private_storage_contents_copy(raw,target,true),n=>wasm!.take_copy_chunk(n));
    scope.postMessage({kind:'restored',...copy},[copy.bytes.buffer]);
   }else{
