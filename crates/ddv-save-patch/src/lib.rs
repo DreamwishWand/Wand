@@ -1014,6 +1014,16 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
 fn relocate_grid_record(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support:bool,storage:bool)->Result<GridCoordinateDraft,PatchError>{
     relocate_grid_record_checked(source,target,expected,destination,replacement,orientation,support,storage,false)
 }
+/// Free placement may carry an observed, reference-free interaction state.
+ /// Never regenerate or accept caller-supplied State, nor allow diagonal
+ /// rotation of a stateful record. The codec authenticates scene ownership.
+fn relocate_free_interaction_record(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ let state=obj.get("State").filter(|v|!v.is_null());
+ if state.is_some_and(|v|!transferable_local_grid_state(v))||state.is_some()&&!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
+ relocate_grid_record_checked(source,target,expected,destination,replacement,orientation,false,false,state.is_some())
+}
 fn relocate_grid_record_checked(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support:bool,storage:bool,local_state:bool)->Result<GridCoordinateDraft,PatchError>{
     if target.grid_id==destination.grid_id||support&&storage||local_state&&(support||storage){return Err(PatchError::InvalidTarget);}
     let mut locator=JsonLocator::grid_axis(source,target,"X")?;
@@ -1864,7 +1874,7 @@ fn outdoor_to_indoor_transfer_mode(source:&str,target:&GridCoordinateTarget,expe
     grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
      return Err(PatchError::InvalidTarget);
  }
- relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
+ if free{relocate_free_interaction_record(source,target,expected,d,xy,orientation)}else{relocate_grid_record(source,target,expected,d,xy,orientation,false,false)}
 }
 /// The codec resolves exact room ownership and source pose before either transfer.
 pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
@@ -1877,7 +1887,7 @@ pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarg
 pub fn preview_free_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
  validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
- relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
+ relocate_free_interaction_record(source,target,expected,d,xy,orientation)
 }
 pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
@@ -1889,7 +1899,7 @@ pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarge
 pub fn preview_free_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",true)?;
- relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
+ relocate_free_interaction_record(source,target,expected,d,xy,orientation)
 }
 /// Relocate an existing support parent between two exact owned room floors.
 /// The codec checks exclusive subtree ownership and external references.
