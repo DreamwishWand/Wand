@@ -2236,7 +2236,7 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
             }else{None};
             if crate::storage_source::is_storage(item){
                 if tree.is_some(){return Err(bad);}
-                let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or(bad)?;
+                let (template,capacity)=if let Some(t)=templates.get(&item){*t}else{crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?};
                 let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
                 if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
                 templates.insert(item,(template,capacity));
@@ -2325,7 +2325,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
         let mut templates=HashMap::new();
         for p in &places{if crate::storage_source::is_storage(p.item_id){
-            let (template,capacity)=crate::storage_source::initial_storage_template(p.item_id).ok_or(bad)?;
+            let (template,capacity)=if let Some(t)=templates.get(&p.item_id){*t}else{crate::storage_source::placement_storage_template(&root,p.item_id).ok_or(bad)?};
             let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&p.destination.grid_id)?;
             if layout!=p.destination.layout_path||factor!=u64::from(p.destination.tessellation)||sx!=u64::from(p.destination.size.0)||sy!=u64::from(p.destination.size.1){return Err(bad);}
             templates.insert(p.item_id,(template,capacity));
@@ -2345,7 +2345,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let mut draft=if crate::storage_source::is_storage(item){
             let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&dest.grid_id)?;
             if layout!=dest.layout_path||factor!=u64::from(dest.tessellation)||sx!=u64::from(dest.size.0)||sy!=u64::from(dest.size.1){return Err(bad);}
-            let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or(bad)?;
+            let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?;
             ddv_save_patch::preview_initial_storage(&working,dest,item,xy,&orientation,*amount,template,capacity,false,row_free)
         }else{preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:dest,item_id:item,xy,orientation:&orientation})}.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}

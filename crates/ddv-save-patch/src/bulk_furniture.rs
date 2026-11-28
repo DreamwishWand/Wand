@@ -113,7 +113,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
   let mut object=serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation});
   if let Some(&(template,size))=templates.get(&p.item_id){
-   if row.tree.is_some()||template!="Chest_48Slot"||size!=48||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(BAD);}
+   if row.tree.is_some()||!super::standard_storage_capacity(template,size)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(BAD);}
    let id=next_container;next_container=id.checked_add(1).ok_or(BAD)?;
    new_containers.push((id,serde_json::json!({"ID":id,"Size":size,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":p.item_id,"ExtraSize":0})));
    object["State"]=serde_json::json!({"Storage":{"ContainerInventoryID":id,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
