@@ -4,11 +4,28 @@ use std::collections::{HashMap,HashSet};
 
 pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,CodecError>{
  let bad=CodecError::Json;
- if scope.len()>65536{return Err(bad);}
+ if scope.len()>2*1024*1024{return Err(bad);}
  let s:Value=serde_json::from_str(scope).map_err(|_|bad)?;
  if s.is_null(){return Ok(None);}
  let m=s.as_object().filter(|m|m.len()==2).ok_or(bad)?;
  let kind=m.get("kind").and_then(Value::as_str).ok_or(bad)?;
+ if kind=="region"{
+  let rows=m.get("objects").and_then(Value::as_array).filter(|a|a.len()<=8192).ok_or(bad)?;
+  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+  let mut selected=HashSet::new();
+  for w in rows{
+   let o=w.as_object().filter(|o|o.len()==5&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"x"|"y"|"orientation"))).ok_or(bad)?;
+   let ordinal=o["localOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+   let item=o["itemId"].as_str().and_then(|s|s.parse::<u64>().ok()).ok_or(bad)?;
+   let coord=|key:&str|o.get(key).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+   let orientation=o["orientation"].as_str().ok_or(bad)?;
+   let t=crate::grid_instance_preview::resolve_grid_orientation_target(source,ordinal,item,(coord("x")?,coord("y")?),"full",orientation)?;
+   crate::grid_instance_preview::house_exterior_identity(&root,&t.grid_id)?;
+   let obj=&root["World"]["GridCollection"]["Grids"][&t.grid_id]["Objects"][&t.object_id];
+   if !ddv_save_patch::storage_pose(&root,obj)||!selected.insert(format!("{}:{}",t.grid_id,t.object_id)){return Err(bad);}
+  }
+  return Ok(Some(selected));
+ }
  if kind=="outdoor"{
   let rows=m.get("destinations").and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=64).ok_or(bad)?;
   let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;

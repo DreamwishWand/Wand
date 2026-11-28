@@ -15,6 +15,7 @@ mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
 mod storage_source;
+#[cfg(feature="wasm")]
 mod private_storage_scope;
 mod player_house_source;
 #[cfg(feature="wasm")]

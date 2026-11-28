@@ -15,6 +15,16 @@ type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
 type Incoming=ReturnType<typeof parseIslandDecoration>;
 const isNetwork=(p:MainlandSavedObject)=>p.object.layer==='ground'||p.object.layer==='fence';
 const inside=(r:CaptureRegion,p:{x:number;y:number;factor:number;shape:SourceObjectShape|null})=>!!p.shape&&p.shape.runs.every(q=>p.x+q.x/p.factor>=r.x&&p.x+(q.x+q.width)/p.factor<=r.x+r.w&&p.y-(q.y+1)/p.factor>=r.y&&p.y-q.y/p.factor<=r.y+r.h);
+export function regionStorageWitnesses(region:CaptureRegion,grids:readonly MainlandGrid[],objects:ReadonlyMap<string,readonly MainlandSavedObject[]>){
+ if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
+ const all=grids.flatMap(g=>[...(objects.get(g.key)??[])]);
+ if(grids.some(g=>!objects.has(g.key)))return null;
+ const storage=all.filter(p=>p.object.storage===true);
+ if(storage.some(p=>!p.shape))return null;
+ const hit=mainlandSavedInRect(storage,region,{x:region.x+region.w,y:region.y+region.h});
+ if(hit.some(p=>!inside(region,p)))return null;
+ return hit.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,x:p.object.x,y:p.object.y,orientation:p.object.orientation}));
+}
 const buildingKey=(p:BuildingPose)=>[p.itemId,p.x,p.y,p.orientation].join(':');
 /** Count pose multiplicities, not merely Item IDs or occupied anchors. */
 export function regionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],free=false):BuildingPose[]|null{

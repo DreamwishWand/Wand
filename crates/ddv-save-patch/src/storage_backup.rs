@@ -16,6 +16,9 @@ fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
   _=>if marked{if let Some(n)=id(v){*counts.entry(n).or_default()+=1;}}
  }
 }
+fn in_scope(scope:Option<&HashSet<String>>,gid:&str,oid:&str)->bool{
+ scope.is_none_or(|s|s.contains(gid)||s.contains(&format!("{gid}:{oid}")))
+}
 fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError>{
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(BAD);}
  let collection=&root["World"]["GridCollection"];
@@ -29,7 +32,7 @@ fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError
   total=total.checked_add(objects.len()).filter(|n|*n<=200_000).ok_or(BAD)?;
   for(oid,o)in objects{
    let Some(n)=id(&o["State"]["Storage"]["ContainerInventoryID"])else{continue;};
-   if scope.is_none_or(|s|s.contains(gid)){scoped.insert(n);}
+   if in_scope(scope,gid,oid){scoped.insert(n);}
    let st=&o["State"]["Storage"];
    let path=g["GridDataPath"].as_str().filter(|s|s.len()<=1024);
    let item=id(&o["ItemID"]);
@@ -46,7 +49,7 @@ fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError
   let c=&containers[&n.to_string()];
   let size=id(&c["Size"]);let parent=id(&c["ParentItemID"]);
   if !scoped.contains(&n){continue;}
-  if scope.is_some_and(|s|witnesses.iter().any(|w|w["grid"].as_str().is_none_or(|g|!s.contains(g))))||rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
+  if witnesses.iter().any(|w|!in_scope(scope,w["grid"].as_str().unwrap_or(""),w["object"].as_str().unwrap_or("")))||rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
     c.as_object().is_none_or(|m|m.len()!=7||m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))||
     c["BlockMoveTo"].as_bool()!=Some(false)||c["ExtraSize"].as_u64().is_none()||!simple_inventory(&c["Inventory"]){skipped+=1;continue;}
   witnesses.sort_by_cached_key(Value::to_string);
@@ -106,6 +109,8 @@ mod tests{
   assert!(restore(SAVE,&backup).is_err());
   let scope=HashSet::from(["42".to_owned()]);
   assert_eq!(export_scoped(SAVE,Some(&scope)).unwrap(),backup);
+  assert_eq!(export_scoped(SAVE,Some(&HashSet::from(["42:1".to_owned()]))).unwrap(),backup);
+  assert!(restore_scoped(&changed,&backup,Some(&HashSet::from(["42:2".to_owned()]))).is_err());
   let other=HashSet::from(["43".to_owned()]);
   assert!(restore_scoped(&changed,&backup,Some(&other)).is_err());
   let mut alias:Value=serde_json::from_str(SAVE).unwrap();
