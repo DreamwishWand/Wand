@@ -509,7 +509,7 @@ export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indi
  if(!t||face?.kind!=='floor'||!face.terrain||!Number.isSafeInteger(roomOrdinal)||roomOrdinal<1||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
  for(const index of indices){
-  const o=t.objects[index];if(!o||!isEightWay(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!(free?(face.positions[index]?.plain===true||face.positions[index]?.storage===true&&isCardinal(o.orientation)||supportIndices.has(index)&&isCardinal(o.orientation))&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(t,shapes,index)))return null;
+  const o=t.objects[index];if(!o||!isEightWay(o.orientation)||Math.floor(o.itemId/100000)!==400||!editable.has(o.itemId)||!removable.has(o.itemId)||!(free?(supportIndices.has(index)?face.positions[index]?.plain!==true&&face.positions[index]?.storage!==true&&isCardinal(o.orientation):face.positions[index]?.plain===true||face.positions[index]?.storage===true&&isCardinal(o.orientation))&&freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(t,shapes,index)))return null;
   rows.push({roomSource:{roomOrdinal,index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(supportIndices.has(index)?{supportFactor:t.factor}:{}),...(face.positions[index]?.storage?{storage:true as const}:{})});
   clip.push({itemId:o.itemId,dx:o.x*2/t.factor,dy:o.y*2/t.factor,orientation:worldOrientationCode(o.orientation)!/4});
  }
