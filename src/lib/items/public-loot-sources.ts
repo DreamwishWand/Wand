@@ -81,6 +81,20 @@ function referrerRole(cls:string|null,category:string,path:string):LootReferrerR
   if(category==='RecurringEvent'&&path==='source.WeedOverrides.WeedLootTable')return 'recurring_weed_override';
   return 'other_reference';
 }
+/** Exact source definition -> LootTable occurrence; no asserted drop or stock. */
+export interface LootReferrerTableReference {
+  readonly sourcePath:string;
+  readonly role:LootReferrerRole;
+  readonly definition:Readonly<LootTableDefinition>;
+}
+export interface LootReferrerEvidence {
+  readonly sourceItemId:number;
+  readonly status:'indexed'|'not_indexed';
+  readonly references:readonly Readonly<LootReferrerTableReference>[];
+  readonly coverageComplete:false;
+  readonly actualDropVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface LootItemSourceEvidence {
   readonly occurrence:Readonly<LootItemOccurrence>;
   readonly group:Readonly<LootSourceGroup>;
@@ -170,6 +184,49 @@ export function createLootSourceReader(db:PublicCompleteItemMaster){
       return Object.freeze({tableItemId:r.itemId,status,referrers:Object.freeze(referrers),coverageComplete:false as const});
     }));
   }
+  /** Forward lookup from any canonical source definition, including unknown
+   * referrer roles. Resolve only the referenced tables; no locale or full
+   * master record is required. Preserve repeated source occurrences. */
+  async function getForReferrers(sourceIds:readonly number[]):Promise<readonly (Readonly<LootReferrerEvidence>|null)[]>{
+    input(sourceIds);
+    const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
+    const available=await indexed()&&catalog.has('references.outgoing')&&catalog.has('sourceClass');
+    const rows=await db.getItemFields(sourceIds,available?['nativeCategory','sourceClass']:['itemId']);
+    const unique=[...new Set(rows.flatMap(r=>r?[r.itemId]:[]))].sort((a,b)=>a-b);
+    const outgoing=available?await db.getItemsReferences(unique,'outgoing'):[];
+    const bySource=new Map(unique.map((id,i)=>[id,outgoing[i]??[]]));
+    const targets=[...new Set(outgoing.flatMap(r=>(r??[]).map(e=>e[0])))].sort((a,b)=>a-b);
+    const tableIds:number[]=[];
+    for(let start=0;start<targets.length;start+=10000){
+      for(const target of await db.getItemFields(targets.slice(start,start+10000),['nativeCategory'])){
+        check(target,'REFERRER_TARGET');
+        if(target.values.nativeCategory==='LootTable')tableIds.push(target.itemId);
+      }
+    }
+    const tables=new Map<number,Readonly<LootTableDefinition>>();
+    for(let start=0;start<tableIds.length;start+=10000){
+      for(const table of await getForTables(tableIds.slice(start,start+10000))){
+        check(table?.definition,'REFERRER_TABLE_JOIN');
+        tables.set(table.itemId,table.definition);
+      }
+    }
+    return Object.freeze(rows.map(row=>{
+      if(!row)return null;
+      const category=row.values.nativeCategory,cls=row.values.sourceClass;
+      if(available)check(typeof category==='string','REFERRER_SOURCE_CATEGORY');
+      const references:Readonly<LootReferrerTableReference>[]=[];
+      if(available&&typeof category==='string'){
+        for(const [target,sourcePath] of bySource.get(row.itemId)??[]){
+          const definition=tables.get(target);
+          if(definition)references.push(Object.freeze({sourcePath,
+            role:referrerRole(typeof cls==='string'?cls:null,category,sourcePath),definition}));
+        }
+      }
+      return Object.freeze({sourceItemId:row.itemId,status:available?'indexed' as const:'not_indexed' as const,
+        references:Object.freeze(references),coverageComplete:false as const,actualDropVerified:false as const,
+        currentAvailabilityVerified:false as const});
+    }));
+  }
   async function getForItems(itemIds:readonly number[],locale?:ItemMasterLocale):Promise<readonly (Readonly<LootItemEvidence>|null)[]>{
     input(itemIds);check(locale===undefined||ITEM_MASTER_LOCALES.includes(locale),'LOCALE');const available=await indexed();
     if(!available)return Object.freeze((await db.getItemFields(itemIds,['itemId'])).map(r=>r?Object.freeze({
@@ -200,5 +257,5 @@ export function createLootSourceReader(db:PublicCompleteItemMaster){
         const r=occurrences.get(e[0]+':'+e[2]);check(r&&r.occurrence.itemId===itemIds[i],'OCCURRENCE_JOIN');return r;
       })),guaranteedRewardVerified:false as const,currentAvailabilityVerified:false as const})));
   }
-  return Object.freeze({release,getForTables,getForItems,getTableReferrers});
+  return Object.freeze({release,getForTables,getForItems,getTableReferrers,getForReferrers});
 }
