@@ -46,7 +46,7 @@
   import { collectionFamilyLabel } from '$lib/collection/copy';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy.ts';
   import {collectionScopeOptions,collectionItemScopeLabels,COLLECTION_WORLD_NAVIGATION,type CollectionScopeOption} from '$lib/collection/scope-options';
-  import {collectionItemFromLink}
+  import {collectionItemFromLink,collectionItemIdFromSearch}
     from '$lib/collection/item-permalink.ts';
 
   let memoryPreviewRequested=false;
@@ -164,6 +164,7 @@
   let selectionMode=false;
   let selectedIds:number[]=[];
   let selectedItemId:number|null=null;
+  let legacyLinkedItemId:number|null=null;
   let importInput:HTMLInputElement;
   let workspaceOptions:HTMLDetailsElement;
   let localCatalogInput:HTMLInputElement;
@@ -1138,6 +1139,7 @@
   }
   onMount(()=>{
     memoryPreviewRequested=new URLSearchParams(window.location.search).get('memoryPreview')==='1';
+    legacyLinkedItemId=collectionItemIdFromSearch(window.location.search);
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
       if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
@@ -1178,7 +1180,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('popstate',onCollectionPopState);window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;pendingBrowseRestore=null;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('popstate',onCollectionPopState);window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -1813,7 +1815,7 @@
             {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               {#key selectedItem.itemId}
                 <!-- Preserve existing pose permalinks during migration. -->
-                {#if typeof window!=='undefined'&&new URLSearchParams(window.location.search).has('pose')}<ItemMasterDetails itemId={selectedItem.itemId} {locale}/>{/if}
+                {#if legacyLinkedItemId===selectedItem.itemId}<ItemMasterDetails itemId={selectedItem.itemId} {locale}/>{/if}
                 <CurrentItemFacts itemId={selectedItem.itemId} {locale} compact/>
               {/key}
             {/if}
