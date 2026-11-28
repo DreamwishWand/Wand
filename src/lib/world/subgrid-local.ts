@@ -29,15 +29,15 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
  for(const o of tree.objects){const key=supportShapeKey(o),s=key?shapes[key]:null;left=Math.min(left,o.x);top=Math.min(top,o.y);right=Math.max(right,o.x+(s?.width??1));bottom=Math.max(bottom,o.y+(s?.height??1));}
  return {x:left-.5,y:top-.5,w:right-left+1,h:bottom-top+1};
 }
-export function supportParentEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
- return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move');
+export function supportParentEligible(p:MainlandSavedObject|null,nonstandard=false):p is MainlandSavedObject{
+ return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&(nonstandard||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move'));
 }
 export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={},objects:readonly MainlandSavedObject[]=[],duplicate=false,nonstandard=false){
- if(!supportParentEligible(p)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ if(!supportParentEligible(p,nonstandard)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const original=grids.find(g=>g.key===p.area),hits=(nonstandard?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
  if(!original||!g||!r||g.factor!==p.factor||original.factor!==p.factor)return null;
  const cross=original.key!==g.key,turned=orientation!==p.object.orientation;
- if(cross&&nativeActionBlocked(p.object.editRestrictions,'switchGrid')||turned&&nativeActionBlocked(p.object.editRestrictions,'rotate'))return null;
+ if(!nonstandard&&(cross&&nativeActionBlocked(p.object.editRestrictions,'switchGrid')||turned&&nativeActionBlocked(p.object.editRestrictions,'rotate')))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  const shape=turned?shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]:p.shape;
  if(!shape||!shape.cellCount||shape.cellCount>65536||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!cross&&!turned&&x===p.object.x&&y===p.object.y&&!(duplicate&&nonstandard))return null;

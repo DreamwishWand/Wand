@@ -16,3 +16,11 @@ test('group pickup includes only verified empty storage and refuses mixed select
  assert.equal(groupPickupPlan([p(1),{...storage,object:{...storage.object,storageEmpty:false}}]),null);
  assert.equal(groupPickupPlan([p(1),{...storage,object:{...storage.object,storageEmpty:undefined}}]),null);
 });
+
+test('free pickup releases native game flags but retains structural constraints',()=>{
+ const fixed={...p(1),object:{...p(1).object,editRestrictions:{select:'denied',remove:'denied',move:'denied'}}};
+ const table={...fixed,object:{...fixed.object,subgrid:{status:'resolved_full',objectCount:2}}};
+ assert.equal(groupPickupPlan([table]),null);assert.equal(groupPickupPlan([table],true)[0].includeSupport,true);
+ assert.equal(groupPickupPlan([fixed,p(2)]),null);assert.equal(groupPickupPlan([fixed,p(2)],true).length,2);
+ assert.equal(groupPickupPlan([{...table,object:{...table.object,subgrid:{status:'unresolved',objectCount:null}}}],true),null);
+});
