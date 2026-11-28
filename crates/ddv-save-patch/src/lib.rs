@@ -893,6 +893,32 @@ pub fn preview_free_outdoor_world_transfer(source:&str,target:&GridCoordinateTar
  if local_state&&(!obj.get("State").is_some_and(transferable_local_grid_state)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!obj["Orientation"].as_str().is_some_and(|o|OBSERVED_CARDINAL_ORIENTATIONS.contains(&o))){return Err(PatchError::InvalidTarget);}
  relocate_grid_record_checked(source,target,expected,d,xy,orientation,false,false,local_state)
 }
+/// Transfer an existing owned furniture root involving a calibrated scene.
+ /// The codec authenticates both exact catalog identities, source bounds and
+ /// dependency references. Preserve the observed child/container ID and State;
+ /// only the Grid-local root identity is reallocated.
+pub fn preview_free_owned_scene_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,support:bool,storage:bool)->Result<GridCoordinateDraft,PatchError>{
+ let bad=PatchError::InvalidTarget;
+ if target.grid_id==d.grid_id||support==storage||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+ let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
+ let collection=&root["World"]["GridCollection"];
+ let grids=collection["Grids"].as_object().ok_or(bad)?;
+ let from=grids.get(&target.grid_id).ok_or(bad)?;
+ let layout=from["GridDefaultLayoutPath"].as_str().unwrap_or("");
+ let data=from["GridDataPath"].as_str().ok_or(bad)?;
+ let source_local=underwater_plain_path(layout,data);
+ let dest_local=underwater_plain_path(&d.layout_path,&d.data_path);
+ if !source_local&&!dest_local||!source_local&&house_exterior_world(layout,data).is_none()||!dest_local&&house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}
+ let factor=from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64).ok_or(bad)?;
+ if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||source_local&&factor!=1||dest_local&&d.tessellation!=1||support&&factor!=u64::from(d.tessellation)||
+    grids.values().filter(|g|g["GridDataPath"].as_str()==Some(data)&&g["GridDefaultLayoutPath"].as_str().unwrap_or("")==layout).count()!=1{return Err(bad);}
+ let obj=&from["Objects"][&target.object_id];
+ if storage&&!storage_transform_pose(&root,obj)||support&&!obj.get("State").and_then(serde_json::Value::as_object).is_some_and(|m|m.len()==1&&m.contains_key("SubGrid")){return Err(bad);}
+ relocate_grid_record(source,target,expected,d,xy,orientation,support,storage)
+}
+
 fn outdoor_world_path(scope:&str,path:&str)->bool{
     if path.contains("..")||path.contains('\\')||!path.ends_with(".json"){return false;}
     match scope{
@@ -2019,7 +2045,7 @@ pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expect
  if target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
  let room=d.layout_path.is_empty()&&d.data_path.starts_with("GridData/Rooms/Room");
  if room{if target.grid_id!=d.grid_id{return Err(bad);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
- else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(free&&d.tessellation==1&&underwater_plain_path(&d.layout_path,&d.data_path)){return Err(bad);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
  if obj["ID"].as_u64()!=target.object_id.parse::<u64>().ok()||obj["ItemID"].as_u64()!=Some(target.item_id)||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1))||

@@ -65,7 +65,7 @@ export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string
  if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
  if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope){
   const outdoor=['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'];
-  if(free)outdoor.push('FloatingIslands');
+  if(free)outdoor.push('FloatingIslands','VillageExpansion04UnderwaterAreas');
   if(!outdoor.includes(cut.scope)||!outdoor.includes(scope))return false;
  }
  if(cut.scope===scope&&!(free&&['FloatingIslands','VillageExpansion04UnderwaterAreas'].includes(scope)&&cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal))))return cutWitnessMatches(cut.rows,objects,free);
@@ -148,11 +148,11 @@ export const groupPasteWords={
 } as const;
 
 /** Native source witnesses remain local to this exact opened Save. */
-export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false){
+export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false,ownedScene=false){
  if(!free||!items.length||items.some(p=>!isCardinal(p.object.orientation)))return null;
  // Existing native mixed route also authenticates ordinary cardinal source
  // records; keep the specialized support/storage-only paths unchanged.
- if(!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)&&items.some(p=>p.object.subgrid||p.object.storage||p.object.storageKnown))return null;
+ if(!ownedScene&&!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)&&items.some(p=>p.object.subgrid||p.object.storage||p.object.storageKnown))return null;
  const clip=captureFurnitureGroup(items,true,true,true),sources=captureCutWitness(items,true);
  return clip&&sources?{clip,sources}:null;
 }
