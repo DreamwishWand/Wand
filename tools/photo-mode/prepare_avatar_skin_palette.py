@@ -11,10 +11,11 @@ def download_skin_palette():
     r=urllib.request.Request(URL,headers={"User-Agent":"Dreamwish-Wand-Pages"})
     with urllib.request.urlopen(r,timeout=180) as f:return f.read(SIZE+1)
 
-def apply_skin_palette(raw,dest):
+def apply_skin_palette(raw,dest,base_source):
     require(len(raw)==SIZE and digest(raw)==SHA,"skin archive integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["gameVersion"]=="1.26.2" and public["publicationAuthorized"] is True and public["testOnly"] is True and public["fullPoseVerified"] is False and public.get("avatarMaterials"),"skin base identity")
+    require(base_source["schema"]=="wand.photo-mode.avatar-base-materials@1" and base_source["gameVersion"]==public["gameVersion"] and base_source["skinVariant"]=="A","skin base source identity")
     rows=[];used=set();source_materials=set();existing=set()
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         require(len(z.infolist())==117 and len(set(z.namelist()))==117,"skin archive coverage")
@@ -33,7 +34,14 @@ def apply_skin_palette(raw,dest):
                     name=e["sha256"]+"."+ext
                     if ext=="png":
                         expected={s["texture"]["sha256"] for s in public["avatarMaterials"][public["models"][b]["sha256"]] if s["role"]==role}
-                        require(expected=={e["sha256"]},"existing skin A identity")
+                        # The regenerated archive references separately encoded PNGs which are not shipped.
+                        # Reuse only the independently verified base PNG for the exact same native material and texture.
+                        matches=[r for r in base_source["items"][b] if r["role"]==role]
+                        require(len(matches)==1,"existing skin A source role")
+                        source=matches[0]
+                        require(all(source[k]==v[k] for k in ("materialSha256","textureSourceSha256","width","height")),"existing skin A native source identity: "+b+" "+role)
+                        e=entry(source["texture"]);name=e["sha256"]+".png"
+                        require(expected=={e["sha256"]},"existing skin A model texture identity")
                         data=(dest/name).read_bytes();require(len(data)==e["bytes"] and digest(data)==e["sha256"],"existing skin texture");existing.add(name)
                     else:
                         require(name not in used,"unexpected skin texture duplicate");info=z.getinfo(name);require(info.file_size==e["bytes"]<=16*1024*1024,"skin asset size")

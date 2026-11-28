@@ -132,7 +132,7 @@ if __name__=='__main__':
         apply_materials(a.mermaid_materials.read_bytes() if a.mermaid_materials else download_materials(),a.dest)
 
         from prepare_avatar_base_materials import download_avatar_materials,apply_avatar_materials
-        apply_avatar_materials(a.avatar_materials.read_bytes() if a.avatar_materials else download_avatar_materials(),a.dest)
+        base_source=apply_avatar_materials(a.avatar_materials.read_bytes() if a.avatar_materials else download_avatar_materials(),a.dest)
 
         from prepare_avatar_skin_palette import download_skin_palette,apply_skin_palette
-        apply_skin_palette(a.skin_palette.read_bytes() if a.skin_palette else download_skin_palette(),a.dest)
+        apply_skin_palette(a.skin_palette.read_bytes() if a.skin_palette else download_skin_palette(),a.dest,base_source)

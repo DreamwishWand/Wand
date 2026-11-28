@@ -77,3 +77,4 @@ def apply_avatar_materials(raw,dest):
     public["avatarMaterials"]=result
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Shared avatar base appearance:",len(result),"model/paired assets;",sum(map(len,result.values())),"matched primitives; 5 PNGs and 8 UV arrays")
+    return source
