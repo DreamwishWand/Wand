@@ -4,8 +4,10 @@ import type {ShopSourceKind} from './shop-source-media.ts';
 import {shopArtworkTemplate,shopOneLineArtworkTemplate} from './shop-artwork-layout.ts';
 import {steamShopArtworkRules,nativeShopBindingAddress} from './shop-native-artwork.ts';
 
+import type {ShopRuntimePrefix} from './shop-runtime-items.ts';
+
 type Reader={get(address:unknown,kind?:ShopSourceKind):BundleArtwork|null};
-export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,groupWidth:number){
+export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,groupWidth:number,runtime?:ShopRuntimePrefix|null){
   const art=revision.artwork??{};
   const mega=art.megaImages as Record<string,unknown>|undefined;
   const fields:{field:string;address:unknown;itemId?:number}[]=[
@@ -19,7 +21,7 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
   const template=shopArtworkTemplate(native?.layout??art.lightLayout,groupWidth);
   // Explicit candidate bindings only; an absent override or ambiguous Icon is not a resolved native image.
   const slots=template?.slots.map(s=>{
-    const nativeAddress=native?nativeShopBindingAddress(revision,s.binding):null;
+    const nativeAddress=native?nativeShopBindingAddress(revision,s.binding,runtime?.revisionSha256===revision.revisionSha256?runtime.items:undefined):null;
     const field=nativeAddress?.status==='address'?nativeAddress.field:
       s.binding==='CurrentImage'?'Image':s.binding.startsWith('MegaBundleImage')?
       'OverridedImage'+s.binding.slice('MegaBundleImage'.length):
@@ -46,14 +48,16 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
  * The first runtime item is the only source position used without expansion.
  * Do not apply grid ImageAdjustmentBinding to this dedicated prefab.
  */
-export function inspectOneLineShopArtwork(revision:PremiumBundleRevision,reader:Reader,width:number,height:number){
+export function inspectOneLineShopArtwork(revision:PremiumBundleRevision,reader:Reader,width:number,height:number,runtime?:ShopRuntimePrefix|null){
   if(!steamShopArtworkRules(revision))return null;
   const template=shopOneLineArtworkTemplate(width,height);
   if(!template)return null;
   const main=nativeShopBindingAddress(revision,'CurrentImage');
   const first=nativeShopBindingAddress(revision,'Items[0].Icon');
-  return {template,main,first,
+  const prefix=runtime?.revisionSha256===revision.revisionSha256?runtime:null;
+  const scrollItems=prefix?.items.map(item=>({...item,image:item.address?reader.get(item.address,'Sprite'):null}))??[];
+  return {template,main,first,scrollItems,
     mainImage:main.status==='address'?reader.get(main.address,'Sprite'):null,
     firstImage:first.status==='address'?reader.get(first.address,'Sprite'):null,
-    runtimeOrderVerified:false as const,renderingVerified:false as const};
+    runtimeOrderVerified:prefix?.complete??false,renderingVerified:false as const};
 }

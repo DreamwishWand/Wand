@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import {readShopRuntimePrefix,type ShopRuntimePrefix} from '$lib/media/shop-runtime-items.ts';
   import {loadPinnedShopBundleSources} from '$lib/acquisition/public-native-shop.ts';
   import {createShopCategoryObservations,type ShopCategoryObservation} from '$lib/media/shop-category-observations.ts';
   import ShopBundleContents from '$lib/media/ShopBundleContents.svelte';
@@ -17,6 +18,13 @@
   let categoryLookup:ReturnType<typeof createShopCategoryObservations>|null=null;
   let categoryLoading=true,categoryFailed=false;
   let appearance='';
+  let runtime:ShopRuntimePrefix|null=null;
+  let runtimeRequest=0;
+  async function loadRuntime(v:NonNullable<typeof revision>,db:PublicCompleteItemMaster){
+    const request=++runtimeRequest;runtime=null;
+    try{const result=await readShopRuntimePrefix(v,db);if(request===runtimeRequest)runtime=result;}catch{/* No inferred runtime order on missing DB data. */}
+  }
+  $: if(revision&&database)void loadRuntime(revision,database);
   $: observations=definition&&revision&&categoryLookup?categoryLookup(definition,revision):[];
   $: observation=observations.find(o=>o.snapshotKey===appearance)??observations.at(-1)??null;
   const appearanceLabel=(o:ShopCategoryObservation)=>o.snapshotKey+' · '+o.category;
@@ -25,8 +33,8 @@
   $: filtered=definitions.filter(b=>[b.bundleId,b.current?.title,b.legacy?.title].some(v=>v?.toLowerCase().includes(query.trim().toLowerCase())));
   $: definition=definitions.find(b=>b.bundleId===selected);
   $: revision=definition?.[source]??null;
-  $: inspection=revision&&reader?inspectShopArtwork(revision,reader,groupWidth):null;
-  $: oneLine=revision&&reader&&observation?.presentation==='one_line'?inspectOneLineShopArtwork(revision,reader,groupWidth,groupHeight):null;
+  $: inspection=revision&&reader?inspectShopArtwork(revision,reader,groupWidth,runtime):null;
+  $: oneLine=revision&&reader&&observation?.presentation==='one_line'?inspectOneLineShopArtwork(revision,reader,groupWidth,groupHeight,runtime):null;
   function choose(b:PremiumBundleDefinition){selected=b.bundleId;source=b.current?'current':'legacy';appearance='';}
   onMount(()=>{
     let alive=true;
@@ -87,12 +95,22 @@
                   {:else}<span>CurrentImage 未確定</span>{/if}
                 </div>
                 <div class="slot one-line-scroll" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'} style:top={100*t.scroll.y/t.artworkHeight+'%'} style:height={100*t.scroll.height/t.artworkHeight+'%'}>
+                  {#if oneLine.scrollItems.length}
+                    {#each oneLine.scrollItems as item,j (j)}
+                      <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
+                        {#if item.image}<img src={url(item.image,detail)} alt={'Items['+j+'].Icon'} loading="lazy" decoding="async" style:object-fit={t.scroll.fill}/>
+                        {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail}/>
+                        {:else}<span>画像未登録</span>{/if}
+                      </div>
+                    {/each}
+                  {:else}
                   <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
                     {#if oneLine.firstImage}<img src={url(oneLine.firstImage,detail)} alt="Items[0].Icon" loading="lazy" decoding="async" style:object-fit={t.scroll.fill}/>
                     {:else if oneLine.first.status==='unresolved'&&oneLine.first.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
                     {:else}<span>Items[0].Icon 未確定</span>{/if}
                   </div>
-                  <div class="one-line-item unresolved">後続Itemsの展開未確定</div>
+                  {/if}
+                  {#if !oneLine.runtimeOrderVerified}<div class="one-line-item unresolved">後続Itemsの展開未確定</div>{/if}
                 </div>
               </div>
             {:else}<p>Steam版の有効な比較寸法が必要です。</p>{/if}
@@ -115,6 +133,9 @@
               {/each}
               {#if t.scroll}<div class="slot" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'}>Scroll / Icon 未確定</div>{/if}
             </div>
+          {/if}
+          {#if runtime?.revisionSha256===revision.revisionSha256}
+            <p>Items順序: {runtime.items.length}件{runtime.complete?'（全順序確定）':'（確定範囲のみ · '+runtime.blockedBy+'）'}</p>
           {/if}
           <h3>原本参照</h3>
           {#each inspection.rows.filter(r=>r.address!=null&&r.address!=='') as row (row.field)}
