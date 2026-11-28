@@ -21,6 +21,8 @@ mod storage_source;
 mod private_storage_scope;
 #[cfg(feature="wasm")]
 mod private_storage_pose;
+#[cfg(feature="wasm")]
+mod private_storage_transfer;
 mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
@@ -1558,7 +1560,7 @@ mod browser_amount_preview {
             let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
             if scope_value["kind"]!="outdoor"{return Err(invalid());}
             let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?;
-            let patched=crate::private_storage_pose::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
+            let patched=crate::private_storage_transfer::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
         pub fn prepare_private_storage_contents_copy(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
