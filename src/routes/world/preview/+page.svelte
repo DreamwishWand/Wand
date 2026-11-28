@@ -152,6 +152,8 @@
   let floorLayerInspectionError='';
   let savedSourceCandidates:SaveCandidateResult|null=null;
   let effectiveDiff:DiffResult|null=null;
+  let effectiveDraft:DiffResult|null=null,draftRequest=-1,draftWorking=false,draftFailed=false;
+  let draftRevision=-1;
   let diffRequest=-1,diffWorking=false,diffFailed=false;
   let diffViewKey='',diffGridId=-1;
   let savedShapeMap:SavedShapeMap|null=null;
@@ -410,6 +412,7 @@
     saveComparisonWorker=null;
     savedSourceCandidates=null;
     effectiveDiff=null;diffRequest=-1;diffWorking=false;diffFailed=false;diffViewKey='';diffGridId=-1;
+    effectiveDraft=null;draftRequest=-1;draftWorking=false;draftFailed=false;draftRevision=-1;
     savedShapeMap=null;savedShapeRequest=-1;
     saveComparisonLoading=false;
     saveComparisonError='';
@@ -421,6 +424,12 @@
     selectedSaveRevision=$localSaveSession.revision;
     worldTimeline=emptyWorldTimeline();
     clearSavedSourceComparison();
+  }
+  function rehearseDiffGrid(plan:unknown){
+    const file=$localSaveSession.file;
+    if(!worker||!file||!effectiveDiff||diffViewKey!==selectedViewKey||diffGridId!==Number(selectedGridId)||draftWorking)return;
+    draftRequest=++requestId;draftRevision=$localSaveSession.revision;draftWorking=true;draftFailed=false;effectiveDraft=null;
+    worker.postMessage({command:'compare-diff',requestId:draftRequest,file,viewKey:diffViewKey,gridIdNative:diffGridId,draftPlan:plan});
   }
   function compareSelectedSaveToGrid(){
     clearSavedSourceComparison();
@@ -909,6 +918,15 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='effective-diff-draft'||(result?.kind==='error'&&result.requestId===draftRequest)){
+        if(result.requestId!==draftRequest||draftRevision!==$localSaveSession.revision||
+          diffViewKey!==selectedViewKey||diffGridId!==Number(selectedGridId))return;
+        draftWorking=false;
+        if(result.kind==='effective-diff-draft'&&result.viewKey===diffViewKey&&result.gridIdNative===diffGridId&&result.result){
+          effectiveDraft=result.result as DiffResult;
+        }else{draftFailed=true;effectiveDraft=null;}
+        return;
+      }
       if(result?.kind==='effective-diff'||(result?.kind==='error'&&result.requestId===diffRequest)){
         if(result.requestId!==diffRequest||diffViewKey!==selectedViewKey||diffGridId!==Number(selectedGridId))return;
         diffWorking=false;
@@ -1506,7 +1524,10 @@
           errorMessage={saveComparisonError}
           onCompare={compareSelectedSaveToGrid}/>
         {#if diffViewKey===selectedViewKey&&diffGridId===Number(selectedGridId)}
-          <EffectiveDiffGridPreview result={effectiveDiff} working={diffWorking} failed={diffFailed}/>
+          {#key diffRequest}
+            <EffectiveDiffGridPreview result={effectiveDiff} working={diffWorking} failed={diffFailed}
+              draft={effectiveDraft} {draftWorking} {draftFailed} onDraft={rehearseDiffGrid}/>
+          {/key}
         {/if}
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
