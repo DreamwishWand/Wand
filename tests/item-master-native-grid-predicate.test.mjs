@@ -27,3 +27,12 @@ test('native layer mask, invalid area and unverified ignore tags do not fabricat
  assert.equal(match({},{maxArea:[1,1]}).status,'unresolved');
  assert.equal(match(null,{}).status,'passed');
 });
+
+test('native ignore-size tag bypass reads only original direct item tags',()=>{
+ const f={maxArea:[1,1],ignoreSizeForTags:[2000300021]};
+ assert.equal(match(grid(5,1),f,[2000300021]).status,'passed');
+ assert.equal(match(null,f,[2000300021]).status,'passed');
+ assert.equal(match(grid(5,1),f,[]).status,'failed');
+ assert.equal(match(grid(5,1),f).status,'unresolved');
+ assert.equal(match(grid(5,1),f,[2000300011]).status,'failed');
+});

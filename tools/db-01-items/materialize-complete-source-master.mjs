@@ -1681,7 +1681,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(shelfCandidates?.length)add('acquisition.storeInstalledShelfCandidates',row.itemId,shelfCandidates);
     const ordinaryShelves=installedShelves.ordinary.get(row.itemId);
     if(ordinaryShelves?.length){
-      add('acquisition.ordinaryGeneratedClothingShelfSources',row.itemId,ordinaryShelves);
+      add('acquisition.ordinaryGeneratedStoreShelfSources',row.itemId,ordinaryShelves);
       categorySet.add('ordinary_gameplay');
     }
     const configuredStore=ordinaryStore.get(row.itemId);

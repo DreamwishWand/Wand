@@ -48,7 +48,7 @@ const extensionFields={
   eventLootPresent:'acquisition.eventLootPresentSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   storeSequence:'acquisition.ordinaryStoreSequenceSources',
-  storeGeneratedShelf:'acquisition.ordinaryGeneratedClothingShelfSources',
+  storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
@@ -123,8 +123,10 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
         }else if(family==='storeGeneratedShelf'){
-          check(evidence.kind==='ordinary_generated_clothing_shelf'&&evidence.sourceDisplaySha256===sha?.Display&&
-            evidence.sourceBuildingSha256===sha?.Building&&evidence.sourceItemFileSha256===sha?.Clothing&&
+          check(evidence.kind==='ordinary_generated_store_shelf'&&evidence.sourceDisplaySha256===sha?.Display&&
+            evidence.sourceBuildingSha256===sha?.Building&&evidence.sourceDirectTagPredicateVerified===true&&
+            (evidence.itemNativeCategory==='Clothing'&&evidence.sourceItemFileSha256===sha?.Clothing&&evidence.nativeGrid===null||
+             evidence.itemNativeCategory==='Furniture'&&evidence.sourceItemFileSha256===sha?.Furniture&&object(evidence.nativeGrid)&&evidence.nativeGrid.status==='passed'&&evidence.nativeGrid.directTagPredicateVerified===true)&&
             evidence.sourceSetSha256===sha?.Set&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
             evidence.purchaseCurrencyItemId===80000000&&id(evidence.configuredPurchaseAmount)&&id(evidence.buildingItemId)&&
             id(evidence.minimum)&&id(evidence.maximum)&&evidence.configuredPurchaseAmount>=evidence.minimum&&

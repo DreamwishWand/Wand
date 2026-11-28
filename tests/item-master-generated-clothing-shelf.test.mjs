@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
 import {readItemAcquisitionSourceDetails} from '../src/lib/items/public-item-acquisition-details.ts';
-test('original clothing shelf routes preserve native price intervals and set unlock fallback',async()=>{
+test('original furniture and clothing shelf routes preserve native price intervals and set unlock fallback',async()=>{
  const db=await openCurrentItemDatabase('',async u=>new Response(await readFile('static'+u),{status:200}));
- const actual=new Map(await db.getFieldRows('acquisition.ordinaryGeneratedClothingShelfSources'));
+ const actual=new Map(await db.getFieldRows('acquisition.ordinaryGeneratedStoreShelfSources'));
  assert(actual.size>0);
  const [candidates,prices,gates,sets,overrides,evolved,category]=await Promise.all([
   'acquisition.storeInstalledShelfCandidates','acquisition.catalogFacts','source.SetItemID',
@@ -20,7 +20,8 @@ test('original clothing shelf routes preserve native price intervals and set unl
       !facts?.flagsKnown||facts.exclusionFlags.length||facts.gateStatus!=='empty_source_gate'||
       evolved.get(id)===true||!override||Object.keys(override).length||
       provider?.buy.length!==1||provider.buy[0][0]!==80000000||!(provider.buy[0][1]>0))continue;
-   if(links.some(l=>l.sourceItemFileSha256===db.release.sourceFilesSha256.Clothing&&!l.gridReviewRequired&&!l.directTagReviewRequired&&
+   if(links.some(l=>(l.sourceItemFileSha256===db.release.sourceFilesSha256.Clothing&&!l.gridReviewRequired&&!l.directTagReviewRequired||
+       l.sourceItemFileSha256===db.release.sourceFilesSha256.Furniture&&l.gridReviewRequired&&l.nativeGrid?.status==='passed'&&l.nativeGrid.directTagPredicateVerified===true)&&
      Array.isArray(l.priceTables)&&l.priceTables.some(t=>Array.isArray(t.Thresholds)&&t.Thresholds.length)))expected.add(id);
  }
  assert.deepEqual([...actual.keys()].sort((a,b)=>a-b),[...expected].sort((a,b)=>a-b));
@@ -29,6 +30,9 @@ test('original clothing shelf routes preserve native price intervals and set unl
    for(const l of links){
      const match=candidates.get(id).find(c=>c.displayItemId===l.sourceItemId&&c.buildingSourcePath===l.sourcePath&&c.shelfSlotIndex===l.shelfSlotIndex);
      assert(match);const ts=match.priceTables[l.tableIndex].Thresholds;
+     assert.equal(l.sourceDirectTagPredicateVerified,true);
+     assert.deepEqual(l.nativeGrid,match.nativeGrid);
+     if(l.itemNativeCategory==='Furniture')assert.equal(l.nativeGrid.status,'passed');
      const cost=costs.get(id).buy[0][1];
      assert.equal(l.configuredPurchaseAmount,cost);
      assert.equal(l.minimum,l.bandIndex===0?1:ts[l.bandIndex-1]);

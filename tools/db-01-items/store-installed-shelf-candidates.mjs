@@ -2,7 +2,7 @@
  * Native 1.26.2 StoreUtil.GetScroogeStoreItemList -> AddItemsToResult -> 
  * ItemGenerator.GetFilteredItemList enumerates candidates, with price table
  * partitions. Runtime ownership, expansion, price and uniqueness gates
- * remain separate. Only fully evaluated original clothing shelf routes add a category.
+ * remain separate. Only fully evaluated original shelf routes add a category.
  */
 const id=n=>Number.isSafeInteger(n)&&n>0;
 const props=r=>({...r?.nativeProperties,...r?.sourceAttributes});
@@ -55,16 +55,15 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
       catalogGateStatus:f?.gateStatus??null,catalogFlagsKnown:f?.flagsKnown??false,
       catalogExclusionFlags:f?.exclusionFlags??null,
       sourceTagIds:row.tags.filter(t=>t.sourceField===9).map(t=>t.id),
-      directLayoutMatch:true,nativeOwnershipCheckRequired:row.nativeCategory==='Clothing',
+      directLayoutMatch:true,sourceDirectTagPredicateVerified:candidate.sourceDirectTagPredicateVerified===true,nativeOwnershipCheckRequired:row.nativeCategory==='Clothing',
       nativeGrid:layout.dimensionComparisons.get(itemId)?.find(g=>g.areaKey===l.areaKey)?.nativeGrid??null,
       gridPredicateEvaluated:false,runtimeStorePoolVerified:false,
       storeMembershipVerified:false,currentAvailabilityVerified:false})));
     counts[row.nativeCategory]=(counts[row.nativeCategory]??0)+1;
     // The native catalogue enumeration calls ItemGenerator.GetFilteredItemList,
-    // then repeats with each positive inclusive price interval. Only clothing
-    // type/subtype-only shelves can currently be evaluated end-to-end here.
-    // Grid and direct/dynamic tag filters are intentionally not promoted.
-    if(row.nativeCategory!=='Clothing')continue;
+    // then repeats with each positive inclusive price interval. Both furniture
+    // and clothing use the same price and inherited unlock checks.
+    if(!['Clothing','Furniture'].includes(row.nativeCategory))continue;
     if(!f?.flagsKnown||f.exclusionFlags.length||f.gateStatus!=='empty_source_gate'){reject('item_gate');continue;}
     const p=props(row),setId=p.SetItemID;
     if(!Number.isSafeInteger(setId)||setId<0){reject('set_unknown');continue;}
@@ -87,7 +86,14 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
     const qualifying=[];
     for(const l of links){
       const area=byArea.get(l.areaKey),filter=area?.filter;
-      if(!filter||filter.grid||filter.allTags||filter.anyTags||filter.typeCodes?.length!==1||
+      const furniture=row.nativeCategory==='Furniture';
+      const nativeGrid=layout.dimensionComparisons.get(itemId)?.find(g=>g.areaKey===l.areaKey)?.nativeGrid??null;
+      if(!filter||candidate.sourceDirectTagPredicateVerified!==true)continue;
+      if(furniture){
+        // These matches were selected by the exact direct type/subtype/tag
+        // predicates. Require a fully resolved grid match, never just bounds.
+        if(!filter.grid||nativeGrid?.status!=='passed'||nativeGrid.directTagPredicateVerified!==true)continue;
+      }else if(filter.grid||filter.allTags||filter.anyTags||filter.typeCodes?.length!==1||
         filter.typeCodes[0]!==5||filter.subtypes?.length!==1||filter.subtypes[0][0]!==6||
         !filter.subtypes[0][1].includes(row.itemType.subtypeCode))continue;
       if(!Array.isArray(l.priceTables))continue;
@@ -100,12 +106,12 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
         if(bandIndex===-1)bandIndex=ts.length;
         const minimum=bandIndex===0?1:ts[bandIndex-1],maximum=bandIndex===ts.length?2147483647:ts[bandIndex]-1;
         if(price.amount<minimum||price.amount>maximum)continue;
-        qualifying.push({kind:'ordinary_generated_clothing_shelf',sourceItemId:l.displayItemId,targetItemId:itemId,
+        qualifying.push({kind:'ordinary_generated_store_shelf',itemNativeCategory:row.nativeCategory,sourceDirectTagPredicateVerified:true,nativeGrid,sourceItemId:l.displayItemId,targetItemId:itemId,
           buildingItemId:building.itemId,upgradeLevel:l.upgradeLevel,configuredDisplayQuantity:l.configuredDisplayQuantity,
           sourcePath:l.buildingSourcePath,shelfSlotIndex:l.shelfSlotIndex,shelfSlotAmount:l.shelfSlotAmount,
           areaKey:l.areaKey,areaRecordIndex:l.areaRecordIndex,areaSourceRecordSha256:l.areaSourceRecordSha256,
           sourceProtoDbSha256:l.sourceProtoDbSha256,sourceGameVersion:source.target.gameVersion,
-          sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,sourceItemFileSha256:sha.Clothing,sourceSetSha256:sha.Set,
+          sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,sourceItemFileSha256:sha[row.nativeCategory],sourceSetSha256:sha.Set,
           nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
           purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource:provider.providerKind,
           priceProviderRecordIndex:provider.sourceRecordIndex,tableIndex,bandIndex,minimum,maximum,

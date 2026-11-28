@@ -508,7 +508,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const [id,links] of objectiveGrants)if(links.some(l=>l.category!==null))expected.add(id);
   const storeSequence=new Map(await master.getFieldRows('acquisition.ordinaryStoreSequenceSources'));
   for(const id of storeSequence.keys())expected.add(id);
-  const generatedShelf=fields.has('acquisition.ordinaryGeneratedClothingShelfSources')?new Map(await master.getFieldRows('acquisition.ordinaryGeneratedClothingShelfSources')):new Map();
+  const generatedShelf=fields.has('acquisition.ordinaryGeneratedStoreShelfSources')?new Map(await master.getFieldRows('acquisition.ordinaryGeneratedStoreShelfSources')):new Map();
   for(const id of generatedShelf.keys())expected.add(id);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){

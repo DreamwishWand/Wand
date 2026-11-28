@@ -1,6 +1,6 @@
 /** Build-only ItemGridFilter.Matches projection, pinned to original Steam 1.26.2.
- * GridSizeQualifierData from protoDb record 88. The tag-bypass branch
- * remains unresolved if the base predicate cannot pass independently.
+ * GridSizeQualifierData from protoDb record 88. The ignore-size branch is a direct IHasTags.Tags membership test.
+ * Absent tag data keeps an otherwise failing bypass route unresolved.
  */
 export const GRID_QUALIFIER_SOURCE=Object.freeze({
   recordIndex:88,recordSha256:'99a5348bc8a6688173c5435f9ff0a33b627b44eb8cbc498b7225a214ab203409',
@@ -11,7 +11,7 @@ export const GRID_QUALIFIER_SOURCE=Object.freeze({
 });
 const integer=v=>Number.isSafeInteger(v);
 const positive=v=>integer(v)&&v>0&&v<=2147483647;
-export function evaluateSourceGridPredicate(g,f){
+export function evaluateSourceGridPredicate(g,f,directTagIds){
   const result={status:'unresolved',sourceGridValidity:null,wallBranch:null,sizeQualifierCode:null,
     minimumPassed:null,maximumPassed:null,qualifierPassed:null,excludedLayersPassed:null,
     ignoreTagBranchRequired:!!f.ignoreSizeForTags?.length,basePredicatePassed:null,
@@ -20,13 +20,17 @@ export function evaluateSourceGridPredicate(g,f){
     sourceProtoDbSha256:GRID_QUALIFIER_SOURCE.sourceProtoDbSha256,
     nativeAssemblySha256:GRID_QUALIFIER_SOURCE.nativeAssemblySha256,
     runtimeTagMatchingVerified:false,storeMembershipVerified:false,currentAvailabilityVerified:false};
+  const knownTags=Array.isArray(directTagIds)&&directTagIds.every(v=>integer(v)&&v>0);
+  result.directTagPredicateVerified=knownTags;
+  result.matchedIgnoreSizeTagIds=knownTags?(f.ignoreSizeForTags??[]).filter(t=>directTagIds.includes(t)):null;
   const finish=passed=>{
     result.basePredicatePassed=passed;
-    result.status=passed?'passed':result.ignoreTagBranchRequired?'unresolved':'failed';
+    result.status=passed?'passed':result.ignoreTagBranchRequired&&!knownTags?'unresolved':'failed';
     return result;
   };
   const min=f.minArea,max=f.maxArea;
   if(!min&&!max&&!f.sizeQualifiers?.length&&!f.excludedLayers?.length)return finish(true);
+  if(result.matchedIgnoreSizeTagIds?.length){result.status='passed';return result;}
   const x=g?.SizeX,y=g?.SizeY,layers=g?.Layers,flag=g?.AcceptedFloorTypesFlag;
   if(!g||!integer(x)||!integer(y)||!Array.isArray(layers))return result;
   if(!positive(x)||!positive(y)||!positive(x*y)||layers.length!==x*y){

@@ -27,6 +27,13 @@ PINS={
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
 WINDOWS=(
+ # AllTags / AnyTag and ignore-size call the direct IHasTags.Tags getter.
+ (0x386cbd1,43,'7ea519155a58aabf52adc93dac8440b8ff36cc14e0aaccd21f2754e86552ee59'),
+ (0x386e1d1,43,'14e7f88b638f0679b95932b2facb0de1f375b358b6fd3c925774bb238451c22f'),
+ (0x3872f9c,57,'2c118bf017ba4a7b6fd3ed21519452e7f662de455b1c9dbe113bca78ab9c2102'),
+ (0x6eb090,8,'909e0dc4d3ccacb58fc60ac44606c857c6ca02c2998d3c01aa5d00470ded71c2'),
+ (0x386cc40,4,'20cdc1df20ac7ef181c9eecea393d56a3fb42630c2f6503d1cb79512285995fc'),
+ (0x386e1fa,8,'e91d415d13c1da13f1a7e814f5dcd7b0bee941366f021aacc4dc1854c1b5b040'),
  # ItemGridFilter.Matches, GridAreaData validity, qualifier and bounds branches.
  (0x3872e65,83,'9d0ac558f2a47c61ac27e6d455bfcb977adf57d022b5f037b603d3109b188f5f'),
  (0x3872f0d,200,'1b16329c5a795b36fd2c3602457403bb9340ce039080974d56dc6e27f7f15cf0'),
@@ -96,7 +103,8 @@ def resolve_native_interfaces(raw,schema):
      (0x9bd90a0,69924,11069,'IIsHiddable'),
      (0x9bd9558,68775,11029,'IAvailability'),
      (0x9b57de8,69925,11006,'IIsMissionItem'),
-     (0x9b16928,69820,10990,'IHasSet')]:
+     (0x9b16928,69820,10990,'IHasSet'),
+     (0x9bccdd8,69824,10987,'IHasTags')]:
   encoded=struct.unpack_from('<Q',raw,slot-0x3200)[0]
   require(encoded==(0x20000001|(expected_index<<1)),'TYPE_ENCODING')
   va=struct.unpack_from('<Q',raw,table+expected_index*8)[0]
@@ -193,6 +201,7 @@ def audit(assembly,dump,proto,itemlist):
   'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
   'nativeCatalogueEnumerationPriceBandsVerified':True,'nativeSetUnlockFallbackVerified':True,
   'nativeGridQualifierRanges':ranges,'nativeGridBoundsAndLayerBranchesVerified':True,
+  'nativeDirectTagFiltersVerified':True,
   'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}

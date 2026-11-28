@@ -1,7 +1,7 @@
 import {evaluateSourceGridPredicate} from './store-native-grid-predicate.mjs';
 /** Build-only original StoreLayoutArea predicates and Display Item relations.
- * A match compares only declared type/subtype and direct source tag criteria.
- * It never evaluates grid qualifiers, dynamic tags, runtime state or stock.
+ * A match compares declared type/subtype and the native direct tag criteria.
+ * Grid evaluation is separate from runtime state and stock.
  */
 import {readFileSync,existsSync} from 'node:fs';
 const SHA=/^[0-9a-f]{64}$/;
@@ -104,7 +104,7 @@ export function buildStoreLayoutFacts(source,rows,screens){
       (!filter.minArea||n>=filter.minArea[i])&&(!filter.maxArea||n<=filter.maxArea[i]));
     const comparisons=matchingAreas.filter(a=>a.filter.grid).map(a=>{
       const f=a.filter.grid;
-      const nativeGrid=evaluateSourceGridPredicate(g,f);
+      const nativeGrid=evaluateSourceGridPredicate(g,f,[...tags]);
       gridStatus[nativeGrid.status]=(gridStatus[nativeGrid.status]??0)+1;
       return {areaKey:a.key,sourceSizeXY:size,nativeGrid,
         directWithinNumericBounds:size?within(size,f):null,
@@ -117,7 +117,7 @@ export function buildStoreLayoutFacts(source,rows,screens){
     for(const key of matchingAreaKeys)perArea[category+'.'+key]=(perArea[category+'.'+key]??0)+1;
     result.candidates.set(row.itemId,{matchingAreaKeys,gridReviewAreaKeys,
       basis:'native_type_subtype_and_direct_source_tags',
-      runtimeTagMatchingVerified:false,gridPredicateEvaluated:false,
+      runtimeTagMatchingVerified:false,sourceDirectTagPredicateVerified:true,gridPredicateEvaluated:false,
       storeMembershipVerified:false,currentAvailabilityVerified:false});
   }
   check(counts.Furniture===1544&&counts.Clothing===904&&matches.Furniture===1544&&matches.Clothing===864,'MATCH_CENSUS');

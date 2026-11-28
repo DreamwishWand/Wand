@@ -132,7 +132,10 @@ test('store layout numeric dimension comparisons are independent of unverified n
       assert.equal(native.storeMembershipVerified,false);
       if(native.basePredicatePassed===true)assert.equal(native.status,'passed');
       if(native.basePredicatePassed===false&&!f.ignoreSizeForTags?.length)assert.equal(native.status,'failed');
-      if(native.basePredicatePassed===false&&f.ignoreSizeForTags?.length)assert.equal(native.status,'unresolved');
+      assert.equal(native.directTagPredicateVerified,true);
+      assert.deepEqual(native.matchedIgnoreSizeTagIds,comparison.directIgnoreSizeTagIds);
+      if(native.matchedIgnoreSizeTagIds.length)assert.equal(native.status,'passed');
+      if(native.basePredicatePassed===false)assert.equal(native.status,'failed');
       assert.equal(comparison.storeMembershipVerified,false);
       assert.equal(comparison.currentAvailabilityVerified,false);
       if(size)validSizeCount++;
