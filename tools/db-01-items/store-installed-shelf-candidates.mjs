@@ -4,11 +4,36 @@
  * partitions. Runtime ownership, expansion, price and uniqueness gates
  * remain separate. Only fully evaluated original shelf routes add a category.
  */
+import {stageAreaSlots} from './store-native-stage-layout.mjs';
+import {resolveStoreCatalogGate} from './store-catalog-gate.mjs';
 const id=n=>Number.isSafeInteger(n)&&n>0;
+// Five exact original Display records have no field 10 (PricesTables).
+// StoreInfo refresh bypasses missing table setters, clamps min to 1 in
+// UpdateSlot; PriceMatches treats MaxAmount <= 0 as unbounded.
+// Diagnostic StoreUtil enumeration skips these, unlike actual generation.
+const NO_PRICE_TABLE=new Set([2140000002,2140000003,2140000006,2140000015,2140000016]);
+function priceBands(link,amount){
+  const tables=link.priceTables;
+  if(NO_PRICE_TABLE.has(link.displayItemId)&&(tables===null||Array.isArray(tables)&&tables.length===0))
+    return [{tableIndex:null,bandIndex:null,minimum:1,maximum:2147483647,priceBandKind:'native_unbounded_positive',catalogueEnumerationVerified:false}];
+  if(!Array.isArray(tables))return [];
+  const bands=[];
+  for(const [tableIndex,table] of tables.entries()){
+    const ts=table?.Thresholds;
+    if(!Array.isArray(ts)||!ts.length||Object.keys(table).length!==1||
+      !ts.every((n,i)=>id(n)&&n<2147483647&&(i===0||n>ts[i-1])))continue;
+    let bandIndex=ts.findIndex(n=>amount<n);
+    if(bandIndex===-1)bandIndex=ts.length;
+    const minimum=bandIndex===0?1:ts[bandIndex-1],maximum=bandIndex===ts.length?2147483647:ts[bandIndex]-1;
+    if(amount>=minimum&&amount<=maximum)bands.push({tableIndex,bandIndex,minimum,maximum,priceBandKind:'configured_thresholds',catalogueEnumerationVerified:true});
+  }
+  return bands;
+}
 const props=r=>({...r?.nativeProperties,...r?.sourceAttributes});
-export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices){
+export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices,questKinds=new Map()){
   const out=new Map(),ordinary=new Map(),sha=source.sourceFilesSha256;
-  const result={candidates:out,ordinary};
+  const stageCandidates=new Map(),stageOrdinary=new Map();
+  const result={candidates:out,ordinary,stageCandidates,stageOrdinary};
   if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
     source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'||
     sha.Set!=='3682f4888244a9a460d08300a00cc873307c9ad3553fb929aaca135efb38708f'||
@@ -20,13 +45,28 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
   const building=known.get(20300028),b=props(building);
   if(building?.nativeCategory!=='Building'||b.DisplayName!=='Building.ScroogeStore_DisplayName'||
     b.DefaultGridLayoutPath!=='SceneLayouts/Rooms/ScroogeShop/ScroogeShop_DefaultLayout.json')return result;
-  const byArea=new Map(layout.areas.map(a=>[a.key,a])),slots=new Map();
+  const byArea=new Map(layout.areas.map(a=>[a.key,a])),slots=new Map(),stageSlots=new Map();
   for(const [ui,u] of (b.UpgradeInfo??[]).entries()){
     if(!id(u.Level))continue;
     for(const [di,d] of (u.Store?.Displays??[]).entries()){
       const def=layout.displayDefinitions.get(d.ItemID);
-      if(!id(d.Quantity)||def?.kind!=='shelf')continue;
+      if(!id(d.Quantity)||!def)continue;
       const p=props(known.get(d.ItemID));
+      if(def.kind==='stage'){
+        for(const stage of stageAreaSlots(d.ItemID,def.stageLayouts,p)){
+          const area=byArea.get(stage.areaKey);if(!area)continue;
+          const a=stageSlots.get(stage.areaKey)??[];
+          a.push({...stage,displayItemId:d.ItemID,upgradeLevel:u.Level,configuredDisplayQuantity:d.Quantity,
+            buildingSourcePath:'source.UpgradeInfo['+ui+'].Store.Displays['+di+'].ItemID',
+            areaRecordIndex:area.recordIndex,areaSourceRecordSha256:area.sourceRecordSha256,
+            priceTables:p.PricesTables??null,uniqueTagsFilters:p.UniqueTagsFilters??null,
+            gridReviewRequired:!!area.filter.grid,directTagReviewRequired:!!(area.filter.allTags||area.filter.anyTags),
+            sourceProtoDbSha256:area.sourceProtoDbSha256});
+          stageSlots.set(stage.areaKey,a);
+        }
+        continue;
+      }
+      if(def.kind!=='shelf')continue;
       for(const [si,s] of def.shelfSlots.entries()){
         const area=byArea.get(s.areaKey);if(!area)continue;
         const a=slots.get(s.areaKey)??[];
@@ -46,9 +86,11 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
   const reject=k=>{rejected[k]=(rejected[k]??0)+1;};
   for(const [itemId,candidate] of layout.candidates){
     const row=known.get(itemId),f=catalog.facts.get(itemId);
-    const links=candidate.matchingAreaKeys.flatMap(k=>slots.get(k)??[]);
+    const shelfLinks=candidate.matchingAreaKeys.flatMap(k=>slots.get(k)??[]);
+    const stageLinks=row.nativeCategory==='Furniture'?candidate.matchingAreaKeys.flatMap(k=>stageSlots.get(k)??[]):[];
+    const links=[...shelfLinks,...stageLinks];
     if(!links.length)continue;
-    out.set(itemId,links.map(l=>({...l,buildingItemId:building.itemId,
+    const enrich=l=>({...l,buildingItemId:building.itemId,
       targetItemId:itemId,sourceGameVersion:source.target.gameVersion,
       sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,
       sourceItemFileSha256:sha[row.nativeCategory],
@@ -58,13 +100,19 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
       directLayoutMatch:true,sourceDirectTagPredicateVerified:candidate.sourceDirectTagPredicateVerified===true,nativeOwnershipCheckRequired:row.nativeCategory==='Clothing',
       nativeGrid:layout.dimensionComparisons.get(itemId)?.find(g=>g.areaKey===l.areaKey)?.nativeGrid??null,
       gridPredicateEvaluated:false,runtimeStorePoolVerified:false,
-      storeMembershipVerified:false,currentAvailabilityVerified:false})));
-    counts[row.nativeCategory]=(counts[row.nativeCategory]??0)+1;
+      storeMembershipVerified:false,currentAvailabilityVerified:false});
+    if(shelfLinks.length){
+      out.set(itemId,shelfLinks.map(enrich));
+      counts[row.nativeCategory]=(counts[row.nativeCategory]??0)+1;
+    }
+    if(stageLinks.length)stageCandidates.set(itemId,stageLinks.map(enrich));
     // The native catalogue enumeration calls ItemGenerator.GetFilteredItemList,
     // then repeats with each positive inclusive price interval. Both furniture
     // and clothing use the same price and inherited unlock checks.
     if(!['Clothing','Furniture'].includes(row.nativeCategory))continue;
-    if(!f?.flagsKnown||f.exclusionFlags.length||f.gateStatus!=='empty_source_gate'){reject('item_gate');continue;}
+    if(!f?.flagsKnown||f.exclusionFlags.length){reject('item_flags');continue;}
+    const catalogGate=resolveStoreCatalogGate(f.catalogVisibilityConditions,known,questKinds,sha);
+    if(!catalogGate){reject('item_gate');continue;}
     const p=props(row),setId=p.SetItemID;
     if(!Number.isSafeInteger(setId)||setId<0){reject('set_unknown');continue;}
     const set=setId>0?known.get(setId):null;
@@ -109,36 +157,39 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
       }else if(filter.grid||filter.allTags||filter.anyTags||filter.typeCodes?.length!==1||
         filter.typeCodes[0]!==5||filter.subtypes?.length!==1||filter.subtypes[0][0]!==6||
         !filter.subtypes[0][1].includes(row.itemType.subtypeCode))continue;
-      if(!Array.isArray(l.priceTables))continue;
-      for(const [tableIndex,table] of l.priceTables.entries()){
-        const ts=table?.Thresholds;
-        if(!Array.isArray(ts)||!ts.length||Object.keys(table).length!==1||
-          !ts.every((n,i)=>id(n)&&n<2147483647&&(i===0||n>ts[i-1])))continue;
-        // Native thresholds delimit [1,t0-1], [t0,t1-1], ..., [tn,INT_MAX].
-        let bandIndex=ts.findIndex(n=>price.amount<n);
-        if(bandIndex===-1)bandIndex=ts.length;
-        const minimum=bandIndex===0?1:ts[bandIndex-1],maximum=bandIndex===ts.length?2147483647:ts[bandIndex]-1;
-        if(price.amount<minimum||price.amount>maximum)continue;
-        qualifying.push({kind:'ordinary_generated_store_shelf',itemNativeCategory:row.nativeCategory,sourceDirectTagPredicateVerified:true,nativeGrid,sourceItemId:l.displayItemId,targetItemId:itemId,
+      for(const band of priceBands(l,price.amount)){
+        const stage=l.stageLayoutType!==undefined;
+        qualifying.push({kind:stage?'ordinary_generated_store_stage':'ordinary_generated_store_shelf',itemNativeCategory:row.nativeCategory,sourceDirectTagPredicateVerified:true,nativeGrid,sourceItemId:l.displayItemId,targetItemId:itemId,
           buildingItemId:building.itemId,upgradeLevel:l.upgradeLevel,configuredDisplayQuantity:l.configuredDisplayQuantity,
-          sourcePath:l.buildingSourcePath,shelfSlotIndex:l.shelfSlotIndex,shelfSlotAmount:l.shelfSlotAmount,
+          sourcePath:l.buildingSourcePath,...(stage?{stageLayoutType:l.stageLayoutType,stageLayoutIndex:l.stageLayoutIndex,
+            stageLayoutWeight:l.stageLayoutWeight,stageSourceSize:l.stageSourceSize,stageAreaSize:l.stageAreaSize,stageSlotIndices:l.stageSlotIndices}:
+            {shelfSlotIndex:l.shelfSlotIndex,shelfSlotAmount:l.shelfSlotAmount}),
           areaKey:l.areaKey,areaRecordIndex:l.areaRecordIndex,areaSourceRecordSha256:l.areaSourceRecordSha256,
           sourceProtoDbSha256:l.sourceProtoDbSha256,sourceGameVersion:source.target.gameVersion,
           sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,sourceItemFileSha256:sha[row.nativeCategory],sourceSetSha256:sha.Set,
           nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
           purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource,
-          priceProviderRecordIndex,tableIndex,bandIndex,minimum,maximum,
-          setItemId:setId||null,itemCatalogGateEmpty:true,inheritedSetGateEmpty:true,
+          priceProviderRecordIndex,...band,
+          setItemId:setId||null,itemCatalogGateEmpty:catalogGate.kind==='empty',catalogGate,inheritedSetGateEmpty:true,
           itemTypeCode:row.itemType.code,itemSubtypeCode:row.itemType.subtypeCode,
           configuredPoolRouteVerified:true,runtimeStockVerified:false,storeMembershipVerified:false,
           currentAvailabilityVerified:false,guaranteedGrantVerified:false});
       }
     }
-    if(qualifying.length){
-      ordinary.set(itemId,qualifying);
+    const shelves=qualifying.filter(l=>l.kind==='ordinary_generated_store_shelf');
+    const stages=qualifying.filter(l=>l.kind==='ordinary_generated_store_stage');
+    if(shelves.length){
+      ordinary.set(itemId,shelves);
       classificationCounts[row.nativeCategory]=(classificationCounts[row.nativeCategory]??0)+1;
-    }else reject('no_verified_price_table_shelf');
+    }else if(shelfLinks.length)reject('no_verified_price_table_shelf');
+    if(stages.length)stageOrdinary.set(itemId,stages);
   }
   console.log('DB01_INSTALLED_SHELF '+JSON.stringify({counts,items:out.size,occurrences:[...out.values()].flat().length,areas:[...slots.keys()],classificationCounts,classifiedItems:ordinary.size,classifiedOccurrences:[...ordinary.values()].flat().length,rejected}));
+  console.log('DB01_INSTALLED_STAGE '+JSON.stringify({areas:[...stageSlots.keys()],items:stageCandidates.size,occurrences:[...stageCandidates.values()].flat().length,classifiedItems:stageOrdinary.size,classifiedOccurrences:[...stageOrdinary.values()].flat().length}));
+  const gated=new Map();
+  for(const [itemId,links] of [...ordinary,...stageOrdinary])if(links[0]?.catalogGate.kind!=='empty')gated.set(itemId,links[0].catalogGate.kind);
+  console.log('DB01_STORE_PROGRESSION_GATE '+JSON.stringify({items:gated.size,byKind:Object.fromEntries([...new Set(gated.values())].map(k=>[k,[...gated.values()].filter(v=>v===k).length]))}));
+  const unbounded=[...ordinary,...stageOrdinary].flatMap(([itemId,ls])=>ls.filter(l=>l.priceBandKind==='native_unbounded_positive').map(l=>({itemId,displayItemId:l.sourceItemId})));
+  console.log('DB01_NATIVE_UNBOUNDED_STORE_PRICE '+JSON.stringify({items:new Set(unbounded.map(l=>l.itemId)).size,occurrences:unbounded.length,byDisplay:Object.fromEntries([...new Set(unbounded.map(l=>l.displayItemId))].map(d=>[d,new Set(unbounded.filter(l=>l.displayItemId===d).map(l=>l.itemId)).size]))}));
   return result;
 }

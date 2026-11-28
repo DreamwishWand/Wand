@@ -29,6 +29,7 @@ export interface StoreItemSourceEvidence {
   readonly layoutCandidates:ItemFieldValue|null;
   readonly dimensionComparisons:ItemFieldValue|null;
   readonly installedShelfCandidates:ItemFieldValue|null;
+  readonly installedStageCandidates:ItemFieldValue|null;
   readonly configuredPrice:Readonly<ItemPriceDetails>|null;
   readonly effectiveCategories:ItemFieldValue|null;
   readonly currentPremiumBundleIds:ItemFieldValue|null;
@@ -37,7 +38,7 @@ export interface StoreItemSourceEvidence {
 }
 const fields=['nativeCategory','acquisition.additionalSources','acquisition.storeDisplayScreen',
   'acquisition.catalogFacts','acquisition.storeLayoutCandidates','acquisition.storeLayoutDimensionComparisons',
-  'acquisition.storeDisplaySequenceLinks','acquisition.effectiveCategories','acquisition.premiumCurrentBundleIds','acquisition.storeInstalledShelfCandidates'];
+  'acquisition.storeDisplaySequenceLinks','acquisition.effectiveCategories','acquisition.premiumCurrentBundleIds','acquisition.storeInstalledShelfCandidates','acquisition.storeInstalledStageCandidates'];
 export async function readStoreItemSourceEvidence(db:PublicCompleteItemMaster,ids:readonly number[],locale:ItemMasterLocale):
   Promise<readonly (Readonly<StoreItemSourceEvidence>|null)[]>{
   check(Array.isArray(ids)&&ids.length<=10000&&ids.every(id),'IDS');
@@ -105,6 +106,7 @@ export async function readStoreItemSourceEvidence(db:PublicCompleteItemMaster,id
       layoutCandidates:active?v['acquisition.storeLayoutCandidates']??null:null,
       dimensionComparisons:active?v['acquisition.storeLayoutDimensionComparisons']??null:null,
       installedShelfCandidates:active?v['acquisition.storeInstalledShelfCandidates']??null:null,
+      installedStageCandidates:active?v['acquisition.storeInstalledStageCandidates']??null:null,
       configuredPrice:prices.get(r.itemId)??null,
       effectiveCategories:active?v['acquisition.effectiveCategories']??null:null,
       currentPremiumBundleIds:active?v['acquisition.premiumCurrentBundleIds']??null:null,

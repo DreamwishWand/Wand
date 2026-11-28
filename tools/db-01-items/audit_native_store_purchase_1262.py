@@ -23,6 +23,7 @@ PINS={
  'dump.cs':'0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08',
  'Furniture.json':'cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196',
  'Clothing.json':'a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946',
+ 'Display.json':'6ba1986365d04a1b1db665a48f3289eee18ee166fcbb864c470093c20d2ea452',
 }
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
@@ -62,6 +63,22 @@ WINDOWS=(
  (0x383b179,24,'c455514d6b5622cc2e911dde0205087d6bb096f062f444ef975928bd2b269255'),
  (0x4a55385,9,'1016c74cd17988108feb64ccf6ff93d6fb86baaeb0f212a8f40f65f111c8f222'),
  (0x4a5540d,32,'24d9a44c2c539ce193d166b3a31701cbb293fdba602bbd347d4c7ed9615be38f'),
+ # Native stage layout switch, dimension-to-area lookup and catalogue call.
+ (0x3936e30,804,'32a8dc360b55c0032a35747675fa0ff088287de93ac95e7b23f8fd078399f4c8'),
+ (0x4d2177d,16,'5f1087ef75c8bc9740d6e5e57dfbe2b4fb9e093893ee23a2812564204b20d31b'),
+ (0x4d2186a,127,'91b17dca4caee6f9b61f9cea38235dd81fe2e3acecc8f6ffcb3bdda4df7f51f6'),
+ (0x4d218f2,163,'a8baf1199d689c32d9f3410c13e6f883a6efb290b5ee6f1d2c7c1f9c00805a64'),
+ # Actual refresh path: fresh currency filter, missing table bypass,
+ # minimum clamp, max<=0 unbounded. Diagnostic catalogue skips missing tables.
+ (0x4a51a1e,33,'40dee1dafc9a886c2f3bf32caa44c53a974a80b17d060c7239c8a3af4b934046'),
+ (0x4a51adb,86,'3e1a2b20ddfa7ed9920a5b35c0232d33b1b0849032de86ec7e32b2ce9a0429b8'),
+ (0x4a5344b,24,'b27b0deddb118f6c00c35c9e4d580c61924864deeb32d91d8a97293f189006ca'),
+ (0x4a53559,77,'c8da1d9f3fa2f5b6ed06d24df5b984d4a0457a6640ccb6e2253272b1e6044788'),
+ (0x4a53688,17,'116687f51e030acd25daf07e5a516c9cb6011b0aa9b2227e17d279786de4f578'),
+ (0x4a5806b,112,'8dca8d6684417281f8e500dafde1a92c2966a803400fc0c49e93015a611d2b0f'),
+ (0x3873d20,188,'1af50f162157de8adb78385e3c0bfaab1cded88c816cf3c9f87eac97a25a791e'),
+ (0x4d21ee9,40,'43a1e6469f74ad720f022f697b1fa7f2401797a07e71d240bc382853121b81ce'),
+ (0x4037e9c,76,'8ce0f5767ca8fb380a7c5cb6b13daa61484d80365351eadb407c8811e05bef20'),
  # Native catalogue enumeration: positive inclusive price ranges and set fallback.
  (0x4d21fa0,100,'52b3f0891fbdf23ed92e628d95366e43a5afd25ebf7feba62b9e0b2aa6ccc628'),
  (0x4d22002,8,'81094a4f1f1b8e7f3f05ef60109e0319f385f043e1949de9e6ba18b3947dd4a3'),
@@ -80,7 +97,8 @@ CALLS=(
  (0x45e285a,0x383a8c0),(0x4a5858c,0x383ae60),
  (0x4a50200,0x41080c0),(0x4a5022f,0x36d8d70),
  (0x4a5032c,0x4a552d0),(0x4a53a9f,0x38a6770),
- (0x4d21990,0x4d21c70),(0x4d21b62,0x4d21c70),
+ (0x4a51a3a,0x3873d20),(0x4a53453,0x4037e20),(0x4a53852,0x4a57aa0),(0x4a5825c,0x38a6870),
+ (0x4d21788,0x3936e30),(0x4d21990,0x4d21c70),(0x4d21b62,0x4d21c70),
  (0x4d21e32,0x38a6870),(0x4d2203e,0x38a6870),
  (0x38a6ca3,0x41080c0),(0x38a6e16,0x41080c0),
  (0x38a6cd5,0x38a6f90),(0x38a6e54,0x38a6f90),
@@ -157,6 +175,9 @@ def audit(assembly,dump,proto,itemlist):
   require(n in ranges and w==2,'GRID_QUALIFIER_WIRE');f=fields(v)
   ranges[n].append([one(f,1) or 0,one(f,2),one(f,3)])
  require(ranges=={1:[[0,1,1],[2,16,2],[17,64,3],[65,999999999,4]],2:[[0,1,1],[2,4,2],[5,7,3],[8,999999999,4]]},'GRID_QUALIFIER_RANGES')
+ displays=list(frames(authenticated(itemlist/'Display.json','Display.json'),2140000000))
+ no_price_table=[i for i,f in displays if not any(n==10 for n,w,v in f)]
+ require(len(displays)==17 and sorted(no_price_table)==[2140000002,2140000003,2140000006,2140000015,2140000016],'EMPTY_DISPLAY_PRICE_TABLES')
  providers={}
  for _,_,rec in entries:
   meta=fields(one(fields(rec),2));typ=strings(meta,5);payload=one(meta,6)
@@ -200,6 +221,7 @@ def audit(assembly,dump,proto,itemlist):
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
   'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
   'nativeCatalogueEnumerationPriceBandsVerified':True,'nativeSetUnlockFallbackVerified':True,
+  'nativeRefreshMissingPriceTablePositiveUnboundedVerified':True,'displayIdsWithoutPriceTable':sorted(no_price_table),
   'nativeGridQualifierRanges':ranges,'nativeGridBoundsAndLayerBranchesVerified':True,
   'nativeDirectTagFiltersVerified':True,
   'otherNativeConditionsVerified':False,
