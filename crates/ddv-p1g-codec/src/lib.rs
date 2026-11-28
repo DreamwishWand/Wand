@@ -2272,7 +2272,10 @@ mod browser_amount_preview {
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let oblique=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
             let check_destination=|d:&ddv_save_patch::PlainGridDestination,orientation:&str|->Result<(),JsValue>{
-                if free{
+                if grid_instance_preview::is_underwater_grid(&root["World"]["GridCollection"]["Grids"][&d.grid_id]){
+                    if !free{return Err(invalid());}
+                    grid_instance_preview::validate_underwater_stock_destination(&root,d,item,orientation).map_err(|_|invalid())?;
+                }else if free{
                     if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(invalid());}
                     let (_,layout,factor,sx,sy)=grid_instance_preview::house_exterior_identity(&root,&d.grid_id).map_err(|_|invalid())?;
                     if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(invalid());}
@@ -2305,14 +2308,24 @@ mod browser_amount_preview {
             }else{
                 // Reuse the original-source structural rehearsal, including
                 // dependency blocking when the removal guard is available.
-                if o.len()!=7+usize::from(free)+usize::from(o.contains_key("replacementOrientation"))||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"|"replacementOrientation"))||o.contains_key("replacementOrientation")&&(!free||action!="duplicate")||free&&action!="duplicate"{return Err(invalid());}
+                if o.len()!=7+usize::from(free)+usize::from(o.contains_key("replacementOrientation"))||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"|"replacementOrientation"))||o.contains_key("replacementOrientation")&&(!free||action!="duplicate")||free&&!matches!(action,"duplicate"|"remove"){return Err(invalid());}
                 let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
                 let expected=(int("expectedX")?,int("expectedY")?);
                 let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
                     .map_err(|_|fail("DB05_FURNITURE_STOCK_STALE"))?.pop().ok_or_else(invalid)?;
                 let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
                 let orientation=obj["Orientation"].as_str().ok_or_else(invalid)?;
-                if oblique(orientation){
+                let underwater=grid_instance_preview::is_underwater_grid(&root["World"]["GridCollection"]["Grids"][&target.grid_id]);
+                if underwater{
+                    if !free||!grid_instance_preview::underwater_plain_item(&root,item)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||!obj.get("State").is_none_or(serde_json::Value::is_null){return Err(invalid());}
+                    let (sx,sy)=grid_instance_preview::underwater_transform_identity(&root,&target.grid_id).map_err(|_|invalid())?;
+                    if expected.0<0||expected.1<0||expected.0 as u64>=sx||expected.1 as u64>=sy{return Err(invalid());}
+                    if action=="remove"&&(!o["x"].is_null()||!o["y"].is_null()){return Err(invalid());}
+                    let refs=grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?;
+                    if refs.blocking()>0||action=="remove"&&refs.historical>0{return Err(invalid());}
+                    let mut guard=ddv_save_patch::preview_plain_grid_structure(json,&target,expected,ddv_save_patch::PlainGridStructureAction::Remove).map_err(|_|invalid())?;
+                    guard.patched_json.zeroize();
+                }else if oblique(orientation){
                     let check=ddv_save_patch::GridMixedEdit{target:target.clone(),expected,position:None,orientation:None};
                     grid_instance_preview::validate_oblique_grid_edits(original,&[check]).map_err(|_|invalid())?;
                     if action=="remove"&&(!o["x"].is_null()||!o["y"].is_null()){return Err(invalid());}
@@ -2327,7 +2340,9 @@ mod browser_amount_preview {
                         let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                         let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                         // Copy creates a new ordinary object at the independently resolved destination. The source identity remains unchanged.
-                        if free{
+                        let dest_underwater=grid_instance_preview::is_underwater_grid(&root["World"]["GridCollection"]["Grids"][&dest.grid_id]);
+                        if (underwater||dest_underwater)&&(!underwater||!dest_underwater||target.grid_id!=dest.grid_id){return Err(invalid());}
+                        if free&&!underwater{
                             let (_,_,factor,sx,sy)=grid_instance_preview::house_exterior_identity(&root,&target.grid_id).map_err(|_|invalid())?;
                             if expected.0<0||expected.1<0||expected.0 as u64>=sx*factor||expected.1 as u64>=sy*factor||grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?.blocking()>0{return Err(invalid());}
                         }
