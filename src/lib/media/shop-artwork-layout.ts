@@ -62,3 +62,28 @@ export function shopArtworkTemplate(layout:unknown,groupWidth?:number):ShopArtwo
     default:return null;
   }
 }
+
+/** Steam 1.26.2 menu-premiumshop SHA256 257b3b44ac442c08c8d17072188157db322fdae32ffe53261e7646e497e15bed,
+ * MonoScript SHA256 c0f5d54d2b03116dfb757d70e84531c99f54b9e9698947ae7ced7645709f9107.
+ * LightOneLineBundle.LoadAsync RVA 0x6B67271..0x6B672A9 loads its fixed prefab
+ * -3372827615130793737, then BundleLoader.DelayedInstantiate stretches root.
+ * TileAndItems LayoutElement preferred height 508; serialized root 1320 x 508
+ * is NOT the runtime width. Tile width 900, Mask sizeDelta (+28,+30),
+ * anchored position (0,-1); Right sizeDelta (-902,0) / position (451,0).
+ * Scroll sizeDelta (0,-64) / position (0,32); ImageTemplate width 300,
+ * source preferred width 300, Icon ImageBinding + AsyncImage<Sprite>, fitter 3.
+ * CurrentImage fitter 4, no ImageAdjustmentBinding on this image.
+ * Group dimensions must be supplied; this is geometry, not pixel equivalence.
+ */
+export function shopOneLineArtworkTemplate(groupWidth:number,groupHeight:number){
+  if(!Number.isFinite(groupWidth)||groupWidth<=902||groupWidth>16384||
+     !Number.isFinite(groupHeight)||groupHeight<=64||groupHeight>16384)return null;
+  return {
+    prefab:'LightBundle_With_Scroll' as const,cardWidth:groupWidth,cardHeight:groupHeight,
+    artworkWidth:groupWidth,artworkHeight:groupHeight,
+    main:{binding:'CurrentImage' as const,x:-14,y:-14,width:928,height:groupHeight+30,fill:'cover' as const},
+    scroll:{x:902,y:0,width:groupWidth-902,height:groupHeight-64,itemWidth:300,fill:'contain' as const},
+    preferredHeight:508,serializedRootWidth:1320,
+    scrollConsumer:'Sprite' as const,renderingVerified:false as const
+  };
+}
