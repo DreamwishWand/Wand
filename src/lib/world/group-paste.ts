@@ -16,17 +16,20 @@ export type {GroupGeometry,GroupPasteCandidate,GroupPasteRow,WorldGroupPose,Worl
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
 export const ROOM_CUT_LIMIT=32;
 export interface StorageDuplicateSource{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay}
-export function storageGroupSelection(items:readonly MainlandSavedObject[],free=false){
- if(!items.some(p=>p.object.storage)||items.some(p=>p.object.subgrid||p.object.storageKnown&&!p.object.storage))return null;
- const clip=captureFurnitureGroup(items,true,free);
+export function storageGroupSelection(items:readonly MainlandSavedObject[],free=false,allowSupport=false){
+ if(!items.some(p=>p.object.storage)||items.some(p=>p.object.subgrid&&!allowSupport||p.object.storageKnown&&!p.object.storage))return null;
+ const clip=captureFurnitureGroup(items,true,items.some(p=>p.object.subgrid)?false:free);
  if(!clip)return null;
  const sources=items.map(p=>p.object.storage?{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay}:null);
  return {clip,sources};
 }
 export function storageGroupPlan(sources:readonly (StorageDuplicateSource|null)[],candidate:GroupPasteCandidate,copyContents:boolean,freePlacement:boolean){
  if(!sources.some(Boolean)||sources.length!==candidate.rows.length)return null;
+ const supportRows='supportRows' in candidate?(candidate as import('./support-scene.ts').MixedScenePlacement).supportRows:null;
+ if(supportRows&&supportRows.length!==candidate.rows.length)return null;
  const rows=candidate.rows.map((p,i)=>{
-  const s=sources[i];if(!s)return p;
+  const s=sources[i],support=supportRows?.[i];if(!s)return support??p;
+  if(support?.scene)return null;
   if(p.itemId!==s.itemId||!CARDINAL_ORIENTATIONS.some(o=>o===p.orientation)||!CARDINAL_ORIENTATIONS.some(o=>o===s.expectedOrientation))return null;
   return {...s,...p,copyContents,freePlacement};
  });

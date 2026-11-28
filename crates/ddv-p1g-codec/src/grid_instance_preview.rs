@@ -2139,7 +2139,10 @@ fn storage_group_candidate(profile:&[u8],plan:&Value)->Result<String,CodecError>
     if storage.is_empty(){return Err(bad);}
     let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
     if !normal.is_empty(){
-        let next=plain_group_paste_with_mode(profile,&serde_json::to_string(&normal).map_err(|_|bad)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,free)?;
+        let next=if normal.iter().any(|r|r.get("scene").is_some()){
+            if free{for row in &mut normal{let o=row.as_object_mut().ok_or(bad)?;if o.contains_key("freePlacement"){return Err(bad);}o.insert("freePlacement".into(),Value::Bool(true));}}
+            mixed_scene_bounded_mode(profile,&Value::Array(normal),MAX_SCENE_FURNITURE,free)?
+        }else{plain_group_paste_with_mode(profile,&serde_json::to_string(&normal).map_err(|_|bad)?,ddv_save_patch::MAX_GRID_MIXED_EDITS,free)?};
         working.zeroize();*working=next;
     }
     for (row,target) in storage{

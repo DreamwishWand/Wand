@@ -419,3 +419,17 @@ test('indoor mixed storage duplication keeps each original witness and staged st
  assert.equal(indoorStorageDuplicatePlacement(f,shapes,allowed,stock,selection.clip.map((p,i)=>i===0?{...p,orientation:2.5}:p),selection.sources,true,2,3,true),null);
  assert.equal(indoorStorageDuplicateSelection({...f,positions:[{...positions[0],storage:undefined},...positions.slice(1)]},[0,1,2],shapes,allowed,stock,true),null);
 });
+
+test('local indoor mixed duplication carries separate support and storage witnesses without portable storage capture',async()=>{
+ const {captureIndoorMixedScene,indoorMixedPlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const id=40001680,table=40000001,child=40000002;
+ const f={...face,positions:[{itemId:table,x:1,y:1,orientationCode:8},{itemId:id,x:3,y:1,orientationCode:8,storage:true,storageKnown:true},{itemId:child,x:5,y:1,orientationCode:8,plain:true}],missingPositions:0,terrain:{sizeX:8,sizeY:8,nativeFloorValues:Uint32Array.from({length:64},()=>1024)}};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'},shapes=Object.fromEntries([id,table,child].map(id=>[id+':8',shape])),allowed=new Set([id,table,child]);
+ const support={schema:'wand.preset.support-scene@1',gameVersion:'1.26.2',ownerItemId:table,tree:{factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:child,x:0,y:0,orientation:'GridOrientation_Down',child:null}]}},supports=new Map([[0,support]]);
+ assert.equal(captureIndoorMixedScene(f,[0,1,2],shapes,allowed,supports),null);
+ const scene=captureIndoorMixedScene(f,[0,1,2],shapes,allowed,supports,true);assert.ok(scene);
+ const clip=scene.items.map(({support,...pose})=>pose),stock=new Map([[id,1],[table,1],[child,2]]),source={index:0,expectedX:1,expectedY:1,expectedOrientation:'GridOrientation_Down'},storage={index:1,expectedX:3,expectedY:1,expectedOrientation:'GridOrientation_Down'};
+ const q=indoorMixedPlacement(f,shapes,allowed,stock,clip,scene,'corner',1,3,[source,null,null],[null,storage,null],true);assert.ok(q);
+ assert.deepEqual(q.map(p=>p.expectedStock),[1,1,1]);assert.deepEqual(q[0].supportSource,source);assert.deepEqual(q[1].storageSource,{...storage,copyContents:true});assert.equal(q[2].storageSource,undefined);
+ assert.equal(indoorMixedPlacement(f,shapes,allowed,stock,clip,scene,'corner',1,3,[source,null,null],[null,{...storage,expectedX:99},null],true),null);
+});
