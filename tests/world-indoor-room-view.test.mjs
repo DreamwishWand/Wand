@@ -478,3 +478,18 @@ test('support parents participate in free floor group moves without diagonal par
  assert.equal(indoorFreeTransform(face,shapes,allowed,0,1,1,'GridOrientation_DownLeft'),null);
  assert.equal(indoorFreeTransform({...face,positions:[{...face.positions[0],supportTransform:undefined},face.positions[1]]},shapes,allowed,0,3,3),null);
 });
+
+test('free linked symmetry transforms typed stateful partners without treating them as plain stock',async()=>{
+ const {indoorLinkedMove,indoorLinkedRotate,indoorTransformAllowed}=await import('../src/lib/world/indoor-room-view.ts');
+ const id=40000001,shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:'M0 0h1v1H0Z'};
+ const shapes=Object.fromEntries([0,4,8,12].map(code=>[id+':'+code,shape])),axis={mode:'vertical',x2:6,y2:0};
+ for(const marker of ['supportTransform','storage']){
+  const full={...face,kind:'floor',gridStatus:'full',factor:1,sourcePath:'GridData/Rooms/Room8x8-GridData.json',terrain:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64)},missingPositions:0,positions:[{itemId:id,x:1,y:1,orientationCode:8,[marker]:true},{itemId:id,x:4,y:1,orientationCode:8,[marker]:true}]};
+  const allowed=indoorTransformAllowed(full,new Set());
+  assert.deepEqual(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis,true)?.map(p=>[p.index,p.x,p.y]),[[0,2,2],[1,3,2]]);
+  assert.deepEqual(indoorLinkedRotate(full,shapes,allowed,[0],1,axis,true)?.map(p=>p.orientation),['GridOrientation_Left','GridOrientation_Right']);
+  assert.equal(indoorLinkedMove(full,shapes,allowed,[0],0,2,2,axis,false),null);
+  assert.equal(indoorLinkedMove({...full,positions:[full.positions[0],{itemId:id,x:4,y:1,orientationCode:8,plain:true}]},shapes,allowed,[0],0,2,2,axis,true),null);
+  assert.equal(indoorLinkedMove({...full,positions:[...full.positions,{...full.positions[1]}]},shapes,allowed,[0],0,2,2,axis,true),null);
+ }
+});

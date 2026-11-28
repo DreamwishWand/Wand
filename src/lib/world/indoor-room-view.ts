@@ -190,7 +190,7 @@ function freeRoomPose(face:IndoorSurface|null,shapes:Readonly<Record<string,Sour
  if(!indoorFreeFloor(face)||!face?.terrain||!face.factor||Math.floor(itemId/100000)!==400||!isEightWay(orientation)||!isCardinal(orientation)&&face.factor!==1||![x,y].every(Number.isSafeInteger)||x<0||y<0||x>=face.terrain.sizeX*face.factor||y>=face.terrain.sizeY*face.factor)return false;
  const shape=shapes[itemId+':'+worldOrientationCode(orientation)];return !!shape&&shape.cellCount>0&&shape.cellCount<=65536;
 }
-export function indoorTransformAllowed(face:IndoorSurface|null,eligible:ReadonlySet<number>){return new Set([...eligible,...(face?.positions.filter(p=>p.supportTransform===true).map(p=>p.itemId)??[])]);}
+export function indoorTransformAllowed(face:IndoorSurface|null,eligible:ReadonlySet<number>){return new Set([...eligible,...(face?.positions.filter(p=>(p.supportTransform===true||p.storage===true)).map(p=>p.itemId)??[])]);}
 export function indoorFreeTransform(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,index:number,x:number,y:number,orientation?:string):SupportChildEdit[]|null{
  const t=indoorEditableTree(face),o=t?.objects[index],next=orientation??o?.orientation;
  if(!o||!next||!(face?.positions[index]?.plain===true||(face?.positions[index]?.storage===true||face?.positions[index]?.supportTransform===true)&&isCardinal(o.orientation)&&isCardinal(next))||!allowed.has(o.itemId)||!isEightWay(o.orientation)||!freeRoomPose(face,shapes,o.itemId,x,y,next)||x===o.x&&y===o.y&&next===o.orientation)return null;
@@ -297,18 +297,27 @@ export function indoorSymmetricDuplicate(face:IndoorSurface|null,shapes:Readonly
  const left=Math.min(...clip.map(p=>p.dx)),top=Math.min(...clip.map(p=>p.dy));
  try{const relative=clip.map(p=>({...p,dx:p.dx-left,dy:p.dy-top})),doc=mixedSceneFromClip(relative,scenes,'corner');return indoorMixedPlacement(face,shapes,allowed,stock,relative,doc,'corner',left*tree.factor/2,top*tree.factor/2,sources);}catch{return null;}
 }
-/** Translate exact reflected plain pairs together. No guessed counterpart,
+/** Identify compatible instances, not merely matching item IDs. Stateful roots
+ * may be transformed only in free floor mode; their original state is retained.
+ */
+function linkedRoomKind(face:IndoorSurface,index:number,free:boolean):string|null{
+ const p=face.positions[index];if(!p)return null;
+ if(p.plain===true)return 'plain';
+ if(!free||p.orientationCode===null||p.orientationCode%4!==0)return null;
+ return p.storage===true?'storage':p.supportTransform===true?'support':null;
+}
+/** Translate exact reflected pairs together. No guessed counterpart,
  * no implicit duplication and no change to saved orientations. */
 export function indoorLinkedMove(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],anchor:number,x:number,y:number,axis:DesignSymmetry,free=false):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face),origin=tree?.objects[anchor];if(!tree||!face?.terrain||free&&!indoorFreeFloor(face)||!origin||!indices.includes(anchor)||!indices.length||new Set(indices).size!==indices.length)return null;
  const dx=x-origin.x,dy=y-origin.y;if(!dx&&!dy)return null;
  const targets=new Map<number,{x:number;y:number}>();
  function put(i:number,px:number,py:number){const old=targets.get(i);if(old)return old.x===px&&old.y===py;targets.set(i,{x:px,y:py});return true;}
- for(const i of indices){const o=tree.objects[i];if(!o||face.positions[i]?.plain!==true||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i)&&isCardinal(o.orientation)))return null;
+ for(const i of indices){const o=tree.objects[i];if(!o||!linkedRoomKind(face,i,free)||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i)&&isCardinal(o.orientation)))return null;
   const g:DesignItemGeometry={itemId:o.itemId,name:null,layer:'furniture',surfaceCapable:false,shapes};
   const p={itemId:o.itemId,x:o.x,y:o.y,orientation:worldOrientationCode(o.orientation)!/4},before=reflectedDesignItem(p,g,axis,free&&face.factor===1),after=reflectedDesignItem({...p,x:p.x+dx,y:p.y+dy},g,axis,free&&face.factor===1);
   if(!before||!after)return null;const matches=tree.objects.flatMap((v,j)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[before.orientation*2]?[j]:[]);
-  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,o.x+dx,o.y+dy)||!put(matches[0],after.x,after.y))return null;
+  if(matches.length!==1||matches[0]===i||linkedRoomKind(face,matches[0],free)!==linkedRoomKind(face,i,free)||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,o.x+dx,o.y+dy)||!put(matches[0],after.x,after.y))return null;
  }
  if(targets.size>ROOM_CUT_LIMIT||targets.size%2!==0)return null;
  const staged={...tree,objects:tree.objects.filter((_,i)=>!targets.has(i))},out:SupportChildEdit[]=[];
@@ -319,7 +328,7 @@ export function indoorLinkedMove(face:IndoorSurface|null,shapes:Readonly<Record<
  * original anchors are checked before either side is staged. */
 export function indoorLinkedRotate(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,indices:readonly number[],turn:-1|1,axis:DesignSymmetry,free=false):SupportChildEdit[]|null{
  const tree=indoorEditableTree(face);if(!tree||!face?.terrain||free&&!indoorFreeFloor(face)||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length||![-1,1].includes(turn))return null;
- const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||face.positions[indices[j]]?.plain!==true||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,indices[j]))))return null;
+ const chosen=indices.map(i=>tree.objects[i]);if(chosen.some((o,j)=>!o||!linkedRoomKind(face,indices[j],free)||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):isCardinal(o.orientation)&&indoorClear(tree,shapes,indices[j]))))return null;
  const left=Math.min(...chosen.map(o=>o.x)),top=Math.min(...chosen.map(o=>o.y));
  const clip=chosen.map(o=>({itemId:o.itemId,dx:(o.x-left)*2/tree.factor,dy:(o.y-top)*2/tree.factor,orientation:worldOrientationCode(o.orientation)!/4}));
  const rotated=indices.length===1?[{...clip[0],orientation:(clip[0].orientation+turn+4)%4}]:rotateIndoorCut(clip,tree.factor,shapes,turn);if(!rotated)return null;
@@ -331,7 +340,7 @@ export function indoorLinkedRotate(face:IndoorSurface|null,shapes:Readonly<Recor
   const before=reflectedDesignItem({itemId:o.itemId,x:o.x,y:o.y,orientation:clip[j].orientation},g,axis,free&&face.factor===1),next={itemId:o.itemId,x:left+p.dx*tree.factor/2,y:top+p.dy*tree.factor/2,orientation:p.orientation},after=reflectedDesignItem(next,g,axis,free&&face.factor===1);
   if(!before||!after)return null;
   const matches=tree.objects.flatMap((v,k)=>v.itemId===before.itemId&&v.x===before.x&&v.y===before.y&&v.orientation===EIGHT_WAY_ORIENTATIONS[before.orientation*2]?[k]:[]);
-  if(matches.length!==1||matches[0]===i||face.positions[matches[0]]?.plain!==true||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,next)||!put(matches[0],after))return null;
+  if(matches.length!==1||matches[0]===i||linkedRoomKind(face,matches[0],free)!==linkedRoomKind(face,i,free)||!(free?freeRoomPose(face,shapes,tree.objects[matches[0]].itemId,tree.objects[matches[0]].x,tree.objects[matches[0]].y,tree.objects[matches[0]].orientation):indoorClear(tree,shapes,matches[0]))||!put(i,next)||!put(matches[0],after))return null;
  }
  if(targets.size>ROOM_CUT_LIMIT||targets.size%2!==0)return null;
  const staged={...tree,objects:tree.objects.filter((_,i)=>!targets.has(i))},out:SupportChildEdit[]=[];
