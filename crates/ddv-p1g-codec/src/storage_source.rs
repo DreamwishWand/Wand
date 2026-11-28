@@ -109,3 +109,12 @@ mod tests{
   assert!(!is_storage(99999999));
  }
 }
+
+/// Positive GridAreaData evidence, minus all reviewed special/interacting
+/// Furniture fields. This is a source-derived experimental placement candidate
+/// set, not proof that the runtime can initialize every item in every scene.
+pub(super) fn plain_source_items()->&'static Vec<u64>{
+ static ITEMS:OnceLock<Vec<u64>>=OnceLock::new();
+ ITEMS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/plain-furniture-source.json"))).expect("compiled plain furniture source"))
+}
+pub(super) fn is_plain_source_item(id:u64)->bool{!is_storage(id)&&plain_source_items().binary_search(&id).is_ok()}
