@@ -49,7 +49,7 @@
  $: states=new Map((map?.areaPlan?.areaTypes??[]).map(id=>[id,overrides.get(id)??locked]));
  $: drawLayers=map?(map.areaPlan?selectNativeAreaLayers(map.locked,map.areaPlan,states):locked?map.locked:map.unlocked):[];
  $: stateKey=map?.id+':'+locked+':'+[...states].map(([id,value])=>id+'='+Number(value)).join(',');
- function toggleArea(id:number,value:boolean){overrides=new Map(overrides).set(id,value);resetReference();}
+ function toggleArea(id:number,value:boolean){overrides=new Map(overrides).set(id,value);status='drawing';resetReference();}
  function resetAreas(){overrides=new Map();appliedSave=null;resetReference();}
  function applySavedAreas(value:Map<number,boolean>,file:File){if($localSaveSession.file!==file)return;overrides=value;appliedSave=file;resetReference();}
  let knownX:number|undefined,knownZ:number|undefined,reference='',reportError='';
@@ -120,7 +120,7 @@
   const point:NativeLandmark=witness?{x:p.x,y:p.y,worldXZ:witness.worldXZ,reference:witness.reference}:{x:p.x,y:p.y};try{nativeLandmarkMeasurement(map,point);}catch{return;}
   const existing=witness?points.findIndex(p=>p.reference===witness?.reference):-1;
   if(existing<0&&points.length>=512){reportError='測定点の上限に達しました。';return;}
-  updatePoints(existing<0?[...points,point]:points.map((p,i)=>i===existing?point:p));resetReference();
+  updatePoints([...points.filter((_,i)=>i!==existing),point]);resetReference();
  }
 </script>
 <svelte:head><title>Native map — local preview</title></svelte:head>
