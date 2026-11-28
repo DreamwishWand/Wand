@@ -1,12 +1,14 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import ShopBundleContents from '$lib/media/ShopBundleContents.svelte';
   import {base} from '$app/paths';
-  import {openCurrentItemDatabase,type PremiumBundleDefinition} from '$lib/items/public-item-master.ts';
+  import {openCurrentItemDatabase,type PremiumBundleDefinition,type PublicCompleteItemMaster} from '$lib/items/public-item-master.ts';
   import {loadShopSourceMedia} from '$lib/media/shop-source-media.ts';
   import ShopPrimaryIconCandidate from '$lib/media/ShopPrimaryIconCandidate.svelte';
   import {inspectShopArtwork} from '$lib/media/shop-artwork-inspection.ts';
   import {bundleArtworkUrl,type BundleArtwork} from '$lib/media/bundle-artwork.ts';
   let definitions:readonly PremiumBundleDefinition[]=[];
+  let database:PublicCompleteItemMaster|null=null;
   let reader:Awaited<ReturnType<typeof loadShopSourceMedia>>|null=null;
   let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500;
   let loading=true,error='';
@@ -19,9 +21,9 @@
   function choose(b:PremiumBundleDefinition){selected=b.bundleId;source=b.current?'current':'legacy';}
   onMount(()=>{
     let alive=true;
-    Promise.all([openCurrentItemDatabase(base).then(db=>db.getPremiumBundleCatalog()),loadShopSourceMedia()])
-      .then(([catalog,r])=>{if(!alive)return;if(!catalog)throw new Error('Bundle catalog unavailable');
-        definitions=catalog.definitions;reader=r;if(definitions[0])choose(definitions[0]);})
+    Promise.all([openCurrentItemDatabase(base).then(async db=>({db,catalog:await db.getPremiumBundleCatalog()})),loadShopSourceMedia()])
+      .then(([{db,catalog},r])=>{if(!alive)return;if(!catalog)throw new Error('Bundle catalog unavailable');
+        database=db;definitions=catalog.definitions;reader=r;if(definitions[0])choose(definitions[0]);})
       .catch(e=>{if(alive)error=e instanceof Error?e.message:String(e);})
       .finally(()=>{if(alive)loading=false;});
     return ()=>{alive=false;};
@@ -90,6 +92,7 @@
             </article>
           {:else}<p>明示的な画像参照なし。</p>{/each}
         {/if}
+        {#if revision&&reader&&database}<ShopBundleContents {revision} {reader} {database} {detail}/>{/if}
       </section>
     </div>
   {/if}

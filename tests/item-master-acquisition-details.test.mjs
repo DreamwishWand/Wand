@@ -77,7 +77,7 @@ test('ordinary category extensions resolve every quest and production source usi
 test('all classification extensions preserve original evidence and localized source and related identities',async()=>{
   const requests=[],fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
   const db=await openCurrentItemDatabase('',fetcher);
-  const fields={storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
+  const fields={initialInventory:'acquisition.ordinaryInitialInventorySources',storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
     eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
@@ -93,7 +93,7 @@ test('all classification extensions preserve original evidence and localized sou
       if(list.length)expected.set(id,list);
     }
   }
-  assert.equal(counts.progression,124);assert.equal(counts.critterBefriending,100);
+  assert(counts.progression>=150);assert.equal(counts.critterBefriending,100);
   assert(counts.conditionalQuest>=5);assert.equal(counts.configuredStore,134);assert.equal(counts.lootPresent,24);
   const ids=[...expected.keys()].sort((a,b)=>a-b);
   const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');
@@ -105,10 +105,10 @@ test('all classification extensions preserve original evidence and localized sou
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
-      if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
+      if(ext.family==='initialInventory'||ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
-      const related=ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
+      const related=ext.family==='progression'&&ev.rankActivity?[ev.rankActivity.preConditionItemId,ev.rankActivity.unlockMissionItemId]:ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
           ...(ev.boundedLocalDateGate?[ev.boundedLocalDateGate.conditionItemId,ev.boundedLocalDateGate.missionItemId]:[]),...(ev.orbItemId?[ev.orbItemId]:[])]:ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:

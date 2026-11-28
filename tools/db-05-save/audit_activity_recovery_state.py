@@ -77,6 +77,23 @@ def source_fields(native):
     return fields
 
 
+def amount_wrapper(native):
+    """The direct, typed bridge found in the original 1.26.2 metadata."""
+    path = "/World/GridCollection/Grids/{id}/Objects/{id}/State/ItemAmountState"
+    cls, name, tag, typ = native_field_chain(native, path)
+    if (cls, name, tag, typ) != ("GridState", "ItemAmountState", 2, "AmountWithState"):
+        raise ValueError("SOURCE_AMOUNT_WRAPPER")
+    expected = {"Amount": (1, "Nullable<int>"), "State": (2, "ItemState"),
+                "AssignedPlayer": (3, "Nullable<int>")}
+    result = []
+    for field, (number, property_type) in expected.items():
+        if native_field_chain(native, path + "/" + field) != ("AmountWithState", field, number, property_type):
+            raise ValueError("SOURCE_AMOUNT_WRAPPER_FIELD")
+        result.append({"name": field, "tag": number, "type": property_type})
+    return {"gridField": {"name": name, "tag": tag, "type": typ},
+            "fields": result, "nativeCallFlowVerified": False}
+
+
 def candidate_methods(dump):
     """Locate source declarations for subsequent binary call-flow analysis."""
     current, namespace, rva = "", "", None
@@ -175,7 +192,8 @@ def observed_profiles(profiles, ids, fields):
 def audit(dump, profile_paths=(), root=ROOT):
     if sha256_stream(dump) != DUMP_SHA:
         raise ValueError("DUMP_HASH")
-    fields = source_fields(parse_native_messages(dump))
+    native = parse_native_messages(dump)
+    fields = source_fields(native)
     ids, digest = activity_membership(root)
     grid, item = (field_map(fields[f]) for f in FAMILIES)
     profiles = []
@@ -188,6 +206,7 @@ def audit(dump, profile_paths=(), root=ROOT):
     return {"schema": REPORT_SCHEMA, "sourceGameVersion": "1.26.2",
             "sourceDumpSha256": DUMP_SHA, "activitySourceSha256": digest,
             "activityDefinitionCount": len(ids), "nativeFields": fields,
+            "amountWithState": amount_wrapper(native),
             "directItemStateFieldsInGridState": [k for k, v in grid.items() if v == "ItemState"],
             "sameNameAndTypeCandidates": sorted(k for k in grid.keys() & item.keys() if grid[k] == item[k]),
             "nativeMethodCandidates": candidate_methods(dump),
