@@ -3605,7 +3605,6 @@ fn mission_item_referenced(root:&Value,item:u64)->Result<bool,CodecError>{
  Ok(false)
 }
 pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String,CodecError>{
- use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
  if plan.len()>128*1024{return Err(CodecError::Bounds);}
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
@@ -3639,12 +3638,10 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
  }
  for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
 
- let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
- for (t,s) in targets.iter().zip(&selections){
-  let next=ddv_save_patch::field_recovery::recover(&working,t,s.2,s.4.as_deref().ok_or(bad)?,&dest.container_id).map_err(|_|CodecError::Patch)?;
-  working.zeroize();*working=next;
- }
- Ok(std::mem::take(&mut *working))
+ let batch=targets.into_iter().zip(selections).map(|(target,selection)|{
+  Ok((target,selection.2,selection.4.ok_or(bad)?))
+ }).collect::<Result<Vec<_>,CodecError>>()?;
+ ddv_save_patch::field_recovery::recover_batch(std::str::from_utf8(source).map_err(|_|bad)?,&batch,&dest.container_id).map_err(|_|CodecError::Patch)
 }
 
 #[cfg(test)]
