@@ -114,7 +114,7 @@ test('ordinary befriending classification preserves every eligible original vill
   const reader=createCritterSourceReader(db);
   const defs=(await reader.getForCritters(ids)).map(r=>r.definition);
   const raw=await db.getItemFields(ids,['source.AppearanceConditions','observedFields']);
-  const gateTag=db.release.sourceFieldDeclarations.CritterItemData.AppearanceConditions;
+  const gateTag=(await db.getSourceRelations()).sourceFieldDeclarations.CritterItemData.AppearanceConditions;
   const classes=new Map(await db.getFieldRows('sourceClass'));
   const key=(pet,critter,count,area,gate)=>JSON.stringify([pet,critter,count,area,gate]);
   const expected=[];
