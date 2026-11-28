@@ -7,6 +7,7 @@
  import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
+ import {readTransitionWitnesses,witnessesForMap,type TransitionWitnessMap,type TransitionWitness} from '$lib/media/native-transition-witness.ts';
  import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
  import {localSaveSession} from '$lib/ui/local-save-session.ts';
  import {hasNativeGridLockStates} from '$lib/media/native-map-save-area-flags.ts';
@@ -21,6 +22,22 @@
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
  let points:NativeLandmark[]=[];
+ let witnessDoc:ReadonlyMap<string,TransitionWitnessMap>|null=null,witnesses:readonly TransitionWitness[]=[],witnessId='',showWitness=false,witnessError='',witnessTicket=0;
+ let witness:TransitionWitness|undefined;
+ $: updateWitnesses(map,witnessDoc);
+ $: witness=witnesses.find(w=>w.component===witnessId);
+ function updateWitnesses(m:LocalNativeMap|null,doc:ReadonlyMap<string,TransitionWitnessMap>|null){
+  witnesses=[];witnessId='';witnessError='';
+  if(!m||!doc)return;
+  try{witnesses=witnessesForMap(m,doc);}catch(e){witnessError=e instanceof Error?e.message:'比較点の読み込み失敗';}
+ }
+ async function openWitnesses(event:Event){
+  const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';if(!file)return;
+  const revision=++witnessTicket;witnessError='';
+  try{const doc=await readTransitionWitnesses(file);if(revision===witnessTicket)witnessDoc=doc;}
+  catch(e){if(revision===witnessTicket)witnessError=e instanceof Error?e.message:'比較点の読み込み失敗';}
+ }
+ function clearWitnesses(){++witnessTicket;witnessDoc=null;showWitness=false;}
  let overrides=new Map<number,boolean>();
  let appliedSave:File|null=null;
  $: if(appliedSave&&$localSaveSession.file!==appliedSave)resetAreas();
@@ -81,7 +98,7 @@
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(transform.inverse());
   if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<viewport.x||p.y<viewport.y||p.x>viewport.x+viewport.w||p.y>viewport.y+viewport.h)return;
   if(!map)return;
-  const point={x:p.x,y:p.y};try{nativeLandmarkMeasurement(map,point);}catch{return;}
+  const point:NativeLandmark=witness?{x:p.x,y:p.y,worldXZ:witness.worldXZ,reference:witness.reference}:{x:p.x,y:p.y};try{nativeLandmarkMeasurement(map,point);}catch{return;}
   points=[...points.slice(-99),point];knownX=undefined;knownZ=undefined;reference='';
  }
 </script>
@@ -95,6 +112,17 @@
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
    <label><input type="checkbox" bind:checked={locked} on:change={resetAreas}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
+   <details><summary>原本の区画遷移座標と比較</summary>
+    <div class="tools">
+     <label>原本比較点 JSON <input type="file" accept=".json" on:change={openWitnesses}/></label>
+     {#if witnessDoc}<button type="button" on:click={clearWitnesses}>比較点を解除</button>{/if}
+     {#if witnesses.length}
+      <select aria-label="原本の比較点" bind:value={witnessId}><option value="">比較点を選択</option>{#each witnesses as w}<option value={w.component}>{w.name} ({w.worldXZ[0].toFixed(2)}, {w.worldXZ[1].toFixed(2)})</option>{/each}</select>
+      <label><input type="checkbox" bind:checked={showWitness}/> 候補位置を表示</label>
+     {/if}
+    </div>
+    {#if witnessError}<p role="alert">{witnessError}</p>{:else if witnessDoc}<p>{witnesses.length} 件。選択後、背景画像上の対応する位置をクリックすると残差を記録します。候補位置は校正結果ではありません。</p>{/if}
+   </details>
    <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>検証座標を保存</button>
    {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> {map.areaPlan.gridStateLabels?.[id-1]??('区画 '+id)} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>{appliedSave?'保存フラグによる試験表示（実行時判定未確認）':'手動指定・セーブ判定ではありません。'} 個別設定中は座標記録の出力を無効にします。</p></details>{/if}
    {#if map&&hasNativeGridLockStates(map.id)&&!map.areaPlan?.gridStateLabels}<p>旧マニフェストでは海中の個別グリッドを切り替えられません。</p>{/if}
@@ -117,6 +145,7 @@
     <rect x={viewport.x} y={viewport.y} width={viewport.w} height={viewport.h} fill="transparent" pointer-events="all"/>
     {#if showTerrain&&terrainScope}{#key map.id}<NativeCalibrationOverlay mapId={map.id} scope={terrainScope} opacity={terrainOpacity} onStatus={s=>terrainStatus=s}/>{/key}{/if}
     {#if status==='ready'}
+     {#if showWitness&&witness}<circle cx={2*witness.worldXZ[0]} cy={-2*witness.worldXZ[1]} r={Math.min(viewport.w,viewport.h)*.012} fill="none" stroke="#00e5ff" vector-effect="non-scaling-stroke" stroke-width="2" pointer-events="none"/>{/if}
      {#each points as p}<rect x={p.x-.5} y={p.y-.5} width="1" height="1" fill="#ffd84d" fill-opacity=".5" stroke="white" vector-effect="non-scaling-stroke" stroke-width="1" pointer-events="none"/>{/each}
     {/if}
    </svg>
