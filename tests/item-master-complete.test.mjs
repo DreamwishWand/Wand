@@ -496,11 +496,14 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of stores.keys())expected.add(id);
   const feeding=fields.has('acquisition.ordinaryCritterFeedingSources')?new Map(await master.getFieldRows('acquisition.ordinaryCritterFeedingSources')):new Map();
   for(const id of feeding.keys())expected.add(id);
+  const historicStar=new Map(await master.getFieldRows('acquisition.historicalStarpathSources'));
+  for(const id of historicStar.keys())expected.add(id);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){
     const old=previous.get(id)??[];
     const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id)||critter.has(id)||stores.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
+    if(historicStar.has(id)&&!want.includes('star_path'))want.push('star_path');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if((loot.has(id)||feeding.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
