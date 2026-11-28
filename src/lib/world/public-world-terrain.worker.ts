@@ -5,7 +5,7 @@ import {roomFinishRecordValid,type RoomFinishKind,type RoomFinishItem} from './r
 import {roomDesignTemplates,supportDesignTemplate,type RoomDesignTemplate} from './room-design.ts';
 import {parseAreaScene} from './area-scene.ts';
 import {parseSupportScene,parseMixedScene,SCENE_FURNITURE_LIMIT,SCENE_SUPPORT_TREE_LIMIT} from './support-scene.ts';
-import {supportPlacementFits,type SupportTree} from './subgrid-local.ts';
+import {supportPlacementFits,supportLeafFreeEligible,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
@@ -56,6 +56,14 @@ let supportCatalog:Promise<unknown>|null=null;
 let roomTemplates:Promise<RoomDesignTemplate[]>|null=null;
 function loadRoomTemplates(){return roomTemplates??=(fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/room-terrain.json').then(r=>{if(!r.ok)throw Error('room terrain');return r.json();}).then(roomDesignTemplates).catch(e=>{roomTemplates=null;throw e;}));}
 let supportPaths:Promise<Map<number,unknown>>|null=null;
+let supportSpecial:Promise<Set<number>>|null=null;
+function supportSpecialIds(){
+ return supportSpecial??=getMaster().then(async db=>{
+  const fields=['source.SubGrid','source.Container','source.Keyhole.Keyhole','source.ToolBreakable','source.Toggle'];
+  const rows=await Promise.all(fields.map(field=>db.getFieldRows(field)));
+  return new Set([40001680,...rows.flatMap(a=>a.map(([id])=>id))]);
+ }).catch(e=>{supportSpecial=null;throw e;});
+}
 async function boundSupportTerrain(path:unknown,owner:unknown){
  if(typeof path!=='string'||!/^GridData\/Furniture\/[A-Za-z0-9_./ -]+\.json$/.test(path)||path.includes('..')||typeof owner!=='number'||!Number.isSafeInteger(owner))return null;
  supportPaths??=getMaster().then(db=>db.getFieldRows('source.SubGrid')).then(rows=>new Map(rows)).catch(e=>{supportPaths=null;throw e;});
@@ -137,12 +145,13 @@ scope.onmessage=async({data})=>{
     if(data.command==='support-catalog'){
       if(!release||!Array.isArray(data.itemIds)||data.itemIds.length>20000||!data.itemIds.every((n:unknown)=>typeof n==='number'&&Number.isSafeInteger(n)&&Math.floor(n/100000)===400))throw Error('stock catalog');
       const terrain=await boundSupportTerrain(data.sourcePath,data.ownerItemId);if(!terrain)throw Error('support path');
-      const definitions=await loadGeometry(),subgrids=await supportPaths!,names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
-      const mask=terrain.nativeFloorValues.reduce((v,n)=>v|n,0),items:{itemId:number;name:string}[]=[];
+      const definitions=await loadGeometry(),special=await supportSpecialIds(),names=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
+      const mask=terrain.nativeFloorValues.reduce((v,n)=>v|n,0),items:{itemId:number;name:string;standard:boolean}[]=[];
       for(const id of new Set<number>(data.itemIds)){
         const def=definitions.get(String(id)),shape=def?.footprint as {acceptedFloorTypesFlag?:number}|null,rule=sourceEditRestrictions(def);
-        if(!def||def.nativeType!=='Furniture'||!shape||!((shape.acceptedFloorTypesFlag??0)&mask)||subgrids.has(id)||nativeActionBlocked(rule,'select')||nativeActionBlocked(rule,'move')||nativeActionBlocked(rule,'remove'))continue;
-        items.push({itemId:id,name:names.get(id)??String(def.nativeName??'—')});
+        if(!def||def.nativeType!=='Furniture'||!shape||special.has(id))continue;
+        const standard=!!((shape.acceptedFloorTypesFlag??0)&mask)&&!nativeActionBlocked(rule,'select')&&!nativeActionBlocked(rule,'move')&&!nativeActionBlocked(rule,'remove');
+        items.push({itemId:id,name:names.get(id)??String(def.nativeName??'—'),standard});
       }
       items.sort((a,b)=>a.name.localeCompare(b.name,data.locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'support-catalog',requestId:id,items});return;
@@ -183,11 +192,12 @@ scope.onmessage=async({data})=>{
       if(!release||(data.factor!==1&&data.factor!==2)||!Array.isArray(data.items)||data.items.length>5000)throw Error('indoor shape request');
       const cache=createSourceGeometryCache({manifest:{platform:'Steam',gameVersion:'1.26.2'},objects:await loadGeometry()},data.factor);
       const keys=new Set<string>(),editable=new Set<number>(),removable=new Set<number>(),freeEligible=new Set<number>();
+      const special=data.command==='support-shapes'?await supportSpecialIds():null;
       for(const row of data.items){
         if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||!(data.command==='indoor-shapes'&&data.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).includes(row.orientationCode))throw Error('indoor item');
         const key=row.itemId+':'+row.orientationCode;if(keys.has(key))continue;keys.add(key);
         const obj=cache.resolve(row.itemId,row.orientationCode);
-        if(data.command==='indoor-shapes'&&obj.shapeKey&&obj.layer==='furniture'&&!obj.surfaceCapable&&Math.floor(row.itemId/100000)===400)freeEligible.add(row.itemId);
+        if(data.command==='indoor-shapes'&&obj.shapeKey&&obj.layer==='furniture'&&!obj.surfaceCapable&&Math.floor(row.itemId/100000)===400||special&&supportLeafFreeEligible(row.itemId,obj,special))freeEligible.add(row.itemId);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'move')&&!nativeActionBlocked(obj.editRestrictions,'rotate'))editable.add(row.itemId);
         if(obj.shapeKey&&!nativeActionBlocked(obj.editRestrictions,'select')&&!nativeActionBlocked(obj.editRestrictions,'remove'))removable.add(row.itemId);
       }

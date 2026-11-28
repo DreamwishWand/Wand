@@ -855,7 +855,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let row=transfer.as_object().filter(|r|r.len()==9&&r.keys().all(|k|matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
   let index=row.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512).ok_or(bad)?;
   let (key,v)=objects.iter().nth(index).ok_or(bad)?;
-  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
   let expected=(int(transfer,"expectedX")?,int(transfer,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
   if v.get("ItemID").and_then(Value::as_u64)!=Some(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!free&&objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(expected)).count()!=1{return Err(bad);}
@@ -913,7 +913,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    for row in rows{
     let m=row.as_object().filter(|m|m.len()==6&&m.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))).ok_or(bad)?;
     if m.get("action").and_then(Value::as_str)!=Some("place"){return Err(bad);}
-    let item=m.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+    let item=m.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
     let amount=m.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
     let xy=(int(row,"x")?,int(row,"y")?);
     if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor||!anchors.insert(xy)||cells[((xy.1 as u32/factor)*sx+xy.0 as u32/factor) as usize].as_u64().is_none_or(|n|n==0){return Err(bad);}
@@ -931,7 +931,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   }
   let row=stock.as_object().ok_or(bad)?;
   let action=row.get("action").and_then(Value::as_str).ok_or(bad)?;
-  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let source=std::str::from_utf8(profile).map_err(|_|bad)?;
   if action=="pickup"{
@@ -981,7 +981,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
  for e in edits{
   let row=e.as_object().filter(|r|r.len()==8&&r.keys().all(|k|matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))).ok_or(bad)?;
   let i=row.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512&&seen.insert(*n)).ok_or(bad)?;
-  let (id,v)=objects.iter().nth(i).ok_or(bad)?;let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
+  let (id,v)=objects.iter().nth(i).ok_or(bad)?;let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
   let before=(int(e,"expectedX")?,int(e,"expectedY")?);let after=(int(e,"x")?,int(e,"y")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;let new=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if v.get("ItemID").and_then(Value::as_u64)!=Some(item)||v.get("ID").and_then(Value::as_u64)!=key_id(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(before)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||

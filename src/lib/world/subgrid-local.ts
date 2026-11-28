@@ -29,6 +29,12 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
  for(const o of tree.objects){const key=supportShapeKey(o),s=key?shapes[key]:null;left=Math.min(left,o.x);top=Math.min(top,o.y);right=Math.max(right,o.x+(s?.width??1));bottom=Math.max(bottom,o.y+(s?.height??1));}
  return {x:left-.5,y:top-.5,w:right-left+1,h:bottom-top+1};
 }
+/** Source-backed ordinary leaf furniture, including surface-only decor.
+ * A support, container, keyhole or other known interaction is not a
+ * plain-stock template. Game placement flags are not structural evidence. */
+export function supportLeafFreeEligible(itemId:number,source:{layer:string;shapeKey:string|null},special:ReadonlySet<number>){
+ return Math.floor(itemId/100000)===400&&(source.layer==='furniture'||source.layer==='surface')&&!!source.shapeKey&&!special.has(itemId);
+}
 export function supportParentEligible(p:MainlandSavedObject|null,nonstandard=false):p is MainlandSavedObject{
  return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&(nonstandard||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move'));
 }

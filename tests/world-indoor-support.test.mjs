@@ -36,3 +36,18 @@ test('support free placement permits overlap and terrain holes but requires nati
  assert.equal(supportPlacementFits(tree,shapes,raster,id,2,1,'GridOrientation_Down',true),false);
  assert.equal(supportPlacementFits(tree,{},raster,id,0,1,'GridOrientation_Down',true),false);
 });
+
+test('free support leaf eligibility ignores floor acceptance but excludes native state owners',async()=>{
+ const {supportLeafFreeEligible,supportFreeEdit}=await import('../src/lib/world/subgrid-local.ts');
+ const id=40000002,source={layer:'surface',shapeKey:id+':8'},special=new Set([40001680]);
+ assert.equal(supportLeafFreeEligible(id,source,special),true);
+ assert.equal(supportLeafFreeEligible(40001680,source,special),false);
+ assert.equal(supportLeafFreeEligible(40100001,source,special),false);
+ assert.equal(supportLeafFreeEligible(id,{...source,shapeKey:null},special),false);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4096,path:''};
+ const tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:id,x:0,y:0,orientation:'GridOrientation_Down',child:null}]},raster={sizeX:2,sizeY:1,nativeFloorValues:Uint32Array.from([4096,0])};
+ const free=new Set([id]),strict=new Set();
+ assert.equal(supportFreeEdit(tree,{[source.shapeKey]:shape},strict,raster,0,1,0,'GridOrientation_Down'),null);
+ assert.ok(supportFreeEdit(tree,{[source.shapeKey]:shape},free,raster,0,1,0,'GridOrientation_Down',true));
+ assert.equal(supportFreeEdit({...tree,objects:[{...tree.objects[0],child:{...tree,objects:[]}}]},{[source.shapeKey]:shape},free,raster,0,1,0,'GridOrientation_Down',true),null);
+});
