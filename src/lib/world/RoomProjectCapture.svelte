@@ -1,6 +1,6 @@
 <script lang="ts">
  import PrivateStorageBackup from './PrivateStorageBackup.svelte';
- import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope} from './private-decoration-backup.ts';
+ import {readDecorationFile,savePrivateDecoration,privateDecorationWords,stagePrivateDecoration} from './private-decoration-backup.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -13,14 +13,14 @@
  import {commitWorldCheckpoint} from '../ui/local-save-session';
  import {indoorBackupRooms,serializeIndoorBackup,parseIndoorBackup,buildIndoorRestore,INDOOR_BACKUP_LIMIT,indoorBackupWords,type IndoorBackupScope,type IndoorBackupRoom,type IndoorRestoreInput} from './indoor-decoration-backup.ts';
  import {currentDesign} from './design-layout.ts';
- import {indoorFreeFloor} from './indoor-room-view.ts';
+ import {indoorFreeFloor,parseIndoorRooms} from './indoor-room-view.ts';
  import type {RoomApplySurfaceGeometry} from './room-project-apply.ts';
  import {captureRoomTemplate,captureRoomRows,captureRoomSurface,capturedRoomDocument,roomBackupSurfaceValid,roomBackupProtected,roomCaptureWords,protectedRoomWords} from './room-project-capture.ts';
  import {captureSupportScene,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
  import {designAttachments} from './design-support-attachment.ts';
  import type {IndoorRoom} from './indoor-room-view.ts';
- import type {IndoorSupportWitness} from './indoor-support.ts';
+ import {parseIndoorSupportParents,type IndoorSupportWitness} from './indoor-support.ts';
  import type {RoomDesignTemplate} from './room-design.ts';
  import type {RoomProjectSurface} from './room-project-design.ts';
  import type {DesignItemGeometry} from './design-layout.ts';
@@ -32,9 +32,9 @@
  $: bw=indoorBackupWords[locale];
  $: testExport=browser&&testSaveExportEnabled(window.location);
  $: targets=indoorBackupRooms(scope,room,rooms);
- let privateStorage:string|null=null,includeContents=false;
+ let privateStorage:string|null=null,stagedFile:File|null=null,includeContents=false;
  $: privateWords=privateDecorationWords[locale];
- function reset(){privateStorage=null;review=null;error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
+ function reset(){privateStorage=null;stagedFile=null;review=null;error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
  let busy=false,error=false,alive=true,epoch=0,seen:Worker|null=null,reader:Worker|null=null,rejectRead:((e:Error)=>void)|null=null;
  const requests=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void}>();
  $: w=roomCaptureWords[locale];
@@ -57,12 +57,12 @@
   });
  }
  onDestroy(()=>{alive=false;epoch++;seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('closed'));requests.clear();reader?.terminate();reader=null;rejectRead?.(Error('closed'));rejectRead=null;writer?.terminate();if(copy)URL.revokeObjectURL(copy.url);});
- async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>,backup=false,privateContents=false):Promise<IndoorBackupRoom>{
+ async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>,backup=false,privateContents=false,parents:readonly IndoorSupportWitness[]=witnesses):Promise<IndoorBackupRoom>{
   if(!target.surfaces.length||target.surfaces.length>9)throw Error('surfaces');
   const out:RoomProjectSurface[]=[];
    for(const face of target.surfaces){
     if(!valid())throw Error('changed');const template=captureRoomTemplate(face,templates);if(!template)throw Error('terrain');
-    const supportParents=witnesses.filter(p=>p.roomOrdinal===target.ordinal&&p.surfaceOrdinal===face.ordinal),scenes=new Map<number,SupportScene>();
+    const supportParents=parents.filter(p=>p.roomOrdinal===target.ordinal&&p.surfaceOrdinal===face.ordinal),scenes=new Map<number,SupportScene>();
     for(let i=0;i<supportParents.length;i+=16){const batch=await readSupports(source,supportParents.slice(i,i+16));if(!valid())throw Error('changed');for(const [id,scene] of batch)scenes.set(id,scene);}
     const rows=captureRoomRows(target,face,template,supportParents,scenes,privateContents);if(!rows)throw Error('poses');
     const itemIds=[...new Set(rows.map(p=>p.itemId))],defs=new Map<number,DesignItemGeometry>();
@@ -81,6 +81,16 @@
   if(items.length){if(items.length>5000)throw Error('native geometry limit');const d=await request(own,{command:'indoor-shapes',factor:face.factor,items});if(!valid()||d.kind!=='indoor-shapes'||!d.shapes||!Array.isArray(d.removable))throw Error('native geometry');shapes=d.shapes;allowed=new Set(d.removable);freeAllowed=new Set(Array.isArray(d.freeEligible)?d.freeEligible:[]);}
   return {design,shapes,allowed,freeAllowed};
  }
+ function readStagedRooms(source:File):Promise<{rooms:IndoorRoom[];parents:IndoorSupportWitness[]}>{
+  return new Promise((resolve,reject)=>{
+   const session=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});reader=session;rejectRead=reject;
+   const done=(d:any)=>{session.terminate();if(reader!==session)return;reader=null;rejectRead=null;
+    try{if(d?.kind!=='indoor-rooms')throw Error('staged rooms');const rooms=parseIndoorRooms(d.result);resolve({rooms,parents:parseIndoorSupportParents(d.result,rooms)});}catch(e){reject(e);}
+   };
+   session.onmessage=e=>done(e.data);session.onerror=()=>done(null);session.onmessageerror=()=>done(null);
+   session.postMessage({command:'indoor-rooms',file:source});
+  });
+ }
  async function run(mode:'design'|'backup'|'restore',chosen?:File){
   if(busy||blocked||mode==='restore'&&!testExport)return;reset();busy=true;const token=++epoch,source=file,target=room,own=worker,selectedScope=scope,group=mode==='design'?[target]:[...targets],baselineRooms=rooms,baselineStock=stock,selectedFree=freePlacement;
   const valid=()=>alive&&epoch===token&&file===source&&room===target&&worker===own&&rooms===baselineRooms&&stock===baselineStock&&scope===selectedScope&&freePlacement===selectedFree&&!blocked;
@@ -88,8 +98,15 @@
    if(!group.length)throw Error('scope');
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
-   const loaded=mode==='restore'&&chosen?await readDecorationFile(chosen,INDOOR_BACKUP_LIMIT):null,incomingRaw=loaded?.text??null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw&&!loaded?.storage)void rememberPreset(chosen,incomingRaw).catch(()=>{});
-   for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds,mode!=='design',mode==='backup'&&includeContents));
+   const loaded=mode==='restore'&&chosen?await readDecorationFile(chosen,INDOOR_BACKUP_LIMIT):null,incomingRaw=loaded?.text??null;
+   let planningFile=source,planningGroup=group,planningParents=witnesses,normalized=loaded?.storage??null;
+   if(normalized){
+    const stage=await stagePrivateDecoration(source,normalized,JSON.stringify({kind:selectedScope,roomOrdinal:target.ordinal}),valid);
+    if(!valid())throw Error('changed');planningFile=stage.file;normalized=stage.storage;
+    if(planningFile!==source){const staged=await readStagedRooms(planningFile);if(!valid())throw Error('changed');const selected=staged.rooms.find(r=>r.ordinal===target.ordinal);if(!selected)throw Error('scope');planningGroup=indoorBackupRooms(selectedScope,selected,staged.rooms);planningParents=staged.parents;}
+   }
+   const incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,planningGroup,templates):null;if(chosen&&incomingRaw&&!loaded?.storage)void rememberPreset(chosen,incomingRaw).catch(()=>{});
+   for(const targetRoom of planningGroup)entries.push(await readRoom(targetRoom,templates,own,planningFile,valid,finishIds,mode!=='design',mode==='backup'&&includeContents,planningParents));
    if(!valid())throw Error('changed');
    if(mode==='restore'){
     if(!incoming)throw Error('file');
@@ -111,7 +128,7 @@
      }
      inputs.push({room:entry.room,before:entry.surfaces,after,geometry,...(ceiling===undefined?{}:{ceiling})});
     }
-    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');privateStorage=loaded?.storage??null;return;
+    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');privateStorage=normalized;stagedFile=planningFile!==source?planningFile:null;return;
    }
    const raw=mode==='design'?capturedRoomDocument(target,entries[0].surfaces,templates):serializeIndoorBackup(selectedScope,entries,templates);if(!valid()||!raw)throw Error('document');
    if(mode==='backup'&&includeContents)await savePrivateDecoration(source,JSON.stringify({kind:selectedScope,roomOrdinal:target.ordinal}),raw,'wand-private-indoor-'+selectedScope+'.json',valid);
@@ -123,7 +140,7 @@
  function validate(){if(!testExport||blocked||busy||!review||!review.changed&&!privateStorage||!review.plan||review.missing.length||copy)return;
   busy=true;const source=file,target=room,plan=review.changed?review.plan:null,own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});writer=own;
   const done=(d:any)=>{own.terminate();if(writer!==own)return;writer=null;busy=false;if(!alive||file!==source||room!==target||blocked){d?.bytes?.fill(0);return;}try{if(d?.kind!=='indoor-room-project-copy')throw Error('receipt');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'indoor-room-project-export',file:source,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:JSON.stringify({kind:scope,roomOrdinal:target.ordinal})}:{})});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'indoor-room-project-export',file:stagedFile??source,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:JSON.stringify({kind:scope,roomOrdinal:target.ordinal})}:{})});
  }
  function apply(){if(!testExport||blocked||busy||!copy||!commitWorldCheckpoint(file,copy.file)){error=true;return;}reset();}
 </script>
