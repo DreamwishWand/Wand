@@ -86,7 +86,11 @@ fn valid_field_object(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32
  let collection=&root["World"]["GridCollection"];let g=&collection["Grids"][&target.grid_id];let o=&g["Objects"][&target.object_id];
  root["GameInfo"]["Version"].as_u64()==Some(643)&&g["ID"].as_u64()==key_id(&target.grid_id).map(u64::from)&&
  collection.get("DiffGrids").is_none_or(|v|v.as_object().is_some_and(|m|!m.contains_key(&target.grid_id)))&&
- o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
+ // Native GridObject.From is the optional GridSource enum (tag 7).
+ // PlayerDrop (15) is source metadata, not an ItemState or allocated ID.
+ // Other provenance may belong to automatic spawning or progression.
+ o.as_object().is_some_and(|m|(5..=7).contains(&m.len())&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"|"From")))&&
+ o.get("From").is_none_or(|v|v.is_null()||v.as_str()==Some("GridSource_PlayerDrop")||v.as_u64()==Some(15))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
  super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)
@@ -444,6 +448,23 @@ mod tests{
   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=wrap(json!({}));
   let out:Value=serde_json::from_str(&recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
   assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["State"],json!({}));
+ }
+ #[test]fn recover_player_dropped_stack_without_inventing_inventory_source_fields(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let t=target();
+  // Source metadata is optional and exists only on GridObject.
+  for source in [Value::Null,json!("GridSource_PlayerDrop"),json!(15)]{
+   let o=&mut root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"];
+   o["From"]=source;
+   o["State"]=json!({"ItemAmountState":{"Amount":7,"State":null,"AssignedPlayer":null}});
+   let out:Value=serde_json::from_str(&recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+   assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":t.item_id,"Amount":7,"State":null}]));
+   assert!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+  }
+  for source in [json!("GridSource_Gardening"),json!("GridSource_LootPresent"),json!("GridSource_Mining"),json!(10),json!(18),json!({"Unknown":true}),json!("Unknown")]{
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["From"]=source;
+   assert!(recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").is_err());
+  }
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
