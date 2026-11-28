@@ -3355,10 +3355,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             let state=old.get("State");
             let has_storage=state.is_some_and(|s|s.get("Storage").is_some());
             let has_support=state.is_some_and(|s|s.get("SubGrid").is_some());
-            if storage!=has_storage||factor.is_some()!=has_support||storage&&has_support||!same_grid&&(storage||has_support)||factor.is_some_and(|f|f!=1){return Err(bad);}
+            if storage!=has_storage||factor.is_some()!=has_support||storage&&has_support{return Err(bad);}
             // The existing pose writer preserves the native identity and State.
             // Only relocation that changes identity requires the plain-stock census.
-            if !same_grid{
+            if !same_grid&&!has_storage&&!has_support{
                 if old.get("State").is_some_and(|v|!v.is_null()){
                     if crate::storage_source::is_storage(target.item_id)||!old.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state){return Err(bad);}
                 }else{
@@ -3368,6 +3368,8 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }
             let from=plain_scene_identity(&root,&target.grid_id)?;
             let to=plain_scene_identity(&root,&d.grid_id)?;
+            if factor.is_some_and(|f|f!=from.2||f!=to.2){return Err(bad);}
+            if has_storage||has_support{validate_owned_transform_root(profile,target)?;}
             let before=selection.4.as_ref().ok_or(bad)?;
             let valid=|p:(i32,i32),f:u64,sx:u64,sy:u64|p.0>=0&&p.1>=0&&(p.0 as u64)<f*sx&&(p.1 as u64)<f*sy;
             if to.1!=d.layout_path||to.2!=u64::from(d.tessellation)||to.3!=u64::from(d.size.0)||to.4!=u64::from(d.size.1)||
@@ -3383,7 +3385,8 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }else{
                 *new_counts.entry(d.grid_id.clone()).or_default()+=1;
                 old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
-                cross.push((target,selection.2,d,*xy,before,orientation,None,false));
+                let tree=if has_support{Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)}else{None};
+                cross.push((target,selection.2,d,*xy,before,orientation,tree,has_storage));
             }
             continue;
         }
@@ -3476,10 +3479,11 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             Some(current["World"]["GridCollection"]["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?.to_string())
         }else{None};
         let native_orientation=if native_turn{before}else{orientation};
-        let draft=if storage{ddv_save_patch::preview_storage_transfer(&working,target,expected,d,xy,orientation,false,free).map_err(|_|CodecError::Patch)?}else if let Some(tree)=tree{
+        let local=is_underwater_grid(&grids[&target.grid_id])||is_underwater_grid(&grids[&d.grid_id]);
+        let draft=if storage{(if local{ddv_save_patch::preview_free_owned_scene_transfer(&working,target,expected,d,xy,orientation,false,true)}else{ddv_save_patch::preview_storage_transfer(&working,target,expected,d,xy,orientation,false,free)}).map_err(|_|CodecError::Patch)?}else if let Some(tree)=tree{
             let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
             let next=current.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
-            let draft=if free{ddv_save_patch::preview_free_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}else{preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}.map_err(|_|CodecError::Patch)?;
+            let draft=if local{ddv_save_patch::preview_free_owned_scene_transfer(&working,target,expected,d,xy,orientation,true,false)}else if free{ddv_save_patch::preview_free_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}else{preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}.map_err(|_|CodecError::Patch)?;
             let parsed:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
             let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
             if subgrid_tree(c,&d.grid_id,&next)?!=tree{return Err(bad);}
@@ -5326,6 +5330,41 @@ mod terrain_session_tests{
             for (id,x) in [("1",2),("2",3),("3",4)]{let o=&mut expected["World"]["GridCollection"]["Grids"]["7"]["Objects"][id];o["X"]=x.into();o["Y"]=3.into();o["Orientation"]="GridOrientation_Left".into();}
             assert_eq!(serde_json::from_str::<Value>(&ddv_save_patch::preview_existing_grid_mixed_batch(&raw,&edits).unwrap().patched_json).unwrap(),expected);
             assert_eq!(serde_json::from_str::<Value>(&group_cut_candidate(raw.as_bytes(),&plan.to_string()).unwrap()).unwrap(),expected);
+            let mut cross_root=root.clone();
+            cross_root["World"]["GridCollection"]["Grids"]["19"]=serde_json::json!({"ID":19,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":10,"Objects":{}});
+            let cross_raw=cross_root.to_string();
+            let (cross_scan,_)=scan_grid_instances(cross_raw.as_bytes()).unwrap();
+            let meadow=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100});
+            let mut transfer=plan.clone();
+            for (i,id) in ["1","2","3"].iter().enumerate(){
+                let n=cross_scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id==*id).unwrap()+1;
+                transfer["rows"][i]["localOrdinal"]=n.into();transfer["rows"][i]["destination"]=meadow.clone();
+            }
+            // The plain census is irrelevant to owned roots, but remains mandatory for newly relocated plain leaves.
+            transfer["rows"].as_array_mut().unwrap().truncate(2);
+            let relocated=group_cut_candidate(cross_raw.as_bytes(),&transfer.to_string()).unwrap();
+            let after:Value=serde_json::from_str(&relocated).unwrap();
+            assert_eq!(after["Player"],cross_root["Player"]);
+            assert_eq!(after["World"]["GridCollection"]["Grids"]["8"],cross_root["World"]["GridCollection"]["Grids"]["8"]);
+            assert_eq!(after["World"]["GridCollection"]["NextGridID"],20);
+            let (after_scan,_)=scan_grid_instances(relocated.as_bytes()).unwrap();
+            let mut back=transfer.clone();
+            for (i,id) in ["10","11"].iter().enumerate(){
+                assert!(after["World"]["GridCollection"]["Grids"]["7"]["Objects"].get((i+1).to_string()).is_none());
+                assert_eq!(after["World"]["GridCollection"]["Grids"]["19"]["Objects"][*id]["State"],cross_root["World"]["GridCollection"]["Grids"]["7"]["Objects"][(i+1).to_string()]["State"]);
+                let n=after_scan.private_targets.iter().position(|(t,_)|t.grid_id=="19"&&t.object_id==*id).unwrap()+1;
+                back["rows"][i]["localOrdinal"]=n.into();back["rows"][i]["destination"]=w.clone();
+                back["rows"][i]["expectedX"]=(i+2).into();back["rows"][i]["expectedY"]=3.into();
+                back["rows"][i]["expectedOrientation"]="GridOrientation_Left".into();
+                back["rows"][i]["x"]=(i+1).into();back["rows"][i]["y"]=2.into();back["rows"][i]["orientation"]="GridOrientation_Down".into();
+            }
+            let restored:Value=serde_json::from_str(&group_cut_candidate(relocated.as_bytes(),&back.to_string()).unwrap()).unwrap();
+            assert_eq!(restored["Player"],cross_root["Player"]);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["8"],cross_root["World"]["GridCollection"]["Grids"]["8"]);
+            assert!(restored["World"]["GridCollection"]["Grids"]["19"]["Objects"].as_object().unwrap().is_empty());
+            for (old,new) in [("1","4"),("2","5")]{assert_eq!(restored["World"]["GridCollection"]["Grids"]["7"]["Objects"][new]["State"],cross_root["World"]["GridCollection"]["Grids"]["7"]["Objects"][old]["State"]);}
+            let mut referenced=cross_root.clone();referenced["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":19,"GridObjectID":10}]);
+            assert!(group_cut_candidate(referenced.to_string().as_bytes(),&transfer.to_string()).is_err());
             let mut bad_plan=plan.clone();bad_plan["rows"][1]["storage"]=false.into();assert!(group_cut_candidate(raw.as_bytes(),&bad_plan.to_string()).is_err());
             let mut bad_plan=plan.clone();bad_plan["rows"][0]["x"]=65536.into();assert!(group_cut_candidate(raw.as_bytes(),&bad_plan.to_string()).is_err());
             let mut linked=root.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":1}]);
