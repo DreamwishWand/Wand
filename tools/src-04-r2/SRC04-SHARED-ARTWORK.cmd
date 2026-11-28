@@ -36,7 +36,7 @@ try {
     }
     $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/db67aa0432d0d0879302b4e4f09b6937fc1554b7/tools/src-04-r2/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/1d9fedb73f78bbafa9ee64281f3c020516e69190/tools/src-04-r2/'
     foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py','native_cdn_curl.py','audit_native_map_cdn.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }

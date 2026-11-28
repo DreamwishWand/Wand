@@ -6,6 +6,7 @@ import json
 import re
 import os
 import shutil
+import time
 from pathlib import Path
 from collections import Counter
 from bundle_thumbnails import POLICY, MAX_EDGE, write_json
@@ -57,33 +58,49 @@ def extract(spec,aa,root,out,ledger=None,prior_index=None):
     report={"schema":REPORT_SCHEMA,"gameVersion":spec["gameVersion"],"sourceFullVersion":version,
             "privateOnly":True,"publicationAuthorized":False,"catalogSha256":pins,
             "targets":roles,"assets":{},"errors":{}}
+    print("Reading existing image manifests...",flush=True)
     existing=manifests(root)
-    memo={}
+    memo={};reused=Counter();processed=0
+    started=time.monotonic();last=started
+    total=sum(len(v) for v in locs.values())
+    print(f"Original extraction: {len(roles)} unique GUIDs; {total} catalog references",flush=True)
     for guid,match,error in exact_objects(aa,locs):
-        if error:
-            report["errors"].setdefault(guid,[]).append(error);continue
-        identity,refs,bundles=match
         try:
-            previous=report["assets"].get(guid)
-            if previous is not None:
-                # The catalog may expose both Sprite and Texture2D for one GUID.
-                # Compare the decoded original, not the object name or class.
-                native=refs["Image"].read().image.convert("RGBA")
-                original=previous["original"]
-                check(native.size==(original["width"],original["height"]) and
-                      hashlib.sha256(native.tobytes()).hexdigest()==original.get("sourcePixelSha256"),
-                      "Ambiguous exact source pixels")
-                if identity!=previous["unityAssetId"] and identity not in previous.get("equivalentSourceObjects",[]):
-                    previous.setdefault("equivalentSourceObjects",[]).append(identity)
-                continue
-            ck=(identity,roles[guid])
-            if ck not in memo:
-                m=materialize(refs["Image"],bundles,existing,out,True,ledger,
-                              "shared-thumbnail-cache.json" if roles[guid]=="shop-512" else None)
-                memo[ck]=local_image(out,m)
-            report["assets"][guid]={"unityAssetId":identity,"original":memo[ck]}
-        except Exception as exc:
-            report["errors"].setdefault(guid,[]).append(type(exc).__name__+": "+str(exc)[:180])
+            if error:
+                report["errors"].setdefault(guid,[]).append(error);continue
+            identity,refs,bundles=match
+            try:
+                previous=report["assets"].get(guid)
+                if previous is not None:
+                    # The catalog may expose both Sprite and Texture2D for one GUID.
+                    # Compare the decoded original, not the object name or class.
+                    native=refs["Image"].read().image.convert("RGBA")
+                    original=previous["original"]
+                    check(native.size==(original["width"],original["height"]) and
+                          hashlib.sha256(native.tobytes()).hexdigest()==original.get("sourcePixelSha256"),
+                          "Ambiguous exact source pixels")
+                    if identity!=previous["unityAssetId"] and identity not in previous.get("equivalentSourceObjects",[]):
+                        previous.setdefault("equivalentSourceObjects",[]).append(identity)
+                    continue
+                ck=(identity,roles[guid])
+                if ck not in memo:
+                    m=materialize(refs["Image"],bundles,existing,out,True,ledger,
+                                  "shared-thumbnail-cache.json" if roles[guid]=="shop-512" else None)
+                    memo[ck]=local_image(out,m)
+                    reused["published" if m.get("reusedPublished") else "local" if m.get("reused") else "encoded"]+=1
+                report["assets"][guid]={"unityAssetId":identity,"original":memo[ck]}
+            except Exception as exc:
+                report["errors"].setdefault(guid,[]).append(type(exc).__name__+": "+str(exc)[:180])
+        finally:
+            processed+=1
+            now=time.monotonic()
+            if processed==1 or processed%10==0 or now-last>=10:
+                print(f"  Originals: {len(report['assets'])}/{len(roles)} GUIDs; "
+                      f"references {processed}/{total}; materializations {reused['encoded']} encoded, "
+                      f"{reused['local']} local reuse, {reused['published']} CDN reuse; "
+                      f"GUIDs with errors {len(report['errors'])}; elapsed {now-started:.0f}s",flush=True)
+                last=now
+    print(f"Original extraction finished: {len(report['assets'])}/{len(roles)} GUIDs; {processed} references; {len(report['errors'])} error GUIDs",flush=True)
     missing=set(roles)-set(report["assets"])
     report["complete"]=not missing and not report["errors"]
     report["unresolved"]=sorted(missing|set(report["errors"]))
@@ -101,7 +118,9 @@ def finalize(report,out,ledger=None,prior_index=None):
     old=json.loads(cache_path.read_bytes()) if cache_path.exists() else {}
     previous=old.get("images",{}) if old.get("policy")==POLICY else {}
     cache={};images={};refs={}
-    for guid,row in sorted(report["assets"].items()):
+    started=time.monotonic();last=started
+    print(f"Preparing original/512px image variants: {len(roles)} GUIDs",flush=True)
+    for i,(guid,row) in enumerate(sorted(report["assets"].items()),1):
         o=info(row["original"]);sha=o["sha256"]
         images[sha]=o
         r={"original":sha,"role":roles[guid]}
@@ -109,7 +128,14 @@ def finalize(report,out,ledger=None,prior_index=None):
             if sha not in cache:cache[sha]=thumbnail(out,o,previous,ledger)
             t=cache[sha];images[t["sha256"]]=t;r["thumbnail"]=t["sha256"]
         refs[guid]=r
-    for m in images.values():verify_local_or_published(out,m,ledger)
+        now=time.monotonic()
+        if i==1 or i%10==0 or i==len(roles) or now-last>=10:
+            print(f"  Variants: {i}/{len(roles)} GUIDs; {len(images)} unique images; elapsed {now-started:.0f}s",flush=True)
+            last=now
+    print(f"Verifying {len(images)} unique local or published images...",flush=True)
+    for i,m in enumerate(images.values(),1):
+        verify_local_or_published(out,m,ledger)
+        if i==1 or i%50==0 or i==len(images):print(f"  Image verification: {i}/{len(images)}",flush=True)
     index={"schema":INDEX_SCHEMA,"gameVersion":report["gameVersion"],"privateOnly":True,
            "thumbnailPolicy":POLICY,"references":refs,"images":images}
     changes=classify(prior_index["references"] if prior_index else {},refs)
