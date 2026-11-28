@@ -12,7 +12,7 @@ const check=(ok,why)=>{if(!ok)throw Error('DB01_QUEST_FLOW_'+why)};
 const id=v=>Number.isSafeInteger(v)&&v>0;
 export function loadQuestFlowColumns(project,source,rows){
   const byQuest=new Map(),byItem=new Map();
-  if(source.target.platform!=='Steam'||source.sourceFilesSha256?.Mission!==MISSION)return {byQuest,byItem,metadata:null};
+  if(source.target.platform!=='Steam'||source.sourceFilesSha256?.Mission!==MISSION)return {byQuest,byItem,ordinaryIntro:new Map(),metadata:null};
   const known=new Map(rows.map(r=>[r.itemId,r]));
   const raw=readFileSync(join(project,'data/ddv/item-master/original-quest-intro-grants-steam-1.26.2.json'));
   check(raw.length===2153&&createHash('sha256').update(raw).digest('hex')===INTRO,'INTRO_SHA');
@@ -81,7 +81,38 @@ export function loadQuestFlowColumns(project,source,rows){
   check(missions===1030&&bringSteps===989&&counts.intro_grant===70&&counts.substep_handoff===293&&
     counts.post_mission_cleanup===824&&counts.additional_reward_loot===330&&keepCount===8&&
     handoffItems.size===251&&handoffQuests.size===172,'ORIGINAL_CENSUS');
-  return {byQuest,byItem,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
+  // The public Guide's original native quest groups establish the same
+  // story/friendship/realm taxonomy used by the product. Exclude known
+  // mini-event quests independently, as well as premium/repeatable/other.
+  const q=JSON.parse(readFileSync(join(project,'static/guide/public/quest-index.json'),'utf8'));
+  const e=JSON.parse(readFileSync(join(project,'static/guide/public/event-quest-links-1.26.2.json'),'utf8'));
+  check(q.schema==='wand.db03.public-guide-quests@1'&&q.target.platform==='Steam'&&
+    q.target.gameVersion===source.target.gameVersion&&q.provenance.missionFullFileSha256===MISSION&&
+    q.provenance.missionSourceIdenticalAcrossVersions===true&&q.quests.length===733,'GUIDE_INDEX');
+  check(e.schema==='wand.db03.public-event-quest-links@1'&&e.target.platform==='Steam'&&
+    e.target.gameVersion===source.target.gameVersion&&e.source.staticMiniEventSourceOnly===true&&
+    e.source.originalEventLinksSha256==='4802d7f6cfd4f72733ceb5c16dd149aa6e724e118bb5795b6c72ad50ebee3b0c','EVENT_INDEX');
+  const eventIds=new Set(Object.values(e.events).flat().map(Number));
+  check(eventIds.size===49,'EVENT_CENSUS');
+  const ordinaryIntro=new Map();
+  const published=new Map(q.quests.map(r=>[Number(r.id),r]));
+  for(const [questId,flows] of byQuest){
+    const quest=published.get(questId);
+    if(!quest||eventIds.has(questId))continue;
+    const prefix=quest.internalName.split('!')[0];
+    const group=q.groups[quest.groupId];
+    if(!['Village','Story','Realm'].includes(prefix)||group?.rawName.split('!')[0]!==prefix)continue;
+    for(const [flowIndex,flow] of flows.entries()){
+      if(flow.kind!=='intro_grant'||!id(flow.configuredAmount))continue;
+      const list=ordinaryIntro.get(flow.itemId)??[];
+      list.push({questId,flowIndex,sourcePath:flow.sourcePath,configuredAmount:flow.configuredAmount,
+        nativeQuestGroupId:Number(quest.groupId),nativeQuestGroup:prefix,
+        sourceGameVersion:source.target.gameVersion,sourceMissionSha256:MISSION,
+        guaranteedGrantVerified:false,currentAvailabilityVerified:false});
+      ordinaryIntro.set(flow.itemId,list);
+    }
+  }
+  return {byQuest,byItem,ordinaryIntro,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
     sourceGameVersion:source.target.gameVersion,counts,questCount:byQuest.size,itemCount:byItem.size,
     total:1517,guaranteedGrantVerified:false,currentAvailabilityVerified:false}};
 }

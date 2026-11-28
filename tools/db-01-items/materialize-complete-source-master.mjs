@@ -1128,6 +1128,13 @@ function ordinaryProductionLinks(rows,source,acquisition,protoAcquisition){
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
+  const introNew=[...questFlows.ordinaryIntro.keys()].filter(id=>
+    !acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
+    !(protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)&&!ordinaryProduction.has(id));
+  console.log('DB01_ORDINARY_QUEST_INTRO '+JSON.stringify({items:questFlows.ordinaryIntro.size,
+    occurrences:[...questFlows.ordinaryIntro.values()].reduce((n,a)=>n+a.length,0),
+    newOrdinaryCategory:introNew.length,previouslyUnclassified:introNew.filter(id=>
+      !(acquisition?.summary.get(id)?.categories.length)&&!premiumBundles?.byItem.get(id)?.currentBundleIds.length).length}));
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1366,6 +1373,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const production=ordinaryProduction.get(row.itemId);
     if(production?.length){
       add('acquisition.ordinaryProductionSources',row.itemId,production);
+      categorySet.add('ordinary_gameplay');
+    }
+    const intro=questFlows.ordinaryIntro.get(row.itemId);
+    if(intro?.length){
+      add('acquisition.ordinaryQuestIntroSources',row.itemId,intro);
       categorySet.add('ordinary_gameplay');
     }
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
