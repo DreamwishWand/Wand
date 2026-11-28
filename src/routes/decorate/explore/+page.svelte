@@ -8,6 +8,7 @@
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
   import {profileFavorites} from '$lib/explore/profile-favorites';
+  import {encodeMoodboardBackup,mergeMoodboardBackup,readMoodboardBackup} from '$lib/explore/board-backup';
   import {CollectionRuntime} from '$lib/collection/runtime';
   import {editHistory} from '$lib/ui/edit-history';
   import {CATEGORY_KEYS,categoriesOf,matchesScope,readDecorationScope,DECORATION_SCOPE_KEY,type DecorationScope,type ExploreCategory} from '$lib/explore/scope';
@@ -256,6 +257,32 @@
     let j=i+step;while(j>=0&&j<entries.length&&entries[j].groupId!==entries[i].groupId)j+=step;
     if(j<0||j>=entries.length)return b;[entries[i],entries[j]]=[entries[j],entries[i]];return {...b,entries};
   }));}
+  let boardImportBusy=$state(false),boardBackupFailed=$state(false);
+  function exportBoards(onlyActive=false){
+    boardBackupFailed=false;
+    try{
+      const raw=encodeMoodboardBackup(boards,onlyActive?active?.id:undefined);
+      const url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));
+      const link=document.createElement('a');link.href=url;
+      link.download='dreamwish-wand-moodboards-'+new Date().toISOString().slice(0,10)+'.json';
+      try{link.click();}finally{setTimeout(()=>URL.revokeObjectURL(url),1000);}
+    }catch{boardBackupFailed=true;}
+  }
+  async function importBoards(event:Event){
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];input.value='';
+    if(!file||boardImportBusy||!ready||storageFailed)return;
+    boardImportBusy=true;boardBackupFailed=false;
+    try{
+      const backup=readMoodboardBackup(await file.text());
+      if(disposed)return;
+      // Rebase on current local state, with existing CAS protecting other tabs.
+      const next=mergeMoodboardBackup(boards,backup,()=>crypto.randomUUID());
+      save(next);
+      if(storageFailed)throw Error('MOODBOARD_STORAGE_FAILED');
+    }catch{if(!disposed)boardBackupFailed=true;}
+    finally{if(!disposed)boardImportBusy=false;}
+  }
   function pickBoard(id:string){save({...boards,active:id});}
   function addBoard(){if(!newName.trim())return;save(createBoard(boards,crypto.randomUUID(),newName));newName='';boardsOpen=true;}
   function removeBoard(){if(active&&confirm(t('このムードボードを削除しますか？','Delete this moodboard?')))save(deleteBoard(boards,active.id));}
@@ -369,6 +396,12 @@
   <aside class="boards" aria-label="Moodboards">
     <div class="bar board-header"><h2>Moodboards</h2><button aria-label={t('閉じる','Close')} onclick={()=>boardsOpen=false}><WandIcon name="close" size={18}/></button></div>
     <div class="bar"><input bind:value={newName} placeholder={t('新しいボード名','New moodboard name')} aria-label={t('新しいボード名','New moodboard name')}/><button disabled={!newName.trim()||!ready||storageFailed} onclick={addBoard}>{t('作成','Create')}</button></div>
+    <div class="bar board-transfer">
+      <button disabled={!ready||storageFailed||!boards.boards.length} onclick={()=>exportBoards()}>{label('exportBoards')}</button>
+      <button disabled={!ready||storageFailed||!active} onclick={()=>exportBoards(true)}>{label('exportBoard')}</button>
+      <label class="import-board">{label('importBoards')}<input aria-label={label('importBoards')} type="file" accept=".json,application/json" disabled={!ready||storageFailed||boardImportBusy} onchange={importBoards}/></label>
+    </div>
+    {#if boardBackupFailed}<p role="alert">{label('boardBackupFailed')}</p>{/if}
     <div class="board-list">
       {#each boards.boards as b (b.id)}
         <button class="board-card" class:activeTab={b.id===active?.id} onclick={()=>pickBoard(b.id)}>
@@ -434,6 +467,7 @@
   .boards{min-width:0;max-height:calc(100dvh - var(--shell-height,60px) - 24px);overflow:auto;border-left:1px solid var(--wand-line);padding-left:12px}
   .boards .tiles{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
   .board-header{justify-content:space-between}
+  .board-transfer{gap:5px}.board-transfer button,.import-board{font-size:.78rem}.import-board{display:grid;gap:4px;max-width:100%;overflow:hidden}.import-board input{max-width:100%;font-size:.72rem}
   .back{font-size:12px;text-decoration:none}
 
   .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
