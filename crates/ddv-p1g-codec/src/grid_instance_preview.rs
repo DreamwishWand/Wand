@@ -1862,7 +1862,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
     let local=targets.iter().find(|t|is_underwater_grid(&grids[&t.grid_id])).map(|t|t.grid_id.as_str());
     if let Some(gid)=local{
-        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS||targets.iter().any(|t|t.grid_id!=gid)||support_flags.iter().any(|v|*v)||storage_flags.iter().any(|v|*v){return Err(CodecError::Json);}
+        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&scope!=Some(gid)||targets.iter().any(|t|t.grid_id!=gid)||support_flags.iter().any(|v|*v)||storage_flags.iter().any(|v|*v){return Err(CodecError::Json);}
         let (sx,sy)=underwater_transform_identity(&root,gid)?;
         let checked=underwater_plain_items(&root);
         for (target,selection) in targets.iter().zip(&selections){
@@ -2796,7 +2796,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let row_free=free||o.get("freePlacement").and_then(Value::as_bool)==Some(true);
         let underwater=is_underwater_grid(&grids[&d.grid_id]);
         if underwater{
-            if !row_free||ordinary_grid||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS||underwater_grid.as_ref().is_some_and(|id|id!=&d.grid_id){return Err(bad);}
+            if !row_free||ordinary_grid||underwater_grid.as_ref().is_some_and(|id|id!=&d.grid_id){return Err(bad);}
             underwater_grid=Some(d.grid_id.clone());
         }else{if underwater_grid.is_some(){return Err(bad);}ordinary_grid=true;}
         if row_free&&!underwater&&checked_world_grids.insert(key.clone()){
@@ -2877,16 +2877,22 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
  let witness=o.get("destination").ok_or(bad)?;
- // Only the eight original Valley biome root layouts.
+ // Exact original Valley biome or calibrated single independent scene.
  let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
- if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
  let d=resolve_plain_grid_destination(profile,witness)?;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let local=is_underwater_grid(&root["World"]["GridCollection"]["Grids"][&d.grid_id]);
+ if local{
+  let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
+  if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
+ }else if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
  let remove=o.get("remove").and_then(Value::as_array).ok_or(bad)?;
  let add=o.get("add").and_then(Value::as_array).ok_or(bad)?;
  if remove.len()+add.len()==0||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  // Every new pose must target exactly the selected original grid. The
  // plain writer rejects unsupported state, stock and occupied anchors.
  if add.iter().any(|p|p.get("destination")!=Some(witness)){return Err(bad);}
+ if local&&add.iter().any(|p|p.get("freePlacement").and_then(Value::as_bool)!=Some(true)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let r=group_pickup_bounded(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id),MAX_AREA_FURNITURE_CHANGES)?;
@@ -3116,6 +3122,11 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  if plan.len()>if decoration{6_000_000}else{2_000_000}{return Err(CodecError::Bounds);}
  let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=if decoration{64}else{16}).ok_or(bad)?;
+ // A calibrated independent scene uses the same single-grid replacement
+ // transaction, not the multi-grid floating-island identity contract.
+ if !decoration&&rows.len()==1&&rows[0]["destination"]["layoutId"].as_str().is_some_and(|s|s.starts_with("SceneLayouts/VillageExpansion04UnderwaterAreas/")){
+  return biome_furniture_candidate(profile,&rows[0].to_string());
+ }
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
  let mut layout_id=None::<String>;let mut world_mode=None::<bool>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
@@ -3715,8 +3726,14 @@ mod tests{
             let removed=group_pickup_candidate(moved.as_bytes(),&pickup.to_string()).unwrap();
             let result:Value=serde_json::from_str(&removed).unwrap();assert_eq!(result["Player"],root["Player"]);
             assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]);
+            let replacement=serde_json::json!([{"destination":w,"remove":pickup,"add":[{"itemId":"40000001","destination":w,"x":3,"y":3,"orientation":"GridOrientation_Left","freePlacement":true}]}]);
+            let restored:Value=serde_json::from_str(&island_furniture_candidate(moved.as_bytes(),&replacement.to_string()).unwrap()).unwrap();
+            assert_eq!(restored["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["X"],3);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
             let mut blocked:Value=serde_json::from_str(&moved).unwrap();
             blocked["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Toggle":{"Value":true}});
+            assert!(island_furniture_candidate(blocked.to_string().as_bytes(),&replacement.to_string()).is_err());
             assert!(group_pickup_candidate(blocked.to_string().as_bytes(),&pickup.to_string()).is_err());
         }
     }

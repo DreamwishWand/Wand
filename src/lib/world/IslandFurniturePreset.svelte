@@ -21,7 +21,8 @@
  import {islandSaveSnapshot,privateIslandFurnitureText,parseIslandSavePreset,islandSaveReplacement,islandSaveWords} from './island-save-preset.ts';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import {DESIGN_FILE_LIMIT,type DesignItemGeometry} from './design-layout.ts';
- import {parseFurnitureStock} from './furniture-stock-view.ts';
+ import {parseFurnitureStock,parseLocalPlainStock} from './furniture-stock-view.ts';
+ import {wholeAreaWords} from './whole-area-preset.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {commitWorldCheckpoint} from '../ui/local-save-session.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
@@ -34,7 +35,9 @@
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File|null,worker:Worker|null,grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],activeKey:string,blocked=false,allowed=false,locale:WandLanguage='ja',nextRequest:()=>number,label:(key:string)=>string,onClose:()=>void;
  export let freePlacement=false;
- export let world=false,region:CaptureRegion|null=null;
+ export let world=false,region:CaptureRegion|null=null,localScene=false;
+ let localPlainIds:ReadonlySet<number>|undefined;
+ $: aw=wholeAreaWords[locale];
  export let ghosts:readonly StockCandidate[]=[],removed:readonly MainlandSavedObject[]=[];
  let snapshot:ReturnType<typeof islandSaveSnapshot>=null,review:ReturnType<typeof islandSaveReplacement>=null;
  let includeSupport=false,supportTrees:SupportAreaTrees|undefined,supportAbort:AbortController|null=null,supportSnapshot:ReturnType<typeof captureIslandDecoration>=null;
@@ -72,7 +75,7 @@
    const cleanup=()=>{clearTimeout(timer);own.terminate();if(stockWorker===own)stockWorker=null;cancelRequests.delete(cancel);};
    const cancel=()=>{cleanup();reject(Error('stock'));};
    const timer=setTimeout(cancel,30000);cancelRequests.add(cancel);
-   own.onmessage=e=>{cleanup();try{if(e.data?.kind!=='furniture-stock')throw Error('stock');resolve(parseFurnitureStock(e.data.result));}catch(e){reject(e);}};
+   own.onmessage=e=>{cleanup();try{if(e.data?.kind!=='furniture-stock')throw Error('stock');if(localScene)localPlainIds=parseLocalPlainStock(e.data.result);resolve(parseFurnitureStock(e.data.result));}catch(e){reject(e);}};
    own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'read-furniture-stock',file:f});
   });
  }
@@ -132,12 +135,13 @@
     }
    }
    if(token!==epoch||file!==f||sessions!==ss)return;
-   snapshot=islandSaveSnapshot(grids,ss,maps,world);if(!snapshot)throw Error('snapshot');
+   if(localScene){await readStock(f);if(token!==epoch||file!==f||sessions!==ss||!localPlainIds)return;}
+   snapshot=islandSaveSnapshot(grids,ss,maps,world,localScene?localPlainIds:undefined);if(!snapshot)throw Error('snapshot');
    if(world||region){includeNetworks=true;includeSupport=true;await loadNetworks(f,ss,token);const trees=await readSupports(f,own);if(epoch!==token||file!==f||sessions!==ss)return;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');supportTrees=trees;}
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  async function exportPreset(){
-  if(!snapshot||blocked||busy||includeNetworks&&!selectedSnapshot)return;const text=includeContents?(region?(supportTrees?reviewRegionCapture(region,grids,snapshot,networks,supportTrees,world,landscapes,freePlacement&&world,true)?.text??null:null):includeNetworks?captureIslandDecoration(grids,snapshot,networks,includeSupport?supportTrees:undefined,world,landscapes,world,true)?.text??null:privateIslandFurnitureText(grids,snapshot)):region?(regionCapture?.text??null):includeNetworks?selectedSnapshot!.text:snapshot.text;if(!text){error=true;return;}if(includeContents&&file){if(region&&!privateRegion){error=true;return;}const f=file,token=epoch,scope=region?JSON.stringify({kind:'region',objects:privateRegion}):outdoorPrivateScope(grids);reading=true;try{await savePrivateDecoration(f,scope,text,region?'wand-private-region.json':'wand-private-outdoor.json',()=>file===f&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}return;}savePresetFile(text,region?'wand-region-decoration.json':world?'wand-world-'+grids[0].layoutId.split('/')[1]+'-decoration.json':'wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json');
+  if(!snapshot||blocked||busy||includeNetworks&&!selectedSnapshot)return;const text=includeContents?(region?(supportTrees?reviewRegionCapture(region,grids,snapshot,networks,supportTrees,world,landscapes,freePlacement&&world,true)?.text??null:null):includeNetworks?captureIslandDecoration(grids,snapshot,networks,includeSupport?supportTrees:undefined,world,landscapes,world,true)?.text??null:privateIslandFurnitureText(grids,snapshot)):region?(regionCapture?.text??null):includeNetworks?selectedSnapshot!.text:snapshot.text;if(!text){error=true;return;}if(includeContents&&file){if(region&&!privateRegion){error=true;return;}const f=file,token=epoch,scope=region?JSON.stringify({kind:'region',objects:privateRegion}):outdoorPrivateScope(grids);reading=true;try{await savePrivateDecoration(f,scope,text,region?'wand-private-region.json':'wand-private-outdoor.json',()=>file===f&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}return;}savePresetFile(text,localScene?'wand-area-furniture.json':region?'wand-region-decoration.json':world?'wand-world-'+grids[0].layoutId.split('/')[1]+'-decoration.json':'wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json');
  }
  async function open(e:Event){
   const el=e.currentTarget as HTMLInputElement,preset=el.files?.[0];el.value='';if(preset)void openPreset(preset);
@@ -147,7 +151,7 @@
   const own=worker,f=file,ss=sessions,token=++epoch;reading=true;error=false;review=null;decorationReview=null;privateStorage=null;privateScope=null;
   try{
    const loaded=await readDecorationFile(preset,world?WORLD_DECORATION_FILE_LIMIT:Math.max(ISLAND_DECORATION_FILE_LIMIT,DESIGN_FILE_LIMIT)),text=loaded.text;if(token!==epoch||file!==f||sessions!==ss)return;if(!loaded.storage)void rememberPreset(preset,text).catch(()=>{});
-   const schema=JSON.parse(text)?.schema,regionDoc=(world||region)&&schema==='wand.preset.region-decoration@1'?parseRegionDecoration(text,grids,world):null;
+   const schema=JSON.parse(text)?.schema;if(localScene&&(loaded.storage||schema!=='wand.preset.whole-area-design@1'))throw Error('local scope');const regionDoc=(world||region)&&schema==='wand.preset.region-decoration@1'?parseRegionDecoration(text,grids,world):null;
    if(region&&!regionDoc)throw Error('region');
    const privatePoses=loaded.storage&&regionDoc?privateRegionPoses(loaded.storage,regionDoc.region,grids):null;
    if(loaded.storage&&regionDoc&&!privatePoses)throw Error('private region');
@@ -157,7 +161,7 @@
    let combined=regionDoc?.incoming??(full?parseIslandDecoration(text,grids,world):null);
    const current=regionDoc&&supportSnapshot?parseIslandDecoration(supportSnapshot.text,grids,world):null;
    if(regionDoc&&!current)throw Error('current region');
-   const incoming=combined?new Map([...combined].map(([k,v])=>[k,v.furniture])):parseIslandSavePreset(text,grids),rasters=new Map<string,TerrainRaster>(),definitions=new Map<string,Map<number,DesignItemGeometry>>();
+   const incoming=combined?new Map([...combined].map(([k,v])=>[k,v.furniture])):parseIslandSavePreset(text,grids,localScene),rasters=new Map<string,TerrainRaster>(),definitions=new Map<string,Map<number,DesignItemGeometry>>();
    if(world&&combined&&[...combined.values()].some(v=>v.supports===undefined))throw Error('support scope');
    if(full)await loadNetworks(f,ss,token);
    if(token!==epoch||file!==f||sessions!==ss)return;
@@ -168,7 +172,7 @@
     rasters.set(g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:d.nativeFloorValues});
     const ids=[...new Set([...(incoming.get(g.key)??[]),...(combined?.get(g.key)?.network??[]),...(current?.get(g.key)?.furniture??[]),...(current?.get(g.key)?.network??[]),...(combined?.get(g.key)?.landscape??[]),...(current?.get(g.key)?.landscape??[]),...(regionDoc?combined?.get(g.key)?.buildings??[]:[])].map(p=>p.itemId).concat(privatePoses?.find(a=>a.grid.key===g.key)?.poses.map(p=>p.item)??[]))],defs=new Map<number,DesignItemGeometry>();
     for(let i=0;i<ids.length;i+=128){
-     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch,allowBuildings:!!regionDoc&&world,freePlacement:freePlacement&&world,eightWay:world&&[...(incoming.get(g.key)??[]),...(current?.get(g.key)?.furniture??[])].some(p=>!Number.isInteger(p.orientation))});
+     const batch=ids.slice(i,i+128),r=await request(own,g.key,'design-shapes',{itemIds:batch,allowBuildings:!!regionDoc&&world,freePlacement:localScene||freePlacement&&world,eightWay:world&&[...(incoming.get(g.key)??[]),...(current?.get(g.key)?.furniture??[])].some(p=>!Number.isInteger(p.orientation))});
      if(!Array.isArray(r.result)||r.result.length!==batch.length||r.result.some((x:DesignItemGeometry)=>!batch.includes(x.itemId)))throw Error('shape');
      for(const def of r.result as DesignItemGeometry[])defs.set(def.itemId,def);
     }
@@ -187,7 +191,7 @@
    const stock=await readStock(f);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
    if(regionDoc){if(!trees||!current||!combined)throw Error('region');combined=mergeRegionDecoration(regionDoc.region,grids,snapshot,networks,trees,current,combined,definitions,world,landscapes,freePlacement&&world);if(!combined)throw Error('region boundary');}
-   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees,world,landscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock);if(!review)throw Error('plan');}
+   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees,world,landscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock,localScene?localPlainIds:undefined);if(!review)throw Error('plan');}
    // Do not change the confirmed rectangle or mode on a rejected import.
    if(regionDoc)region=regionDoc.region;
    includeNetworks=full;includeSupport=!!trees;privateStorage=loaded.storage;privateScope=restoredPrivateScope;
@@ -203,13 +207,13 @@
  onMount(()=>{void load();});
  onDestroy(()=>{epoch++;supportAbort?.abort();for(const cancel of [...cancelRequests])cancel();stockWorker?.terminate();writeWorker?.terminate();if(copy)URL.revokeObjectURL(copy.url);writeWorker=null;});
 </script>
-<aside class="biome-furniture-panel island-furniture-panel" aria-label={region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}>
- <strong>{region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}</strong>{#if !world&&!region}<label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label>{#if includeNetworks}<label><input type="checkbox" checked={includeSupport} disabled={!networkSnapshot||busy||!!copy} on:change={e=>void setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}{/if}<small>{region?rg[4]:world?ww[3]:includeNetworks?(includeSupport?sw[1]:dw[4]):w[3]}</small>
+<aside class="biome-furniture-panel island-furniture-panel" aria-label={localScene?aw[2]:region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}>
+ <strong>{localScene?aw[2]:region?rg[0]:world?ww[0]:includeNetworks?dw[0]:w[0]}</strong>{#if !localScene&&!world&&!region}<label><input type="checkbox" checked={includeNetworks} disabled={!snapshot||busy||!!copy} on:change={e=>void setMode(e.currentTarget.checked)}/>{dw[1]}</label>{#if includeNetworks}<label><input type="checkbox" checked={includeSupport} disabled={!networkSnapshot||busy||!!copy} on:change={e=>void setSupports(e.currentTarget.checked)}/>{sw[0]}</label>{/if}{/if}<small>{localScene?bw[15]+' · '+bw[7]:region?rg[4]:world?ww[3]:includeNetworks?(includeSupport?sw[1]:dw[4]):w[3]}</small>
  {#if region}{#if regionCapture}<small>{bw2[4]} {regionCapture.summaries.reduce((n,r)=>n+r.furnitureCount,0)} · {bw2[5]} {regionCapture.summaries.reduce((n,r)=>n+r.networkCount,0)} · {landscapeBackupWords[locale]} {regionCapture.summaries.reduce((n,r)=>n+r.landscapeCount,0)} · {bw[7]} {regionCapture.summaries.reduce((n,r)=>n+r.protectedCount,0)}</small>{#if world}<small>{buildingBackupWords[locale]} {regionCapture.summaries.reduce((n,r)=>n+r.buildingCount,0)}</small>{/if}{:else if !busy}<small role="alert">{rg[4]}</small>{/if}{:else if includeNetworks&&selectedSnapshot}{#each selectedSnapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw2[4]} {row.furnitureCount} · {bw2[5]} {row.networkCount} · {landscapeBackupWords[locale]} {row.landscapeCount} · {bw[7]} {row.protectedCount}</small>{#if world&&row.houseCount}<small>{houseBackupWords[locale]} {row.houseCount}</small>{/if}{#if world&&row.buildingCount}<small>{buildingBackupWords[locale]} {row.buildingCount}</small>{/if}{/each}{:else if snapshot}{#each snapshot.summaries as row (row.key)}<small>{label(row.key)} · {bw[15]} {row.editable} · {bw[7]} {row.preserved}</small>{/each}{/if}
  <input class="island-save-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
- <label><input type="checkbox" bind:checked={includeContents} disabled={blocked||busy||!!region&&!privateRegion}/>{privateWords[0]}</label>
- <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot||!!region&&!regionCapture} on:click={exportPreset}>{region?rg[2]:world?ww[1]:includeNetworks?dw[2]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={region?['wand.preset.region-decoration@1']:world?['wand.preset.world-decoration@1','wand.preset.region-decoration@1']:['wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.whole-area-design@1']} kinds={region?['region']:world?['world','region']:['island']} disabled={!snapshot||blocked||busy||!!copy} label={region?rg[3]:world?ww[2]:openWords[locale]} onPick={f=>void openPreset(f)}/><button type="button" disabled={blocked||busy||!!copy} on:click={()=>input.click()}>{privateWords[1]}</button>{/if}</div>
- {#if file&&region&&privateRegion}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'region',objects:privateRegion})}/>{:else if file&&!region}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'outdoor',destinations:grids.map(g=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}))})}/>{/if}
+ {#if !localScene}<label><input type="checkbox" bind:checked={includeContents} disabled={blocked||busy||!!region&&!privateRegion}/>{privateWords[0]}</label>{/if}
+ <div><button type="button" disabled={!snapshot||blocked||busy||!!copy||includeNetworks&&!selectedSnapshot||!!region&&!regionCapture} on:click={exportPreset}>{localScene?bw[2]:region?rg[2]:world?ww[1]:includeNetworks?dw[2]:w[1]}</button>{#if allowed}<PresetFilePicker {locale} schemas={localScene?['wand.preset.whole-area-design@1']:region?['wand.preset.region-decoration@1']:world?['wand.preset.world-decoration@1','wand.preset.region-decoration@1']:['wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.whole-area-design@1']} kinds={localScene?['world']:region?['region']:world?['world','region']:['island']} disabled={!snapshot||blocked||busy||!!copy} label={localScene?aw[2]:region?rg[3]:world?ww[2]:openWords[locale]} onPick={f=>void openPreset(f)}/>{#if !localScene}<button type="button" disabled={blocked||busy||!!copy} on:click={()=>input.click()}>{privateWords[1]}</button>{/if}{/if}</div>
+ {#if !localScene&&file&&region&&privateRegion}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'region',objects:privateRegion})}/>{:else if !localScene&&file&&!region}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'outdoor',destinations:grids.map(g=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}))})}/>{/if}
  {#if busy}<small role="status">{bw[14]}</small>{/if}
  {#if result}
   {#if decorationReview&&includeNetworks}{#if decorationReview.houseReview}<small>{houseBackupWords[locale]} · {bw[4]} {decorationReview.houseReview.retained} · {bw[5]} {decorationReview.houseReview.removed} · {bw[6]} {decorationReview.houseReview.added}</small>{/if}{#if decorationReview.buildingReview}<small>{buildingBackupWords[locale]} · {decorationReview.buildingReview.moved}</small>{/if}{#each [...decorationReview.reviews] as [key,r] (key)}<small>{label(key)} · {bw2[4]} {bw[4]} {r.furniture.retained.length} · {bw[5]} {r.furniture.removed.length} · {bw[6]} {r.furniture.ghosts.length}</small><small>{bw2[5]} · {bw[4]} {r.network.retained} · {bw[5]} {r.network.removed.length} · {bw[6]} {r.network.ghosts.length}</small>{/each}{:else if review}{#each [...review.reviews] as [key,r] (key)}<small>{label(key)} · {bw[4]} {r.retained.length} · {bw[5]} {r.removed.length} · {bw[6]} {r.plan.add.length}</small>{/each}{/if}
