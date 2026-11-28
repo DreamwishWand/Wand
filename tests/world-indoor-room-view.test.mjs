@@ -395,6 +395,12 @@ test('free indoor cut captures overlapping diagonal records and pastes them with
  assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,1,1),null);
  assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,8,1,true),null);
  assert.equal(captureIndoorCut(full,1,[0,1],shapes,allowed,allowed,new Set([0]),true),null);
+ assert.equal(captureIndoorCut(full,1,[1],shapes,allowed,allowed,new Set([1]),true),null);
+ const support={...full,positions:[{itemId:40000001,x:1,y:1,orientationCode:8,plain:false}]};
+ const hierarchy=captureIndoorCut(support,1,[0],shapes,allowed,allowed,new Set([0]),true);assert.ok(hierarchy);
+ assert.equal(hierarchy.rows[0].supportFactor,1);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,hierarchy.rows,hierarchy.clip,1,1,true)[0].supportFactor,1);
+ assert.equal(indoorGroupTransfer(full,shapes,allowed,hierarchy.rows,[{...hierarchy.clip[0],orientation:2.5}],1,1,true),null);
 });
 
 test('storage root supports cardinal move and explicit storage cut but not leaf pickup',async()=>{
