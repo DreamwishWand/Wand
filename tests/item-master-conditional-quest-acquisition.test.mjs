@@ -9,7 +9,18 @@ test('quest gate classification rejects non-positive, mixed, cyclic and unrecogn
   const tree={Conditions:[{CommonConditions:{Condition:10}}, {SubConditions:{Operator:0,Conditions:[leaf]}}]};
   const found=questGate(tree,common,kinds);
   assert.equal(found.length,2);assert.equal(found[0].commonChain[0].conditionItemId,10);
+  for(const state of [2,4,8]){
+    const raw={MissionStatus:{Mission:1,State:state,Operator:0}};
+    assert.deepEqual(questGate({Conditions:[raw]},common,kinds)?.[0]?.original,raw.MissionStatus);
+  }
+  const step={MissionStepStatus:{Mission:1,StepID:2,Status:4}};
+  assert.deepEqual(questGate({Conditions:[step]},common,kinds)?.[0]?.original,step.MissionStepStatus);
   for(const v of [{Operator:1,Conditions:[leaf]},{Operator:2,Conditions:[leaf]},
+    {Conditions:[{MissionStatus:{Mission:1,State:8,Operator:1}}]},
+    {Conditions:[{MissionStatus:{Mission:1,State:0,Operator:0}}]},
+    {Conditions:[{MissionStatus:{Mission:1,State:16}}]},
+    {Conditions:[{MissionStepStatus:{Mission:1,Status:4}}]},
+    {Conditions:[{MissionStepStatus:{Mission:1,StepID:2,Status:5}}]},
     {Conditions:[{MissionCompleted:{Mission:1,Inversed:true}}]},
     {Conditions:[{CommonConditions:{Condition:11}}]},
     {Conditions:[leaf,{EventTime:{Event:'event'}}]},

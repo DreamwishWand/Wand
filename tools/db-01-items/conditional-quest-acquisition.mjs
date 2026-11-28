@@ -26,10 +26,18 @@ export function questGate(tree,common,questKinds,stack=[],depth=0,path='source.C
     if(!category||!id(questId))return null;
     const isSimple=['MissionCompleted','MissionOngoing','MissionAvailable'].includes(kind)&&
       keys(v,['Mission','Inversed'])&&positive(v.Inversed);
-    // Explicit completion of a step. No numeric step-state interpretation.
+    // Explicit completion of a step. Numeric states are reviewed separately.
     const isStep=kind==='MissionStepCompleted'&&keys(v,['Mission','StepID','Inversed'])&&
       Number.isSafeInteger(v.StepID)&&v.StepID>=0&&positive(v.Inversed);
-    if(!isSimple&&!isStep)return null;
+    // Original ConditionMissionStatus uses IntOperator.Equal (0) and
+    // MissionState.Available/OnGoing/Completed (2/4/8). ConditionMissionStepStatus
+    // completion (4) is already verified in catalog-acquisition-facts.
+    // Do not admit negative comparisons, unavailable states or unknown flags.
+    const isMissionState=kind==='MissionStatus'&&keys(v,['Mission','State','Operator'])&&
+      (v.Operator===undefined||v.Operator===0)&&[2,4,8].includes(v.State);
+    const isCompletedStep=kind==='MissionStepStatus'&&keys(v,['Mission','StepID','Status'])&&
+      Number.isSafeInteger(v.StepID)&&v.StepID>=0&&v.Status===4;
+    if(!isSimple&&!isStep&&!isMissionState&&!isCompletedStep)return null;
     result.push({questId,category,kind,sourcePath:p,original:v,commonChain:[]});
   }
   return result;
@@ -43,6 +51,7 @@ export function conditionalQuestGrants(rows,source,questKinds){
   const props=r=>({...r.nativeProperties,...r.sourceAttributes});
   const common=new Map(rows.filter(r=>r.nativeCategory==='Condition').map(r=>[r.itemId,props(r).Conditions]));
   let matchedEvents=0;
+  const stateItems=new Set(),stateEvents=new Set();
   for(const row of rows){
     if(row.nativeCategory!=='ConditionalEvent')continue;
     const p=props(row),gate=questGate(p.Conditions,common,questKinds);
@@ -65,10 +74,11 @@ export function conditionalQuestGrants(rows,source,questKinds){
         sourceConditionSha256:source.sourceFilesSha256.Condition,
         guaranteedGrantVerified:false,currentAvailabilityVerified:false});
       byItem.set(itemId,list);matched=true;
+      if(gate.some(g=>g.kind==='MissionStatus'||g.kind==='MissionStepStatus')){stateItems.add(itemId);stateEvents.add(row.itemId);}
     }
     if(matched)matchedEvents++;
   }
   console.log('DB01_CONDITIONAL_QUEST '+JSON.stringify({matchedEvents,items:byItem.size,
-    occurrences:[...byItem.values()].reduce((n,a)=>n+a.length,0)}));
+    occurrences:[...byItem.values()].reduce((n,a)=>n+a.length,0),stateItems:stateItems.size,stateEvents:stateEvents.size}));
   return byItem;
 }
