@@ -10,7 +10,7 @@ try{
  browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:1280,height:720}});
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
- let catalogRequests=0;page.on('request',req=>{if(req.url().includes('/ddv/item-master-releases.json'))catalogRequests++;});
+ let catalogRequests=0;page.on('request',req=>{if(req.url().endsWith('/explore.json'))catalogRequests++;});
  await page.goto(url);
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  assert.equal(await page.locator('[data-scope="outdoor"]').getAttribute('aria-pressed'),'true');
