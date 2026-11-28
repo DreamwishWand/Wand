@@ -1387,6 +1387,18 @@ mod tests{
   expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["Orientation"]="GridOrientation_Left".into();
   assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);
   assert!(d.patched_json.contains("1e2"));
+  let mut mixed:Value=serde_json::from_slice(raw).unwrap();
+  mixed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]=json!({"ID":2,"ItemID":40000002,"X":2,"Y":1,"Orientation":"GridOrientation_Down"});
+  let mut group=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"edits":[{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":3,"y":3,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40000002,"expectedX":2,"expectedY":1,"expectedOrientation":"GridOrientation_Down","x":4,"y":3,"orientation":"GridOrientation_Down"}]});
+  let bytes=serde_json::to_vec(&mixed).unwrap();
+  let d=furniture_candidate(&bytes,&group.to_string()).unwrap();
+  let mut changed=mixed.clone();
+  changed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"]=3.into();changed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["Y"]=3.into();
+  changed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=4.into();changed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["Y"]=3.into();
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),changed);
+  group["edits"][0]["orientation"]="GridOrientation_DownLeft".into();assert!(furniture_candidate(&bytes,&group.to_string()).is_err());
+  group["edits"][0]["orientation"]="GridOrientation_Down".into();
+  mixed["World"]["SpawnedObjects"]=json!([{"GridID":43,"GridObjectID":1}]);assert!(furniture_candidate(&serde_json::to_vec(&mixed).unwrap(),&group.to_string()).is_err());
   let pickup=json!({"roomOrdinal":1,"surfaceOrdinal":1,"pickup":{"index":0,"itemId":40000001,"expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","expectedStock":0}});
   assert!(furniture_candidate(raw,&pickup.to_string()).is_err());
   let mut alias:Value=serde_json::from_slice(raw).unwrap();
