@@ -602,13 +602,18 @@ def parse_grid_structure(raw, *, source_game_version):
     }
 
 
-def grid_assets(root, sources, *, source_game_version):
+def grid_assets(root, sources, *, source_game_version, native_data_hashes=None):
     grids = []
     for relative in optional_files(root, STREAM / "GridData", sources):
         raw = source_bytes(root, relative, sources)
         try:
             entry = parse_grid_structure(
                 raw, source_game_version=source_game_version)
+            if native_data_hashes is not None and source_game_version == "1.26.2":
+                try:
+                    native_data_hashes[relative.relative_to(STREAM).as_posix()] = native_grid_data_hash(raw)
+                except (ValueError, UnicodeError, struct.error):
+                    pass  # Leave unsupported hash representation unresolved.
         except (ValueError, UnicodeError) as error:
             # Do not silently turn a corrupted/unsupported native GridData
             # file into a "good" empty grid. Preserve a per-file reason and
@@ -658,6 +663,123 @@ def native_uint32(value):
     if not 0 <= value <= 0xffffffff:
         raise ValueError("invalid protobuf uint32")
     return value
+
+
+
+# Steam 1.26.2 native GetHashCode implementation, corroborated against
+# original PE/IL2CPP methods and matching private Save identity pairs.
+# This is a deliberately bounded subset: no guessed GridState, unknown
+# protobuf fields or direct-JSON GridData initialization semantics.
+_HASH_MASK = 0xffffffff
+
+
+def native_string_hash(text):
+    units = text.encode("utf-16-le")
+    a = b = 5381
+    for index, (unit,) in enumerate(struct.iter_unpack("<H", units)):
+        if unit == 0:
+            break
+        if index % 2:
+            b = ((b * 33) ^ unit) & _HASH_MASK
+        else:
+            a = ((a * 33) ^ unit) & _HASH_MASK
+    return (a + b * 1566083941) & _HASH_MASK
+
+
+def native_accum31(values, seed=0):
+    for value in values:
+        seed = (seed * 31 + value) & _HASH_MASK
+    return seed
+
+
+def native_grid_data_hash(raw):
+    """Hash the original wire representation, not expanded terrain cells."""
+    fields = wire_fields(raw)
+    if any((f, w) not in ((1, 0), (2, 0), (3, 2), (3, 5),
+                          (4, 2), (4, 5), (5, 2)) for f, w, _ in fields):
+        raise ValueError("unverified native GridData hash field")
+    x = native_uint32(one(fields, 1, 0, True))
+    y = native_uint32(one(fields, 2, 0, True))
+    compacted = one(fields, 5, 2)
+    return native_int32((1 ^ x ^ y ^
+                         native_accum31(repeated_uint32(fields, 3)) ^
+                         native_accum31(repeated_uint32(fields, 4)) ^
+                         (native_accum31(compacted, 23) if compacted else 0))
+                        & _HASH_MASK)
+
+
+def native_stateless_grid_hash(fields):
+    """Native Grid and GridObject hash for independently supported fields."""
+    if any((f, w) not in ((1, 0), (2, 2), (3, 2), (4, 0),
+                          (5, 2), (6, 0)) for f, w, _ in fields):
+        raise ValueError("unverified native Grid hash field")
+    h = (1 ^ native_uint32(one(fields, 1, 0)) ^
+         native_int32(one(fields, 4, 0)) ^
+         native_uint32(one(fields, 6, 0)))
+    for number in (2, 3):
+        text = text_field(fields, number, number == 2)
+        if text:
+            h ^= native_string_hash(text)
+    seen = set()
+    for f, w, raw in fields:
+        if f != 5:
+            continue
+        entry = wire_fields(raw)
+        if any((n, k) not in ((1, 0), (2, 2)) for n, k, _ in entry):
+            raise ValueError("unverified native GridObject map field")
+        key = native_uint32(one(entry, 1, 0))
+        obj = wire_fields(one(entry, 2, 2, True))
+        if (key in seen or native_uint32(one(obj, 1, 0)) != key or
+                any(n not in (1, 2, 3, 4, 5) or k != 0 for n, k, _ in obj)):
+            raise ValueError("unverified GridObject state or identity")
+        seen.add(key)
+        oh = 1 ^ key
+        for number in (2, 3, 4, 5):
+            oh ^= native_int32(one(obj, number, 0))
+        h ^= (31 * key + oh) & _HASH_MASK
+    return native_int32(h & _HASH_MASK)
+
+
+def attach_native_diffgrid_hashes(layout, raw, data_hashes):
+    """Join hash pairs to already parsed entries; unsupported grids stay absent.
+
+    Source-derived evidence is not Save authentication or writer permission.
+    Both independent hashes still have to match the actual Save identity.
+    """
+    if data_hashes is None or layout["layoutKind"] != "nativeGridCollection":
+        return
+    try:
+        root = wire_fields(raw)
+        if layout.get("embeddedGridCollectionWireField") == 2:
+            root = wire_fields(one(root, 2, 2, True))
+        by_id = {}
+        for number, wire, value in root:
+            if (number, wire) != (1, 2):
+                continue
+            entry = wire_fields(value)
+            if any((n, k) not in ((1, 0), (2, 2)) for n, k, _ in entry):
+                return
+            key = native_uint32(one(entry, 1, 0))
+            fields = wire_fields(one(entry, 2, 2, True))
+            if key in by_id or key != native_uint32(one(fields, 1, 0)):
+                return
+            by_id[key] = fields
+        if set(by_id) != {e["gridIdNative"] for e in layout["nativeGridEntries"]}:
+            return
+    except (ValueError, UnicodeError, struct.error):
+        return
+    for entry in layout["nativeGridEntries"]:
+        try:
+            fields = by_id[entry["gridIdNative"]]
+            path = text_field(fields, 2, True)
+            if path != entry["gridDataPath"] or path not in data_hashes:
+                continue
+            grid_hash = native_stateless_grid_hash(fields)
+            entry.update(defaultGridHashCode=grid_hash,
+                         defaultGridDataHashCode=data_hashes[path],
+                         defaultHashEvidence="source_native_method_correlated")
+        except (ValueError, UnicodeError, struct.error):
+            continue
 
 
 def native_layout_object(payload, map_id, grid_id, layout_id, relative):
@@ -1045,37 +1167,42 @@ def default_village_layout(data, relative):
     }
 
 
-def scene_layouts(root, sources):
+def scene_layouts(root, sources, *, native_data_hashes=None):
     layouts, layout_objects = [], []
     for relative in optional_files(root, STREAM / "SceneLayouts", sources):
         data = source_bytes(root, relative, sources)
         offgrid = offgrid_grid_collection_layout(data, relative)
         if offgrid is not None:
             layout, objects = offgrid
+            attach_native_diffgrid_hashes(layout, data, native_data_hashes)
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
         floating = floating_island_grid_collection_layout(data, relative)
         if floating is not None:
             layout, objects = floating
+            attach_native_diffgrid_hashes(layout, data, native_data_hashes)
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
         interior = interior_grid_collection_layout(data, relative)
         if interior is not None:
             layout, objects = interior
+            attach_native_diffgrid_hashes(layout, data, native_data_hashes)
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
         realm = realm_grid_collection_layout(data, relative)
         if realm is not None:
             layout, objects = realm
+            attach_native_diffgrid_hashes(layout, data, native_data_hashes)
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
         parsed = grid_collection_layout(data, relative)
         if parsed is not None:
             layout, objects = parsed
+            attach_native_diffgrid_hashes(layout, data, native_data_hashes)
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
@@ -1226,8 +1353,11 @@ def extract(game, out, previous=None):
         if scene is not None and world["worldIdKind"] == "nativeWorldName":
             scene["parentWorldId"] = world["worldId"]
             scene["worldHierarchyVerified"] = True
-    grids = grid_assets(game, sources, source_game_version=matches[0])
-    layouts, layout_objects = scene_layouts(game, sources)
+    native_data_hashes = {} if matches[0] == "1.26.2" else None
+    grids = grid_assets(game, sources, source_game_version=matches[0],
+                        native_data_hashes=native_data_hashes)
+    layouts, layout_objects = scene_layouts(game, sources,
+                                            native_data_hashes=native_data_hashes)
     conflicts, overrides = validate_overrides(game, sources, objects)
     source_paths = {row["path"] for row in sources}
     missing_refs = sorted({
