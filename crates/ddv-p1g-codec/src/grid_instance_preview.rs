@@ -486,9 +486,8 @@ pub(super) fn is_underwater_grid(grid:&Value)->bool{
     grid["GridDataPath"].as_str().is_some_and(|s|s.starts_with("GridData/OffGridBuildings/Expansion04/Underwater"))
 }
 /// Exact plain source envelope; don't synthesize native interaction state.
-/// For new underwater placement the opened Save must corroborate a plain
-/// existing instance of the same Item ID. Native storage definitions remain
-/// excluded even if a malformed save contains a state-free chest.
+/// Native storage definitions remain excluded even if a malformed save
+/// contains a state-free chest.
 /// Scan once for all positive plain instances and conflicting state witnesses.
 /// Source-derived candidates do not require a previous placement. Actual
 /// incompatible state in the opened Save takes precedence over the census.
@@ -497,7 +496,7 @@ pub(super) fn underwater_plain_items(root:&Value)->HashSet<u64>{
     let c=&root["World"]["GridCollection"];
     let Some(grids)=c["Grids"].as_object()else{return HashSet::new();};
     if grids.len()>100_000||c.get("DiffGrids").is_some_and(|v|!v.is_object()){return HashSet::new();}
-    let mut plain:HashSet<u64>=crate::storage_source::plain_source_items().iter().copied().filter(|id|!crate::storage_source::is_storage(*id)).collect();
+    let mut plain:HashSet<u64>=crate::storage_source::plain_source_items().iter().copied().filter(|id|crate::storage_source::is_plain_source_item(*id)).collect();
     let mut conflicting=HashSet::new();
     let mut scanned=0usize;
     for (gid,g) in grids{
