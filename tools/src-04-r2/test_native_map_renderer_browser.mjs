@@ -44,23 +44,24 @@ try{
     close([...ctx.getImageData(8,7,1,1).data],[0,0,255,255]);
     await r.render([red,masked],{x:4,y:0,width:8,height:16},source);
     close(read(8,8),[0,0,255,255]);
-    // Exercise actual context loss and restoration without reloading the page.
+    // A lost stage is replaced rather than waiting for the driver to restore it.
     const lose=g.getExtension('WEBGL_lose_context');
     let contextRecovery=false;
     if(lose){
-     const once=(type,prevent=false)=>new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{canvas.removeEventListener(type,listener);reject(Error(type+' timeout'));},10000);
-      const listener=event=>{clearTimeout(timer);if(prevent)event.preventDefault();resolve();};
-      canvas.addEventListener(type,listener,{once:true});
+     const lost=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('webglcontextlost timeout')),10000);
+      canvas.addEventListener('webglcontextlost',()=>{clearTimeout(timer);resolve();},{once:true});
      });
-     const lost=once('webglcontextlost',true);lose.loseContext();await lost;
+     lose.loseContext();await lost;
      if(!g.isContextLost())throw Error('context was not lost');
+     await r.render([red],view,source).then(()=>{throw Error('lost context accepted a render');},()=>{});
      r.dispose();
-     const restored=once('webglcontextrestored');lose.restoreContext();await restored;
-     const recovered=new NativeMapRenderer(canvas);
+     const fresh=document.createElement('canvas');fresh.width=16;fresh.height=16;
+     const recovered=new NativeMapRenderer(fresh),next=fresh.getContext('webgl2');
      try{
       await recovered.render([red,masked],view,source);
-      close(read(8,8),[0,0,255,255]);close(read(1,8),[255,0,0,255]);
+      const readFresh=(x,y)=>{const p=new Uint8Array(4);next.readPixels(x,y,1,1,next.RGBA,next.UNSIGNED_BYTE,p);return [...p];};
+      close(readFresh(8,8),[0,0,255,255]);close(readFresh(1,8),[255,0,0,255]);
       contextRecovery=true;
      }finally{recovered.dispose();}
     }
