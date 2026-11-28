@@ -78,7 +78,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
          if storage_known{pose["storageKnown"]=json!(true);}
          if !storage_known&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
          if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);if ddv_save_patch::storage_pickup_eligible(&root,obj){pose["storageEmpty"]=json!(true);if crate::storage_source::restorable_empty_storage(&root,obj,item){pose["storageRestorable"]=json!(true);}}}
-         if !storage_known&&surface==1&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|matches!(n,0|4|8|12))&&obj.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["localTransform"]=json!(true);}
+         if !storage_known&&kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|matches!(n,0|4|8|12))&&obj.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["localTransform"]=json!(true);}
          if !storage_known&&terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
@@ -796,7 +796,7 @@ fn furniture_candidate_mode(source:&[u8],plan:&str,private_storage:bool)->Result
   let (target,expected,old)=resolve(row)?;
   if private_storage&&!ddv_save_patch::storage_transform_pose(&root,&objects[&target.object_id]){return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  if !allowed_orientation(orientation)||(storage_pose(&root,&objects[&target.object_id])||objects[&target.object_id].get("State").and_then(|s|s.get("SubGrid")).is_some())&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+  if !allowed_orientation(orientation)||(storage_pose(&root,&objects[&target.object_id])||objects[&target.object_id].get("State").and_then(|s|s.get("SubGrid")).is_some()||objects[&target.object_id].get("State").is_some_and(ddv_save_patch::transferable_local_grid_state))&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
   if mode.is_some()&&(!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
   if alignment&&(old!=orientation||!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||xy.0!=expected.0&&xy.1!=expected.1){return Err(bad);}
   if free{if !within_room(xy)||xy==expected&&old==orientation{return Err(bad);}}
