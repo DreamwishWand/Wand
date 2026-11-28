@@ -48,6 +48,7 @@ const extensionFields={
   eventLootPresent:'acquisition.eventLootPresentSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   storeSequence:'acquisition.ordinaryStoreSequenceSources',
+  storeGeneratedShelf:'acquisition.ordinaryGeneratedClothingShelfSources',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
@@ -121,6 +122,18 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
+        }else if(family==='storeGeneratedShelf'){
+          check(evidence.kind==='ordinary_generated_clothing_shelf'&&evidence.sourceDisplaySha256===sha?.Display&&
+            evidence.sourceBuildingSha256===sha?.Building&&evidence.sourceItemFileSha256===sha?.Clothing&&
+            evidence.sourceSetSha256===sha?.Set&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+            evidence.purchaseCurrencyItemId===80000000&&id(evidence.configuredPurchaseAmount)&&id(evidence.buildingItemId)&&
+            id(evidence.minimum)&&id(evidence.maximum)&&evidence.configuredPurchaseAmount>=evidence.minimum&&
+            evidence.configuredPurchaseAmount<=evidence.maximum&&
+            (evidence.setItemId===null||id(evidence.setItemId))&&evidence.itemCatalogGateEmpty===true&&
+            evidence.inheritedSetGateEmpty===true&&evidence.configuredPoolRouteVerified===true&&
+            evidence.runtimeStockVerified===false&&evidence.storeMembershipVerified===false,'EXTENSION_STORE_GENERATED');
+          relatedIds.push(evidence.buildingItemId,80000000);
+          if(id(evidence.setItemId))relatedIds.push(evidence.setItemId);
         }else if(family==='storeSequence'){
           check(evidence.kind==='ordinary_store_display_sequence'&&evidence.sourceDisplaySha256===sha?.Display&&
             evidence.sourceBuildingSha256===sha?.Building&&
@@ -392,7 +405,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
       const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
-        e.family==='questObjective'?['Mission']:e.family==='storeSequence'?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+        e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
       return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});

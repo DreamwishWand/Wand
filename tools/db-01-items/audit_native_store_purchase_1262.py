@@ -42,6 +42,13 @@ WINDOWS=(
  (0x383b179,24,'c455514d6b5622cc2e911dde0205087d6bb096f062f444ef975928bd2b269255'),
  (0x4a55385,9,'1016c74cd17988108feb64ccf6ff93d6fb86baaeb0f212a8f40f65f111c8f222'),
  (0x4a5540d,32,'24d9a44c2c539ce193d166b3a31701cbb293fdba602bbd347d4c7ed9615be38f'),
+ # Native catalogue enumeration: positive inclusive price ranges and set fallback.
+ (0x4d21fa0,100,'52b3f0891fbdf23ed92e628d95366e43a5afd25ebf7feba62b9e0b2aa6ccc628'),
+ (0x4d22002,8,'81094a4f1f1b8e7f3f05ef60109e0319f385f043e1949de9e6ba18b3947dd4a3'),
+ (0x3874ee7,27,'b2d636da393394d89115f4cc66041ffc9a2dd8a26e8efef24a4b2d0f5ebaa0ee'),
+ (0x3875088,24,'0fb5e083d371ef0bb97a423f7b0224075771381ccfc05aca4d18900b6084e190'),
+ (0x410b11d,147,'43e0f395c362b98208c617e7790bc339174020f25d8120dd3aa6b98bfae94db1'),
+ (0x38a6a78,78,'c6e722b03d8f81fabf15c086b04d60d34cff5338bf2a483d0a71348d966e7d4f'),
 )
 # Direct call edges: explicit override first, formula/provider paths later,
 # transaction callers, then the actual store generator's structural/state filters.
@@ -53,6 +60,12 @@ CALLS=(
  (0x45e285a,0x383a8c0),(0x4a5858c,0x383ae60),
  (0x4a50200,0x41080c0),(0x4a5022f,0x36d8d70),
  (0x4a5032c,0x4a552d0),(0x4a53a9f,0x38a6770),
+ (0x4d21990,0x4d21c70),(0x4d21b62,0x4d21c70),
+ (0x4d21e32,0x38a6870),(0x4d2203e,0x38a6870),
+ (0x38a6ca3,0x41080c0),(0x38a6e16,0x41080c0),
+ (0x38a6cd5,0x38a6f90),(0x38a6e54,0x38a6f90),
+ (0x38d0508,0x410afc0),(0x410b0cb,0x3b67c40),(0x410b18d,0x410afc0),
+ (0x38751c9,0x383ae60),(0x38751dd,0x3874d10),
 )
 def require(ok,code):
  if not ok:raise ValueError('DB01_NATIVE_PURCHASE_'+code)
@@ -69,7 +82,8 @@ def resolve_native_interfaces(raw,schema):
  for slot,expected_index,expected_definition,name in [
      (0x9bd90a0,69924,11069,'IIsHiddable'),
      (0x9bd9558,68775,11029,'IAvailability'),
-     (0x9b57de8,69925,11006,'IIsMissionItem')]:
+     (0x9b57de8,69925,11006,'IIsMissionItem'),
+     (0x9b16928,69820,10990,'IHasSet')]:
   encoded=struct.unpack_from('<Q',raw,slot-0x3200)[0]
   require(encoded==(0x20000001|(expected_index<<1)),'TYPE_ENCODING')
   va=struct.unpack_from('<Q',raw,table+expected_index*8)[0]
@@ -157,6 +171,7 @@ def audit(assembly,dump,proto,itemlist):
   'nativeCallEdgesVerified':len(CALLS),'matchingCurrencyExplicitOverridePrecedesProviders':True,
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
   'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
+  'nativeCatalogueEnumerationPriceBandsVerified':True,'nativeSetUnlockFallbackVerified':True,
   'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}

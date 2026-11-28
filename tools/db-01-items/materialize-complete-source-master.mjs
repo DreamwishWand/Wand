@@ -1346,7 +1346,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
   const ordinaryStore=ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices);
   const storeSequences=buildStoreSequenceSources(rows,source,catalogFacts,storeLayout,originalPrices);
-  const installedShelves=buildInstalledShelfCandidates(rows,source,storeLayout,catalogFacts);
+  const installedShelves=buildInstalledShelfCandidates(rows,source,storeLayout,catalogFacts,originalPrices);
   const existingCategories=id=>new Set([...(acquisition?.summary.get(id)?.categories??[]),
     ...((protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)?['ordinary_gameplay']:[]),
     ...(questFlows.conditionalQuest.get(id)??[]).map(l=>l.category),
@@ -1677,8 +1677,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryStoreSequenceSources',row.itemId,sequenceSources);
       categorySet.add('ordinary_gameplay');
     }
-    const shelfCandidates=installedShelves.get(row.itemId);
+    const shelfCandidates=installedShelves.candidates.get(row.itemId);
     if(shelfCandidates?.length)add('acquisition.storeInstalledShelfCandidates',row.itemId,shelfCandidates);
+    const ordinaryShelves=installedShelves.ordinary.get(row.itemId);
+    if(ordinaryShelves?.length){
+      add('acquisition.ordinaryGeneratedClothingShelfSources',row.itemId,ordinaryShelves);
+      categorySet.add('ordinary_gameplay');
+    }
     const configuredStore=ordinaryStore.get(row.itemId);
     if(configuredStore){
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
