@@ -2227,10 +2227,13 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
             let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let orientation=row["orientation"].as_str().ok_or(bad)?;
             let free_placement=row.get("freePlacement").and_then(Value::as_bool)==Some(true);
-            if free_placement&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
+            if free_placement&&checked_world_grids.insert(d.grid_id.clone()){
+                let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+                if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
+            }
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
                 if row.get("scene").is_some()||d.tessellation!=1||!ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation){return Err(bad);}
-                if checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
+                player_house_grid_scope(&root,&d.grid_id)?;
             }
             let tree=if let Some(scene)=row.get("scene"){
                 let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
@@ -2301,12 +2304,15 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
         let d=destinations.get(&key).ok_or(bad)?;
         let row_free=free||o.get("freePlacement").and_then(Value::as_bool)==Some(true);
-        if row_free&&limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
+        if row_free&&checked_world_grids.insert(d.grid_id.clone()){
+            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+            if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
+        }
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
-        if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&checked_world_grids.insert(d.grid_id.clone()){player_house_grid_scope(&root,&d.grid_id)?;}
+        if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
         if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!row_free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
         let objects=grid.get("Objects").and_then(Value::as_object).ok_or(bad)?;
@@ -4761,6 +4767,29 @@ mod complete_area_support_tests{
   assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
   let mut invalid=plan.clone();invalid["rows"][0]["scene"]["tree"]["objects"][0]["x"]=999.into();
   assert!(group_paste_candidate(input.as_bytes(),&invalid.to_string()).is_err());
+ }
+ #[test]
+ fn floating_free_scene_retains_other_plane_and_support_dependencies(){
+  let layout="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json";
+  let data="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json";
+  let water="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanWaterGrid-GridData.json";
+  let path="GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json";
+  let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":100,"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":4,"Y":4,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":layout,"GridDataPath":water,"NextGridObjectID":3,"Objects":{}}}}}});
+  let tree=serde_json::json!({"factor":2,"sourcePath":path,"objects":[{"itemId":40005161,"x":0,"y":0,"orientation":"GridOrientation_Down","child":null}]});
+  let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":40005160,"tree":tree});
+  let dest=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":130,"sizeY":130});
+  let rows=serde_json::json!([{"destination":dest,"itemId":"40005160","x":4,"y":4,"orientation":"GridOrientation_Down","scene":scene},{"destination":dest,"itemId":"40005161","x":4,"y":4,"orientation":"GridOrientation_Left"}]);
+  let input=raw.to_string();
+  assert!(group_paste_candidate(input.as_bytes(),&rows.to_string()).is_err());
+  let mut plan=serde_json::json!({"freePlacement":true,"rows":rows});
+  let out:Value=serde_json::from_str(&group_paste_candidate(input.as_bytes(),&plan.to_string()).unwrap()).unwrap();
+  let c=out["World"]["GridCollection"].as_object().unwrap();
+  assert_eq!(subgrid_tree(c,"42","5").unwrap(),tree);
+  assert_eq!(c["Grids"]["42"]["Objects"]["6"]["X"],4);
+  assert_eq!(c["Grids"]["43"],raw["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+  plan["rows"][1]["orientation"]="GridOrientation_DownLeft".into();assert!(group_paste_candidate(input.as_bytes(),&plan.to_string()).is_err());
+  plan["rows"][1]["orientation"]="GridOrientation_Down".into();plan["rows"][1]["destination"]["sizeX"]=131.into();assert!(group_paste_candidate(input.as_bytes(),&plan.to_string()).is_err());
  }
  #[test]
  fn biome_support_replacement_restores_tree_and_stock_in_one_candidate(){
