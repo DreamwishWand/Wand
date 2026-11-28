@@ -30,10 +30,13 @@ try {
     New-Item -ItemType Directory -Path $homePath -Force | Out-Null
     $ledger=Join-Path $homePath 'source-image-ledger.json'
     $alternate=(Read-Host "Existing verified source-image ledger path (Enter uses $ledger)").Trim().Trim('"')
-    if ($alternate) { $ledger=(Resolve-Path -LiteralPath $alternate).Path }
+    if ($alternate) {
+        if (-not (Test-Path -LiteralPath $alternate -PathType Leaf)) { throw 'Specify an existing source-image-ledger.json FILE, not a directory. Or press Enter.' }
+        $ledger=(Resolve-Path -LiteralPath $alternate).Path
+    }
     $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/b1447e9f42969ac21e14cd512749c8e6dd64bf69/tools/src-04-r2/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/5db3a1a055e648a73a29620fcfb5ccbe50c832dc/tools/src-04-r2/'
     foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }

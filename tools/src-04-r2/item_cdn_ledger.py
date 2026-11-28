@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from verify_source_cdn import readback, KEY, check
 from migrate_item_thumbnails_256 import BUCKET, POLICY, key
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bundle_thumbnails import write_json
 
 SCHEMA="wand.media.item-cdn-ledger@1"
@@ -49,10 +49,16 @@ def batch(objects,prior,max_objects,max_bytes,reader=readback):
             continue
         pending.append((k,n));size+=n
     errors={}
-    for k,n,error in map(reader,pending):
-        check((k,n) in pending,"Unexpected readback result")
-        if error:errors[k]=error
-        else:verified[k]=n
+    print(f"  CDN readback: {len(pending)} remaining objects (up to 6 concurrent GETs)",flush=True)
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures={pool.submit(reader,entry):entry for entry in pending}
+        for i,future in enumerate(as_completed(futures),1):
+            k,n,error=future.result()
+            check((k,n)==futures[future],"Unexpected readback result")
+            if error:errors[k]=error
+            else:verified[k]=n
+            if i==1 or i%10==0 or i==len(pending):
+                print(f"  CDN readback {i}/{len(pending)}; errors {len(errors)}",flush=True)
     return verified,errors,len(pending),size
 
 
