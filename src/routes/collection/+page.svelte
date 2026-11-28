@@ -1820,7 +1820,8 @@
   .item-card{position:relative;display:flex;min-width:0;min-height:0;padding:5px;gap:0;align-items:stretch;border-radius:7px;
     background:var(--wand-card);border-color:var(--wand-line);color:var(--wand-text)}
   .item-card-body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;width:100%;text-align:center;padding:0;min-width:0}
-  .item-icon{width:100%;height:76px;border-radius:4px;background:transparent;padding:3px;box-sizing:border-box}
+  .item-icon{width:100%;height:76px;min-width:0;min-height:0;grid-template:minmax(0,1fr)/minmax(0,1fr);overflow:hidden;border-radius:4px;background:transparent;padding:3px;box-sizing:border-box}
+  .inspector-art{grid-template:minmax(0,1fr)/minmax(0,1fr);min-width:0;min-height:0}
   .item-card-copy{width:100%;display:block;min-height:30px;flex:0}
   .item-card-copy :global(.collection-source-marks){margin-top:3px}
   .item-card-copy strong{font-size:11px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}

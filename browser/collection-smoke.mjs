@@ -614,6 +614,23 @@ try{
   await currentFacts.locator('summary').click();
   await currentFacts.locator('.fact-note').waitFor({timeout:60000});
   await currentFacts.locator('summary').click();
+  // Intrinsic image dimensions must not enlarge the grid track or overlap the name.
+  const artworkBounds=await deep.evaluate(()=>{
+    const frames=[...document.querySelectorAll('.item-icon,.inspector-art')];
+    return frames.flatMap(frame=>{
+      const host=frame.querySelector('.artwork,.memory-candidate');
+      if(!host)return [];
+      const outer=frame.getBoundingClientRect(),inner=host.getBoundingClientRect();
+      const copy=frame.parentElement?.querySelector('.item-card-copy')?.getBoundingClientRect();
+      const art=host.querySelector('img,canvas:not([hidden])');
+      const bounds=art?.getBoundingClientRect();
+      return [{hostInside:inner.left>=outer.left-1&&inner.right<=outer.right+1&&inner.top>=outer.top-1&&inner.bottom<=outer.bottom+1,
+        artInside:!bounds||bounds.left>=inner.left-1&&bounds.right<=inner.right+1&&bounds.top>=inner.top-1&&bounds.bottom<=inner.bottom+1,
+        copySeparate:!copy||inner.bottom<=copy.top+1}];
+    });
+  });
+  assert(artworkBounds.length>0,'artwork frames present');
+  assert(artworkBounds.every(row=>row.hostInside&&row.artInside&&row.copySeparate),'artwork contained without overlapping names');
   await assertCollectionThemes(deep,[
     ['.item-inspector','background-color','--wand-header'],
     ['.item-inspector h2','color','--wand-text'],
