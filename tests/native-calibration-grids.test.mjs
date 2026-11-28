@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {biomeFurnitureSnapshot} from '../src/lib/world/biome-furniture-preset.ts';
 import assert from 'node:assert/strict';
 import {nativeDesignViewport} from '../src/lib/world/native-design-viewport.ts';
 import {readFileSync} from 'node:fs';
@@ -50,5 +51,21 @@ test('all exact underwater grids can open the existing independent Save overview
   assert.deepEqual(bindIndependentEditorGrid(g),nativeUnderwaterDesignGrid(g).grid);
   assert.equal(bindIndependentEditorGrid({...g,sizeX:g.sizeX+1}),null);
   assert.equal(bindIndependentEditorGrid({...g,layoutId:'SceneLayouts/OffGridBuildings/Expansion04/UnderwaterTutorial/UnderwaterTutorial-DefaultLayout.json'}),null);
+ }
+});
+
+test('private underwater area snapshots include known nonempty storage without changing shareable layout eligibility',()=>{
+ const item=40001680;
+ for(const row of grids){
+  const g=nativeUnderwaterDesignGrid(row).grid;
+  const base={area:g.key,factor:g.factor,x:1,y:1,shape:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:''}};
+  const storage={...base,object:{localOrdinal:1,itemId:String(item),x:1,y:1,orientation:'GridOrientation_Down',layer:'furniture',surfaceCapable:false,storage:true,storageKnown:true}};
+  const known=new Set([item]);
+  const regular=biomeFurnitureSnapshot(g,[storage],0,false,undefined,true,false,known);
+  assert.ok(regular);assert.equal(regular.placements.length,0);
+  const privateBackup=biomeFurnitureSnapshot(g,[storage],0,false,undefined,true,true,known);
+  assert.ok(privateBackup);assert.deepEqual(privateBackup.placements.map(p=>p.itemId),[item]);
+  assert.equal(biomeFurnitureSnapshot(g,[storage],0,false,undefined,true,true,new Set()),null);
+  assert.equal(biomeFurnitureSnapshot(g,[{...storage,object:{...storage.object,storage:undefined}}],0,false,undefined,true,true,known),null);
  }
 });

@@ -4,10 +4,15 @@ import type {FaceMorphEntry} from './face-morph.ts';
 export const headRoles=['skull','eyes','eyelash','teeth_lower','teeth_upper'] as const;
 export type HeadRole=typeof headRoles[number];
 type Body='male'|'female';
-type HeadPart={vertices:number;indices:number;jointPaths:string[];asset:BlobEntry};
+export type HeadPart={vertices:number;indices:number;jointPaths:string[];asset:BlobEntry};
 type HeadRow={parts:Record<HeadRole,HeadPart>;morph:FaceMorphEntry};
 type Target={body:Body;index:number;slots:Record<HeadRole,{mesh:number;primitive:number}>};
 export type HeadGeometry={heads:Record<Body,HeadRow[]>;targets:Record<string,Target>};
+export type EyeShadowGeometry=Record<Body,HeadPart[]>;
+export function validEyeShadowGeometry(x:unknown):x is EyeShadowGeometry{
+ if(!exact(x,['male','female']))return false;const g=x as EyeShadowGeometry;
+ return (['male','female'] as const).every(b=>Array.isArray(g[b])&&g[b].length===8&&g[b].every(p=>p&&int(p.vertices,1,100000)&&int(p.indices,3,600000)&&p.indices%3===0&&Array.isArray(p.jointPaths)&&int(p.jointPaths.length,1,256)&&new Set(p.jointPaths).size===p.jointPaths.length&&p.jointPaths.every(s=>typeof s==='string'&&s.startsWith('root/')&&s.length<=512)&&asset(p.asset)&&p.asset.bytes===16+56*p.vertices+2*p.indices+64*p.jointPaths.length));
+}
 export type HeadReplacement={mesh:number;primitive:number;jointPaths:string[];inverseBind:Float32Array;positions:Float32Array;normals:Float32Array;uv:Float32Array;joints:Uint16Array;weights:Float32Array;indices:Uint16Array};
 const int=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
 const hash=(s:unknown):s is string=>typeof s==='string'&&/^[0-9a-f]{64}$/.test(s);

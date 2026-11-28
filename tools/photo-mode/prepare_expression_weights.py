@@ -51,8 +51,7 @@ def apply_expressions(raw,dest,head_source):
                         require(i<n and i not in seen and all(map(finite,(x,y,zv))),"expression delta");seen.add(i)
                     pos+=16*count
                 require(pos==len(data) and counts==mesh["frameCounts"],"expression frame coverage");used.add(name)
-                if role!="shadow":
-                    geo=p["asset"]["sha256"];v={"vertices":n,"asset":e};require(geo not in meshes or meshes[geo]==v,"expression geometry conflict");meshes[geo]=v;blobs[name]=data
+                geo=p["asset"]["sha256"];v={"vertices":n,"asset":e};require(geo not in meshes or meshes[geo]==v,"expression geometry conflict");meshes[geo]=v;blobs[name]=data
         require(len(used)==26 and set(z.namelist())=={"expression-weights.json",*used},"expression archive members")
         active=set()
         for row in [*public["items"].values(),*(r for vs in public.get("variants",{}).values() for r in vs)]:

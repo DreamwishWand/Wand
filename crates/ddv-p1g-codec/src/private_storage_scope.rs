@@ -59,7 +59,14 @@ pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,C
   let mut grids=HashSet::new();
   for w in rows{
    let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,w)?;
-   let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+   let g=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
+   let (layout,factor,sx,sy)=if crate::grid_instance_preview::is_underwater_grid(g){
+    let (sx,sy)=crate::grid_instance_preview::underwater_transform_identity(&root,&d.grid_id)?;
+    (g["GridDefaultLayoutPath"].as_str().ok_or(bad)?.to_owned(),1,sx,sy)
+   }else{
+    let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+    (layout,factor,sx,sy)
+   };
    if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1)||!grids.insert(d.grid_id){return Err(bad);}
   }
   return Ok(Some(grids));
@@ -97,6 +104,26 @@ pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,C
 #[cfg(test)]
 mod tests{
  use super::*;
+ #[test]fn calibrated_underwater_private_scope_roundtrips_storage(){
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+  let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+  assert_eq!(rows.len(),12);
+  for r in rows{
+   let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}}});
+   let raw=root.to_string();
+   let scope=serde_json::json!({"kind":"outdoor","destinations":[{"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]}]});
+   let selected=resolve(raw.as_bytes(),&scope.to_string()).unwrap();
+   assert_eq!(selected,Some(HashSet::from(["42".to_owned()])));
+   let backup=ddv_save_patch::storage_backup::export_scoped(&raw,selected.as_ref()).unwrap();
+   let doc:Value=serde_json::from_str(&backup).unwrap();
+   assert_eq!(doc["skipped"],0);assert_eq!(doc["rows"].as_array().unwrap().len(),1);
+   let mut changed=root.clone();changed["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([]);
+   let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&changed.to_string(),&backup,selected.as_ref(),true,true).unwrap();
+   assert_eq!(serde_json::from_str::<Value>(&patched).unwrap(),root);
+   let mut wrong=scope.clone();wrong["destinations"][0]["sizeX"]=65536.into();assert!(resolve(raw.as_bytes(),&wrong.to_string()).is_err());
+   let mut wrong=root.clone();wrong["World"]["GridCollection"]["DiffGrids"]=serde_json::json!({"42":{}});assert!(resolve(wrong.to_string().as_bytes(),&scope.to_string()).is_err());
+  }
+ }
  #[test]fn room_floor_building_scope_resolves_owned_native_floors(){
   let raw=br#"{"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":1},"1":{"FloorGridID":2}}},{"Rooms":{"0":{"FloorGridID":3}}}]}],"GridCollection":{"Grids":{"1":{"ID":1,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{}},"2":{"ID":2,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{}},"3":{"ID":3,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{}}}}}}"#;
   for(kind,ids)in [("room",vec!["2"]),("floor",vec!["1","2"]),("building",vec!["1","2","3"])]{

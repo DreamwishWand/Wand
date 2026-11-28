@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {nativeEyeColor,nativeEyeHighlight} from '../src/lib/photo-mode/native-eye-surface.ts';
+import {nativeEyeColor,nativeEyeHighlight,packNativeEyeColor,nativeEyePackedOutput,nativeEyeHighlightDirection} from '../src/lib/photo-mode/native-eye-surface.ts';
 const c=[[1,0,0,1],[0,1,0,1],[0,0,1,1]];
 test('eye native color: sequential blend, blue modulation and alpha preserve source',()=>{
  assert.deepEqual(nativeEyeColor([1,1,1,1],c),[1,0,0]);
@@ -14,4 +14,24 @@ test('native eye highlight response is the clamped exponent, not generic PBR glo
  assert.ok(nativeEyeHighlight(.995,.005,200)===1);
  assert.ok(nativeEyeHighlight(.98,.005,200)<.05);
  assert.ok(nativeEyeHighlight(0,.005,200)>=0);
+});
+
+test('original combiner packs red and alpha, not green or blue, in half-float UV components',()=>{
+ const p=packNativeEyeColor(new Float32Array([1,0,0,1,0,1,1,0,0,1,1,128/255]));
+ assert.deepEqual([...p],[1,1,0,0,0,0.501953125]);
+ assert.throws(()=>packNativeEyeColor(new Float32Array([0,1,2,1])));
+});
+test('eye shadow suppresses gloss and applies original premultiplied vertex alpha',()=>{
+ assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[0,.5]),[.48,.48,.48,.5]);
+ assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[0,0]),[0,0,0,0]);
+ assert.deepEqual(nativeEyePackedOutput([0,0,0],[.2,.2,.2],[1,1]),[.2,.2,.2,1]);
+});
+
+test('original eye highlight direction reflects back-facing horizontal light and retains vertical shift',()=>{
+ const a=nativeEyeHighlightDirection([0,1],[0,1],.8,.2),b=nativeEyeHighlightDirection([0,1],[0,-1],.8,.2);
+ assert.deepEqual(a,b);assert.ok(Math.abs(a[1]-.2/Math.hypot(1,.2))<1e-12);assert.ok(Math.abs(Math.hypot(...a)-1)<1e-12);
+ const d=nativeEyeHighlightDirection([0,1],[1,0],.8,.2);assert.ok(Math.abs(d[0]-.6/Math.hypot(.6,.2,.8))<1e-12);assert.ok(Math.abs(d[2]-.8/Math.hypot(.6,.2,.8))<1e-12);
+ assert.throws(()=>nativeEyeHighlightDirection([0,0],[1,0],.8,.2));
+ // The native eye has additive-highlight vertices with alpha=0 and red=1.
+ assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[1,0]),[.2,.2,.2,0]);
 });

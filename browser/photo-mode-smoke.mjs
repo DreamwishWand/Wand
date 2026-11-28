@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {checkLinearSceneComposite} from './photo-mode-linear-composite-smoke.mjs';
 import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
 import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.mjs';
 
@@ -51,6 +52,7 @@ const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male'
 assert.equal(Object.keys(index.avatarMakeup.items).length,69);assert.equal(Object.keys(index.avatarMakeup.textures).length,128);assert.equal(index.avatarMakeup.palette.length,75);
 assert.equal(index.nativeSkinInputs.rows.length,30);assert.equal(index.nativeSkinInputs.lightingParityVerified,false);assert.deepEqual(Object.keys(index.nativeBodyGeometry).sort(),['female','male']);
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
+assert.equal(index.eyeShadowGeometry.male.length,8);assert.equal(index.eyeShadowGeometry.female.length,8);assert.ok(Object.keys(index.nativeEyeGeometry).length>=16);
 assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
 assert.deepEqual(Object.keys(index.faceMorphs).sort(),['female','male']);for(const b of ['male','female']){const f=index.faceMorphs[b];assert.ok(index.avatarMaterials[index.models[b].sha256].filter(s=>s.role==='face').every(s=>s.vertices===f.vertices));const raw=await readFile('build/photo-mode-preview/'+f.asset.sha256+'.wfm');assert.equal(raw.length,f.asset.bytes);assert.equal(raw.subarray(0,4).toString(),'WFM1')}
 assert.equal(Object.keys(index.headGeometry.targets).length,Object.keys(index.avatarMaterials).length);for(const b of ['male','female'])assert.equal(index.headGeometry.heads[b].length,8);
@@ -85,6 +87,7 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
   await checkNativeMakeupBake(page);
+  await checkLinearSceneComposite(page);
   const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
@@ -208,6 +211,7 @@ try{
     const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),(index.eyeMouthMaterials?asset(index.eyeMouthMaterials.eyes[index.eyePalette.items[String(eye)].texture.sha256].asset)+'.wem2':asset(index.eyePalette.items[String(eye)].texture)+'.png'),...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
     const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
     if(index.eyeMouthMaterials){urls.push(...Object.values(index.eyeMouthMaterials.teeth).map(m=>asset(m.asset)+'.wem2'),...['teeth_upper','teeth_lower'].map(role=>asset(index.nativeTeethGeometry[head.parts[role].asset.sha256].asset)+'.wsg'))}
+    const eyeShadow=index.eyeShadowGeometry[body][7];urls.push(asset(eyeShadow.asset)+'.whg',asset(index.nativeEyeGeometry[eyeShadow.asset.sha256].asset)+'.wsg',asset(index.nativeEyeGeometry[head.parts.eyes.asset.sha256].asset)+'.wsg');
     const materials=index.nativeSkinInputs.rows[skin][body];assert.equal(materials.face.faceFlag,1);
     urls.push(asset(index.nativeBodyGeometry[body].asset)+'.wsg',...Object.values(materials).flatMap(r=>[r.spec,r.shadow,...(r.normal?[r.normal]:[])].map(m=>asset(m.asset)+'.wsi')));
     urls.push(...Object.values(makeup).map(r=>asset(index.avatarMakeup.textures[index.avatarMakeup.items[String(r.MakeupItemID)].masks[body]].asset)+'.wmp'));

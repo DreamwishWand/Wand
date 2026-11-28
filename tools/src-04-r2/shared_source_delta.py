@@ -490,6 +490,7 @@ def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.
         reader_factory=CurlReader
     errors={};count=0;budget=[sum(expected[key(s)] for s in pending)]
     cursor=0;attempt=0
+    reconnect_delays=(2,5,10,30,60)
     while cursor<len(pending):
         chunk=pending[cursor:cursor+128]
         try:
@@ -510,11 +511,11 @@ def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.
             # HTTP errors, invalid headers or bytes, or certificate failures.
             transient=isinstance(exc,URLError) and bool(re.search(
                 r"HTTP/connection result=000 \d+.*curl: \((?:5|6|7|18|28|35|52|55|56)\)",str(exc)))
-            if transient and attempt<3:
+            if transient and attempt<len(reconnect_delays):
                 attempt+=1
-                delay=(2,5,10)[attempt-1]
+                delay=reconnect_delays[attempt-1]
                 print(f"  CDN connection interrupted at {len(verified)}/{len(expected)}; "
-                      f"reconnect {attempt}/3 in {delay}s (HTTP/1.1, TLS validation retained)",flush=True)
+                      f"reconnect {attempt}/{len(reconnect_delays)} in {delay}s (HTTP/1.1, TLS validation retained)",flush=True)
                 pause(delay)
                 continue
             errors[k]=type(exc).__name__+": "+str(exc)[:240]

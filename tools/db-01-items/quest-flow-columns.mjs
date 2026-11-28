@@ -121,9 +121,20 @@ export function loadQuestFlowColumns(project,source,rows){
     if(['Village','Story','Realm'].includes(prefix)&&q.groups[quest.groupId]?.rawName.split('!')[0]===prefix)
       questKinds.set(questId,'ordinary_gameplay');
   }
+  // The character-unlock action itself is independently native-verified.
+  // Secret character introductions are not generic grants; extend only
+  // this consumer, not the shared ordinary quest taxonomy. Exclude known
+  // event quests and require the exact Secret internal-name prefix and
+  // native Village/Secret group, including reassigned friendship groups.
+  const characterUnlockQuestKinds=new Map(questKinds);
+  for(const [questId,quest] of published){
+    if(!eventIds.has(questId)&&quest.internalName.startsWith('Secret!')&&
+      ['Secret','Village'].includes(q.groups[quest.groupId]?.rawName.split('!')[0]))
+      characterUnlockQuestKinds.set(questId,'ordinary_gameplay');
+  }
   const conditionalQuest=conditionalQuestGrants(rows,source,questKinds);
   const additionalLoot=buildQuestAdditionalLoot(rows,source,questKinds);
-  return {byQuest,byItem,ordinaryIntro,conditionalQuest,additionalLoot,questKinds,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
+  return {byQuest,byItem,ordinaryIntro,conditionalQuest,additionalLoot,questKinds,characterUnlockQuestKinds,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
     sourceGameVersion:source.target.gameVersion,counts,questCount:byQuest.size,itemCount:byItem.size,
     total:1517,guaranteedGrantVerified:false,currentAvailabilityVerified:false}};
 }

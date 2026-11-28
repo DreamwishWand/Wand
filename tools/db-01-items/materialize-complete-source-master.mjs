@@ -19,6 +19,7 @@ import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {buildQuestObjectiveGrants} from './quest-objective-grants.mjs';
+import {buildCharacterUnlockSources} from './character-unlock-sources.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
@@ -1338,6 +1339,7 @@ function memoryAppearanceSources(rows,source){
   return result;
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
+  const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
   const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
@@ -1700,6 +1702,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(configuredStore){
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
       categorySet.add('ordinary_gameplay');
+    }
+    const characterMode=characterUnlock.modes.get(row.itemId);
+    if(characterMode)add('acquisition.characterUnlockMode',row.itemId,characterMode);
+    const characterSources=characterUnlock.byItem.get(row.itemId);
+    if(characterSources?.length){
+      add('acquisition.characterUnlockSources',row.itemId,characterSources);
+      for(const link of characterSources)if(link.category!==null)categorySet.add(link.category);
     }
     const memory=memoryAppearance.get(row.itemId);
     if(memory){

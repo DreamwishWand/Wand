@@ -13,7 +13,8 @@ scope.onmessage=async({data})=>{
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   if(restore){
-   const copy=readExperimentalCopy(wasm.prepare_private_storage_contents_copy(await data.backup.text(),typeof data.scope==='string'?data.scope:'null',true),n=>wasm!.take_copy_chunk(n));
+   const raw=await data.backup.text(),target=typeof data.scope==='string'?data.scope:'null';
+   const copy=readExperimentalCopy(data.restorePose===true?wasm.prepare_private_storage_pose_copy(raw,target,true):wasm.prepare_private_storage_contents_copy(raw,target,true),n=>wasm!.take_copy_chunk(n));
    scope.postMessage({kind:'restored',...copy},[copy.bytes.buffer]);
   }else{
    const raw=wasm.export_private_storage_contents(typeof data.scope==='string'?data.scope:'null'),doc=JSON.parse(raw);

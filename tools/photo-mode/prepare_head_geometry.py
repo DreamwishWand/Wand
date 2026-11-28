@@ -25,7 +25,7 @@ def apply_heads(raw,dest,base_source,morph_source):
     require(len(raw)==SIZE and digest(raw)==SHA,"head archive integrity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["gameVersion"]=="1.26.2" and public["publicationAuthorized"] is True and public["testOnly"] is True and public["fullPoseVerified"] is False and public.get("avatarMaterials"),"head base identity")
-    used=set();assets={};heads={};targets={}
+    used=set();assets={};heads={};targets={};eye_shadows={}
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         require(len(z.infolist())==71 and len(set(z.namelist()))==71,"head archive coverage")
         info=z.getinfo("head-geometry.json");require(info.file_size<512*1024,"head manifest size");m=json.loads(z.read(info))
@@ -33,7 +33,7 @@ def apply_heads(raw,dest,base_source,morph_source):
         for body in BODY_TYPES:
             rows=m["items"][body];require(len(rows)==8 and [r["index"] for r in rows]==list(range(8)) and len({r["guid"] for r in rows})==8,"head choices")
             require({r["parts"]["skull"]["meshSha256"] for r in rows}==set(morph_source["items"][body]),"head morph correspondence")
-            heads[body]=[]
+            heads[body]=[];eye_shadows[body]=[]
             for r in rows:
                 require(len(r["guid"])==32 and all(c in "0123456789abcdef" for c in r["guid"]) and set(r["parts"])==set(ROLES),"head part coverage")
                 parts={}
@@ -41,8 +41,9 @@ def apply_heads(raw,dest,base_source,morph_source):
                     require(all(valid_hash(p[k]) for k in ("meshSha256","positionSha256","indicesSha256")),"head source hashes")
                     e=entry(p["asset"]);name=e["sha256"]+".whg";info=z.getinfo(name);require(info.file_size==e["bytes"]<=4*1024*1024,"head asset size")
                     data=z.read(info);require(digest(data)==e["sha256"],"head asset digest");verify_geometry(data,p);used.add(name)
-                    if role!="shadow":
-                        assets[name]=data;parts[role]={"vertices":p["vertices"],"indices":p["indices"],"jointPaths":p["jointPaths"],"asset":e}
+                    assets[name]=data;part={"vertices":p["vertices"],"indices":p["indices"],"jointPaths":p["jointPaths"],"asset":e}
+                    if role=="shadow":eye_shadows[body].append(part)
+                    else:parts[role]=part
                 morph=morph_source["items"][body][r["parts"]["skull"]["meshSha256"]];require(morph["vertices"]==parts["skull"]["vertices"],"head morph vertex identity")
                 heads[body].append({"parts":parts,"morph":morph})
             source=next(s for s in base_source["items"][body] if s["role"]=="face")
@@ -66,7 +67,7 @@ def apply_heads(raw,dest,base_source,morph_source):
                     return digest(b)
                 nodes=[n for n in d["nodes"] if n.get("extras",{}).get("actorId") not in ("companion","prop")]
                 names=[n.get("name") for n in nodes]
-                required={p for r in heads[body] for part in r["parts"].values() for p in part["jointPaths"]}
+                required={p for r in heads[body] for part in r["parts"].values() for p in part["jointPaths"]}|{p for part in eye_shadows[body] for p in part["jointPaths"]}
                 require(all(names.count(p)==1 for p in required),"head target joint paths: "+key)
                 slots={}
                 for n in nodes:
@@ -86,7 +87,9 @@ def apply_heads(raw,dest,base_source,morph_source):
         p=dest/name
         if p.exists():require(p.read_bytes()==data,"head asset conflict")
         else:p.write_bytes(data)
+    require(all(len(v)==8 for v in eye_shadows.values()),"eye shadow geometry coverage")
     public["headGeometry"]={"heads":heads,"targets":targets}
+    public["eyeShadowGeometry"]=eye_shadows
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Native head geometry:",sum(map(len,heads.values())),"head variants;",len(assets),"unique visible meshes;",len(targets),"model bindings")
     return m
