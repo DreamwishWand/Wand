@@ -124,6 +124,29 @@ def apply_content_assignments(history, active, scan_sha, assignments, assignment
 def corpus_digest(source_hashes):
     return digest(json.dumps(source_hashes,sort_keys=True,separators=(",",":")).encode())
 
+def early_source_census(repo, at1253, added, hot):
+    doc = pinned_json(repo/'data/ddv/item-master/historical-early-source-census-steam-12413-1253.json', '942ae38186d3d094f1f74ec46cbd0564419ba79b318cd04d7fe3a7812f468e52')
+    check(doc.get('schema') == 'wand.db01.historical-early-source-census@1' and doc.get('platform') == 'Steam'
+          and doc.get('sourceCensus') == 39 and doc.get('sourcePresenceOnly') is True
+          and [s['version'] for s in doc['snapshots']] == ['1.24.13','1.25.0','1.25.3'], 'EARLY_CENSUS')
+    sets = []
+    for s in doc['snapshots']:
+        check(len(s['sourceFiles']) == 39 and corpus_digest(s['sourceFiles']) == s['sourceCorpusSha256'], 'EARLY_CORPUS')
+        runs = json.loads(zlib.decompress(base64.b64decode(s['idRuns'], validate=True)))
+        check(isinstance(runs,list) and len(runs)%2==0 and len(runs)<=80000, 'EARLY_RUNS')
+        ids = []
+        last = 0
+        for gap,n in zip(runs[::2],runs[1::2]):
+            check(type(gap) is int and gap>0 and type(n) is int and n>0 and
+                  len(ids)+n<=s['definitionCount'] and last+gap+n-1<2**53, 'EARLY_RUN')
+            start=last+gap
+            ids.extend(range(start,start+n))
+            last=ids[-1]
+        check(len(ids)==s['definitionCount'] and digest(json.dumps(ids,separators=(',',':')).encode())==s['itemIdsSha256'], 'EARLY_IDS')
+        sets.append(set(ids))
+    check(sets[2] == set(at1253) and not (sets[0]|sets[1]) & (added|hot), 'EARLY_BOUNDARY')
+    return doc['snapshots'], sets
+
 def historical_seed(active, source_hashes):
     # Only the exact verified current original corpus may initialize the
     # historical census. No game version string alone permits this inference.
@@ -161,11 +184,13 @@ def historical_seed(active, source_hashes):
     shopids={int(x[0]) for offer in shopdoc["offers"] for x in offer[5]}
     check(sorted(added&shopids)==shop["newItemIds"] and shopdoc["source"]["snapshotKey"]==shop["snapshotKey"],
           "HISTORICAL_SHOP_IDS")
+    snapshots, earlier = early_source_census(repo, at1253, added, hot)
     result={}
-    for item_id in set(at1253)|set(active):
+    for item_id in set.union(*earlier)|set(active):
         ishot=item_id in hot;isnew=item_id in added
-        target=hotfix if ishot else expansion if isnew else before
-        prior=expansion if ishot else before if isnew else None
+        early_index=next((i for i,s in enumerate(earlier) if item_id in s), None)
+        target=hotfix if ishot else expansion if isnew else snapshots[early_index]
+        prior=expansion if ishot else before if isnew else snapshots[early_index-1] if early_index else None
         key=active[item_id][1][1].lower() if item_id in active else ""
         result[item_id]={
             "firstObservedVersion":target["version"],"introducedVersion":target["version"] if prior else None,
@@ -179,7 +204,7 @@ def historical_seed(active, source_hashes):
             "contentReleaseEvidenceSha256":None,"contentAssignmentSha256":None,
             "nativeContentMarker":("expansion04" if "expansion04" in key else "update26" if "update26" in key else None) if isnew else None,
             "introductionShopSnapshot":shop["snapshotKey"] if item_id in shop["newItemIds"] else None,
-            "lastObservedVersion":"1.26.2" if item_id in active else "1.25.3",
+            "lastObservedVersion":"1.26.2" if item_id in active else next(snapshots[i]['version'] for i in (2,1,0) if item_id in earlier[i]),
             "presentInCurrentSource":item_id in active
         }
     return result

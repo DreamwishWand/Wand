@@ -37,5 +37,9 @@ test('unnamed single-component offers use only the canonical requested-locale it
   }
   const titleCount=catalog.definitions.filter(b=>b.current?.localizedText?.ja?.title).length;
   const legacyTitleCount=catalog.definitions.filter(b=>b.legacy?.localizedText?.ja?.title).length;
-  assert.equal(titleCount,306);assert.equal(legacyTitleCount,276);
+  assert.equal(titleCount,320);assert.equal(legacyTitleCount,276);
+  for(const locale of ['en','fr','it','de','es-ES','ja','zh-CN','pt-BR']){
+    assert.equal(catalog.definitions.filter(b=>b.current?.localizedText?.[locale]?.title).length,320);
+    assert.equal(catalog.definitions.filter(b=>b.current?.localizedText?.[locale]?.description).length,9);
+  }
 });
