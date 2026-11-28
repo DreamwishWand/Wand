@@ -2853,8 +2853,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
     let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
     if rows.iter().any(|r|r.get("supportSource").is_some()){
-        if !free||rows.len()!=1{return Err(bad);}
-        let row=&rows[0];let o=row.as_object().filter(|o|o.len()==10&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        if !free||rows.len()>32{return Err(bad);}
+        let mut moves=Vec::new();let mut seen=HashSet::new();let mut allocations=HashMap::<String,u64>::new();
+        for row in rows{
+        let o=row.as_object().filter(|o|o.len()==10&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
@@ -2868,11 +2870,20 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
           !(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||factor==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(bad);}
         let grid=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
         let next=grid.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
-        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[next.to_string()])?;
+        if !seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}
+        let offset=allocations.entry(d.grid_id.clone()).or_default();
+        let fresh=next.checked_add(*offset).filter(|n|*n<u32::MAX as u64).ok_or(bad)?;*offset+=1;
+        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[fresh.to_string()])?;
         if refs.blocking()>0||refs.historical>0{return Err(bad);}
-        let draft=ddv_save_patch::preview_free_indoor_to_outdoor_transfer(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
-        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
-        return Ok(draft.patched_json);
+        moves.push((target,expected,d,xy,orientation.to_owned()));
+        }
+        let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+        for (target,expected,d,xy,orientation) in moves{
+            let mut draft=ddv_save_patch::preview_free_indoor_to_outdoor_transfer(&working,&target,expected,&d,xy,&orientation).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+        return Ok(std::mem::take(&mut *working));
     }
     if rows.iter().any(|r|r.get("roomSource").is_some()){
         if rows.len()>32{return Err(bad);}

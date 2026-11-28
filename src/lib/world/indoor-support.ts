@@ -1,5 +1,8 @@
 import type {GroupPickupRow} from './group-pickup.ts';
-import type {CutClipboard} from './group-paste.ts';
+import type {CutClipboard,CutWitness} from './group-paste.ts';
+import type {DesignClipItem} from './design-layout.ts';
+import type {TerrainRaster} from './terrain-binding.ts';
+import {supportShapeKey,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
@@ -17,6 +20,19 @@ export function supportTransferTargets(source:SupportParentWitness|null,targets:
   seen.add(p.localOrdinal);
   return ((names.get(p.itemId)??'')+' '+p.context).normalize('NFKC').toLocaleLowerCase().includes(needle);
  });
+}
+/** Capture a normalized half-cell layout and immutable native parent/leaf witnesses. */
+export function captureSupportCut(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,indices:readonly number[],parent:SupportParentWitness,path:readonly number[]):{rows:CutWitness[];clip:DesignClipItem[]}|null{
+ if(!indices.length||indices.length>32||new Set(indices).size!==indices.length||!tree.factor)return null;
+ const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
+ for(const index of indices){
+  const o=tree.objects[index],key=o?supportShapeKey(o):null;
+  if(!o||o.child||!eligible.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!isCardinal(o.orientation)||!key||!shapes[key]?.cellCount||o.x<0||o.y<0||o.x>=raster.sizeX*tree.factor||o.y>=raster.sizeY*tree.factor)return null;
+  rows.push({localOrdinal:parent.localOrdinal,supportSource:{parentItemId:parent.itemId,parentX:parent.x,parentY:parent.y,path:[...path],index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+ }
+ const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
+ return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
 /** Only one exact ordinary room floor leaf may be pasted into a support.
  * The clipboard is bound to the unchanged local working Save. */

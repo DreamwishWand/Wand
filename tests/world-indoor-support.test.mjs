@@ -144,3 +144,17 @@ test('support batch stock plan uses sequential amounts per item and rejects insu
  assert.equal(supportGroupStockPlan(tree,shapes,allowed,raster,[0,1],counts,{anchor:0,x:3,y:2}),null);
  assert.equal(counts.get(id),2);
 });
+
+test('support group cut captures exact leaf witnesses and normalized half-cell offsets',async()=>{
+ const {captureSupportCut}=await import('../src/lib/world/indoor-support.ts');
+ const {cutClipboardMatches}=await import('../src/lib/world/group-paste.ts');
+ const id=40000002,orientation='GridOrientation_Down',tree={factor:2,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:id,x:2,y:1,orientation,child:null},{itemId:id,x:3,y:2,orientation,child:null}]};
+ const shapes={[id+':8']:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:''}},raster={sizeX:4,sizeY:4},parent={localOrdinal:7,itemId:40000003,x:4,y:5};
+ const group=captureSupportCut(tree,shapes,new Set([id]),raster,[0,1],parent,[2]);
+ assert.deepEqual(group?.clip.map(p=>[p.dx,p.dy]),[[0,0],[1,1]]);
+ assert.deepEqual(group?.rows.map(r=>r.supportSource.index),[0,1]);
+ const file=new File(['save'],'local.json'),cut={file,scope:'indoor',rows:group.rows};
+ assert.equal(cutClipboardMatches(cut,file,'Village04',[],true),true);
+ assert.equal(cutClipboardMatches(cut,file,'Village04',[],false),false);
+ assert.equal(cutClipboardMatches({...cut,rows:[group.rows[0],group.rows[0]]},file,'Village04',[],true),false);
+});
