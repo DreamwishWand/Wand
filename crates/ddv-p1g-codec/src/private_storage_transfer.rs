@@ -209,6 +209,30 @@ mod tests{
   }
   root
  }
+ #[test]fn decoration_stage_preserves_inventory_and_rebinds_native_witnesses(){
+  let mut original=fixture();
+  let chest=json!({"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
+  original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]=chest.clone();
+  let scope=HashSet::from(["42".to_owned()]);
+  let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&scope)).unwrap();
+  let mut moved=original.clone();let grids=&mut moved["World"]["GridCollection"]["Grids"];
+  grids["42"]["Objects"].as_object_mut().unwrap().remove("1");
+  let mut chest=chest;chest["ID"]=2.into();chest["X"]=4.into();grids["43"]["Objects"]["2"]=chest;
+  moved["Player"]["ContainerInventories"]["9"]["Inventory"]=json!([]);
+  let (stage,normalized)=stage_decoration(&moved.to_string(),&backup,&scope).unwrap();
+  let staged:Value=serde_json::from_str(&stage).unwrap();
+  assert_eq!(staged["Player"],moved["Player"]);
+  assert_eq!(staged["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["X"],1);
+  assert!(staged["World"]["GridCollection"]["Grids"]["43"]["Objects"].as_object().unwrap().is_empty());
+  let final_save=ddv_save_patch::storage_backup::restore_scoped_mode(&stage,&normalized,Some(&scope),true,true).unwrap();
+  let final_save:Value=serde_json::from_str(&final_save).unwrap();
+  assert_eq!(final_save["Player"],original["Player"]);
+  let (same,again)=stage_decoration(&stage,&normalized,&scope).unwrap();
+  assert_eq!(same,stage);assert_eq!(again,normalized);
+  let mut absent=moved.clone();absent["World"]["GridCollection"]["Grids"]["43"]["Objects"].as_object_mut().unwrap().clear();absent["Player"]["ContainerInventories"].as_object_mut().unwrap().clear();
+  let (unchanged,normalized)=stage_decoration(&absent.to_string(),&backup,&scope).unwrap();
+  assert_eq!(unchanged,absent.to_string());assert_eq!(normalized,backup);
+ }
  #[test]fn private_storage_moves_between_all_supported_scene_pairs(){
   for from in 42..=46{for to in 42..=46{
    if from==to{continue;}
