@@ -1081,7 +1081,53 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion){
+// Extend the ordinary source category only through explicit production from
+// an independently classified ordinary source item. No transitive promotion,
+// generic LootTable candidate, shop display, negative action or unknown flag.
+function ordinaryProductionLinks(rows,source,acquisition,protoAcquisition){
+  const links=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08')return links;
+  const byId=new Map(rows.map(r=>[r.itemId,r]));
+  const ordinary=id=>acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')||
+    (protoAcquisition.byItem.get(id)??[]).some(r=>r.amount!==null);
+  const emit=(row,target,kind,path,amount)=>{
+    if(!ID(target)||target===row.itemId||!byId.has(target)||!ID(amount))return;
+    if(byId.get(target).nativeCategory!=='ActivityItem')return;
+    const list=links.get(target)??[];
+    list.push({sourceItemId:row.itemId,kind,sourcePath:path,configuredQuantity:amount,
+      quantityKind:kind==='ordinary_seed_production'?'configured_yield':'maximum_produced',
+      sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256[row.nativeCategory],
+      ordinarySourceIndependentlyClassified:true,currentAvailabilityVerified:false});
+    links.set(target,list);
+  };
+  for(const row of rows){
+    if(!ordinary(row.itemId))continue;
+    const p={...row.nativeProperties,...row.sourceAttributes};
+    if(row.sourceClass==='SeedItemData'&&source.sourceFilesSha256.ActivityItem==='4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2'){
+      const declarations=source.sourceFieldDeclarations[row.sourceClass];
+      // Omitted boolean is false only if its field is declared and its wire
+      // tag is actually absent; unresolved observed fields cannot pass.
+      const falseFlag=key=>p[key]===false||(p[key]===undefined&&ID(declarations?.[key])&&
+        Array.isArray(row.observedFields)&&!row.observedFields.some(([n])=>n===declarations[key]));
+      if(p.ProducesItem===true&&falseFlag('IsMissionItem')&&falseFlag('MissionSeedBlockHarvest')&&
+        p.MissionSeedLocationRestriction===undefined){
+        emit(row,p.ProducedItemID,'ordinary_seed_production','source.ProducedItemID',p.ProducedAmount);
+      }
+    }
+    if(row.sourceClass==='FurnitureAncientMachineItemData'&&source.sourceFilesSha256.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196'){
+      const b=p.BeeHouse;
+      if(b)emit(row,b.ProducedItemID,'ordinary_bee_house_production','source.BeeHouse.ProducedItemID',b.MaxProduced);
+    }
+  }
+  const promoted=[...links.keys()].filter(id=>!ordinary(id));
+  console.log('DB01_ORDINARY_PRODUCTION '+JSON.stringify({items:links.size,newOrdinaryCategory:promoted.length,
+    previouslyUnclassified:promoted.filter(id=>!(acquisition?.summary.get(id)?.categories.length)).length,
+    occurrences:[...links.values()].reduce((n,v)=>n+v.length,0)}));
+  return links;
+}
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
+  const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1317,6 +1363,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
+    const production=ordinaryProduction.get(row.itemId);
+    if(production?.length){
+      add('acquisition.ordinaryProductionSources',row.itemId,production);
+      categorySet.add('ordinary_gameplay');
+    }
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
     const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
     if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
@@ -1713,7 +1764,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
