@@ -1,7 +1,7 @@
 import type {PremiumBundleRevision} from '../items/public-item-master.ts';
 import type {BundleArtwork} from './bundle-artwork.ts';
 import type {ShopSourceKind} from './shop-source-media.ts';
-import {shopArtworkTemplate} from './shop-artwork-layout.ts';
+import {shopArtworkTemplate,shopOneLineArtworkTemplate} from './shop-artwork-layout.ts';
 import {steamShopArtworkRules,nativeShopBindingAddress} from './shop-native-artwork.ts';
 
 type Reader={get(address:unknown,kind?:ShopSourceKind):BundleArtwork|null};
@@ -40,4 +40,20 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
     return {...s,field,image,adjustment,nativeAddress};
   })??[];
   return {rows,template,slots,native,renderingVerified:false as const};
+}
+
+/** Category must be established by the caller from a pinned appearance.
+ * The first runtime item is the only source position used without expansion.
+ * Do not apply grid ImageAdjustmentBinding to this dedicated prefab.
+ */
+export function inspectOneLineShopArtwork(revision:PremiumBundleRevision,reader:Reader,width:number,height:number){
+  if(!steamShopArtworkRules(revision))return null;
+  const template=shopOneLineArtworkTemplate(width,height);
+  if(!template)return null;
+  const main=nativeShopBindingAddress(revision,'CurrentImage');
+  const first=nativeShopBindingAddress(revision,'Items[0].Icon');
+  return {template,main,first,
+    mainImage:main.status==='address'?reader.get(main.address,'Sprite'):null,
+    firstImage:first.status==='address'?reader.get(first.address,'Sprite'):null,
+    runtimeOrderVerified:false as const,renderingVerified:false as const};
 }

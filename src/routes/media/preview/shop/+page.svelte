@@ -7,12 +7,12 @@
   import {openCurrentItemDatabase,type PremiumBundleDefinition,type PublicCompleteItemMaster} from '$lib/items/public-item-master.ts';
   import {loadShopSourceMedia} from '$lib/media/shop-source-media.ts';
   import ShopPrimaryIconCandidate from '$lib/media/ShopPrimaryIconCandidate.svelte';
-  import {inspectShopArtwork} from '$lib/media/shop-artwork-inspection.ts';
+  import {inspectShopArtwork,inspectOneLineShopArtwork} from '$lib/media/shop-artwork-inspection.ts';
   import {bundleArtworkUrl,type BundleArtwork} from '$lib/media/bundle-artwork.ts';
   let definitions:readonly PremiumBundleDefinition[]=[];
   let database:PublicCompleteItemMaster|null=null;
   let reader:Awaited<ReturnType<typeof loadShopSourceMedia>>|null=null;
-  let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500;
+  let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500,groupHeight=508;
   let loading=true,error='';
   let categoryLookup:ReturnType<typeof createShopCategoryObservations>|null=null;
   let categoryLoading=true,categoryFailed=false;
@@ -26,6 +26,7 @@
   $: definition=definitions.find(b=>b.bundleId===selected);
   $: revision=definition?.[source]??null;
   $: inspection=revision&&reader?inspectShopArtwork(revision,reader,groupWidth):null;
+  $: oneLine=revision&&reader&&observation?.presentation==='one_line'?inspectOneLineShopArtwork(revision,reader,groupWidth,groupHeight):null;
   function choose(b:PremiumBundleDefinition){selected=b.bundleId;source=b.current?'current':'legacy';appearance='';}
   onMount(()=>{
     let alive=true;
@@ -73,9 +74,28 @@
             </select></label>
             <p>{observation?.presentation==='one_line'?'専用横長カテゴリ：グリッドとは別のPrefab':observation?.presentation==='grid'?'グリッドカテゴリの掲載記録':'未対応カテゴリ'}（掲載時点の記録・現在の販売状況ではない）</p>
           {:else}<p>構成が一致する掲載記録なし。グリッド比較のみ。</p>{/if}
-          <label>比較用 group width <input type="number" min="541" max="16384" bind:value={groupWidth}/></label>
+          <label>比較用 group width <input type="number" min={observation?.presentation==='one_line'?903:541} max="16384" bind:value={groupWidth}/></label>
           {#if observation?.presentation==='one_line'}
-            <p>専用横長Prefabの寸法・配置は未確認。下の原本参照・構成画像を使用。</p>
+            <label>比較用 group height <input type="number" min="65" max="16384" bind:value={groupHeight}/></label>
+            {#if oneLine}
+              {@const t=oneLine.template}
+              <p>専用横長Prefab · 原本座標比較（マスク・色・実行時Itemsの全展開は未確認）</p>
+              <div class="candidate one-line" style:aspect-ratio={t.artworkWidth+' / '+t.artworkHeight}>
+                <div class="slot" style:left={100*t.main.x/t.artworkWidth+'%'} style:width={100*t.main.width/t.artworkWidth+'%'} style:top={100*t.main.y/t.artworkHeight+'%'} style:height={100*t.main.height/t.artworkHeight+'%'}>
+                  {#if oneLine.mainImage}<div class="image-frame"><img src={url(oneLine.mainImage,detail)} alt="CurrentImage" loading="lazy" decoding="async" style:object-fit={t.main.fill}/></div>
+                  {:else if oneLine.main.status==='unresolved'&&oneLine.main.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
+                  {:else}<span>CurrentImage 未確定</span>{/if}
+                </div>
+                <div class="slot one-line-scroll" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'} style:top={100*t.scroll.y/t.artworkHeight+'%'} style:height={100*t.scroll.height/t.artworkHeight+'%'}>
+                  <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
+                    {#if oneLine.firstImage}<img src={url(oneLine.firstImage,detail)} alt="Items[0].Icon" loading="lazy" decoding="async" style:object-fit={t.scroll.fill}/>
+                    {:else if oneLine.first.status==='unresolved'&&oneLine.first.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
+                    {:else}<span>Items[0].Icon 未確定</span>{/if}
+                  </div>
+                  <div class="one-line-item unresolved">後続Itemsの展開未確定</div>
+                </div>
+              </div>
+            {:else}<p>Steam版の有効な比較寸法が必要です。</p>{/if}
           {:else if observation?.presentation==='unsupported'}
             <p>このカテゴリの配置は未確認。</p>
           {:else if inspection.template}
@@ -133,6 +153,10 @@
   .candidate{container-type:inline-size;position:relative;max-width:100%;background:var(--wand-card);border:1px solid var(--wand-line);margin:8px 0}
   .slot{position:absolute;top:0;height:100%;box-sizing:border-box;border:1px dashed var(--wand-line);display:grid;place-items:center;text-align:center;overflow:hidden}
   .image-frame{position:absolute;inset:0;overflow:hidden}
+  .one-line{overflow:visible;margin:16px 0 24px}
+  .one-line-scroll{display:flex;justify-content:flex-start;align-items:stretch;overflow-x:auto;overflow-y:hidden}
+  .one-line-item{flex:none;height:100%;position:relative;display:grid;place-items:center;min-width:0}
+  .one-line-item.unresolved{flex:1;min-width:80px;font-size:.75rem}
   .slot img{width:100%;height:100%;object-fit:contain}
   article{background:var(--wand-card);border:1px solid var(--wand-line);padding:8px;margin-bottom:8px}
   .images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
