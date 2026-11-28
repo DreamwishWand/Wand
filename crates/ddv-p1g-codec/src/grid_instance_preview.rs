@@ -1009,7 +1009,7 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
    path.pop();
   }
  }
- let ordinals=field_recovery_ordinals(profile)?;
+ let ordinals=field_recovery_ordinals_from_scan(&root,&scan);
  let mut recovery=Vec::new();
  recovery_paths(&root,&target.grid_id,&target.object_id,&ordinals,&mut Vec::new(),&mut recovery);
  serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false,"recoveryOrdinals":recovery})).map_err(|_|CodecError::Json)
@@ -3580,11 +3580,14 @@ pub(super) fn field_recovery_ordinals(source:&[u8])->Result<HashMap<(String,Stri
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
  let (scan,_)=scan_grid_instances(source)?;
  if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
- Ok(scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
+ Ok(field_recovery_ordinals_from_scan(&root,&scan))
+}
+fn field_recovery_ordinals_from_scan(root:&Value,scan:&Scan)->HashMap<(String,String),usize>{
+ scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
   let xy=(*xy)?;
   let ori=scan.rows.get(i)?.get("orientation")?.as_str()?;
-  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::stateless_field_object(&root,t,xy,ori)).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
- }).collect())
+  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::stateless_field_object(root,t,xy,ori)).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
+ }).collect()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
  Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(|item|crate::storage_source::is_storage(item)&&(r.owner.is_some()||crate::storage_source::placement_storage_template(root,item).is_some_and(|(_,size)|size==r.capacity)))).collect())
