@@ -48,6 +48,7 @@ test('native floor-context filter reconciles the entire original Furniture and B
   // The shared browse projection must not claim runtime legality or invent scope.
   const path='/ddv/item-master/steam-'+db.release.target.gameVersion+'-complete/explore.json';
   const catalog=JSON.parse(await readFile('static'+path,'utf8'));
+  assert.deepEqual(await db.getDecorationBrowse(),catalog,'pinned current browse matches the generated compatibility view');
   for(const row of catalog.items){
     const c=known.get(row.itemId);
     assert.deepEqual(row.sourcePlacement,c?{floorClass:c.floor?.kind??null,
@@ -56,4 +57,28 @@ test('native floor-context filter reconciles the entire original Furniture and B
     assert.equal(row.placementScope,undefined);
   }
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+test('Explore uses a verified current content-addressed projection; rejects byte tampering',async()=>{
+ const requests=[];
+ const read=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
+ const db=await openCurrentItemDatabase('',read);
+ const manifest=JSON.parse(await readFile('static/ddv/item-master/current/index.json','utf8'));
+ const pin=manifest.assets['explore.json'];
+ assert.match(pin.sha256,/^[a-f0-9]{64}$/);
+ const object='/ddv/item-master/objects/'+pin.sha256+'.json';
+ const catalog=await db.getDecorationBrowse();
+ assert.ok(catalog.items.length>500);
+ assert.equal(catalog.items.length,pin.count);
+ assert.ok(requests.includes(object));
+ assert.equal(requests.filter(url=>url===object).length,1);
+ await db.getDecorationBrowse();
+ assert.equal(requests.filter(url=>url===object).length,1);
+ assert(!requests.some(url=>url.endsWith('/explore.json')),'no versioned decoration read');
+ const broken=await openCurrentItemDatabase('',async url=>{
+  const bytes=await readFile('static'+url);
+  if(url===object)bytes[0]^=1;
+  return new Response(bytes,{status:200});
+ });
+ await assert.rejects(broken.getDecorationBrowse(),/SHA_MISMATCH/);
 });
