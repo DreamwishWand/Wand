@@ -176,6 +176,35 @@
   let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
+  // SvelteKit history-entry snapshot, not a second Collection record store.
+  // Only browsing state is captured; the Rust/IndexedDB workspace is reloaded.
+  function captureBrowse(){
+    return {viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
+      browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
+      sourceChoices:{...sourceChoices},sourceTopCategory,sourceActivityType,sourceNativeSubtype,
+      sourceUniverseSelection,acquisitionFilter,selectedItemId,showMemoryPieces,
+      scrollY:typeof window==='undefined'?0:window.scrollY};
+  }
+  type BrowseSnapshot=ReturnType<typeof captureBrowse>;
+  let pendingBrowseRestore:BrowseSnapshot|null=null;
+  export const snapshot={
+    capture:captureBrowse,
+    restore:(value:BrowseSnapshot)=>{pendingBrowseRestore=value;if(runtime)void restoreBrowse();}
+  };
+  async function restoreBrowse(){
+    const value=pendingBrowseRestore,activeRuntime=runtime;
+    if(!value||!activeRuntime)return;
+    if(sourceLoad)await sourceLoad;
+    if(acquisitionLoad)await acquisitionLoad;
+    if(runtime!==activeRuntime||pendingBrowseRestore!==value)return;
+    pendingBrowseRestore=null;
+    ({viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
+      browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
+      sourceChoices,sourceTopCategory,sourceActivityType,sourceNativeSubtype,
+      sourceUniverseSelection,acquisitionFilter,selectedItemId,showMemoryPieces}=value);
+    refresh();await tick();
+    if(runtime===activeRuntime)window.scrollTo(0,value.scrollY);
+  }
 
   $: topCategoryCards=sourceIndex?.rootsByItem
     ?COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({id,icon,total:rootCounts.get(id)??0,owned:rootOwned.get(id)??0}))
@@ -1137,7 +1166,7 @@
         detachHistory=editHistory.attachCollection(loaded);
         refresh();
         ensureSourceIndex();
-        restoreAddressSelection();
+        if(pendingBrowseRestore)await restoreBrowse();else restoreAddressSelection();
         try{
           const response=await fetch(base+'/ddv/collection/item-images-r39.json');
           if(response.ok){
@@ -1734,7 +1763,7 @@
             <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
-            {#if runtime&&!runtime.isOwnerLocal}<a class="item-page-link" href={itemEntityHref(base,selectedItem.itemId,isWandLanguage(locale)?locale:undefined)}>{entityCopy.page}<WandIcon name="link" size={16}/></a>{/if}
+            {#if runtime&&!runtime.isOwnerLocal&&!busy&&!saveReadInProgress}<a class="item-page-link" href={itemEntityHref(base,selectedItem.itemId,isWandLanguage(locale)?locale:undefined)}>{entityCopy.page}<WandIcon name="link" size={16}/></a>{/if}
             {#if selectedMemory}
               <div class="memory-piece-toolbar">
                 <strong>{selectedMemoryBits===null?'?':memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>

@@ -8,7 +8,7 @@ export function entityItemId(raw:unknown):number|null{
 }
 /** Shared native-primary route. Locale-free href is the permanent resolver. */
 export function itemEntityHref(base:string,id:number,locale?:WandLanguage):string{
-  if((base!==''&&!BASE.test(base))||entityItemId(String(id))===null||
+  if((base!==''&&!BASE.test(base))||typeof id!=='number'||entityItemId(String(id))===null||
     (locale!==undefined&&!isWandLanguage(locale)))throw new TypeError('INVALID_ITEM_ENTITY_URL');
   return base+'/'+(locale?locale+'/':'')+id+'/';
 }

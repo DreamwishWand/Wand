@@ -2,7 +2,7 @@
   import {base} from '$app/paths';
   import {onMount,onDestroy} from 'svelte';
   import {ITEM_MASTER_LOCALES,type ItemMasterLocale} from '$lib/items/public-item-master.ts';
-  import {openCurrentItemDatabase} from '$lib/items/public-item-master';
+  import {currentItemViewMaster} from '$lib/items/item-view-master';
   import {readItemTaxonomyDetails} from '$lib/items/public-item-taxonomy-details';
   import {readCollectionItemFacts,type CollectionItemFacts} from './current-item-facts.ts';
   import {collectionDb01AcquisitionLabel} from './db01-browse-labels.ts';
@@ -37,7 +37,7 @@
   async function load(id:number,l:string,small:boolean){
     const request=++sequence;facts=null;error=false;loading=true;
     try{
-      const master=await openCurrentItemDatabase(base,fetch);
+      const master=await currentItemViewMaster(base);
       const lang=ITEM_MASTER_LOCALES.includes(l as ItemMasterLocale)?l as ItemMasterLocale:'en';
       const result:CollectionItemFacts=small?{taxonomy:(await readItemTaxonomyDetails(master,[id],lang))[0]??null,prices:null,sources:null,recipes:[],names:new Map(),partial:false}:await readCollectionItemFacts(master,id,lang);
       if(request===sequence)facts=result;
@@ -45,7 +45,7 @@
     finally{if(request===sequence)loading=false;}
   }
   $: if(open)void load(itemId,locale,compact);
-  $: tags=[...new Set(facts?.taxonomy?.tags.flatMap(row=>row.identity?.name?[row.identity.name]:[])??[])];
+  $: tags=[...new Set(facts?.taxonomy?.tags.flatMap(row=>row.identity?.name&&!/^is[A-Z]|^Is[A-Z]/.test(row.key)?[row.identity.name]:[])??[])];
   $: sourceNames=[...new Set([
     ...(facts?.sources?.indexed.filter(row=>row.evidence.category!==null).map(row=>row.identity?.name)??[]),
     ...(facts?.sources?.additional.map(row=>row.identity?.name)??[])
@@ -61,7 +61,7 @@
     {:else if error}<p role="alert">{t(6,locale)} <button type="button" on:click={()=>void load(itemId,locale,compact)}>{t(11,locale)}</button></p>
     {:else if facts}
       {#if facts.taxonomy?.sourceSet?.name}<p><strong>{t(5,locale)}:</strong> {facts.taxonomy.sourceSet.name}</p>{/if}
-      {#if tags.length}<div class="fact-tags" aria-label={t(12,locale)}>{#each tags as tag}<span>{tag}</span>{/each}</div>{/if}
+      {#if tags.length}<div class="fact-tags" aria-label={t(12,locale)}>{#each (compact?tags.slice(0,8):tags) as tag}<span>{tag}</span>{/each}</div>{/if}
       {#if facts.sources?.effectiveCategories.length||sourceNames.length}
         <h4>{t(4,locale)}</h4>
         <div class="fact-tags">{#each facts.sources?.effectiveCategories??[] as category}<span>{collectionDb01AcquisitionLabel(locale,category)}</span>{/each}</div>

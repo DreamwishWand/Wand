@@ -1,10 +1,12 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {goto} from '$app/navigation';
+  import {afterNavigate,goto} from '$app/navigation';
   import {page} from '$app/stores';
   import {itemEntityHref,itemPageCopy} from './entity-item-url';
-  import {openCurrentItemDatabase,type CompleteItemMasterRecord} from './public-item-master';
+  import type {CompleteItemMasterRecord} from './public-item-master';
+  import {currentItemViewMaster} from './item-view-master';
+  import {collectionFamilyLabel} from '$lib/collection/copy';
   import {CollectionRuntime,type CollectionItem,type CollectionEntry} from '$lib/collection/runtime';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
@@ -29,6 +31,8 @@
   let entry:CollectionEntry={};
   let loading=true,failed=false,recordFailed=false,busy=false,expert=false,showPieces=false;
   let alive=true,detach=()=>{};
+  let fromInApp=false;
+  afterNavigate(({from})=>{if(from&&from.url.origin===location.origin)fromInApp=true;});
   $: copy=collectionInterfaceCopy(locale);
   $: labels=itemPageCopy(locale);
   $: memoryCopy=memoryPieceCopy(locale);
@@ -45,7 +49,7 @@
   async function load(){
     loading=true;failed=false;
     try{
-      const found=await (await openCurrentItemDatabase(base,fetch)).getItem(itemId);
+      const found=await (await currentItemViewMaster(base)).getItem(itemId);
       if(!alive)return;
       record=found?.itemId===itemId&&found.definitionScope!=='other_definition'&&found.nameVerified&&
         Object.values(found.names).some(Boolean)?found:null;
@@ -88,12 +92,12 @@
   function toggleBit(bit:number){if(eligible&&bits!==null)setBits(bits^bit);}
   function back(){
     // Only use browser history for same-origin in-app navigation.
-    if(document.referrer&&new URL(document.referrer).origin===location.origin&&history.length>1)history.back();
+    if(fromInApp&&history.length>1)history.back();
     else void goto(base+'/collection/');
   }
 </script>
 <svelte:head><title>{name?name+' · ':''}Dreamwish Wand</title></svelte:head>
-<main class="shared-item-page" data-item-page={record?.itemId??''}>
+<article class="shared-item-page" data-item-page={record?.itemId??''}>
   <div class="item-page-tools">
     <button type="button" on:click={back}><WandIcon name="chevron" size={18}/>{labels.back}</button>
     {#if record}<label><input type="checkbox" bind:checked={expert}/>{labels.expert}</label>{/if}
@@ -109,6 +113,7 @@
       </div>
       <div class="item-page-identity">
         <h1>{name||labels.missing}</h1>
+        {#if item}<p>{collectionFamilyLabel(locale,item.family)}</p>{/if}
         {#if memory}
           <div class="item-page-actions"><strong>{bits===null?'?':memoryPieceCount(bits)} / {memory.numberOfShards}</strong>
             <label><input type="checkbox" bind:checked={showPieces}/>{memoryCopy.split}</label>
@@ -122,7 +127,8 @@
         <section class="item-page-record">
           <h2>{copy.collectionRecord}</h2>
           {#if recordFailed}<p role="alert">{copy.failed}</p>
-          {:else if !runtime}<p role="status">{copy.loading}</p>{/if}
+          {:else if !runtime}<p role="status">{copy.loading}</p>
+          {:else if !item}<p role="status">{copy.unrecorded}</p>{/if}
           {#if item}
             {#if !memory}<div class="item-page-actions">
               <button type="button" disabled={busy||recordFailed} aria-pressed={entry.status==='owned'} on:click={()=>change({status:'owned'})}>{copy.owned}</button>
@@ -137,7 +143,6 @@
             <label><input type="checkbox" checked={entry.favorite===true} disabled={busy||recordFailed} on:change={event=>change({favorite:event.currentTarget.checked})}/>{copy.favorite}</label>
           {/if}
         </section>
-        <CurrentItemFacts {itemId} {locale} compact/>
       </div>
     </div>
     <div class="item-page-information">
@@ -147,7 +152,7 @@
     </div>
     <ItemMasterDetails {itemId} {locale} {expert}/>
   {/if}
-</main>
+</article>
 <style>
   .shared-item-page{width:100%;min-height:calc(100dvh - 60px);box-sizing:border-box;padding:clamp(14px,2.4vw,36px);color:var(--wand-text);background:var(--wand-bg)}
   .item-page-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px}

@@ -1,17 +1,5 @@
 <script lang="ts" context="module">
-  import {openCurrentItemDatabase,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
-
-  // DB-01 owns the current canonical, SHA-verified source shards. One index
-  // and one exact-ID bucket are fetched lazily; Collection never duplicates
-  // the Item ID database or fetches all 13,202 records for an inspector.
-  let sharedMaster:Promise<PublicCompleteItemMaster>|null=null;
-  function getItemMaster(base:string):Promise<PublicCompleteItemMaster> {
-    if(sharedMaster)return sharedMaster;
-    const request=openCurrentItemDatabase(base,fetch);
-    sharedMaster=request;
-    void request.catch(()=>{if(sharedMaster===request)sharedMaster=null;});
-    return request;
-  }
+  import {currentItemViewMaster as getItemMaster} from '$lib/items/item-view-master';
 </script>
 
 <script lang="ts">

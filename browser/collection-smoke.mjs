@@ -616,6 +616,11 @@ try{
   assert.match(await full.locator('.collection-item-master').innerText(),/White/);
   assert.match(await full.locator('.collection-item-master').innerText(),/Bedroom/);
   await full.close();
+  await itemPageLink.click();
+  await deep.locator('[data-item-page="40005160"] h1').waitFor({timeout:60000});
+  await deep.goBack();
+  await deep.locator('.item-inspector h2').waitFor({timeout:60000});
+  await deep.waitForFunction(()=>document.querySelector('.toolbar input[type=search]')?.value==='40005160');
   // Intrinsic image dimensions must not enlarge the grid track or overlap the name.
   const artworkBounds=await deep.evaluate(()=>{
     const frames=[...document.querySelectorAll('.item-icon,.inspector-art')];
