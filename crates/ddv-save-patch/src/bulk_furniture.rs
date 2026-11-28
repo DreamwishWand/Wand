@@ -99,7 +99,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
  for row in places{
   let p=&row.pose;
   let d=p.destination;let (x,y)=p.xy;
-  if p.free_placement&&house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(super::underwater_plain_path(&d.layout_path,&d.data_path)&&d.tessellation==1&&row.tree.is_none()&&!templates.contains_key(&p.item_id)&&OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)){return Err(BAD);}
+  if p.free_placement&&house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(super::underwater_plain_path(&d.layout_path,&d.data_path)&&d.tessellation==1&&OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)){return Err(BAD);}
   if p.item_id/100_000!=400||full_grid_scope(&d.layout_path).is_none()||!d.data_path.starts_with("GridData/")||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
    !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>65536||d.size.1>65536||x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||
    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||row.tree.is_none()&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&p.orientation)&&full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)))||!p.free_placement&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(BAD);}
@@ -113,7 +113,7 @@ fn bulk_patch(source:&str,pickups:&[BulkPickup<'_>],places:&[BulkScenePlace<'_>]
   let id=change.next;change.next=id.checked_add(1).ok_or(BAD)?;
   let mut object=serde_json::json!({"ID":id,"ItemID":p.item_id,"X":x,"Y":y,"Orientation":p.orientation});
   if let Some(&(template,size))=templates.get(&p.item_id){
-   if row.tree.is_some()||!super::standard_storage_capacity(template,size)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(BAD);}
+   if row.tree.is_some()||!super::standard_storage_capacity(template,size)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&p.orientation)||house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(p.free_placement&&d.tessellation==1&&super::underwater_plain_path(&d.layout_path,&d.data_path)){return Err(BAD);}
    let id=next_container;next_container=id.checked_add(1).ok_or(BAD)?;
    new_containers.push((id,serde_json::json!({"ID":id,"Size":size,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ParentItemID":p.item_id,"ExtraSize":0})));
    object["State"]=serde_json::json!({"Storage":{"ContainerInventoryID":id,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}});
