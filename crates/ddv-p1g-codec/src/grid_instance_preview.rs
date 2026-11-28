@@ -351,11 +351,13 @@ pub(super) fn resolve_grid_mixed_targets(
         let observed_orientation=scan.rows.get(ordinal-1)
             .and_then(|row|row.get("orientation")).and_then(Value::as_str);
         if target.item_id!=*item||xy!=&Some(*expected)||
-           scan.subgrid_parents.contains(ordinal)||kind!=observed_kind||
+           kind!=observed_kind||
            orientation.as_ref().is_some_and(|o|Some(o.as_str())!=observed_orientation){
             return Err(CodecError::Json);
         }
-        if target.item_id/10_000_000==2{
+        if scan.subgrid_parents.contains(ordinal){
+            validate_owned_transform_root(profile,target)?;
+        }else if target.item_id/10_000_000==2{
             validate_building_transform(profile,target)?;
         }
         out.push(target.clone());
@@ -409,13 +411,55 @@ pub(super) fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u6
     Ok((sx*factor,sy*factor))
 }
 
-/// Only ordinary leaf furniture, on a proven factor-one outdoor Grid.
+/// Common coordinate transform guard for an existing owned stateful root.
+ /// Category does not determine the State discriminant; only a resolved
+ /// native root with a known state envelope and valid ownership can pass.
+fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643)||target.kind!=GridObjectKind::Full{return Err(bad);}
+    let collection=root["World"]["GridCollection"].as_object().ok_or(bad)?;
+    let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+    let obj=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
+    if obj.get("ID").and_then(Value::as_u64).filter(|n|*n>0)!=key_id(&target.object_id)||
+       obj.get("ItemID").and_then(Value::as_u64)!=Some(target.item_id)||
+       obj.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
+       !obj.get("Orientation").and_then(Value::as_str).is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){return Err(bad);}
+    let (_,_,factor,sx,sy)=house_exterior_identity(&root,&target.grid_id)?;
+    let (x,y)=observed_coordinates(obj).ok_or(bad)?;
+    if x<0||y<0||x as u64>=sx*factor||y as u64>=sy*factor{return Err(bad);}
+    let state=obj.get("State").and_then(Value::as_object).filter(|s|s.len()==1).ok_or(bad)?;
+    if state.contains_key("SubGrid"){
+        subgrid_tree(collection,&target.grid_id,&target.object_id)?;
+        support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut HashSet::new(),&mut 0,0,512)?;
+    }else if state.contains_key("Storage"){
+        if !ddv_save_patch::storage_pose(&root,&Value::Object(obj.clone())){return Err(bad);}
+    }else{return Err(bad);}
+    if grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
+    Ok(())
+}
+
+/// Common native transform preflight: dependencies and stateful root
+/// bounds are checked independently of the visual item category. Diagonal
+/// orientation still requires the separately verified factor-one leaf contract.
 pub(super) fn validate_oblique_grid_edits(profile:&[u8],edits:&[ddv_save_patch::GridMixedEdit])->Result<(),CodecError>{
     let bad=CodecError::Json;
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    // One dependency scan per native Grid, rather than per visual category.
+    let mut by_grid=HashMap::<String,Vec<String>>::new();
+    if root["GameInfo"]["Version"].as_u64()==Some(643){
+        for e in edits{by_grid.entry(e.target.grid_id.clone()).or_default().push(e.target.object_id.clone());}
+        for (gid,ids) in by_grid{if grid_identity_dependencies_for_ids(profile,&gid,&ids)?.blocking()>0{return Err(bad);}}
+    }
     for e in edits{
         let grid=&root["World"]["GridCollection"]["Grids"][&e.target.grid_id];
         let obj=&grid["Objects"][&e.target.object_id];
+        if e.target.kind==GridObjectKind::Full&&(obj.get("State").and_then(|s|s.get("SubGrid")).is_some()||obj.get("State").and_then(|s|s.get("Storage")).is_some()||crate::storage_source::is_storage(e.target.item_id)){
+            validate_owned_transform_root(profile,&e.target)?;
+            let (_,_,factor,sx,sy)=house_exterior_identity(&root,&e.target.grid_id)?;
+            let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx*factor&&(y as u64)<sy*factor;
+            if !valid(e.expected)||e.position.is_some_and(|p|!valid(p))||e.orientation.as_ref().is_some_and(|(a,b)|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&a.as_str())||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&b.as_str())){return Err(bad);}
+        }
         let diagonal=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
         let old=obj["Orientation"].as_str().unwrap_or("");
         if !diagonal(old)&&!e.orientation.as_ref().is_some_and(|(a,b)|diagonal(a)||diagonal(b)){continue;}
@@ -4328,6 +4372,22 @@ mod terrain_session_tests{
         assert_eq!(grids["20"]["Objects"],grids["8"]["Objects"]);
         assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
         assert!(support_parent_duplicate_candidate(input.as_bytes(),1,40005160,(4,6),(4,6),&witness,None,None).is_err());
+        // The same mixed writer now accepts a support root and ordinary root
+        // together, without allocating new IDs or touching the child's state.
+        let selectors=vec![(1,40005160,(4,6),"full".into(),Some("GridOrientation_Down".into())),(2,40005161,(5,6),"full".into(),Some("GridOrientation_Down".into()))];
+        let targets=resolve_grid_mixed_targets(input.as_bytes(),&selectors).unwrap();
+        let edits=targets.into_iter().zip([(4,6),(5,6)]).map(|(target,expected)|ddv_save_patch::GridMixedEdit{target,expected,position:Some((expected.0+1,expected.1+1)),orientation:Some(("GridOrientation_Down".into(),"GridOrientation_Left".into()))}).collect::<Vec<_>>();
+        validate_oblique_grid_edits(input.as_bytes(),&edits).unwrap();
+        let mixed=ddv_save_patch::preview_existing_grid_mixed_batch(&input,&edits).unwrap();
+        let mut expected=raw.clone();
+        for (id,x) in [("1",5),("2",6)]{let o=&mut expected["World"]["GridCollection"]["Grids"]["7"]["Objects"][id];o["X"]=x.into();o["Y"]=7.into();o["Orientation"]="GridOrientation_Left".into();}
+        assert_eq!(serde_json::from_str::<Value>(&mixed.patched_json).unwrap(),expected);
+        let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":1}]);
+        assert!(resolve_grid_mixed_targets(blocked.to_string().as_bytes(),&selectors).is_err());
+        let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":7,"GridObjectID":2}]);
+        assert!(validate_oblique_grid_edits(blocked.to_string().as_bytes(),&edits).is_err());
+        let mut unsafe_pose=edits.clone();unsafe_pose[0].position=Some((196,0));
+        assert!(validate_oblique_grid_edits(input.as_bytes(),&unsafe_pose).is_err());
         let moved=free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(5,6),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None,false,None).unwrap();
         let moved:Value=serde_json::from_str(&moved.patched_json).unwrap();
         assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"],raw["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
