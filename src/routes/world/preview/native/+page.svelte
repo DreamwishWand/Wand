@@ -9,6 +9,7 @@
  import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
  import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
  import {localSaveSession} from '$lib/ui/local-save-session.ts';
+ import {hasNativeGridLockStates} from '$lib/media/native-map-save-area-flags.ts';
  import NativeMapSaveAreas from '$lib/world/NativeMapSaveAreas.svelte';
  import NativeCalibrationOverlay from '$lib/world/NativeCalibrationOverlay.svelte';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
@@ -94,8 +95,9 @@
    <label><input type="checkbox" bind:checked={locked} on:change={resetAreas}/> 全区画を未解放として表示</label>
    <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
    <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>検証座標を保存</button>
-   {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> 区画 {id} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>{appliedSave?'保存フラグによる試験表示（実行時判定未確認）':'手動指定・セーブ判定ではありません。'} 個別設定中は座標記録の出力を無効にします。</p></details>{/if}
-   {#if map.areaPlan?.areaTypes.length}<NativeMapSaveAreas mapId={map.id} areaTypes={map.areaPlan.areaTypes} onApply={applySavedAreas}/>{/if}
+   {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> {map.areaPlan.gridStateLabels?.[id-1]??('区画 '+id)} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>{appliedSave?'保存フラグによる試験表示（実行時判定未確認）':'手動指定・セーブ判定ではありません。'} 個別設定中は座標記録の出力を無効にします。</p></details>{/if}
+   {#if map&&hasNativeGridLockStates(map.id)&&!map.areaPlan?.gridStateLabels}<p>旧マニフェストでは海中の個別グリッドを切り替えられません。</p>{/if}
+   {#if map.areaPlan?.areaTypes.length&&!hasNativeGridLockStates(map.id)}<NativeMapSaveAreas mapId={map.id} areaTypes={map.areaPlan.areaTypes} onApply={applySavedAreas}/>{/if}
    {#if terrainScope}<label><input type="checkbox" bind:checked={showTerrain}/> 原本地形を重ねる</label>
     {#if showTerrain}<label>地形の濃さ <input type="range" min="0" max="1" step=".05" bind:value={terrainOpacity}/></label>{/if}
    {/if}

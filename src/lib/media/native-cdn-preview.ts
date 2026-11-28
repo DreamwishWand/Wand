@@ -12,12 +12,14 @@ function check(ok:unknown,msg:string):asserts ok{if(!ok)throw Error(msg);}
 export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cacheLimit=CACHE_LIMIT):LocalNativePreviewPack{
  check(Number.isSafeInteger(cacheLimit)&&cacheLimit>=0&&cacheLimit<=CACHE_LIMIT,'Invalid encoded cache budget');
  check(record(doc)&&doc.sourcePixelsVerified===true&&record(doc.images),'Invalid map preview receipt');
- const areaPreview=doc.schema==='wand.media.native-cdn-area-preview@1';
+ const gridPreview=doc.schema==='wand.media.native-cdn-area-preview@2';
+ const areaPreview=doc.schema==='wand.media.native-cdn-area-preview@1'||gridPreview;
  const verifiedCdn=(doc.schema==='wand.media.native-cdn-preview@1'||areaPreview&&doc.runtimeVisibilityVerified===false)&&doc.cdnVerified===true;
  const verifiedR2=doc.schema==='wand.media.native-r2-preview@1'&&doc.canonicalMetadataVerified===true&&doc.cdnVerified===false;
  check(verifiedCdn||verifiedR2,'Unverified image delivery receipt');
  const maps=parseLocalNativePreview({...doc,schema:'wand.media.native-local-preview@1'});
  check(!areaPreview||maps.every(m=>m.areaPlan),'Missing area rule table');
+ check(gridPreview?maps.filter(m=>m.areaPlan?.gridStateLabels).length===3:maps.every(m=>!m.areaPlan?.gridStateLabels),'Invalid grid preview coverage');
  const required=requiredLocalImages(maps),images=new Map<string,number>();
  check(Object.keys(doc.images).length===required.size,'CDN image coverage mismatch');
  for(const [sha,sz] of required){
@@ -85,7 +87,7 @@ export function parseNativeCdnPreview(doc:unknown,request:typeof fetch=fetch,cac
 }
 export async function openNativePreviewPack(files:readonly File[]):Promise<LocalNativePreviewPack>{
  const doc=await readNativeManifest(files);
- if(record(doc)&&(doc.schema==='wand.media.native-cdn-preview@1'||doc.schema==='wand.media.native-cdn-area-preview@1'||doc.schema==='wand.media.native-r2-preview@1')){
+ if(record(doc)&&(doc.schema==='wand.media.native-cdn-preview@1'||doc.schema==='wand.media.native-cdn-area-preview@1'||doc.schema==='wand.media.native-cdn-area-preview@2'||doc.schema==='wand.media.native-r2-preview@1')){
   check(files.length===1,'Select CDN manifest only');return parseNativeCdnPreview(doc);
  }
  return openLocalNativePreview(files,doc);
