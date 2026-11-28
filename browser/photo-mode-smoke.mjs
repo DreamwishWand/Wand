@@ -94,6 +94,7 @@ try{
   await checkNativeFaceNormalBake(page);
   await checkNativeMakeupBake(page);
   await checkLinearSceneComposite(page);
+  await checkNativeHairSurface(page);
   const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
@@ -124,6 +125,14 @@ try{
         const model=option.kind==='pair'?option.asset:index.models.female;const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads.female[target.index];const prefix=base+'/photo-mode-preview/';
         assert.ok(eyeRequests.has(prefix+index.expressionWeights.clips[option.sourceSha256].sha256+'.wec'),'native curve asset requested');
         for(const role of ['skull','eyelash','teeth_lower','teeth_upper']){const m=index.expressionWeights.meshes[head.parts[role].asset.sha256];assert.ok(m&&eyeRequests.has(prefix+m.asset.sha256+'.wem'),'native head expression part '+role)}
+      }
+      if(index.nativeHair&&option.kind!=='mermaid'){
+        const h=index.nativeHair,sex=b===0?'male':'female',selected=h.standard[sex],row=h.items[String(selected.itemId)][sex],prefix=base+'/photo-mode-preview/';
+        for(const part of row.parts){
+          assert.ok(eyeRequests.has(prefix+part.asset.sha256+'.wha'),'source hair geometry requested');
+          const m=h.materials[part.material];
+          for(const k of [m.mask,m.maps,m.normal])assert.ok(eyeRequests.has(prefix+h.textures[k].asset.sha256+'.wht'),'source hair mip chain requested');
+        }
       }
       if(option.kind!=='mermaid'){
         const sex=b===0?'male':'female',model=option.kind==='pair'?option.asset:index.models[sex],target=index.headGeometry.targets[model.sha256],head=index.headGeometry.heads[sex][target.index],norm=index.nativeFaceNormals,prefix=base+'/photo-mode-preview/';
