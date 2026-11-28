@@ -524,7 +524,7 @@ export function captureIndoorCut(face:IndoorSurface|null,roomOrdinal:number,indi
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
-export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'|'storage'|'supportSource'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
+export type IndoorTransferRow=Omit<IndoorPlace,'expectedStock'|'supportSource'|'scene'|'storageSource'>&Pick<CutWitness,'expectedX'|'expectedY'|'expectedOrientation'|'supportFactor'|'storage'|'supportSource'>&({localOrdinal:number;roomSource?:never}|{roomSource:{roomOrdinal:number;index:number};localOrdinal?:never});
 /** Check every footprint against the floor and all already staged siblings. */
 export function indoorGroupTransfer(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,rows:readonly CutWitness[],clip:readonly DesignClipItem[],x:number,y:number,free=false):IndoorTransferRow[]|null{
  const tree=indoorEditableTree(face);
