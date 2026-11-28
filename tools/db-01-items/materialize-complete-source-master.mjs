@@ -19,6 +19,7 @@ import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
+import {customMemoryConsummables} from './custom-memory-consummable.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1366,6 +1367,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
+  const customMemory=customMemoryConsummables(rows,source,id=>{
+    const categories=existingCategories(id);
+    if(ordinaryStore.has(id)||ordinaryLoot.has(id)||ordinaryFeeding.has(id))categories.add('ordinary_gameplay');
+    return categories;
+  });
   const feedingNew=[...ordinaryFeeding.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay')&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id));
   console.log('DB01_ORDINARY_CRITTER_FEEDING_DELTA '+JSON.stringify({newOrdinaryCategory:feedingNew.length,
     previouslyUnclassified:feedingNew.filter(id=>existingCategories(id).size===0).length}));
@@ -1651,6 +1657,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
       categorySet.add('ordinary_gameplay');
     }
+    const custom=customMemory.byMemory.get(row.itemId);
+    if(custom){
+      add('acquisition.customMemoryConsummable',row.itemId,custom);
+      for(const category of custom.configuredCategories)categorySet.add(category);
+    }
+    const linkedMemories=customMemory.byOrb.get(row.itemId);
+    if(linkedMemories?.length)add('acquisition.customMemoryItemIds',row.itemId,linkedMemories);
     const memory=memoryAppearance.get(row.itemId);
     if(memory){
       add('acquisition.memoryAppearance',row.itemId,memory);
