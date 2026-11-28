@@ -45,7 +45,8 @@ const extensionFields={
   conditionalQuest:'acquisition.conditionalQuestSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   lootPresent:'acquisition.ordinaryLootPresentSources',
-  critterFeeding:'acquisition.ordinaryCritterFeedingSources'
+  critterFeeding:'acquisition.ordinaryCritterFeedingSources',
+  historicalStarpath:'acquisition.historicalStarpathSources'
 } as const;
 export type ClassificationExtensionFamily=keyof typeof extensionFields;
 export interface ClassificationExtensionEvidence {
@@ -69,7 +70,21 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     const list=family==='configuredStore'?[value]:value;
     check(Array.isArray(list),'EXTENSION_LIST');
     for(const evidence of list){
-      check(object(evidence)&&evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      if(family==='historicalStarpath'){
+        check(evidence.sourcePlatform==='Switch'&&(
+          evidence.sourceGameVersion==='1.24.1'&&evidence.sourceProtoDbSha256==='36c2f64d849a5c7e2350b874e9e9443795c0675381a185d801649b587b093b60'||
+          evidence.sourceGameVersion==='1.24.11'&&evidence.sourceProtoDbSha256==='6433b7f00b2d746a28b0d57367f2ba0f8274ab94821ec5be5ffeb881fc553ac2'&&
+          evidence.seasonId==='PopCity2026'&&evidence.unresolvedVaultDefinitionId==='PopCity2026_VR'&&evidence.kind!=='vault')&&
+          typeof evidence.seasonId==='string'&&/^[A-Za-z0-9_]+$/.test(evidence.seasonId)&&
+          typeof evidence.sourceSeasonSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourceSeasonSha256)&&
+          id(evidence.configuredAmount)&&typeof evidence.premiumOnly==='boolean'&&typeof evidence.premiumFieldPresent==='boolean'&&
+          evidence.guaranteedGrantVerified===false&&categories.includes('star_path')&&
+          ['normal','bonus','vault'].some(k=>k===evidence.kind),'EXTENSION_HISTORICAL_STARPATH');
+        output.push({family,category:'star_path',evidence,sourceId:null,relatedIds:[]});
+        continue;
+      }
+      check(evidence.sourceGameVersion===db.release.target.gameVersion,'EXTENSION_VERSION');
       const category=family==='conditionalQuest'?evidence.category:'ordinary_gameplay';
       check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category),'EXTENSION_CATEGORY');
       let sourceId:number|null=null;

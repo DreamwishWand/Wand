@@ -18,6 +18,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
+import {loadHistoricalStarpathRewards} from './historical-starpath-rewards.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1244,7 +1245,7 @@ function ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLa
   }
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath){
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1287,6 +1288,9 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   console.log('DB01_ORDINARY_LOOT_PRESENT_DELTA '+JSON.stringify({newOrdinaryCategory:newLoot.length,
     previouslyUnclassified:newLoot.filter(id=>!(acquisition?.summary.get(id)?.categories.length)&&
       !(questFlows.conditionalQuest.get(id)??[]).length&&!premiumBundles?.byItem.get(id)?.currentBundleIds.length).length}));
+  const historicalNew=[...historicalStarpath.byItem.keys()].filter(id=>!existingCategories(id).has('star_path'));
+  console.log('DB01_HISTORICAL_STARPATH_DELTA '+JSON.stringify({newStarPathCategory:historicalNew.length,
+    previouslyUnclassified:historicalNew.filter(id=>existingCategories(id).size===0&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id)&&!ordinaryFeeding.has(id)).length}));
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1562,6 +1566,14 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
       categorySet.add('ordinary_gameplay');
     }
+    const historicStar=historicalStarpath.byItem.get(row.itemId);
+    if(historicStar?.length){
+      add('acquisition.historicalStarpathSources',row.itemId,historicStar);
+      add('acquisition.historicalStarpathSeasonIds',row.itemId,[...new Set(historicStar.map(l=>l.seasonId))].sort());
+      categorySet.add('star_path');
+    }
+    const starAlternates=historicalStarpath.alternates.get(row.itemId);
+    if(starAlternates?.length)add('acquisition.historicalStarpathAlternateSources',row.itemId,starAlternates);
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
     const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
     if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
@@ -1878,6 +1890,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
   const originalPrices=loadOriginalPriceFacts(project,source,byId);
   const questFlows=loadQuestFlowColumns(project,source,rows);
+  const historicalStarpath=loadHistoricalStarpathRewards(project,source,rows);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
@@ -1958,7 +1971,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
