@@ -79,7 +79,7 @@ test('all classification extensions preserve original evidence and localized sou
   const db=await openCurrentItemDatabase('',fetcher);
   const fields={characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
-    eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+    eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
     lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',questLoot:'acquisition.questAdditionalLootSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
@@ -108,7 +108,7 @@ test('all classification extensions preserve original evidence and localized sou
       if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
-      const related=ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
+      const related=ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId,ev.tableItemId]:ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
         ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId,...(ev.precursors?[ev.inventoryItemId,ev.blockerItemId,...ev.precursors.flatMap(p=>[p.sourceItemId,...(p.missionItemId?[p.missionItemId]:[])])]:[])])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:(ext.family==='storeGeneratedShelf'||ext.family==='storeGeneratedStage')?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[]),...(ev.catalogGate?.targetItemId?[ev.catalogGate.targetItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
