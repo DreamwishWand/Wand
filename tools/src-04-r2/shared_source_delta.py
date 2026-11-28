@@ -9,6 +9,7 @@ import shutil
 import time
 from pathlib import Path
 from collections import Counter
+from PIL import Image, ImageChops
 from bundle_thumbnails import POLICY, MAX_EDGE, write_json
 from extract_memory_sources import exact_objects, materialize, verify_game_version, manifests
 from extract_story_puzzle_sources import local_image, thumbnail
@@ -107,6 +108,93 @@ def extract(spec,aa,root,out,ledger=None,prior_index=None):
     write_json(out/"shared-source-report.json",report)
     check(report["complete"],"Unresolved confirmed references; no publication candidate")
     return finalize(report,out,ledger,prior_index)
+
+
+def visible_difference(original,native):
+    """Only ignore RGB under fully transparent pixels; alpha and all visible RGB stay exact."""
+    if original.size!=native.size:
+        return "dimensions"
+    if original.tobytes()==native.tobytes():
+        return "identical"
+    alpha=original.getchannel("A")
+    if ImageChops.difference(alpha,native.getchannel("A")).getbbox():
+        return "alpha"
+    mask=alpha.point([0]+[255]*255)
+    rgb=ImageChops.difference(original.convert("RGB"),native.convert("RGB"))
+    if ImageChops.multiply(rgb,Image.merge("RGB",(mask,mask,mask))).getbbox():
+        return "visibleRgb"
+    return "transparentRgbOnly"
+
+
+def recover_aliases(aa,out,ledger=None):
+    """Recover the existing extraction without encoding verified originals again.
+    A typed Sprite/Texture2D pair may differ only in invisible RGB; keep the
+    exact Texture2D bytes and record visual (not byte/pixel) equivalence.
+    Any other difference remains private and blocks publication.
+    """
+    path=out/"shared-source-report.json"
+    raw=path.read_bytes();report=json.loads(raw)
+    check(report.get("schema")==REPORT_SCHEMA and report.get("privateOnly") is True and
+          report.get("publicationAuthorized") is False,"Expected private source report")
+    roles=targets({"schema":TARGET_SCHEMA,"gameVersion":report["gameVersion"],"targets":report["targets"]})
+    check(verify_game_version(aa,report["gameVersion"])==report["sourceFullVersion"],"Game version changed")
+    locs,pins=resolve(aa,set(roles))
+    check(pins==report["catalogSha256"],"Source catalog changed")
+    check(set(report["assets"])==set(roles),"Missing original images; use exact extraction")
+    backup=out/"shared-source-report.before-alias-recovery.json"
+    if not backup.exists():backup.write_bytes(raw)
+    def save():
+        report["unresolved"]=sorted(set(roles)-set(report["assets"])|set(report["errors"]))
+        report["complete"]=not report["unresolved"]
+        tmp=path.with_suffix(".tmp")
+        write_json(tmp,report);tmp.replace(path)
+    pending={};stats=Counter()
+    for i,(guid,row) in enumerate(sorted(report["assets"].items()),1):
+        original=row["original"];m=info(original)
+        verify_local_or_published(out,m,ledger)
+        if guid in report["errors"]:
+            check(row["unityAssetId"].endswith(":Texture2D") and
+                  report["errors"][guid]==["ValueError: Ambiguous exact source pixels"],
+                  "Unsupported recovery error: "+guid)
+            classes=Counter(v["class"] for v in locs[guid])
+            check(classes=={"Texture2D":1,"Sprite":1},"Not a unique typed pair: "+guid)
+            pending[guid]=[v for v in locs[guid] if v["class"]=="Sprite"]
+        if i==1 or i%50==0 or i==len(roles):
+            print(f"  Existing originals verified: {i}/{len(roles)}",flush=True)
+    print(f"Recovering {len(pending)} Sprite aliases; no original re-encoding.",flush=True)
+    findings=report.setdefault("aliasRecovery",{})
+    for i,(guid,match,error) in enumerate(exact_objects(aa,pending),1):
+        row=report["assets"][guid];o=row["original"]
+        result={"difference":"readError"}
+        if error:
+            result["error"]=error
+        else:
+            identity,refs,bundles=match
+            try:
+                check(identity.endswith(":Sprite") and any(digest==row["unityAssetId"].split(":")[1] for _,digest,_ in bundles),"Texture source bundle identity mismatch")
+                local=out/"images"/(o["sha256"]+".webp")
+                check(local.is_file(),"Original bytes required for alias recovery")
+                with Image.open(local) as im: original=im.convert("RGBA")
+                check(hashlib.sha256(original.tobytes()).hexdigest()==o["sourcePixelSha256"],"Original pixel witness mismatch")
+                native=refs["Image"].read().image.convert("RGBA")
+                diff=visible_difference(original,native)
+                result={"difference":diff,"spriteIdentity":identity,"spriteSize":list(native.size),
+                        "spritePixelSha256":hashlib.sha256(native.tobytes()).hexdigest()}
+                if diff in ("identical","transparentRgbOnly"):
+                    field="equivalentSourceObjects" if diff=="identical" else "visuallyEquivalentSourceObjects"
+                    if identity not in row.setdefault(field,[]):row[field].append(identity)
+                    del report["errors"][guid]
+            except Exception as exc:
+                result={"difference":"readError","error":type(exc).__name__+": "+str(exc)[:200]}
+        findings[guid]=result;stats[result["difference"]]+=1
+        save()
+        if i==1 or i%10==0 or i==len(pending):
+            print(f"  Alias recovery: {i}/{len(pending)}; {dict(stats)}; unresolved {len(report['errors'])}",flush=True)
+    save()
+    print(json.dumps({"aliasDifferences":dict(Counter(v["difference"] for v in findings.values())),
+                      "remaining":len(report["unresolved"]),"complete":report["complete"]},indent=2),flush=True)
+    check(report["complete"],"Visible or unresolved Sprite differences remain; return updated private report")
+    return finalize(report,out,ledger)
 
 
 def finalize(report,out,ledger=None,prior_index=None):
@@ -320,7 +408,7 @@ def verify(root,ledger,ledger_path,max_objects,max_bytes,transport='urllib'):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("mode",choices=("extract","stage","plan","publish","verify"))
+    p.add_argument("mode",choices=("extract","recover","stage","plan","publish","verify"))
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--ledger",type=Path)
     p.add_argument("--targets",type=Path)
@@ -342,6 +430,9 @@ def main():
         check(not root.exists(),"Use new output for every extraction")
         result=extract(json.loads(a.targets.read_bytes()),a.aa.resolve(),a.existing_root,root,ledger,
                        json.loads(a.prior_index.read_bytes()) if a.prior_index else None)
+    elif a.mode=="recover":
+        check(a.aa is not None and not root.is_relative_to(a.aa.resolve()) and not a.aa.resolve().is_relative_to(root),"Separate game and private recovery paths required")
+        result=recover_aliases(a.aa.resolve(),root,ledger)
     elif a.mode=="stage":
         check(a.targets is not None and a.existing_root is not None,"Explicit subset and existing extraction required")
         result=stage_subset(a.existing_root,root,json.loads(a.targets.read_bytes()),ledger)
