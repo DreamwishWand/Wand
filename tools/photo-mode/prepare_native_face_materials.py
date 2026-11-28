@@ -31,7 +31,7 @@ def apply_native_materials(raw,dest,head_source):
         require(set(n["bodies"])=={"male","female"},"normal bodies")
         for b in ("male","female"):
             rows=n["bodies"][b];require(len(rows)==8 and len({r["guid"] for r in rows})==8,"face normal options")
-            require(all(r["name"]=="avatar_"+b+"_head_"+chr(65+i)+"_nm" for i,r in enumerate(rows)),"face normal order");bodies[b]=[normal(r,2048) for r in rows]
+            require(all(r["name"]=="avatar_"+b+"_head_"+chr(65+i)+"_nm" for i,r in enumerate(rows)),"face normal order: "+b+" "+repr([r["name"] for r in rows]));bodies[b]=[normal(r,2048) for r in rows]
         require(n["mask"]["name"]=="avatar_female_head_masks" and n["mask"]["pathId"]=="-847087465259873375","mask identity");mask=normal(n["mask"],1024)
         head_parts={p["meshSha256"]:(b,role,p) for b in ("male","female") for row in head_source["items"][b] for role,p in row["parts"].items()}
         require(len(head_parts)==70,"head source count")
