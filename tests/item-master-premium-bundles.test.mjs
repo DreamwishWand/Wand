@@ -50,3 +50,34 @@ test('canonical Premium Shop joins preserve server and historical compositions i
   assert.equal(memberships[1],null);assert.deepEqual(memberships[0],memberships[2]);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/acquisition/public/')));
 });
+
+test('confirmed content release selects bundles without mixing source revisions or inferring sale eligibility',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const catalog=await db.getPremiumBundleCatalog();
+  const ids=[...new Set(catalog.definitions.flatMap(b=>[...(b.current?.components??[]),...(b.legacy?.components??[])].map(p=>p.itemId)))];
+  const origins=await db.getItemContentOrigins(ids);
+  const releases=new Map();
+  for(const origin of origins){
+    if(origin?.attribution!=='confirmed')continue;
+    const set=releases.get(origin.contentReleaseId)??new Set();
+    set.add(origin.itemId);releases.set(origin.contentReleaseId,set);
+  }
+  // Independent expected join against canonical Item origins, including complete revision composition.
+  for(const [release,selected] of releases){
+    const expected=catalog.definitions.flatMap(definition=>{
+      const match=r=>[...new Set((r?.components??[]).filter(p=>selected.has(p.itemId)).map(p=>p.itemId))];
+      const currentMatchingItemIds=match(definition.current),legacyMatchingItemIds=match(definition.legacy);
+      return currentMatchingItemIds.length||legacyMatchingItemIds.length?[{definition,currentMatchingItemIds,legacyMatchingItemIds}]:[];
+    });
+    const result=await db.findPremiumBundlesByContentRelease(release);
+    assert.equal(result.status,'indexed');
+    assert.deepEqual(result.matches,expected);
+    assert.equal(result.listingEligibilityVerified,false);
+    assert.equal(result.currentAvailabilityVerified,false);
+  }
+  const unknown=await db.findPremiumBundlesByContentRelease('test-no-such-release-99');
+  assert.equal(unknown.status,'indexed');assert.deepEqual(unknown.matches,[]);
+  await assert.rejects(db.findPremiumBundlesByContentRelease('bad release'),/INVALID_CONTENT_RELEASE_ID/);
+  assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')));
+});
