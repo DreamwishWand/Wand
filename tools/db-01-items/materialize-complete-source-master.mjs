@@ -23,7 +23,7 @@ import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
-import {ordinaryLootPresentLinks} from './ordinary-loot-present.mjs';
+import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1279,6 +1279,10 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
+  const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
+  const feedingNew=[...ordinaryFeeding.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay')&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id));
+  console.log('DB01_ORDINARY_CRITTER_FEEDING_DELTA '+JSON.stringify({newOrdinaryCategory:feedingNew.length,
+    previouslyUnclassified:feedingNew.filter(id=>existingCategories(id).size===0).length}));
   const newLoot=[...ordinaryLoot.keys()].filter(id=>!priorOrdinary(id));
   console.log('DB01_ORDINARY_LOOT_PRESENT_DELTA '+JSON.stringify({newOrdinaryCategory:newLoot.length,
     previouslyUnclassified:newLoot.filter(id=>!(acquisition?.summary.get(id)?.categories.length)&&
@@ -1536,6 +1540,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const loot=ordinaryLoot.get(row.itemId);
     if(loot?.length){
       add('acquisition.ordinaryLootPresentSources',row.itemId,loot);
+      categorySet.add('ordinary_gameplay');
+    }
+    const feeding=ordinaryFeeding.get(row.itemId);
+    if(feeding?.length){
+      add('acquisition.ordinaryCritterFeedingSources',row.itemId,feeding);
       categorySet.add('ordinary_gameplay');
     }
     const progress=progression.get(row.itemId);
