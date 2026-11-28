@@ -4658,6 +4658,35 @@ mod terrain_session_tests{
         let d=support_child_candidate(&raw,&paste).unwrap();let moved:Value=serde_json::from_str(&d.patched_json).unwrap();
         assert_eq!(moved["Player"],save["Player"]);
         assert!(moved["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("3").is_none());
+        // Both witnesses refer to the original support, not to the shifted
+        // index after the first removal. IDs, stock and parent state survive.
+        let mut grouped=save.clone();
+        grouped["World"]["GridCollection"]["Grids"]["11"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40005162,"X":2,"Y":0,"Orientation":"GridOrientation_Down"});
+        grouped["World"]["GridCollection"]["Grids"]["11"]["NextGridObjectID"]=3.into();
+        let raw_group=serde_json::to_vec(&grouped).unwrap();
+        let mut outdoor=plan.clone();
+        let mut second=outdoor["rows"][0].clone();
+        second["supportSource"]["index"]=1.into();second["expectedX"]=2.into();second["x"]=5.into();
+        outdoor["rows"].as_array_mut().unwrap().push(second);
+        let result=group_cut_candidate(&raw_group,&outdoor.to_string()).unwrap();
+        let after:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(after["Player"],grouped["Player"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["11"]["Objects"],serde_json::json!({}));
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["5"]["X"],5);
+        let mut support=serde_json::json!({"localOrdinal":to,"itemId":40005160,"expectedX":8,"expectedY":5,"path":[],"freePlacement":true,"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","floorTransfer":[{"localOrdinal":from,"supportSource":witness,"itemId":40005162,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":0,"y":0,"orientation":"GridOrientation_Left"}]});
+        let mut second=support["floorTransfer"][0].clone();second["supportSource"]["index"]=1.into();second["expectedX"]=2.into();second["x"]=2.into();
+        support["floorTransfer"].as_array_mut().unwrap().push(second);
+        let d=support_child_candidate(&raw_group,&support).unwrap();
+        let after:Value=serde_json::from_str(&d.patched_json).unwrap();
+        assert_eq!(after["Player"],grouped["Player"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"],grouped["World"]["GridCollection"]["Grids"]["10"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["11"]["Objects"],serde_json::json!({}));
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["12"]["Objects"]["2"]["X"],2);
+        let mut duplicate=support.clone();duplicate["floorTransfer"][1]=duplicate["floorTransfer"][0].clone();
+        assert!(support_child_candidate(&raw_group,&duplicate).is_err());
+        grouped["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":11,"GridObjectID":2}]);
+        assert!(support_child_candidate(&serde_json::to_vec(&grouped).unwrap(),&support).is_err());
+        assert!(group_cut_candidate(&serde_json::to_vec(&grouped).unwrap(),&outdoor.to_string()).is_err());
         save["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":11,"GridObjectID":1}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&save).unwrap(),&plan.to_string()).is_err());
     }
