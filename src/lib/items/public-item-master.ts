@@ -565,8 +565,23 @@ export interface PremiumBundleCatalog {
   readonly definitions:readonly PremiumBundleDefinition[];
 }
 
+/** Only confirmed Item content attribution selects a bundle. Each revision is matched independently. */
+export interface PremiumBundleContentMatch {
+  readonly definition:Readonly<PremiumBundleDefinition>;
+  readonly currentMatchingItemIds:readonly number[];
+  readonly legacyMatchingItemIds:readonly number[];
+}
+export interface PremiumBundleContentQueryResult {
+  readonly status:'indexed'|'not_indexed';
+  readonly matches:readonly Readonly<PremiumBundleContentMatch>[];
+  readonly listingEligibilityVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
+
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   getPremiumBundleCatalog():Promise<Readonly<PremiumBundleCatalog>|null>;
+  /** Match confirmed Item content release, never offer dates, versions or candidate attribution. */
+  findPremiumBundlesByContentRelease(releaseId:string):Promise<Readonly<PremiumBundleContentQueryResult>>;
   getPremiumBundleDefinitions(bundleIds:readonly string[]):Promise<readonly (Readonly<PremiumBundleDefinition>|null)[]>;
   getPremiumBundleMembership(itemIds:readonly number[]):Promise<readonly (Readonly<PremiumBundleMembership>|null)[]>;
   getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
@@ -1383,6 +1398,26 @@ export async function openPublicItemMaster(
         coverageComplete:false as const,currentAvailabilityVerified:false as const});
     },
     getPremiumBundleCatalog:premiumCatalog,
+    async findPremiumBundlesByContentRelease(releaseId:string):Promise<Readonly<PremiumBundleContentQueryResult>>{
+      assert(typeof releaseId==='string'&&releaseIdPattern.test(releaseId),'INVALID_CONTENT_RELEASE_ID');
+      const field='history.contentReleaseId';
+      const result=(status:'indexed'|'not_indexed',matches:readonly Readonly<PremiumBundleContentMatch>[])=>Object.freeze({
+        status,matches:Object.freeze(matches),listingEligibilityVerified:false as const,currentAvailabilityVerified:false as const
+      });
+      if(!m.premiumBundleProjectionSha256||!(await fieldReader.getFieldCatalog()).some(f=>f.field===field))
+        return result('not_indexed',[]);
+      const catalog=await premiumCatalog();
+      if(!catalog)return result('not_indexed',[]);
+      const ids=new Set(await fieldReader.findItemIdsByFields([{field,anyOf:[{kind:'equals',value:releaseId}]}]));
+      const matching=(r:PremiumBundleRevision|null)=>Object.freeze([...new Set((r?.components??[]).map(c=>c.itemId).filter(id=>ids.has(id)))]);
+      const matches:Readonly<PremiumBundleContentMatch>[]=[];
+      for(const definition of catalog.definitions){
+        const currentMatchingItemIds=matching(definition.current),legacyMatchingItemIds=matching(definition.legacy);
+        if(currentMatchingItemIds.length||legacyMatchingItemIds.length)
+          matches.push(Object.freeze({definition,currentMatchingItemIds,legacyMatchingItemIds}));
+      }
+      return result('indexed',matches);
+    },
     async getPremiumBundleDefinitions(ids:readonly string[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
       await premiumCatalog();
