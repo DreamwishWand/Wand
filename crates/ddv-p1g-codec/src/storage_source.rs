@@ -168,8 +168,10 @@ pub(super) fn initial_support_trees(root:&Value,ids:impl Iterator<Item=u64>)->st
  }
  let mut factors=HashMap::new();let mut conflicts=HashSet::new();
  for (child,path,factor) in witnesses{if refs.get(&child)!=Some(&1){continue;}if factors.insert(path,factor).is_some_and(|old|old!=factor){conflicts.insert(path);}}
+ static INITIAL:OnceLock<Vec<u64>>=OnceLock::new();
+ let initial=INITIAL.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/support-initial-source.json"))).expect("compiled initial support source"));
  for id in ids{
-  if is_storage(id){continue;}
+  if is_storage(id)||initial.binary_search(&id).is_err(){continue;}
   let Some(path)=support_source_path(id)else{continue;};
   if conflicts.contains(path){continue;}
   if let Some(factor)=factors.get(path){out.insert(id,serde_json::json!({"factor":factor,"sourcePath":path,"objects":[]}));}
