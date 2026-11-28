@@ -1126,8 +1126,57 @@ function ordinaryProductionLinks(rows,source,acquisition,protoAcquisition){
     occurrences:[...links.values()].reduce((n,v)=>n+v.length,0)}));
   return links;
 }
+// Explicit progress rewards are distinct from costs, arbitrary event grants
+// and candidate loot. Figurine extras inherit an ordinary acquisition path
+// only from an independently ordinary-classified figurine.
+function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
+  const byItem=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08')return byItem;
+  const byId=new Map(rows.map(r=>[r.itemId,r]));
+  const ordinary=id=>acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')||
+    (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null);
+  const emit=(row,target,kind,path,amount,threshold=null)=>{
+    if(!ID(target)||!byId.has(target)||target===row.itemId)return;
+    if(kind==='figurine_additional_reward'?amount!==null:!ID(amount))return;
+    if(!/^[a-f0-9]{64}$/.test(source.sourceFilesSha256[row.nativeCategory]??''))return;
+    const list=byItem.get(target)??[];
+    list.push({sourceItemId:row.itemId,kind,sourcePath:path,configuredAmount:amount,
+      configuredMilestone:threshold,sourceGameVersion:source.target.gameVersion,
+      sourceFileSha256:source.sourceFilesSha256[row.nativeCategory],
+      currentAvailabilityVerified:false,guaranteedGrantVerified:false});
+    byItem.set(target,list);
+  };
+  for(const row of rows){
+    const p={...row.nativeProperties,...row.sourceAttributes};
+    if(row.nativeCategory==='Story'&&row.sourceClass==='StoryItemData'){
+      emit(row,p.Reward?.ItemID,'story_progress_reward','source.Reward.ItemID',p.Reward?.Amount);
+    }
+    if(row.nativeCategory==='DutyAch'&&row.sourceClass==='AchievementItemData'){
+      for(const [i,m] of (p.Milestones??[]).entries()){
+        if(!ID(m.Milestone))continue;
+        emit(row,m.RewardItem,'achievement_milestone_reward','source.Milestones['+i+'].RewardItem',m.RewardAmount,m.Milestone);
+      }
+    }
+    if(row.nativeCategory==='BoardGame'&&row.sourceClass==='FigurineItemData'&&ordinary(row.itemId)){
+      for(const [i,target] of (p.AdditionalRewardItemIDs??[]).entries()){
+        if(byId.get(target)?.nativeCategory!=='Furniture')continue;
+        emit(row,target,'figurine_additional_reward','source.AdditionalRewardItemIDs['+i+']',null);
+      }
+    }
+  }
+  return byItem;
+}
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
+  const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
+  const progressionNew=[...progression.keys()].filter(id=>!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
+    !(protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)&&!ordinaryProduction.has(id)&&!questFlows.ordinaryIntro.has(id));
+  const progressionKinds={};
+  for(const links of progression.values())for(const link of links)progressionKinds[link.kind]=(progressionKinds[link.kind]??0)+1;
+  console.log('DB01_ORDINARY_PROGRESSION '+JSON.stringify({items:progression.size,kinds:progressionKinds,
+    newOrdinaryCategory:progressionNew.length,previouslyUnclassified:progressionNew.filter(id=>
+      !(acquisition?.summary.get(id)?.categories.length)&&!premiumBundles?.byItem.get(id)?.currentBundleIds.length).length}));
   const introNew=[...questFlows.ordinaryIntro.keys()].filter(id=>
     !acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
     !(protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)&&!ordinaryProduction.has(id));
@@ -1378,6 +1427,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const intro=questFlows.ordinaryIntro.get(row.itemId);
     if(intro?.length){
       add('acquisition.ordinaryQuestIntroSources',row.itemId,intro);
+      categorySet.add('ordinary_gameplay');
+    }
+    const progress=progression.get(row.itemId);
+    if(progress?.length){
+      add('acquisition.ordinaryProgressionSources',row.itemId,progress);
       categorySet.add('ordinary_gameplay');
     }
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
