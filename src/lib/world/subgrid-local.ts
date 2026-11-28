@@ -123,6 +123,23 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  }
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
+/** Rigid group translation or quarter-turn around the selected anchor.
+ * Free mode retains native bounds, source shape and ordinary leaf checks.
+ * Unchanged rows are omitted; no partial group operation is returned. */
+export function supportFreeGroupTransform(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,indices:readonly number[],anchor:number,x:number,y:number,turn:0|-1|1):SupportChildEdit[]|null{
+ const a=tree.objects[anchor];if(!a||!indices.includes(anchor)||indices.length<2||indices.length>32||new Set(indices).size!==indices.length||![x,y].every(Number.isSafeInteger))return null;
+ const out:SupportChildEdit[]=[];
+ for(const index of indices){
+  const o=tree.objects[index];if(!o||o.child||!eligible.has(o.itemId)||!isCardinal(o.orientation))return null;
+  const dx=o.x-a.x,dy=o.y-a.y,px=x+(turn===1?-dy:turn===-1?dy:dx),py=y+(turn===1?dx:turn===-1?-dx:dy),orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4];
+  if(px===o.x&&py===o.y&&orientation===o.orientation){const key=supportShapeKey(o),s=key?shapes[key]:null;if(!s?.cellCount||s.cellCount>65536||!supportAnchorFits(tree,raster,o.x,o.y))return null;continue;}
+  const edit=supportFreeEdit(tree,shapes,eligible,raster,index,px,py,orientation,true);if(!edit)return null;out.push(...edit);
+ }
+ return out.length?out:null;
+}
+export const supportGroupWords={
+ ja:['複数選択','まとめて移動','選択解除'],en:['Select multiple','Move group','Clear selection'],fr:['Sélection multiple','Déplacer le groupe','Effacer la sélection'],it:['Selezione multipla','Sposta gruppo','Deseleziona'],de:['Mehrfachauswahl','Gruppe verschieben','Auswahl aufheben'],'es-ES':['Selección múltiple','Mover grupo','Borrar selección'],'zh-CN':['多选','移动组合','清除选择'],'pt-BR':['Seleção múltipla','Mover grupo','Limpar seleção']
+} as const;
 /** Exchange two existing ordinary leaves in one transaction. In free mode
  * their footprints may differ and occupied anchors may overlap other leaves. */
 export function supportFreeSwap(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,first:number,second:number):SupportChildEdit[]|null{
@@ -131,6 +148,22 @@ export function supportFreeSwap(tree:SupportTree,shapes:Readonly<Record<string,S
  const left=supportFreeEdit(tree,shapes,eligible,raster,first,b.x,b.y,a.orientation,true);
  const right=supportFreeEdit(tree,shapes,eligible,raster,second,a.x,a.y,b.orientation,true);
  return left&&right?[...left,...right]:null;
+}
+/** Plan stock changes sequentially per Item ID, but apply as one native transaction. */
+export function supportGroupStockPlan(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,indices:readonly number[],counts:ReadonlyMap<number,number>,destination:{anchor:number;x:number;y:number}|null):SupportStockPlan[]|null{
+ if(indices.length<2||indices.length>32||new Set(indices).size!==indices.length||destination&&(!indices.includes(destination.anchor)||tree.objects.length+indices.length>512))return null;
+ const anchor=destination?tree.objects[destination.anchor]:null;
+ if(destination&&!anchor)return null;
+ const stock=new Map(counts),out:SupportStockPlan[]=[];
+ for(const index of indices){
+  const o=tree.objects[index],key=o?supportShapeKey(o):null;
+  if(!o||o.child||!eligible.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!key||!shapes[key]?.cellCount||!supportAnchorFits(tree,raster,o.x,o.y))return null;
+  const count=stock.get(o.itemId);
+  if(count===undefined)return null;
+  const plan=destination&&anchor?supportStockPlacement(tree,shapes,raster,o.itemId,count,destination.x+o.x-anchor.x,destination.y+o.y-anchor.y,o.orientation,true):supportStockPickup(tree,index,stock,eligible);
+  if(!plan)return null;out.push(plan);stock.set(o.itemId,count+(plan.action==='place'?-1:1));
+ }
+ return out;
 }
 export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
 export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string,nonstandard=false):boolean{

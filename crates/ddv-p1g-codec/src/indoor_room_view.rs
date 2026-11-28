@@ -585,27 +585,29 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let support=row.get("supportFactor").map(|v|v.as_u64().filter(|n|matches!(n,1|2)).map(|n|n as u32).ok_or(bad)).transpose()?;
   let storage=row.get("storage").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
   if storage&&support.is_some(){return Err(bad);}
-  if row.as_object().is_none_or(|r|r.len()!=8+usize::from(support.is_some())+usize::from(storage)||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"|"storage"))){return Err(bad);}
+  if row.as_object().is_none_or(|r|r.len()!=8+usize::from(support.is_some())+usize::from(storage)+usize::from(r.contains_key("supportSource"))||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"|"storage"))){return Err(bad);}
   let room_source=row.get("roomSource");
+  let leaf=row.get("supportSource");
+  if leaf.is_some()&&(!free||room_source.is_some()||support.is_some()||storage){return Err(bad);}
   if !free&&support.is_some()&&support!=Some(factor){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
   let target=if let Some(w)=room_source{resolve_room_cut_source(source,&root,w,item,expected,old,support,free,storage)?}else{
    let source_ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
-   if let Some(f)=support{crate::grid_instance_preview::resolve_outdoor_support_cut_target(source,source_ordinal,item,expected,old,f)?}else{crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?}
+   if let Some(w)=leaf{crate::grid_instance_preview::resolve_support_leaf_cut(source,source_ordinal,w,item,expected,old)?}else if let Some(f)=support{crate::grid_instance_preview::resolve_outdoor_support_cut_target(source,source_ordinal,item,expected,old,f)?}else{crate::grid_instance_preview::resolve_grid_orientation_target(source,source_ordinal,item,expected,"full",old)?}
   };
   let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let from=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
   if storage&&(!storage_pose(&root,from.get(&target.object_id).ok_or(bad)?)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)){return Err(bad);}
-  if (free||storage)&&room_source.is_none(){let (scope,_,f,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&target.grid_id)?;if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f||!(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!storage&&f==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old)){return Err(bad);}}
+  if (free||storage)&&room_source.is_none()&&leaf.is_none(){let (scope,_,f,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&target.grid_id)?;if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f||!(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!storage&&f==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old)){return Err(bad);}}
   if !free&&from.values().filter(|v|coord(v,"X").ok()==Some(expected.0)&&coord(v,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);
   let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if (if free{!within_room(xy)||!allowed_orientation(orientation)||support.is_some()&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)}else{!on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy)})||target.grid_id==gid||!seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}
   let tree=if support.is_some(){if free{crate::grid_instance_preview::support_pickup_references(source,grids,&target.grid_id,&target.object_id,&mut std::collections::HashSet::new(),&mut 0,0,512)?;}Some(crate::grid_instance_preview::subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)}else{None};
-  moves.push((target,expected,xy,orientation.to_owned(),room_source.is_some(),tree,storage));
+  moves.push((target,expected,xy,orientation.to_owned(),room_source.is_some()||leaf.is_some(),tree,storage));
   }
   let t=terrain.ok_or(bad)?;
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)? as u32;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)? as u32;
@@ -1101,6 +1103,23 @@ mod tests{
   stale["World"]["SpawnedObjects"]=json!([{"GridID":43,"GridObjectID":1}]);
   assert!(room_to_outdoor_candidate(&serde_json::to_vec(&stale).unwrap(),&cut).is_err());
   cut["expectedX"]=json!(9);assert!(room_to_outdoor_candidate(raw,&cut).is_err());
+ }
+ #[test]
+ fn support_leaf_cut_to_room_floor_preserves_stock_and_parent(){
+  let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":2,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":4,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":43,"DesignID":null}}}}},"43":{"ID":43,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005162,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}}}}}"#;
+  let ordinal=crate::grid_instance_preview::room_support_ordinals(raw).unwrap()[&("42".to_owned(),"1".to_owned())];
+  let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"transfer":{"localOrdinal":ordinal,"supportSource":{"parentItemId":40005160,"parentX":4,"parentY":4,"path":[],"index":0},"itemId":40005162,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":4,"y":4,"orientation":"GridOrientation_Left"}});
+  let d=furniture_candidate(raw,&plan.to_string()).unwrap();let j:Value=serde_json::from_str(&d.patched_json).unwrap();let original:Value=serde_json::from_slice(raw).unwrap();
+  assert_eq!(j["Player"],original["Player"]);assert!(d.patched_json.contains("1e2"));
+  assert_eq!(j["World"]["PlayerHouses"],original["World"]["PlayerHouses"]);
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],original["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"],json!({}));
+  assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["ItemID"],40005162);
+  let mut stale=plan.clone();stale["transfer"]["supportSource"]["parentX"]=9.into();assert!(furniture_candidate(raw,&stale.to_string()).is_err());
+  stale=plan.clone();stale.as_object_mut().unwrap().remove("freePlacement");assert!(furniture_candidate(raw,&stale.to_string()).is_err());
+  let mut protected=original;protected["World"]["MissionSlots"]=json!({"owner":{"Slots":[{"SpawnedObjects":[{"GridID":43,"GridObjectID":1}]}]}});
+  assert!(furniture_candidate(&serde_json::to_vec(&protected).unwrap(),&plan.to_string()).is_err());
+  plan["transfer"]["x"]=999.into();assert!(furniture_candidate(raw,&plan.to_string()).is_err());
  }
  #[test]
  fn free_room_cut_preserves_overlap_diagonal_and_inventory(){

@@ -1,4 +1,4 @@
-import {CARDINAL_ORIENTATIONS,worldOrientationCode,type Cardinal,type EightWay} from './saved-map-transform.ts';
+import {isCardinal,CARDINAL_ORIENTATIONS,worldOrientationCode,type Cardinal,type EightWay} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
@@ -44,7 +44,8 @@ export function storageGroupPlan(sources:readonly (StorageDuplicateSource|null)[
 }
 export const storageGroupWords={ja:'収納の中身も複製する',en:'Duplicate storage contents',fr:'Dupliquer le contenu des rangements',it:'Duplica il contenuto dei contenitori',de:'Lagerinhalt duplizieren','es-ES':'Duplicar el contenido del almacenamiento','zh-CN':'同时复制储物内容','pt-BR':'Duplicar conteúdo dos recipientes'} as const;
 export type RoomCutSource={roomOrdinal:number;index:number};
-type CutPose={itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2;storage?:true};
+export type SupportCutSource={parentItemId:number;parentX:number;parentY:number;path:number[];index:number};
+type CutPose={supportSource?:SupportCutSource;itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay;area:string;supportFactor?:1|2;storage?:true};
 export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSource:RoomCutSource;localOrdinal?:never});
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
@@ -60,6 +61,7 @@ export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly Ma
  * re-resolves every source pose against the unchanged file before writing. */
 export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string,objects:readonly MainlandSavedObject[],free=false):boolean{
  if(cut.file!==file||!cut.scope||!scope||!cut.rows.length)return false;
+ if(cut.rows.some(r=>r.supportSource))return free&&cut.rows.length===1&&!!cut.rows[0].supportSource&&!!cut.rows[0].localOrdinal&&!cut.rows[0].roomSource&&!cut.rows[0].storage&&!cut.rows[0].supportFactor&&isCardinal(cut.rows[0].expectedOrientation);
  if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
  if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope){
   const outdoor=['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'];
@@ -106,7 +108,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
  return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
- if(cut.length!==candidate.rows.length||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
+ if(cut.some(r=>r.supportSource)&&(!free||cut.length!==1)||cut.length!==candidate.rows.length||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||(free&&!!r.roomSource||r.destination.factor===r.supportFactor)&&CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))&&(!r.storage||CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))?rows:null;
 }

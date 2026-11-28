@@ -22,10 +22,10 @@ export function supportTransferTargets(source:SupportParentWitness|null,targets:
  * The clipboard is bound to the unchanged local working Save. */
 export function supportFloorCut(cut:CutClipboard|null,file:File|null){
  const row=cut?.rows[0];
- if(!file||!cut||cut.file!==file||cut.scope!=='indoor'||cut.rows.length!==1||!row?.roomSource||row.supportFactor!==undefined||row.storage||!isCardinal(row.expectedOrientation))return null;
+ if(!file||!cut||cut.file!==file||cut.rows.length!==1||!row||row.supportFactor!==undefined||row.storage||!isCardinal(row.expectedOrientation)||row.roomSource&&cut.scope!=='indoor')return null;
  const itemId=Number(row.itemId);
  if(!Number.isSafeInteger(itemId)||String(itemId)!==row.itemId||Math.floor(itemId/100000)!==400)return null;
- return {roomSource:row.roomSource,itemId,expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};
+ return {...(row.roomSource?{roomSource:row.roomSource}:{localOrdinal:row.localOrdinal,...(row.supportSource?{supportSource:row.supportSource}:{})}),itemId,expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};
 }
 export const supportFloorPasteWords={ja:'切り取った家具をここに移動',en:'Move cut furniture here',fr:'Déplacer le meuble coupé ici',it:'Sposta qui il mobile tagliato',de:'Ausgeschnittenes Möbel hierher verschieben','es-ES':'Mover aquí el mueble cortado','zh-CN':'将剪切的家具移到此处','pt-BR':'Mover móvel recortado para cá'} as const;
 export type IndoorSupportWitness=SupportParentWitness&{roomOrdinal:number;surfaceOrdinal:number;index:number};
