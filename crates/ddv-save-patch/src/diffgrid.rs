@@ -72,6 +72,37 @@ fn changed_pose(p:&DiffPose,x:i32,y:i32,orientation:&str)->Result<DiffPose,Patch
 }
 fn path(parent:&[Segment],key:&str)->Vec<Segment>{let mut p=parent.to_vec();p.push(k(key));p}
 
+/// Stock-aware batch using the same existing furniture inventory route as
+/// Full Grid. Source defaults are not an entitlement: only an added object
+/// can be returned to stock. A caller must still check canonical item
+/// metadata and dependencies before invoking this private draft.
+pub fn preview_diffgrid_stock_batch(source:&str,identity:&DiffIdentity,actions:&[DiffAction],stock:&HashMap<u32,u32>)->Result<DiffDraft,PatchError>{
+    let defaults:HashSet<u32>=identity.defaults.iter().map(|d|d.id).collect();
+    let mut deltas=HashMap::<u32,Vec<i8>>::new();
+    for a in actions{
+        let (item,delta)=match a{
+            DiffAction::Transform{..}=>continue,
+            DiffAction::Remove{id,expected} if !defaults.contains(id)=>(expected.item_id,1),
+            DiffAction::Remove{..}=>continue,
+            DiffAction::Duplicate{expected,..}=>(expected.item_id,-1),
+            DiffAction::Add{pose}=>(pose.item_id,-1)
+        };
+        deltas.entry(item).or_default().push(delta);
+    }
+    if stock.len()!=deltas.len()||deltas.keys().any(|item|!stock.contains_key(item)){return Err(BAD);}
+    let mut draft=preview_diffgrid_batch(source,identity,actions)?;
+    let mut items=deltas.into_iter().collect::<Vec<_>>();items.sort_by_key(|(item,_)|*item);
+    for (item,changes) in items{
+        let mut amount=stock[&item];
+        for delta in changes{
+            let q=preview_default_furniture_stock(&draft.draft.patched_json,u64::from(item),amount,delta)?;
+            amount=u32::try_from(q.replacement_amount).map_err(|_|BAD)?;
+            draft.draft.patched_json=q.patched_json;
+        }
+    }
+    Ok(draft)
+}
+
 /// Reuses the codec's strict lexical locator for one pass over the profile.
 /// Unedited object records, counters, removal markers and unknown fields
 /// outside the selected changes remain byte-exact. A batch failure returns
