@@ -892,6 +892,9 @@ fn saved_layout_matches(layout:Option<&str>,expected:&str,data:&str)->bool{
 pub fn preview_free_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false,true)
 }
+pub fn preview_free_support_parent_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,true,true)
+}
 fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
        target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
@@ -915,7 +918,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     let from_data=from.get("GridDataPath").and_then(|v|v.as_str()).unwrap_or("");
     let from_scope=saved_outdoor_scope(from_layout,from_data).or_else(||(free&&from_data.starts_with("GridData/FloatingIslands/")).then_some("FloatingIslands")).ok_or(PatchError::InvalidTarget)?;
     let same_world=from_scope==to_scope;
-    if free&&(!support_parent||house_exterior_world(from_layout,from_data).is_none()||house_exterior_world(from_layout,from_data)!=house_exterior_world(&destination.layout_path,&destination.data_path)){return Err(PatchError::InvalidTarget);}
+    if free&&(!support_parent||house_exterior_world(from_layout,from_data).is_none()||house_exterior_world(&destination.layout_path,&destination.data_path).is_none()||!allow_world_change&&house_exterior_world(from_layout,from_data)!=house_exterior_world(&destination.layout_path,&destination.data_path)){return Err(PatchError::InvalidTarget);}
     // Landscape is an identity-preserving logical move, not an inventory
     // pickup or grant. Limit it to verified outdoor source path families
     // within one world, with unchanged orientation and native resolution.
@@ -926,7 +929,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)){
         return Err(PatchError::InvalidTarget);
     }
-    if !same_world&&(!allow_world_change||target.item_id/100_000!=400||
+    if !same_world&&!free&&(!allow_world_change||target.item_id/100_000!=400||
        !from.get("GridDataPath").and_then(|v|v.as_str()).is_some_and(|path|outdoor_world_path(from_scope,path))||
        !outdoor_world_path(to_scope,&destination.data_path)){return Err(PatchError::InvalidTarget);}
     if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||

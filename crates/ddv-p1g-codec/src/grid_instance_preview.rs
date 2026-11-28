@@ -2767,7 +2767,6 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         }
         return Ok(std::mem::take(&mut *working));
     }
-    if free&&rows.iter().any(|r|r.get("supportFactor").is_some()){return Err(bad);}
     let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(bad)?;
     let grids=collection.get("Grids").and_then(Value::as_object).ok_or(bad)?;
     let mut selections=Vec::with_capacity(rows.len());
@@ -2842,12 +2841,14 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
                grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
         }
         let tree=if let Some(factor)=factor{
-            if u64::from(d.tessellation)!=*factor||
+            if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str())||selection.4.as_deref().is_none_or(|o|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o))||u64::from(d.tessellation)!=*factor||
                source.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(*factor)||
                old.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid")){return Err(bad);}
             let refs=grid_identity_dependencies(profile,target)?;
             if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
-            if scope(layout)!=scope(&d.layout_path){
+            if free&&target.grid_id!=d.grid_id{
+                support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut HashSet::new(),&mut 0,0,512)?;
+            }else if !free&&scope(layout)!=scope(&d.layout_path){
                 let from=outdoor_identity(&root,&target.grid_id)?;
                 let to=outdoor_identity(&root,&d.grid_id)?;
                 if from.0!=player_house_grid_scope(&root,&target.grid_id)?||to.0!=player_house_grid_scope(&root,&d.grid_id)?||
@@ -2898,7 +2899,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let draft=if storage{ddv_save_patch::preview_storage_transfer(&working,target,expected,d,xy,orientation,false,free).map_err(|_|CodecError::Patch)?}else if let Some(tree)=tree{
             let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
             let next=current.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.get(&d.grid_id)).and_then(|v|v.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
-            let draft=preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?;
+            let draft=if free{ddv_save_patch::preview_free_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}else{preview_support_parent_world_transfer(&working,target,expected,d,xy,orientation)}.map_err(|_|CodecError::Patch)?;
             let parsed:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
             let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
             if subgrid_tree(c,&d.grid_id,&next)?!=tree{return Err(bad);}
@@ -3060,6 +3061,26 @@ mod tests{
         assert!(group_cut_candidate(raw.to_string().as_bytes(),&invalid.to_string()).is_err());
         let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":80,"GridObjectID":1}]);
         assert!(group_cut_candidate(linked.to_string().as_bytes(),&plan.to_string()).is_err());
+        let mut occupied=raw.clone();
+        occupied["World"]["GridCollection"]["Grids"]["43"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40005161,"X":5,"Y":5,"Orientation":"GridOrientation_Down"});
+        let mut free=serde_json::json!({"freePlacement":true,"rows":plan});
+        assert!(group_cut_candidate(occupied.to_string().as_bytes(),&free["rows"].to_string()).is_err());
+        let d=group_cut_candidate(occupied.to_string().as_bytes(),&free.to_string()).unwrap();
+        let out:Value=serde_json::from_str(&d).unwrap();
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["State"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["43"]["Objects"]["2"],occupied["World"]["GridCollection"]["Grids"]["43"]["Objects"]["2"]);
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["80"],raw["World"]["GridCollection"]["Grids"]["80"]);
+        assert_eq!(out["Player"],raw["Player"]);
+        assert!(group_cut_candidate(linked.to_string().as_bytes(),&free.to_string()).is_err());
+        free["rows"][0]["orientation"]="GridOrientation_DownLeft".into();
+        assert!(group_cut_candidate(occupied.to_string().as_bytes(),&free.to_string()).is_err());
+        free["rows"][0]["orientation"]="GridOrientation_Left".into();
+        occupied["World"]["GridCollection"]["Grids"]["43"]["GridDefaultLayoutPath"]="SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json".into();
+        occupied["World"]["GridCollection"]["Grids"]["43"]["GridDataPath"]="GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json".into();
+        free["rows"][0]["destination"]=serde_json::json!({"layoutId":"SceneLayouts/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanLayout.json","gridDataPath":"GridData/FloatingIslands/FloatingIsland_Atlantean/FloatingIsland_AtlanteanGrid-GridData.json","factor":1,"sizeX":130,"sizeY":130});
+        let out:Value=serde_json::from_str(&group_cut_candidate(occupied.to_string().as_bytes(),&free.to_string()).unwrap()).unwrap();
+        assert_eq!(out["World"]["GridCollection"]["Grids"]["80"],raw["World"]["GridCollection"]["Grids"]["80"]);
+        assert_eq!(out["Player"],raw["Player"]);
     }
     #[test]
     fn cut_between_outdoor_worlds_rechecks_both_addresses_and_preserves_inventory(){
