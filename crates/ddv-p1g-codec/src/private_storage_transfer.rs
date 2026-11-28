@@ -140,6 +140,63 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
  Ok(patched)
 }
 
+/// Stage only surviving containers before planning ordinary furniture changes.
+ /// Contents stay untouched until the final decoration transaction.
+pub(super) fn stage_decoration(source:&str,backup:&str,scope:&HashSet<String>)->Result<(String,String),CodecError>{
+ let bad=CodecError::Json;
+ ddv_save_patch::validate_json_without_edit(source).map_err(|_|bad)?;
+ ddv_save_patch::validate_json_without_edit(backup).map_err(|_|bad)?;
+ let mut doc:Value=serde_json::from_str(backup).map_err(|_|bad)?;
+ if doc["schema"]!="wand.private.storage-contents@2"||doc["version"].as_u64()!=Some(643)||doc["skipped"].as_u64()!=Some(0)||doc.as_object().is_none_or(|m|m.len()!=4){return Err(bad);}
+ let rows=doc["rows"].as_array().filter(|a|a.len()<=8192).ok_or(bad)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|bad)?;
+ let mut ids=HashSet::new();
+ for row in rows{
+  let id=row["id"].as_u64().filter(|n|ids.insert(*n)).ok_or(bad)?;
+  if row["metadata"]["ID"].as_u64()!=Some(id)||row["roots"].as_array().is_none_or(|a|a.is_empty()||a.iter().any(|w|w["grid"].as_str().is_none_or(|g|!scope.contains(g)))){return Err(bad);}
+ }
+ let mut current_scope=scope.clone();
+ for (gid,g) in root["World"]["GridCollection"]["Grids"].as_object().ok_or(bad)?{
+  if let Some(objects)=g["Objects"].as_object(){for (oid,o) in objects{
+   if o["State"]["Storage"]["ContainerInventoryID"].as_u64().is_some_and(|n|ids.contains(&n)){current_scope.insert(format!("{gid}:{oid}"));}
+  }}
+ }
+ let raw=Zeroizing::new(ddv_save_patch::storage_backup::export_scoped(source,Some(&current_scope)).map_err(|_|bad)?);
+ let current:Value=serde_json::from_str(&raw).map_err(|_|bad)?;
+ let by_id:HashMap<_,_>=current["rows"].as_array().ok_or(bad)?.iter().filter_map(|r|Some((r["id"].as_u64()?,r))).collect();
+ let mut move_rows=Vec::new();
+ for row in rows{
+  let id=row["id"].as_u64().ok_or(bad)?;
+  if let Some(old)=by_id.get(&id){
+   if old["metadata"]!=row["metadata"]{return Err(bad);}
+   if old["roots"]!=row["roots"]{
+    let mut pose=row.clone();pose["inventory"]=old["inventory"].clone();move_rows.push(pose);
+   }
+  }else if root["Player"]["ContainerInventories"].get(id.to_string()).is_some(){return Err(bad);}
+ }
+ let staged=Zeroizing::new(if move_rows.is_empty(){source.to_owned()}else{
+  let plan=Zeroizing::new(json!({"schema":"wand.private.storage-contents@2","version":643,"skipped":0,"rows":move_rows}).to_string());
+  restore(source,&plan,scope)?
+ });
+ // Rewrite only witnesses whose surviving container was relocated. Missing
+ // containers still use the original strict pose-based empty rebind later.
+ let raw=Zeroizing::new(ddv_save_patch::storage_backup::export_scoped(&staged,Some(scope)).map_err(|_|bad)?);
+ let after:Value=serde_json::from_str(&raw).map_err(|_|bad)?;
+ let by_id:HashMap<_,_>=after["rows"].as_array().ok_or(bad)?.iter().filter_map(|r|Some((r["id"].as_u64()?,r))).collect();
+ for row in doc["rows"].as_array_mut().ok_or(bad)?{
+  let id=row["id"].as_u64().ok_or(bad)?;
+  if let Some(actual)=by_id.get(&id){
+   if actual["metadata"]!=row["metadata"]{return Err(bad);}
+   let mut wanted=row["roots"].as_array().ok_or(bad)?.clone();
+   let mut observed=actual["roots"].as_array().ok_or(bad)?.clone();
+   for roots in [&mut wanted,&mut observed]{for w in roots.iter_mut(){w.as_object_mut().ok_or(bad)?.remove("object");}roots.sort_by_cached_key(Value::to_string);}
+   if wanted!=observed{return Err(bad);}
+   row["roots"]=actual["roots"].clone();
+  }
+ }
+ Ok((staged.to_string(),doc.to_string()))
+}
+
 #[cfg(test)]
 mod tests{
  use super::*;
