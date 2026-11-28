@@ -723,6 +723,17 @@ fn furniture_candidate_mode(source:&[u8],plan:&str,private_storage:bool)->Result
    if surface!=1{return Err(bad);}
    let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?;
    ddv_save_patch::preview_initial_storage(&working,&d,item,xy,orientation,amount,template,capacity,true,free).map_err(|_|CodecError::Patch)?
+  }else if crate::storage_source::support_source_path(item).is_some(){
+   if surface!=1||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+   let trees=crate::storage_source::initial_support_trees(&root,[item].into_iter());
+   let tree=trees.get(&item).ok_or(bad)?;
+   let current:Value=serde_json::from_str(&working).map_err(|_|bad)?;
+   if current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64()!=Some(u64::from(amount)){return Err(bad);}
+   let fresh=ddv_save_patch::room_grid_next_object_id(&current["World"]["GridCollection"]["Grids"][&gid]).map_err(|_|bad)?.to_string();
+   let draft=ddv_save_patch::support_clone::preview_indoor_support_scene_place_mode(&working,item,&d,xy,orientation,tree,free).map_err(|_|CodecError::Patch)?;
+   let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
+   if &crate::grid_instance_preview::subgrid_tree(after["World"]["GridCollection"].as_object().ok_or(bad)?,&gid,&fresh)?!=tree{return Err(bad);}
+   draft
   }else if free{ddv_save_patch::preview_free_indoor_grid_stock_place(&working,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch)?}else{ddv_save_patch::preview_indoor_grid_stock_place(&working,&d,item,xy,orientation,amount).map_err(|_|CodecError::Patch)?};
   if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
   working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
