@@ -1596,7 +1596,7 @@ fn saved_db04_source_projection(
 /// ordinary leaf furniture with exact poses and existing stock routes can
 /// be removed. A failed member discards the entire candidate.
 pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Result<String,CodecError>{
-    use ddv_save_patch::{PlainGridStructureAction,preview_plain_grid_structure,preview_landscape_duplicate_with_mode,preview_landscape_place_with_mode};
+    use ddv_save_patch::{PlainGridStructureAction,preview_plain_grid_structure,preview_landscape_duplicate_oriented,preview_landscape_place_with_mode};
     let bad=CodecError::Json;
     if plan.len()>4096||destination.len()>4096{return Err(bad);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
@@ -1610,11 +1610,13 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
         let witness:Value=serde_json::from_str(destination).map_err(|_|bad)?;
         let dest=landscape_destination(profile,&witness)?;
+        let fresh=root["World"]["GridCollection"]["Grids"][&dest.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?.to_string();
+        let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[fresh])?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
         let draft=preview_landscape_place_with_mode(std::str::from_utf8(profile).map_err(|_|bad)?,&dest,item,(int("x")?,int("y")?),orientation,free).map_err(|_|bad)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
         return Ok(draft.patched_json);
     }
-    let o=value.as_object().filter(|o|o.len()==7+(free as usize)&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"))).ok_or(bad)?;
+    let o=value.as_object().filter(|o|o.len()==7+(free as usize)+usize::from(o.contains_key("replacementOrientation"))&&o.keys().all(|k|matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"|"replacementOrientation"))&&(!o.contains_key("replacementOrientation")||free&&o.get("action").and_then(Value::as_str)==Some("duplicate"))).ok_or(bad)?;
     let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==402)).ok_or(bad)?;
     let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
     let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
@@ -1635,7 +1637,10 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
             let dest=if free{landscape_destination(profile,&witness)?}else{resolve_plain_grid_destination(profile,&witness)?};
             if free{let (sx,sy)=building_transform_grid_size(&root,&target.grid_id)?;if expected.0<0||expected.1<0||expected.0 as u64>=sx||expected.1 as u64>=sy{return Err(bad);}}
             let orientation=grid.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(Value::as_str).ok_or(bad)?;
-            preview_landscape_duplicate_with_mode(json,&target,expected,&dest,(int("x")?,int("y")?),orientation,free)
+            let new=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?};
+            let fresh=root["World"]["GridCollection"]["Grids"][&dest.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?.to_string();
+            let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[fresh])?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+            preview_landscape_duplicate_oriented(json,&target,expected,&dest,(int("x")?,int("y")?),orientation,new,free)
         },
         _=>return Err(bad)
     }.map_err(|_|bad)?;
@@ -5599,6 +5604,16 @@ mod biome_decoration_tests{
   let copied:Value=serde_json::from_str(&landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).unwrap()).unwrap();
   assert_eq!(copied["Player"],raw["Player"]);assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40200001);
   assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],6);
+  dup["replacementOrientation"]="GridOrientation_Left".into();
+  let turned:Value=serde_json::from_str(&landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["Orientation"],"GridOrientation_Left");
+  assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(turned["Player"],raw["Player"]);
+  let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":5}]);
+  assert!(landscape_candidate(blocked.to_string().as_bytes(),&dup.to_string(),&dest.to_string()).is_err());
+  dup["replacementOrientation"]="GridOrientation_DownLeft".into();
+  assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
+  dup.as_object_mut().unwrap().remove("replacementOrientation");
   dup["x"]=196.into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
   dup["x"]=1.into();dup["freePlacement"]="true".into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
  }

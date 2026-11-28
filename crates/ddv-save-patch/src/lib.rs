@@ -1351,6 +1351,10 @@ pub fn preview_landscape_duplicate(source:&str,target:&GridCoordinateTarget,expe
     preview_landscape_duplicate_with_mode(source,target,expected,destination,replacement,orientation,false)
 }
 pub fn preview_landscape_duplicate_with_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
+    preview_landscape_duplicate_oriented(source,target,expected,destination,replacement,orientation,orientation,free)
+}
+pub fn preview_landscape_duplicate_oriented(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,new_orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
+    if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&new_orientation)||!free&&new_orientation!=orientation{return Err(PatchError::InvalidTarget);}
     if target.item_id/100_000!=402||!matches!(destination.tessellation,1|2)||destination.size.0==0||destination.size.1==0||
        destination.size.0>65536||destination.size.1>65536||replacement.0<0||replacement.1<0||
        replacement.0 as u32>=destination.size.0*destination.tessellation||replacement.1 as u32>=destination.size.1*destination.tessellation||
@@ -1374,7 +1378,7 @@ pub fn preview_landscape_duplicate_with_mode(source:&str,target:&GridCoordinateT
        from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("Orientation")).and_then(|v|v.as_str())!=Some(orientation)||
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)||m.contains_key(&destination.grid_id)))||
        to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|!free&&m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::InvalidTarget);}
-    insert_plain_grid_record(source,destination,target.item_id,replacement,orientation)
+    insert_plain_grid_record(source,destination,target.item_id,replacement,new_orientation)
 }
 
 fn landscape_grid_path(layout:&str,data:&str)->bool{
