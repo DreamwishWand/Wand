@@ -40,6 +40,36 @@ function gate(tree,known,questKinds){
   if(!questGates.length||new Set(questGates.map(p=>p.category)).size!==1)return null;
   return {category:questGates[0].category,questGates,sceneItemIds:[...new Set(sceneItemIds)],characterItemIds:[...new Set(characterItemIds)],additionalGates};
 }
+// A positively identified DisneyWorld realm and an explicit custom spawn
+// anchor constitute a configured ordinary exploration route, not a live
+// availability check. Keep the lever dependency verbatim.
+function realmGate(tree,spawn,known,source){
+  if(source.sourceFilesSha256.Scene!=='d8fc56cfc282323df94461e360c26aaf98a884f01b7bd83cabf967ac2cd397d5'||
+    !exact(tree,['Operator','Conditions'])||!(tree.Operator===undefined||tree.Operator===0)||
+    !Array.isArray(tree.Conditions)||![1,2].includes(tree.Conditions.length))return null;
+  const [sceneLeaf,commonLeaf]=tree.Conditions,scene=sceneLeaf?.CurrentScene;
+  if(!exact(sceneLeaf,['CurrentScene'])||!exact(scene,['Scene','Inversed'])||!(scene.Inversed===undefined||scene.Inversed===false))return null;
+  // Scene 1540000031 is the pinned native DisneyWorld realm in this source
+  // census, not one of the original floating-festival scene definitions.
+  if(scene.Scene!==1540000031)return null;
+  const row=known.get(scene.Scene),p={...row?.nativeProperties,...row?.sourceAttributes};
+  if(row?.nativeCategory!=='Scene'||p.SceneType!==5)return null;
+  const loc=spawn.SpawnLocationSource;
+  const guid=v=>typeof v==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(v);
+  if(!exact(loc,['Custom'])||!exact(loc.Custom,['GUID'])||!guid(loc.Custom.GUID))return null;
+  const additionalGates=[],conditionItemIds=[];
+  if(commonLeaf){
+    const ref=commonLeaf.CommonConditions;
+    if(!exact(commonLeaf,['CommonConditions'])||!exact(ref,['Condition','Inversed'])||!(ref.Inversed===undefined||ref.Inversed===false)||ref.Condition!==2130001620)return null;
+    const def=known.get(ref.Condition),original=({...def?.nativeProperties,...def?.sourceAttributes}).Conditions;
+    const leaf=original?.Conditions?.[0],lever=leaf?.LeverStatus;
+    if(def?.nativeCategory!=='Condition'||!exact(original,['Operator','Conditions'])||!(original.Operator===undefined||original.Operator===0)||
+      original.Conditions?.length!==1||!exact(leaf,['LeverStatus'])||!exact(lever,['Lever','State'])||!guid(lever.Lever)||lever.State!==1)return null;
+    conditionItemIds.push(ref.Condition);
+    additionalGates.push({kind:'CommonConditions',sourcePath:'source.Conditions.Conditions[1].CommonConditions',original:ref,resolvedOriginal:original});
+  }
+  return {category:'ordinary_gameplay',kind:'realm_fixed_memory_spawn',questGates:[],sceneItemIds:[scene.Scene],characterItemIds:[],conditionItemIds,additionalGates};
+}
 export function buildMemorySpawnSources(rows,source,memories,questKinds){
   const result=new Map();
   if(!memories.size||!questKinds||source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
@@ -59,14 +89,15 @@ export function buildMemorySpawnSources(rows,source,memories,questKinds){
     const amount=s.AmountToSpawn?.Value?.Value;
     const shardIndexValid=Number.isSafeInteger(index)&&index>=0&&index<memory.configuredShardCount;
     const exactAmount=exact(s.AmountToSpawn,['Value'])&&exact(s.AmountToSpawn.Value,['Value'])&&id(amount);
-    const gateResult=shardIndexValid&&exactAmount&&exact(state,['MemoryShardIndex'])&&(direct||id(nested?.Amount))?gate(p.Conditions,known,questKinds):null;
-    const record={kind:gateResult?'quest_gated_memory_spawn':'configured_memory_spawn',sourceItemId:row.itemId,
+    const gateResult=shardIndexValid&&exactAmount&&exact(state,['MemoryShardIndex'])&&(direct||id(nested?.Amount))?(gate(p.Conditions,known,questKinds)??realmGate(p.Conditions,s,known,source)):null;
+    const record={kind:gateResult?(gateResult.kind??'quest_gated_memory_spawn'):'configured_memory_spawn',sourceItemId:row.itemId,
       targetItemId:target,sourcePath:direct?'source.Spawn.RewardOverride.ItemID':'source.Spawn.RewardOverride.State.ConsummableData.ItemID',
       shardIndex:Number.isSafeInteger(index)?index:null,shardIndexValid,configuredShardCount:memory.configuredShardCount,
       configuredAmount:exactAmount?amount:null,configuredConsumableAmount:direct?null:nested?.Amount??null,
       orbItemId:direct?null:r.ItemID,spawnLocationKinds:Object.keys(s.SpawnLocationSource??{}),
       conditions:p.Conditions??null,category:gateResult?.category??null,questGates:gateResult?.questGates??[],sceneItemIds:gateResult?.sceneItemIds??[],
-      characterItemIds:gateResult?.characterItemIds??[],additionalGates:gateResult?.additionalGates??[],
+      characterItemIds:gateResult?.characterItemIds??[],conditionItemIds:gateResult?.conditionItemIds??[],additionalGates:gateResult?.additionalGates??[],
+      spawnLocation:s.SpawnLocationSource??null,sourceSceneSha256:source.sourceFilesSha256.Scene,
       sourceGameVersion:source.target.gameVersion,sourceEventSha256:source.sourceFilesSha256.ConditionalEvent,
       sourceConditionSha256:source.sourceFilesSha256.Condition,sourceMissionSha256:source.sourceFilesSha256.Mission,
       sourceMemorySha256:source.sourceFilesSha256.MemoryShard,guaranteedGrantVerified:false,currentAvailabilityVerified:false};

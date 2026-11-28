@@ -109,21 +109,25 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
         }else if(family==='memorySpawn'){
-          check(evidence.kind==='quest_gated_memory_spawn'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
+          const realm=evidence.kind==='realm_fixed_memory_spawn';
+          check((evidence.kind==='quest_gated_memory_spawn'||realm&&evidence.sourceSceneSha256===sha?.Scene)&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
             evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceMissionSha256===sha?.Mission&&
             evidence.sourceMemorySha256===sha?.MemoryShard&&id(evidence.configuredAmount)&&evidence.shardIndexValid===true&&
             typeof evidence.shardIndex==='number'&&Number.isSafeInteger(evidence.shardIndex)&&evidence.shardIndex>=0&&
             ['source.Spawn.RewardOverride.ItemID','source.Spawn.RewardOverride.State.ConsummableData.ItemID'].some(k=>k===evidence.sourcePath)&&
-            Array.isArray(evidence.questGates)&&evidence.questGates.length>0&&Array.isArray(evidence.sceneItemIds)&&
+            Array.isArray(evidence.questGates)&&Array.isArray(evidence.sceneItemIds)&&
+            (realm?evidence.questGates.length===0&&evidence.sceneItemIds.length===1&&category==='ordinary_gameplay':evidence.questGates.length>0)&&
+            (evidence.conditionItemIds===undefined||Array.isArray(evidence.conditionItemIds))&&
             (evidence.characterItemIds===undefined||Array.isArray(evidence.characterItemIds))&&
             (evidence.additionalGates===undefined||Array.isArray(evidence.additionalGates)),'EXTENSION_MEMORY_SPAWN');
           for(const gate of evidence.questGates){
             check(object(gate)&&id(gate.questId)&&gate.category===category,'EXTENSION_QUEST_GATE');relatedIds.push(gate.questId);
           }
           for(const n of evidence.sceneItemIds){check(id(n),'EXTENSION_MEMORY_SCENE');relatedIds.push(n);}
+          if(Array.isArray(evidence.conditionItemIds))for(const n of evidence.conditionItemIds){check(id(n),'EXTENSION_MEMORY_CONDITION');relatedIds.push(n);}
           if(Array.isArray(evidence.characterItemIds))for(const n of evidence.characterItemIds){check(id(n),'EXTENSION_MEMORY_CHARACTER');relatedIds.push(n);}
           if(Array.isArray(evidence.additionalGates))for(const g of evidence.additionalGates){
-            check(object(g)&&['CharacterUnlocked','CharacterFriendship','AreaUnlocked'].some(k=>k===g.kind)&&
+            check(object(g)&&['CharacterUnlocked','CharacterFriendship','AreaUnlocked','CommonConditions'].some(k=>k===g.kind)&&
               typeof g.sourcePath==='string'&&g.sourcePath.startsWith('source.Conditions.Conditions[')&&object(g.original),'EXTENSION_MEMORY_EXTRA_GATE');
           }
         }else if(family==='conditionalQuest'){

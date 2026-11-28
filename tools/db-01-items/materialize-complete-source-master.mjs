@@ -21,6 +21,7 @@ import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
+import {buildMemoryLootSources} from './memory-loot-sources.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1369,6 +1370,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
+  const memoryLoot=buildMemoryLootSources(rows,source,memoryAppearance);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
   const feedingNew=[...ordinaryFeeding.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay')&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id));
   console.log('DB01_ORDINARY_CRITTER_FEEDING_DELTA '+JSON.stringify({newOrdinaryCategory:feedingNew.length,
@@ -1668,6 +1670,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const tagId=({...row.nativeProperties,...row.sourceAttributes}).MemoryShardTagItemID;
       if(ID(tagId))add('acquisition.memoryShardTagItemId',row.itemId,tagId);
       if(memory.category)categorySet.add(memory.category);
+      const loot=memoryLoot.get(row.itemId);
+      if(loot?.length)add('acquisition.memoryLootSources',row.itemId,loot);
       const spawns=memorySpawn.get(row.itemId);
       if(spawns?.length){
         add('acquisition.memorySpawnSources',row.itemId,spawns);
