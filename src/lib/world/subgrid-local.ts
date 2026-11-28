@@ -97,10 +97,19 @@ export function supportTerrainRow(value:unknown,path:string):TerrainRaster|null{
  const r=rows[0];if(r.length!==5||!Number.isSafeInteger(r[1])||!Number.isSafeInteger(r[2])||r[1]<1||r[2]<1||r[1]>256||r[2]>256||typeof r[3]!=='string'||!/^[a-f0-9]{64}$/.test(r[3])||!Array.isArray(r[4])||r[4].length!==r[1]*r[2]||!r[4].every((v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff))return null;
  return {sizeX:r[1],sizeY:r[2],nativeFloorValues:Uint32Array.from(r[4])};
 }
-export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,raster:TerrainRaster,index:number,x:number,y:number,orientation:string):SupportChildEdit[]|null{
+// Nonstandard placement changes the game placement rules, not native ownership.
+function supportAnchorFits(tree:SupportTree,raster:TerrainRaster,x:number,y:number){
+ return Number.isSafeInteger(x)&&Number.isSafeInteger(y)&&x>=0&&y>=0&&x<raster.sizeX*tree.factor&&y<raster.sizeY*tree.factor&&raster.nativeFloorValues.length===raster.sizeX*raster.sizeY;
+}
+export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,raster:TerrainRaster,index:number,x:number,y:number,orientation:string,nonstandard=false):SupportChildEdit[]|null{
  const a=tree.objects[index];if(!a||a.child||Math.floor(a.itemId/100000)!==400||!editable.has(a.itemId)||!isCardinal(a.orientation)||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x===a.x&&y===a.y&&orientation===a.orientation)return null;
  const oldKey=supportShapeKey(a),before=oldKey?shapes[oldKey]:null,shape=shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!shape||!before||shape.acceptedFloorTypesFlag===undefined||before.acceptedFloorTypesFlag===undefined||shape.cellCount>65536||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},before,a.x,a.y).length||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
+ if(!shape||!before||!shape.cellCount||!before.cellCount||shape.cellCount>65536||before.cellCount>65536)return null;
+ if(nonstandard){
+  if(!supportAnchorFits(tree,raster,a.x,a.y)||!supportAnchorFits(tree,raster,x,y))return null;
+  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
+ }
+ if(shape.acceptedFloorTypesFlag===undefined||before.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},before,a.x,a.y).length||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return null;
  for(let i=0;i<tree.objects.length;i++){if(i===index)continue;const o=tree.objects[i],k=supportShapeKey(o),other=k?shapes[k]:null;if(!other)return null;
   if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
   if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return null;
@@ -108,18 +117,20 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
 export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
-export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string):boolean{
+export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string,nonstandard=false):boolean{
  if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
  const shape=shapes[itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
- if(!shape||!shape.cellCount||shape.cellCount>65536||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return false;
+ if(!shape||!shape.cellCount||shape.cellCount>65536)return false;
+ if(nonstandard)return supportAnchorFits(tree,raster,x,y);
+ if(shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return false;
  for(const o of tree.objects){const key=supportShapeKey(o),other=key?shapes[key]:null;if(!other)return false;
   if(x>=o.x+other.width||o.x>=x+shape.width||y>=o.y+other.height||o.y>=y+shape.height)continue;
   if(shape.runs.some(a=>other.runs.some(b=>y+a.y===o.y+b.y&&x+a.x<o.x+b.x+b.width&&o.x+b.x<x+a.x+a.width)))return false;
  }
  return true;
 }
-export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string):SupportStockPlan|null{
- if(!Number.isInteger(count)||count<1||count>2147483647||!supportPlacementFits(tree,shapes,raster,itemId,x,y,orientation))return null;
+export function supportStockPlacement(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,count:number,x:number,y:number,orientation:string,nonstandard=false):SupportStockPlan|null{
+ if(!Number.isInteger(count)||count<1||count>2147483647||!supportPlacementFits(tree,shapes,raster,itemId,x,y,orientation,nonstandard))return null;
  return {action:'place',itemId,expectedStock:count,x,y,orientation};
 }
 export const supportTransferWords={
