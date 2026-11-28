@@ -8,11 +8,11 @@ SHA="5acf9b7f51f6e00bd3ca8d5bef2222914e7bfd1c5b177782cc0a553d94776f66"
 def download_native_materials():
     req=urllib.request.Request(URL,headers={"User-Agent":"Dreamwish-Wand-Pages"})
     with urllib.request.urlopen(req,timeout=120) as f:return f.read(SIZE+1)
-def apply_native_materials(raw,dest,head_source):
+def apply_native_materials(raw,dest,head_source,base_source=None):
     require(len(raw)==SIZE and digest(raw)==SHA,"native materials archive identity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["gameVersion"]=="1.26.2" and public["publicationAuthorized"] is True and public["testOnly"] is True and public["fullPoseVerified"] is False and public.get("headGeometry"),"native material base identity")
-    assets={};used=set();geometry={};bodies={}
+    assets={};used=set();geometry={};bodies={};body_geometry={}
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         require(len(z.infolist())==75 and len(set(z.namelist()))==75,"native materials coverage")
         def manifest(name):
@@ -41,15 +41,22 @@ def apply_native_materials(raw,dest,head_source):
             e,name,data=asset(r,".wsg",4*1024*1024);require(len(data)==12+4*v*sum(d for i,d in ((2,4),(3,4),(5,2),(6,2)) if flags&(1<<i)) and struct.unpack_from("<4sII",data)==(b"WSG1",v,flags),"surface layout")
             require(all(math.isfinite(x[0]) for x in struct.iter_unpack("<f",data[12:])) and all(t[3] in (-1,0,1) for t in struct.iter_unpack("<4f",data[12:12+16*v])),"surface values")
             if key not in head_parts:
-                require(r["role"]=="body" and r["headGeometrySha256"] is None,"non-head mesh");continue
+                require(r["role"]=="body" and r["headGeometrySha256"] is None,"non-head mesh")
+                if base_source is not None:
+                    rows=[x for x in base_source["items"][r["body"]] if x["role"]=="body"];require(len(rows)==1 and rows[0]["meshSha256"]==key and rows[0]["positionSha256"]==r["positionSha256"] and rows[0]["vertices"]==v,"native body source identity")
+                    body_geometry[r["body"]]={k:r[k] for k in ("vertices","channels","positionSha256","uv0Sha256")}|{"asset":e};assets[name]=data
+                continue
             b,role,p=head_parts[key];require((r["body"],r["role"],v,r["headGeometrySha256"],r["positionSha256"])==(b,role,p["vertices"],p["asset"]["sha256"],p["positionSha256"]),"surface head identity")
             if role=="skull":
                 whg=(dest/(p["asset"]["sha256"]+".whg")).read_bytes();require(digest(whg[16+24*v:16+32*v])==r["uv0Sha256"],"surface UV identity")
                 geometry[p["asset"]["sha256"]]={k:r[k] for k in ("vertices","channels","positionSha256","uv0Sha256")}|{"asset":e};assets[name]=data
         require(len(geometry)==16 and set(used)==set(z.namelist()) and set(head_parts)<=set(g["items"]),"native surface coverage")
+    if base_source is not None:require(set(body_geometry)=={"male","female"},"body surface coverage")
     for name,data in assets.items():
         p=dest/name
         if p.exists():require(p.read_bytes()==data,"native material conflict")
         else:p.write_bytes(data)
-    public["nativeFaceNormals"]={"bodies":bodies,"mask":mask,"geometry":geometry};index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
+    public["nativeFaceNormals"]={"bodies":bodies,"mask":mask,"geometry":geometry}
+    if body_geometry:public["nativeBodyGeometry"]=body_geometry
+    index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Native face normals: 17 exact LOD-zero maps, 16 skull tangent bindings")
