@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {storageGroupSelection,storageGroupPlan,groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {localSupportDuplicateSelection,storageGroupSelection,storageGroupPlan,groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -177,4 +177,15 @@ test('storage group plan retains support scene rows in the same local transactio
  const q={rows,ghosts:[],supportRows:[rows[0],{...rows[1],scene}]};
  const result=storageGroupPlan([storage,null],q,false,false);assert.ok(result);assert.equal(result.storageGroup.rows[0].copyContents,false);assert.deepEqual(result.storageGroup.rows[1].scene,scene);
  assert.equal(storageGroupPlan([storage,null],{...q,supportRows:[{...rows[0],scene},q.supportRows[1]]},false,false),null);
+});
+
+test('local support duplication accepts a table alone or with ordinary furniture and optional storage',()=>{
+ const table=saved(1,2,-2);table.object.surfaceCapable=true;table.object.subgrid={status:'resolved_full',objectCount:2};
+ const ordinary=saved(2,4,-2),storage=saved(3,6,-2);storage.object.storage=true;storage.object.storageKnown=true;
+ const single=localSupportDuplicateSelection([table]);assert.ok(single);assert.equal(single.sources,null);assert.equal(single.clip.length,1);
+ const mixed=localSupportDuplicateSelection([table,ordinary]);assert.ok(mixed);assert.equal(mixed.sources,null);assert.equal(mixed.clip.length,2);
+ const withStorage=localSupportDuplicateSelection([table,ordinary,storage]);assert.ok(withStorage);assert.equal(withStorage.sources[2].localOrdinal,3);
+ assert.equal(localSupportDuplicateSelection([ordinary]),null);
+ assert.equal(localSupportDuplicateSelection([table,{...storage,object:{...storage.object,storage:false}}]),null);
+ assert.equal(localSupportDuplicateSelection([{...table,object:{...table.object,subgrid:{status:'unresolved',objectCount:null}}}]),null);
 });
