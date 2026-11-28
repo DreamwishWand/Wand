@@ -108,6 +108,7 @@ try{
       const canvas=preview.locator('canvas');
       await canvas.focus();await canvas.press('ArrowRight');
       assert.equal(await seek.inputValue(),t);
+      const panButton=preview.locator('.camera-pan');await panButton.click();assert.equal(await panButton.getAttribute('aria-pressed'),'true');await canvas.focus();await canvas.press('ArrowDown');assert.equal(await seek.inputValue(),t);await preview.locator('.camera-orbit').click();assert.equal(await preview.locator('.camera-orbit').getAttribute('aria-pressed'),'true');
       const play=preview.locator('.controls').first().locator('button').first();
       await play.click();
       await page.waitForFunction(previous=>{const e=document.querySelector('.pose-preview input.seek');return e&&Math.abs(Number(e.value)-Number(previous))>.01},t,{timeout:10000});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {PoseSceneSession,orbit} from '../src/lib/photo-mode/scene-session.ts';
+import {PoseSceneSession,orbit,pan} from '../src/lib/photo-mode/scene-session.ts';
 import {cameraMatrix,validatePrimitive} from '../src/lib/photo-mode/gpu-renderer.ts';
 test('camera can make repeated full turns without touching motion',()=>{
   const view={yaw:0,pitch:0,zoom:1};
@@ -15,7 +15,7 @@ test('visibility and camera changes never resample or restart synchronized actor
   const scene={duration:4,actors:[{id:'player',label:'Player',canHide:false},{id:'prop',label:'Prop',canHide:true},{id:'pet',label:'Pet',canHide:true}],primitives:[],jointCounts:[1],center:[0,0,0],radius:1,sample(t){times.push(t);return [new Float32Array(16).fill(t)]},dispose(){released++}};
   const s=new PoseSceneSession(scene,{draw(p,v,h){frames.push({value:p[0][0],view:{...v},hidden:[...h]})},dispose(){released++}});
   s.clock.setSpeed(.25);s.clock.play();s.clock.tick(2);const state=s.state;
-  s.clock.setActorVisible('prop',false);s.clock.setActorVisible('pet',false);s.move(100,30,400,400);s.zoom(2);assert.deepEqual(s.state,state);assert.deepEqual(times,[0,.5]);assert.deepEqual(frames.at(-1).hidden,['prop','pet']);assert.equal(frames.at(-1).value,.5);
+  s.clock.setActorVisible('prop',false);s.clock.setActorVisible('pet',false);s.move(100,30,400,400);s.zoom(2);s.pan(25,-80,400,400);assert.deepEqual(s.state,state);assert.deepEqual(times,[0,.5]);assert.deepEqual(frames.at(-1).hidden,['prop','pet']);assert.equal(frames.at(-1).value,.5);
   s.clock.tick(2);assert.equal(frames.at(-1).value,1);assert.deepEqual(times,[0,.5,1]);assert.throws(()=>s.clock.setActorVisible('player',false));s.dispose();s.dispose();assert.equal(released,2);
 });
 test('geometry validation rejects invalid joint and triangle indices',()=>{
@@ -31,7 +31,7 @@ test('body comparison keeps absolute time, view, playback and hidden actor prefe
     return {session,frames};
   };
   const first=create(4,true).session;
-  first.clock.seek(2.5);first.clock.setSpeed(.5);first.clock.setLoop(false);first.clock.play();first.move(100,30,400,400);first.zoom(2);first.clock.setActorVisible('companion',false);
+  first.clock.seek(2.5);first.clock.setSpeed(.5);first.clock.setLoop(false);first.clock.play();first.move(100,30,400,400);first.zoom(2);first.pan(25,-80,400,400);first.clock.setActorVisible('companion',false);
   let comparison=first.comparison();first.dispose();
   const short=create(2,false);short.session.restoreComparison(comparison);
   assert.equal(short.session.state.time,2);assert.equal(short.session.state.playing,false);assert.equal(short.session.state.speed,.5);assert.equal(short.session.state.loop,false);assert.deepEqual(short.session.camera,comparison.view);assert.deepEqual(short.frames.at(-1).hidden,[]);
@@ -39,4 +39,19 @@ test('body comparison keeps absolute time, view, playback and hidden actor prefe
   const again=create(4,true);again.session.restoreComparison(comparison);
   assert.equal(again.session.state.time,1);assert.equal(again.session.state.playing,true);assert.deepEqual(again.frames.at(-1).hidden,['companion']);assert.deepEqual(again.frames.at(-1).view,comparison.view);
   again.session.clock.setActorVisible('companion',true);assert.deepEqual(again.session.comparison(comparison).hidden,[]);again.session.dispose();
+});
+
+test('pan tracks drag pixels at any zoom and preserves a world pivot across orbit',()=>{
+  const scene={center:[0,1,0],radius:1},base={yaw:0,pitch:0,zoom:4};
+  for(const [w,h] of [[640,480],[480,640]]){
+    const v=pan(base,80,-50,w,h),a=cameraMatrix(scene,base,w,h),b=cameraMatrix(scene,v,w,h);
+    assert.ok(Math.abs(b[12]-a[12]-160/w)<1e-6);
+    assert.ok(Math.abs(b[13]-a[13]-100/h)<1e-6);
+    const rotated=orbit(v,123,45,w,h);
+    assert.deepEqual(rotated.targetOffset,v.targetOffset);
+    const target=scene.center.map((x,i)=>x+v.targetOffset[i]*scene.radius*1.15);
+    const m=cameraMatrix(scene,rotated,w,h);
+    for(const r of [0,1])assert.ok(Math.abs(m[r]*target[0]+m[r+4]*target[1]+m[r+8]*target[2]+m[r+12])<1e-6);
+  }
+  assert.throws(()=>pan(base,NaN,0,640,480));
 });

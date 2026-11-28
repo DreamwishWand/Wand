@@ -26,7 +26,7 @@ export interface PoseScene {
   sample(seconds:number):readonly Float32Array[];
   dispose():void;
 }
-export interface PoseView {readonly yaw:number;readonly pitch:number;readonly zoom:number}
+export interface PoseView {readonly yaw:number;readonly pitch:number;readonly zoom:number;readonly targetOffset?:readonly [number,number,number]}
 export interface PoseComparison {readonly playback:PosePlaybackState;readonly view:PoseView;readonly hidden:readonly string[]}
 export interface PoseRenderer {
   draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>):void;
@@ -36,6 +36,19 @@ export function orbit(view:PoseView,dx:number,dy:number,width:number,height:numb
   if(![dx,dy,width,height,view.yaw,view.pitch,view.zoom].every(Number.isFinite)||width<=0||height<=0)throw new RangeError('Invalid orbit');
   const turn=2*Math.PI;
   return {...view,yaw:((view.yaw+turn*dx/width)%turn+turn)%turn,pitch:Math.max(-Math.PI*.48,Math.min(Math.PI*.48,view.pitch+Math.PI*dy/height))};
+}
+/** Translate the orbit pivot in the camera plane, in scene-radius units.
+ * Keep the same world-space target during zoom and orbit. */
+export function pan(view:PoseView,dx:number,dy:number,width:number,height:number):PoseView{
+  const old=view.targetOffset??[0,0,0];
+  if(![dx,dy,width,height,view.yaw,view.pitch,view.zoom,...old].every(Number.isFinite)||width<=0||height<=0||view.zoom<=0)throw new RangeError('Invalid pan');
+  const k=2/(Math.min(width,height)*view.zoom),cy=Math.cos(view.yaw),sy=Math.sin(view.yaw),cp=Math.cos(view.pitch),sp=Math.sin(view.pitch);
+  const a=-dx*k,b=dy*k;
+  const next:[number,number,number]=[old[0]+a*cy-b*sp*sy,old[1]+b*cp,old[2]-a*sy-b*sp*cy];
+  const length=Math.hypot(...next);
+  if(!Number.isFinite(length))throw new RangeError('Invalid pan offset');
+  const limit=8;const targetOffset:readonly [number,number,number]=length>limit?[next[0]*limit/length,next[1]*limit/length,next[2]*limit/length]:next;
+  return {...view,targetOffset};
 }
 export class PoseSceneSession {
   readonly clock:PosePlayback;
@@ -76,6 +89,7 @@ export class PoseSceneSession {
   }
   redraw(){if(!this.disposed)this.renderer.draw(this.palettes,this.view,this.hidden)}
   move(dx:number,dy:number,width:number,height:number){this.view=orbit(this.view,dx,dy,width,height);this.redraw()}
+  pan(dx:number,dy:number,width:number,height:number){this.view=pan(this.view,dx,dy,width,height);this.redraw()}
   zoom(value:number){if(!Number.isFinite(value))throw new RangeError('Invalid zoom');this.view={...this.view,zoom:Math.max(.5,Math.min(4,value))};this.redraw()}
   resetView(){this.view={yaw:0,pitch:0,zoom:1};this.redraw()}
   speed(value:PoseSpeed){this.clock.setSpeed(value)}
