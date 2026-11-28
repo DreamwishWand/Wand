@@ -10,6 +10,8 @@
  */
 import {createItemFieldReader,type ItemFieldReader,type ItemFieldFilter,type ItemFieldValue} from './item-field-reader.ts';
 import {DB02_SOURCE_KINDS,DB02_SOURCE_ROLES,type Db01SourceKind,type Db01SourceRole} from '../acquisition/db01-item-source-relations.ts';
+import {resolvePremiumBundleText,singleComponentNameId,type PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
+export type {PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
 export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch,ItemFieldFilter} from './item-field-reader.ts';
 
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
@@ -542,6 +544,7 @@ export interface PremiumBundleRevision {
   readonly detailCaptureSha256?:string;
   readonly minGameVersion?:string|null;
   readonly artwork?:Readonly<Record<string,unknown>>;
+  readonly localizedText?:Readonly<Partial<Record<ItemMasterLocale,Readonly<{title?:string;description?:string}>>>>;
 }
 export interface PremiumBundleDefinition {
   readonly bundleId:string;
@@ -565,9 +568,26 @@ export interface PremiumBundleCatalog {
   readonly definitions:readonly PremiumBundleDefinition[];
 }
 
+/** Only confirmed Item content attribution selects a bundle. Each revision is matched independently. */
+export interface PremiumBundleContentMatch {
+  readonly definition:Readonly<PremiumBundleDefinition>;
+  readonly currentMatchingItemIds:readonly number[];
+  readonly legacyMatchingItemIds:readonly number[];
+}
+export interface PremiumBundleContentQueryResult {
+  readonly status:'indexed'|'not_indexed';
+  readonly matches:readonly Readonly<PremiumBundleContentMatch>[];
+  readonly listingEligibilityVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
+
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   getPremiumBundleCatalog():Promise<Readonly<PremiumBundleCatalog>|null>;
+  /** Match confirmed Item content release, never offer dates, versions or candidate attribution. */
+  findPremiumBundlesByContentRelease(releaseId:string):Promise<Readonly<PremiumBundleContentQueryResult>>;
   getPremiumBundleDefinitions(bundleIds:readonly string[]):Promise<readonly (Readonly<PremiumBundleDefinition>|null)[]>;
+  /** Ordered batch, requested locale only, no cross-revision or invented translation fallback. */
+  getPremiumBundleLocalizedText(bundleIds:readonly string[],locale:ItemMasterLocale):Promise<readonly (Readonly<PremiumBundleLocalizedText>|null)[]>;
   getPremiumBundleMembership(itemIds:readonly number[]):Promise<readonly (Readonly<PremiumBundleMembership>|null)[]>;
   getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
   getOriginalItemSaleFlags(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemSaleFlags>|null)[]>;
@@ -1383,10 +1403,45 @@ export async function openPublicItemMaster(
         coverageComplete:false as const,currentAvailabilityVerified:false as const});
     },
     getPremiumBundleCatalog:premiumCatalog,
+    async findPremiumBundlesByContentRelease(releaseId:string):Promise<Readonly<PremiumBundleContentQueryResult>>{
+      assert(typeof releaseId==='string'&&releaseIdPattern.test(releaseId),'INVALID_CONTENT_RELEASE_ID');
+      const field='history.contentReleaseId';
+      const result=(status:'indexed'|'not_indexed',matches:readonly Readonly<PremiumBundleContentMatch>[])=>Object.freeze({
+        status,matches:Object.freeze(matches),listingEligibilityVerified:false as const,currentAvailabilityVerified:false as const
+      });
+      if(!m.premiumBundleProjectionSha256||!(await fieldReader.getFieldCatalog()).some(f=>f.field===field))
+        return result('not_indexed',[]);
+      const catalog=await premiumCatalog();
+      if(!catalog)return result('not_indexed',[]);
+      const ids=new Set(await fieldReader.findItemIdsByFields([{field,anyOf:[{kind:'equals',value:releaseId}]}]));
+      const matching=(r:PremiumBundleRevision|null)=>Object.freeze([...new Set((r?.components??[]).map(c=>c.itemId).filter(id=>ids.has(id)))]);
+      const matches:Readonly<PremiumBundleContentMatch>[]=[];
+      for(const definition of catalog.definitions){
+        const currentMatchingItemIds=matching(definition.current),legacyMatchingItemIds=matching(definition.legacy);
+        if(currentMatchingItemIds.length||legacyMatchingItemIds.length)
+          matches.push(Object.freeze({definition,currentMatchingItemIds,legacyMatchingItemIds}));
+      }
+      return result('indexed',matches);
+    },
     async getPremiumBundleDefinitions(ids:readonly string[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
       await premiumCatalog();
       return Object.freeze(ids.map(id=>premiumIndex?.get(id)??null));
+    },
+    async getPremiumBundleLocalizedText(ids:readonly string[],locale:ItemMasterLocale){
+      assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+      assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
+      if(ids.length)await premiumCatalog();
+      const definitions=ids.map(id=>premiumIndex?.get(id));
+      const itemIds=[...new Set(definitions.flatMap(b=>b?[singleComponentNameId(b.current),singleComponentNameId(b.legacy)].filter(ID):[]))];
+      const names=new Map<number,string>(),field='names.'+locale;
+      if(itemIds.length&&(await fieldReader.getFieldCatalog()).some(f=>f.field===field)){
+        for(const row of await fieldReader.getItemFields(itemIds,[field])){
+          const name=row?.values[field];
+          if(row&&typeof name==='string'&&name.trim())names.set(row.itemId,name);
+        }
+      }
+      return Object.freeze(definitions.map(b=>b?resolvePremiumBundleText(b,locale,names):null));
     },
     async getPremiumBundleMembership(ids:readonly number[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(ID),'INVALID_ITEM_BATCH');

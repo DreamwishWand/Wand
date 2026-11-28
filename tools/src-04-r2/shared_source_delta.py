@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import re
+import os
+import shutil
 from pathlib import Path
 from collections import Counter
 from bundle_thumbnails import POLICY, MAX_EDGE, write_json
@@ -87,6 +89,14 @@ def extract(spec,aa,root,out,ledger=None,prior_index=None):
     report["unresolved"]=sorted(missing|set(report["errors"]))
     write_json(out/"shared-source-report.json",report)
     check(report["complete"],"Unresolved confirmed references; no publication candidate")
+    return finalize(report,out,ledger,prior_index)
+
+
+def finalize(report,out,ledger=None,prior_index=None):
+    """Create variants and index for a completely resolved explicit scope."""
+    roles=report["targets"]
+    check(report["complete"] is True and not report["errors"] and
+          set(roles)==set(report["assets"]),"Incomplete source scope")
     cache_path=out/"shared-thumbnail-cache.json"
     old=json.loads(cache_path.read_bytes()) if cache_path.exists() else {}
     previous=old.get("images",{}) if old.get("policy")==POLICY else {}
@@ -100,7 +110,7 @@ def extract(spec,aa,root,out,ledger=None,prior_index=None):
             t=cache[sha];images[t["sha256"]]=t;r["thumbnail"]=t["sha256"]
         refs[guid]=r
     for m in images.values():verify_local_or_published(out,m,ledger)
-    index={"schema":INDEX_SCHEMA,"gameVersion":spec["gameVersion"],"privateOnly":True,
+    index={"schema":INDEX_SCHEMA,"gameVersion":report["gameVersion"],"privateOnly":True,
            "thumbnailPolicy":POLICY,"references":refs,"images":images}
     changes=classify(prior_index["references"] if prior_index else {},refs)
     reused=[m for m in images.values() if published(ledger,m)]
@@ -142,6 +152,61 @@ def prepare(root,ledger):
         verify_local_or_published(root,m,ledger)
         objects[key(sha)]=m
     return report,index,cache,objects
+
+
+def stage_subset(source,out,spec,ledger=None):
+    """Reuse resolved source bytes without reloading Unity or encoding known variants.
+
+    A subset can be recovered from an incomplete extraction, but every requested
+    GUID must be independently resolved and error-free. No implicit omission,
+    no mutation of the private source, no network or publication.
+    """
+    source=source.resolve();out=out.resolve()
+    check(not out.exists() and not out.is_relative_to(source) and
+          not source.is_relative_to(out) and not any((x/".git").exists() for x in (out,*out.parents)),
+          "New separate private output required")
+    roles=targets(spec)
+    report_raw=(source/"shared-source-report.json").read_bytes()
+    report=json.loads(report_raw)
+    check(report.get("schema")==REPORT_SCHEMA and report.get("privateOnly") is True and
+          report.get("publicationAuthorized") is False and report["gameVersion"]==spec["gameVersion"],
+          "Source report identity mismatch")
+    unresolved=[g for g in roles if report["targets"].get(g)!=roles[g] or
+                g not in report["assets"] or g in report["errors"] or g in report.get("unresolved",[])]
+    check(not unresolved,"Unresolved requested references: "+", ".join(sorted(unresolved)[:12]))
+    assets={g:report["assets"][g] for g in sorted(roles)}
+    old_cache=source/"shared-thumbnail-cache.json"
+    cache=json.loads(old_cache.read_bytes()) if old_cache.is_file() else {"policy":POLICY,"images":{}}
+    check(cache["policy"]==POLICY,"Thumbnail cache policy mismatch")
+    used_cache={}
+    objects={}
+    for g,row in assets.items():
+        o=info(row["original"]);objects[o["sha256"]]=o
+        if roles[g]=="shop-512" and o["sha256"] in cache["images"]:
+            t=info(cache["images"][o["sha256"]])
+            check(max(t["width"],t["height"])<=MAX_EDGE and
+                  t["width"]<=o["width"] and t["height"]<=o["height"] and
+                  (max(o["width"],o["height"])>MAX_EDGE or t==o),"Thumbnail cache mismatch")
+            used_cache[o["sha256"]]=t
+            objects[t["sha256"]]=t
+    # Verify all bytes before creating the destination. Published-only rows
+    # stay ledger references; local files are linked, with copy fallback.
+    paths={sha:verify_local_or_published(source,m,ledger) for sha,m in objects.items()}
+    out.mkdir(parents=True)
+    (out/"images").mkdir()
+    for sha,p in paths.items():
+        if not p.is_file():continue
+        dest=out/key(sha)
+        try:os.link(p,dest)
+        except OSError:shutil.copyfile(p,dest)
+    subset={**report,"targets":roles,"assets":assets,"errors":{},"unresolved":[],
+            "complete":True,"parentSourceReportSha256":hashlib.sha256(report_raw).hexdigest()}
+    write_json(out/"shared-source-report.json",subset)
+    write_json(out/"shared-thumbnail-cache.json",{"policy":POLICY,"images":used_cache})
+    result=finalize(subset,out,ledger)
+    prepare(out,ledger)
+    return result
+
 
 
 def register(root,ledger,max_objects,max_bytes,r2):
@@ -197,7 +262,7 @@ def verify(root,ledger,ledger_path,max_objects,max_bytes):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("mode",choices=("extract","plan","publish","verify"))
+    p.add_argument("mode",choices=("extract","stage","plan","publish","verify"))
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--ledger",type=Path)
     p.add_argument("--targets",type=Path)
@@ -218,6 +283,9 @@ def main():
         check(not root.exists(),"Use new output for every extraction")
         result=extract(json.loads(a.targets.read_bytes()),a.aa.resolve(),a.existing_root,root,ledger,
                        json.loads(a.prior_index.read_bytes()) if a.prior_index else None)
+    elif a.mode=="stage":
+        check(a.targets is not None and a.existing_root is not None,"Explicit subset and existing extraction required")
+        result=stage_subset(a.existing_root,root,json.loads(a.targets.read_bytes()),ledger)
     elif a.mode=="verify":
         check(a.ledger is not None,"Specify permanent ledger file")
         result=verify(root,ledger,a.ledger,a.max_objects,a.max_bytes)

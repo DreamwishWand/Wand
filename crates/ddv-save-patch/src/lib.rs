@@ -1946,7 +1946,7 @@ pub fn preview_empty_storage_pickup(source:&str,target:&GridCoordinateTarget,exp
  draft.patched_json=amount.patched_json;Ok(draft)
 }
 /// Create an independent owned container using a proven placed storage
-/// record. Do not invent container defaults or copy stateful inventory items.
+/// record. Copy contents only when every item has verified independent state.
 pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::{Value,json};
  let bad=PatchError::InvalidTarget;
@@ -1967,7 +1967,7 @@ pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expect
  let mut row=containers.get(&old).ok_or(bad)?.clone();
  if row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize"))){return Err(bad);}
  if copy_contents{
-  if row["Inventory"].as_array().is_none_or(|a|a.len()>8192||a.iter().any(|v|v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State")))||v["ItemID"].as_u64().is_none()||v["Amount"].as_u64().is_none()||v.get("State").is_some_and(|s|!s.is_null()))){return Err(bad);}
+  if !storage_backup::independent_inventory(&row["Inventory"]){return Err(bad);}
  }else{row["Inventory"]=json!([]);}
  row["ID"]=json!(fresh);st["ContainerInventoryID"]=json!(fresh);
  let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,-1)?;

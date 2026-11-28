@@ -891,6 +891,13 @@ mod tests{
   let raw=br#"{"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40001680":{"Amount":2}}}},"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"BelongsToPlayer":true,"Inventory":[{"ItemID":30000001,"Amount":17,"State":null}],"BlockMoveTo":false,"ExtraSize":0}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
   let old:Value=serde_json::from_slice(raw).unwrap();
   let mut plan=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"place":[{"itemId":40001680,"expectedStock":2,"x":3,"y":3,"orientation":"GridOrientation_Left","storageSource":{"index":0,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","copyContents":true}}]});
+  let mut known=old.clone();
+  let contents=json!([{"ItemID":30300001,"Amount":2,"State":{"MealData":{"IngredientsUsed":[30200001],"SceneRestriction":null}}},{"ItemID":31500001,"Amount":1,"State":{"ConsummableData":{"ItemID":70100001,"Amount":1,"State":null}}}]);
+  known["Player"]["ContainerInventories"]["9"]["Inventory"]=contents.clone();
+  let candidate=furniture_candidate(&serde_json::to_vec(&known).unwrap(),&plan.to_string()).unwrap();
+  let copied:Value=serde_json::from_str(&candidate.patched_json).unwrap();
+  assert_eq!(copied["Player"]["ContainerInventories"]["10"]["Inventory"],contents);
+  assert_eq!(copied["Player"]["ContainerInventories"]["9"],known["Player"]["ContainerInventories"]["9"]);
   let draft=furniture_candidate(raw,&plan.to_string()).unwrap();let after:Value=serde_json::from_str(&draft.patched_json).unwrap();
   assert_eq!(after["Player"]["ContainerInventories"]["9"],old["Player"]["ContainerInventories"]["9"]);
   assert_eq!(after["Player"]["ContainerInventories"]["10"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
