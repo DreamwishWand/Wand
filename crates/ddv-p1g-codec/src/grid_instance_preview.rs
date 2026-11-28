@@ -4037,6 +4037,15 @@ mod terrain_session_tests{
         let old:Value=serde_json::from_slice(raw).unwrap();
         let (_,layout,factor,sx,sy)=outdoor_identity(&old,"10").unwrap();
         let mut plan=serde_json::json!({"storageDuplicate":{"localOrdinal":1,"itemId":"40001680","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":{"layoutId":layout,"gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":factor,"sizeX":sx,"sizeY":sy},"x":4,"y":5,"orientation":"GridOrientation_Left","copyContents":true,"freePlacement":true}});
+        let mut stateful=old.clone();
+        let contents=serde_json::json!([{"ItemID":30300001,"Amount":2,"State":{"MealData":{"IngredientsUsed":[30200001],"SceneRestriction":null}}},{"ItemID":31500001,"Amount":1,"State":{"ConsummableData":{"ItemID":70100001,"Amount":1,"State":null}}}]);
+        stateful["Player"]["ContainerInventories"]["9"]["Inventory"]=contents.clone();
+        let candidate=group_paste_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).unwrap();
+        let copied:Value=serde_json::from_str(&candidate).unwrap();
+        assert_eq!(copied["Player"]["ContainerInventories"]["10"]["Inventory"],contents);
+        assert_eq!(copied["Player"]["ContainerInventories"]["9"],stateful["Player"]["ContainerInventories"]["9"]);
+        stateful["Player"]["ContainerInventories"]["9"]["Inventory"][1]["State"]["ConsummableData"]["State"]=serde_json::json!({"Unknown":1});
+        assert!(group_paste_candidate(&serde_json::to_vec(&stateful).unwrap(),&plan.to_string()).is_err());
         let result=group_paste_candidate(raw,&plan.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
         assert_eq!(v["Player"]["ContainerInventories"]["9"],old["Player"]["ContainerInventories"]["9"]);
         assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],old["Player"]["ContainerInventories"]["9"]["Inventory"]);
