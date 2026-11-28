@@ -4,13 +4,14 @@
  import {browser} from '$app/environment';
  import {base} from '$app/paths';
  import {nativePreviewSession} from '$lib/media/native-preview-session.ts';
- import {nativeEditorExtent,editorViewToNativeCanvas,nativeMapSourceScope,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
+ import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
  import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
  import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
  import {localSaveSession} from '$lib/ui/local-save-session.ts';
  import {hasNativeGridLockStates} from '$lib/media/native-map-save-area-flags.ts';
  import NativeMapSaveAreas from '$lib/world/NativeMapSaveAreas.svelte';
+ import {nativeCalibrationScope} from '$lib/world/native-calibration-grids.ts';
  import NativeCalibrationOverlay from '$lib/world/NativeCalibrationOverlay.svelte';
  import NativeMapCanvas from '$lib/world/NativeMapCanvas.svelte';
  import MapCameraControls from '$lib/world/MapCameraControls.svelte';
@@ -33,7 +34,7 @@
  $: lastPoint=points.at(-1);
  $: lastMeasurement=map&&lastPoint?nativeLandmarkMeasurement(map,lastPoint):null;
  let showTerrain=false,terrainOpacity=.35,terrainStatus:'loading'|'ready'|'error'='loading';
- $: terrainScope=map?nativeMapSourceScope(map.id):null;
+ $: terrainScope=map?nativeCalibrationScope(map.id):null;
  const maxZoom=64,gesture=createMapPanGesture();
  $: map=maps.find(m=>m.id===selected)??null;
  $: extent=map?nativeEditorExtent(map):{x:0,y:0,w:1,h:1};
@@ -114,7 +115,7 @@
      on:pointerup={endPan} on:pointercancel={endPan} on:lostpointercapture={e=>gesture.end(e)} on:pointerleave={()=>gesture.leave()}
      on:click={mark}>
     <rect x={viewport.x} y={viewport.y} width={viewport.w} height={viewport.h} fill="transparent" pointer-events="all"/>
-    {#if showTerrain&&terrainScope}{#key terrainScope}<NativeCalibrationOverlay scope={terrainScope} opacity={terrainOpacity} onStatus={s=>terrainStatus=s}/>{/key}{/if}
+    {#if showTerrain&&terrainScope}{#key map.id}<NativeCalibrationOverlay mapId={map.id} scope={terrainScope} opacity={terrainOpacity} onStatus={s=>terrainStatus=s}/>{/key}{/if}
     {#if status==='ready'}
      {#each points as p}<rect x={p.x-.5} y={p.y-.5} width="1" height="1" fill="#ffd84d" fill-opacity=".5" stroke="white" vector-effect="non-scaling-stroke" stroke-width="1" pointer-events="none"/>{/each}
     {/if}
