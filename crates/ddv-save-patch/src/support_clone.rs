@@ -150,7 +150,7 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400{return Err(BAD);}
  // Rooms have shared template paths but their exact owner is resolved by
  // the codec. Keep the outdoor layout/path uniqueness contract unchanged.
- if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&!room&&super::house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(BAD);}
+ if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&!room&&super::house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(d.tessellation==1&&super::underwater_plain_path(&d.layout_path,&d.data_path)){return Err(BAD);}
  if room{validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
  else{let _=preview_plain_grid_place(source,d,target.item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
@@ -159,7 +159,12 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
  let next=checked_grid_allocator(c)?;
  let source_grid=grids.get(&target.grid_id).ok_or(BAD)?;
- if free&&!room&&super::house_exterior_world(source_grid["GridDefaultLayoutPath"].as_str().ok_or(BAD)?,source_grid["GridDataPath"].as_str().ok_or(BAD)?)!=super::house_exterior_world(&d.layout_path,&d.data_path){return Err(BAD);}
+ if free&&!room{
+  let layout=source_grid["GridDefaultLayoutPath"].as_str().ok_or(BAD)?;let data=source_grid["GridDataPath"].as_str().ok_or(BAD)?;
+  let source_local=super::underwater_plain_path(layout,data);let dest_local=super::underwater_plain_path(&d.layout_path,&d.data_path);
+  let from=super::house_exterior_world(layout,data);let to=super::house_exterior_world(&d.layout_path,&d.data_path);
+  if source_local||dest_local{if d.tessellation!=1||scene.is_some()||!source_local&&from.is_none()||!dest_local&&to.is_none(){return Err(BAD);}}else if from.is_none()||from!=to{return Err(BAD);}
+ }
  let src=source_grid.get("Objects").and_then(|m|m.get(&target.object_id)).ok_or(BAD)?;
  if object(src,&target.object_id)?!=target.item_id||(coord(src,"X")?,coord(src,"Y")?)!=expected{return Err(BAD);}
  if source_grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
