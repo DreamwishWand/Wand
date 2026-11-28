@@ -5,7 +5,6 @@ not linear shader uniforms. No publication or visual parity is asserted.
 Unsupported material families, sampler states or blend modes remain explicit.
 """
 import argparse, json, zipfile, zlib
-from collections import Counter
 from pathlib import Path
 from resolve_animation_bundle import Reader,digest,unityfs,serialized_objects
 from pose_material import decode_material,externals,read_streamed_texture
@@ -17,7 +16,28 @@ SHADER=('CAB-d79bfb1b074ecaf0c1e3e4fd94de319e','7527358103810511856')
 SLOTS=(('normal','_BumpMap'),('maps','_MapsTex'),('mask','_MaskMap'))
 SAMPLER=(1,1,0.,0,0,0)
 
-def convert(geometry, resources, paths, out):
+def read_reused_map(previous,key,info,sampler,color):
+    """Reuse only matching native texture metadata AND streamed mip bytes.
+    A changed or absent source map is a cache miss, never a substitution.
+    A matching but corrupt cache entry fails closed.
+    """
+    if previous is None:return None
+    manifest,z=previous
+    row=manifest['textures'].get(key)
+    if row is None or any(row.get(k)!=info[k] for k in ('sourceSha256','payloadSha256','width','height','format','mips')):
+        return None
+    require(tuple(row['sampler'])==sampler and row['colorSpace']==color,'cached sampler identity')
+    a=row['asset'];name=a['sha256']+'.wht'
+    require(len(a['sha256'])==64 and all(c in '0123456789abcdef' for c in a['sha256']) and 0<a['bytes']<=64*1024*1024 and z.getinfo(name).file_size==a['bytes'],'cached map bounds')
+    packed=z.read(name)
+    require(digest(packed)==a['sha256'],'cached map hash')
+    lengths=[4*max(1,info['width']>>i)*max(1,info['height']>>i) for i in range(info['mips'])]
+    require(row['mipByteLengths']==lengths,'cached mip layout')
+    size=sum(lengths);d=zlib.decompressobj();pixels=d.decompress(packed,size+1)
+    require(d.eof and not d.unconsumed_tail and not d.unused_data and len(pixels)==size and digest(pixels)==row['rgbaSha256'],'cached map pixels')
+    return row,packed
+
+def convert(geometry, resources, paths, out, previous=None):
     index={};source_cabs={}
     for path in sorted(set(paths)):
         raw=path.read_bytes();v,files=unityfs(raw,include_resources=True)
@@ -37,7 +57,7 @@ def convert(geometry, resources, paths, out):
         return (cab if f==0 else index[cab]['ext'][f-1].rsplit('/',1)[-1],str(p))
     def get(ref,cls):
         cab,p=ref;actual,data=index[cab]['obs'][p];require(actual==cls,'incorrect referenced class');return data
-    maps={};blobs={};materials={}
+    maps={};blobs={};materials={};reused=set()
     def convert_map(ref):
         key=':'.join(ref)
         if key in maps:return key
@@ -45,6 +65,9 @@ def convert(geometry, resources, paths, out):
         color=source_color_space(raw);r=Reader(raw);r.string();r.take(32);group=r.string();r.take(16)
         sampler=r.unpack('IIfIII');require(sampler==SAMPLER,'unsupported sampler '+str(sampler))
         w,h,fmt=info['width'],info['height'],info['format'];require(max(w,h)<=4096,'texture dimensions')
+        cached=read_reused_map(previous,key,info,sampler,color)
+        if cached is not None:
+            row,packed=cached;maps[key]=row;blobs[row['asset']['sha256']]=packed;reused.add(key);return key
         pixels=[];offset=0
         for i,n in enumerate(lengths):
             pixels.append(decode_mip(payload[offset:offset+n],max(1,w>>i),max(1,h>>i),fmt));offset+=n
@@ -95,6 +118,7 @@ def convert(geometry, resources, paths, out):
         used_maps={v[k] for v in materials.values() for k,_ in SLOTS}
         maps={k:v for k,v in maps.items() if k in used_maps}
         blobs={m['asset']['sha256']:blobs[m['asset']['sha256']] for m in maps.values()}
+        reused.intersection_update(maps)
         p=palette(resources.read_bytes())
         require(len(p['base'])==len(p['highlight'])==90,'source palette coverage')
         manifest=dict(schema='wand.photo-mode.private-hair-inputs-converted@1',gameVersion='1.26.2',privateOnly=True,publicationAuthorized=False,gpuColorConversionVerified=False,shaderParityVerified=False,secondaryMotionVerified=False,coordinateSpace='UnityTextureRows',palette=p,items=items,materials=materials,textures=maps,unresolved=unresolved)
@@ -108,11 +132,18 @@ def convert(geometry, resources, paths, out):
         for m in maps.values():
             a=m['asset'];packed=z.read(a['sha256']+'.wht');rgba=zlib.decompress(packed)
             require(digest(packed)==a['sha256'] and len(packed)==a['bytes'] and digest(rgba)==m['rgbaSha256'] and len(rgba)==sum(m['mipByteLengths']),'converted texture identity')
-    print(json.dumps(dict(items=len(items),bodyVariants=sum(map(len,items.values())),materials=len(materials),maps=len(maps),uniqueMaps=len(blobs),unresolved=len(unresolved),bytes=out.stat().st_size,sha256=digest(out.read_bytes()))))
+    print(json.dumps(dict(items=len(items),bodyVariants=sum(map(len,items.values())),materials=len(materials),maps=len(maps),uniqueMaps=len(blobs),reusedMaps=len(reused),generatedMaps=len(maps)-len(reused),unresolved=len(unresolved),bytes=out.stat().st_size,sha256=digest(out.read_bytes()))))
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--geometry',type=Path,required=True);p.add_argument('--resources',type=Path,required=True)
     p.add_argument('--source',type=Path,action='append',required=True);p.add_argument('--out',type=Path,required=True)
+    p.add_argument('--reuse',type=Path,help='Previous private converted archive; reuse only source-identical maps')
     a=p.parse_args();out=a.out.resolve();require(not any((x/'.git').exists() for x in (out,*out.parents)) and not out.exists(),'private new output only')
-    convert(a.geometry,a.resources,a.source,out)
+    if a.reuse:
+        with zipfile.ZipFile(a.reuse) as old:
+            m=json.loads(old.read('index.json'))
+            require(m['schema']=='wand.photo-mode.private-hair-inputs-converted@1' and m['privateOnly'] is True and m['publicationAuthorized'] is False and m['gameVersion']=='1.26.2','private reuse archive required')
+            convert(a.geometry,a.resources,a.source,out,(m,old))
+    else:
+        convert(a.geometry,a.resources,a.source,out)
