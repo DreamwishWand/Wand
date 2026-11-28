@@ -24,6 +24,7 @@ export const furnitureStockWords={
 /** The local WASM guard supplies the candidate set alongside exact counts.
  * Do not recompute eligibility from display categories in the UI. */
 export function parseLocalPlainStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localPlainItemIds');}
+export function parseLocalSupportStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localSupportItemIds');}
 export function parseLocalStorageStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localStorageItemIds');}
 export function parseLocalRestorableStorageStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localRestorableStorageItemIds');}
 function parseLocalStockIds(value:unknown,field:string):Set<number>{
