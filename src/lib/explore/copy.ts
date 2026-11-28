@@ -1,6 +1,10 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  favoriteFailed:['お気に入りを同期できませんでした。','Could not synchronize favorites.','Impossible de synchroniser les favoris.','Impossibile sincronizzare i preferiti.','Favoriten konnten nicht synchronisiert werden.','No se pudieron sincronizar los favoritos.','无法同步收藏。','Não foi possível sincronizar os favoritos.'],
+  legacyFavorites:['旧Explorerのお気に入りが残っています。取り込むプロフィールを選択してください。','Legacy Explorer favorites remain. Choose the destination profile.','Des favoris Explorer restent à importer. Choisissez le profil.','Sono presenti preferiti precedenti. Scegli il profilo di destinazione.','Alte Explorer-Favoriten vorhanden. Zielprofil wählen.','Hay favoritos antiguos de Explorer. Elige el perfil de destino.','仍有旧版收藏。请选择目标档案。','Há favoritos antigos do Explorer. Escolha o perfil de destino.'],
+  importFavorites:['このプロフィールへ取り込む','Import into this profile','Importer dans ce profil','Importa in questo profilo','In dieses Profil importieren','Importar a este perfil','导入此档案','Importar neste perfil'],
+  retry:['再試行','Retry','Réessayer','Riprova','Erneut versuchen','Reintentar','重试','Tentar novamente'],
   configuredPurchase:['購入価格（原本設定）','Configured purchase price','Prix d’achat configuré','Prezzo d’acquisto configurato','Konfigurierter Kaufpreis','Precio de compra configurado','原始购买价格','Preço de compra configurado'],
   configuredSell:['売却価格（原本設定）','Configured sell price','Prix de vente configuré','Prezzo di vendita configurato','Konfigurierter Verkaufspreis','Precio de venta configurado','原始出售价格','Preço de venda configurado'],
   cachedPrice:['キャッシュ値','Cached value','Valeur en cache','Valore in cache','Cachewert','Valor en caché','缓存值','Valor em cache'],

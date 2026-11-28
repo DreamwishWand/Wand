@@ -30,6 +30,7 @@ export interface ExploreItem {
 export interface BoardGroup {id:string;name:string}
 export interface BoardEntry {itemId:number;groupId:string|null}
 export interface Board {id:string;name:string;entries:BoardEntry[];groups:BoardGroup[];note:string}
+/** favorites is legacy unscoped migration input; new stars live in Collection profiles. */
 export interface BoardState {schema:'wand.explore.boards@1';active:string|null;boards:Board[];favorites:number[]}
 export function emptyBoards():BoardState{return {schema:'wand.explore.boards@1',active:null,boards:[],favorites:[]}}
 const validId=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;

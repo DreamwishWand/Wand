@@ -7,6 +7,9 @@
   import {registerServiceToolbar} from '$lib/ui/service-toolbar';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
+  import {profileFavorites} from '$lib/explore/profile-favorites';
+  import {CollectionRuntime} from '$lib/collection/runtime';
+  import {editHistory} from '$lib/ui/edit-history';
   import {CATEGORY_KEYS,categoriesOf,matchesScope,readDecorationScope,DECORATION_SCOPE_KEY,type DecorationScope,type ExploreCategory} from '$lib/explore/scope';
   import {exploreLabel,CATEGORY_ICONS} from '$lib/explore/copy';
   import type {ItemMasterTagLabel} from '$lib/items/public-item-master';
@@ -22,7 +25,7 @@
   import {seriesShelves,orderedSeriesDesigns,type SeriesShelf,type DesignTile,type ReleaseGroup} from '$lib/explore/series';
   import {collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES} from '$lib/collection/db01-native-facets';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
-  import {emptyBoards,readBoards,createBoard,editBoard,toggleItem,deleteBoard,toggleFavorite,STORAGE_KEY,type ExploreItem,type BoardState} from '$lib/explore/model';
+  import {emptyBoards,readBoards,createBoard,editBoard,toggleItem,deleteBoard,STORAGE_KEY,type ExploreItem,type BoardState} from '$lib/explore/model';
   let locale=$state<WandLanguage>('ja');
   let items=$state.raw<ExploreItem[]>([]);
   let images=$state.raw<Record<string,string>>({});
@@ -66,7 +69,7 @@
   export const snapshot={capture:()=>navigationSnapshot??captureBrowse(),restore:applyBrowse};
   $effect(()=>{
     const saved=pendingRestore;
-    if(!saved||loading||!catalogWidth||saved.ownedOnly&&!ownershipSettled)return;
+    if(!saved||loading||!catalogWidth||saved.ownedOnly&&!ownershipSettled||saved.favorites&&!favoriteSettled)return;
     const node=catalogNode;if(!node)return;
     untrack(()=>{
       const item=saved.selectedId===null?undefined:byId.get(saved.selectedId);
@@ -97,7 +100,57 @@
    if(!handoff)return;
    worldIncoming.set(handoff);void goto(base+'/world/');
   }
-  const favoriteIds=$derived(new Set(boards.favorites));
+  let favoriteIds=$state.raw<ReadonlySet<number>>(new Set());
+  let favoriteReady=$state(false),favoriteSettled=$state(false),favoriteBusy=$state(false),favoriteFailed=$state(false);
+  let favoriteProfile=$state<{id:string;name:string;count:number}|null>(null);
+  function updateFavoriteView(db:CollectionRuntime){
+    const view=profileFavorites(db.state);
+    favoriteIds=view.ids;favoriteProfile={id:view.id,name:view.name,count:view.workspaceCount};
+    favoriteReady=true;favoriteFailed=false;
+  }
+  async function importLegacy(db:CollectionRuntime){
+    // LocalStorage is migration input only, not the canonical favorite store.
+    // Keep it intact on any failure; explicit canonical false is preserved.
+    if(!ready||storageFailed||!boards.favorites.length)return;
+    const expected=storageRaw;
+    await db.importLegacyFavorites(boards.favorites);
+    if(localStorage.getItem(STORAGE_KEY)!==expected)throw Error('LEGACY_FAVORITE_STORAGE_CONFLICT');
+    save({...boards,favorites:[]});
+    if(storageFailed)throw Error('LEGACY_FAVORITE_STORAGE_UNAVAILABLE');
+    editHistory.reconcileCollection(db.state);
+  }
+  async function refreshFavorites(explicitImport=false){
+    if(disposed||favoriteBusy)return;
+    favoriteBusy=true;favoriteFailed=false;
+    let db:CollectionRuntime|undefined;
+    try{
+      const expected=favoriteProfile?.id;
+      db=await CollectionRuntime.openProfile();
+      if(disposed)return;
+      updateFavoriteView(db);
+      if(explicitImport&&expected!==favoriteProfile?.id)throw Error('COLLECTION_WORKSPACE_CHANGED');
+      if(boards.favorites.length&&ready&&!storageFailed&&(explicitImport||favoriteProfile?.count===1)){
+        await importLegacy(db);if(!disposed)updateFavoriteView(db);
+      }
+    }catch{if(!disposed){favoriteFailed=true;favoriteReady=false;favorites=false;}}
+    finally{db?.close();if(!disposed){favoriteBusy=false;favoriteSettled=true;}}
+  }
+  async function changeFavorite(item:ExploreItem){
+    if(!favoriteReady||favoriteBusy||editHistory.isTraveling())return;
+    const expected=favoriteProfile?.id;
+    const next=!favoriteIds.has(item.itemId);
+    favoriteBusy=true;favoriteFailed=false;editHistory.beginCollectionEdit();
+    let db:CollectionRuntime|undefined;
+    try{
+      db=await CollectionRuntime.openProfile();
+      const before=db.state,view=profileFavorites(before);
+      if(view.id!==expected||view.ids.has(item.itemId)===next)throw Error('COLLECTION_FAVORITE_STATE_CHANGED');
+      await db.setEntry(item.itemId,{favorite:next});
+      editHistory.recordCollection(before,db.state,{title:nameOf(item),change:label('favorites')});
+      if(!disposed)updateFavoriteView(db);
+    }catch{if(!disposed){favoriteFailed=true;favoriteReady=false;favorites=false;}}
+    finally{db?.close();editHistory.endCollectionEdit();if(!disposed)favoriteBusy=false;}
+  }
   const universeNames=$derived(new Map([...sourceUniverses.map(u=>[String(u.tagId),{label:u.names[locale]??u.names.en??u.key,sort:u.names[locale]??u.names.en??u.key}] as const),...COLLECTION_UNIVERSE_TAG_NAMES.map(u=>[String(u.id),{label:u.names[locale],sort:locale==='ja'?u.jaReading:u.names[locale]}] as const)]));
   function universeName(key:string){return key==='none'?t('ユニバースなし','No universe'):key==='unknown'?t('ユニバース未確認','Universe unconfirmed'):universeNames.get(key)?.label??t('ユニバース未確認','Universe unconfirmed');}
   function sortUniverse(a:string,b:string){
@@ -225,14 +278,18 @@
       void task.then(result=>{if(!controller.signal.aborted){ownershipAvailable=result.available;ownedIds=result.ids;ownedOnly=result.available&&restoreOwned;restoreOwned=false;}}).catch(()=>{}).finally(()=>{if(!controller.signal.aborted)ownershipSettled=true;});
     });
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
+    void refreshFavorites();
     void loadExploreCatalog(base).then(d=>{
       if(disposed)return;
       items=d.items;sourceUniverses=d.universeTags;sourceWorlds=d.worldTags;releases=d.releases;loading=false;
     },()=>{if(!disposed){failed=true;loading=false;}});
     void loadExploreHistoricalArtwork(base).then(d=>{if(!disposed)images=d;}).catch(()=>{});
     const storageListener=(e:StorageEvent)=>{if(e.key===STORAGE_KEY){try{storageRaw=e.newValue;boards=readBoards(storageRaw);}catch{storageFailed=true;}}};
+    const refreshProfile=()=>{void refreshFavorites();};
     window.addEventListener('storage',storageListener);
-    return()=>{disposed=true;unwatch();unregister();unsubscribeSave();ownershipAbort?.abort();window.removeEventListener('storage',storageListener);};
+    window.addEventListener('focus',refreshProfile);
+    window.addEventListener('wand:collection-history-restored',refreshProfile);
+    return()=>{disposed=true;unwatch();unregister();unsubscribeSave();ownershipAbort?.abort();window.removeEventListener('storage',storageListener);window.removeEventListener('focus',refreshProfile);window.removeEventListener('wand:collection-history-restored',refreshProfile);};
   });
 </script>
 {#snippet exploreToolbar()}
@@ -246,7 +303,7 @@
     <input class="search" type="search" placeholder={label('search')} aria-label={label('search')} bind:value={search} oninput={resetBrowse}/>
     <button class="icon-button" aria-label={label('filters')} title={label('filters')} aria-expanded={filtersOpen} class:activeTab={filterCount>0} onclick={()=>filtersOpen=!filtersOpen}><WandIcon name="filter" size={20}/>{#if filterCount}<small>{filterCount}</small>{/if}</button>
     <button class="icon-button" aria-label={label('owned')} title={ownershipAvailable?label('owned'):label('noOwnership')} aria-pressed={ownedOnly} disabled={!ownershipAvailable} onclick={()=>{ownedOnly=!ownedOnly;resetBrowse();}}><WandIcon name="owned" size={20}/></button>
-    <button class="icon-button" aria-label={label('favorites')} title={label('favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
+    <button class="icon-button" aria-label={label('favorites')} title={label('favorites')} aria-pressed={favorites} disabled={!favoriteReady||favoriteBusy} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
     <button class="icon-button" aria-label={label('boards')} title={active?.name??label('boards')} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={toggleBoards}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
     {#if selectionMode}<button class="icon-button" aria-label={t('選択を追加','Add selected')} disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}><WandIcon name="plus" size={16}/>{selectedIds.length}</button>{#if selectedCandidates.length}<button class="icon-button" aria-label={incomingWords[1]} title={incomingWords[1]} onclick={()=>sendCandidates(selectedCandidates)}><WandIcon name="world" size={18}/>{selectedCandidates.length}</button>{/if}<button class="icon-button" aria-label={label('close')} onclick={toggleSelection}><WandIcon name="close" size={16}/></button>{/if}
     {#if filtersOpen}
@@ -269,6 +326,10 @@
 <svelte:head><title>Explore · Dreamwish Wand</title></svelte:head>
 <section class="decorate">
   {#if storageFailed}<p role="alert">{t('保存できません。再読み込みしてください。','Storage unavailable. Reload before editing.')}</p>{/if}
+  {#if favoriteFailed}<p role="alert">{label('favoriteFailed')} <button disabled={favoriteBusy} onclick={()=>void refreshFavorites()}>{label('retry')}</button></p>
+  {:else if favoriteReady&&boards.favorites.length&&favoriteProfile&&favoriteProfile.count>1&&!storageFailed}
+    <p>{label('legacyFavorites')} <button disabled={favoriteBusy} onclick={()=>void refreshFavorites(true)}>{label('importFavorites')} — {favoriteProfile.name}</button></p>
+  {/if}
   <div class="workspace" class:withBoards={boardsOpen} class:withReview={Boolean(selected)}>
   <div class="catalog" bind:this={catalogNode} bind:clientWidth={catalogWidth} data-explore-total={total}>
     {#if filterCount}
@@ -296,7 +357,7 @@
       {@const item=selected}
       {#snippet reviewActions()}
         <button disabled={!ready||storageFailed} aria-pressed={activeIds.has(item.itemId)} onclick={()=>chooseItem(item.itemId)}><WandIcon name={activeIds.has(item.itemId)?'check':'plus'} size={17}/>{label(activeIds.has(item.itemId)?'removeBoard':'addBoard')}</button>
-        <button aria-label={label('favorites')} title={label('favorites')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={17}/></button>
+        <button aria-label={label('favorites')} title={label('favorites')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!favoriteReady||favoriteBusy} onclick={()=>void changeFavorite(item)}><WandIcon name="star" size={17}/></button>
         {#if catalogPlacementCandidate(item)}<button onclick={()=>sendCandidates([item])}><WandIcon name="world" size={17}/>{incomingWords[0]}</button>{/if}
       {/snippet}
       {#snippet reviewVariants()}
@@ -350,7 +411,7 @@
     <article class="catalog-tile" data-item-id={item.itemId} class:inBoard={activeIds.has(item.itemId)}>
       <button class="item" aria-label={nameOf(item)} title={nameOf(item)} aria-pressed={selectionMode?selectedIds.includes(item.itemId):undefined} onclick={()=>selectionMode?selectItem(item.itemId):showReview(item,design)}><span class="art"><ItemArtwork itemId={item.itemId} sourcePath={images[String(item.itemId)]??null}/></span><span class="visually-hidden">{nameOf(item)}</span></button>
       <div class="tile-controls">
-      <button class="tile-favorite" aria-label={t('お気に入り','Favorite')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={16}/></button>
+      <button class="tile-favorite" aria-label={label('favorites')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!favoriteReady||favoriteBusy} onclick={()=>void changeFavorite(item)}><WandIcon name="star" size={16}/></button>
       {#if design&&design.items.length>1}
         <button class="variants-button" aria-label={t('色違いを選択','Choose variant')} title={t('色違いを選択','Choose variant')} onclick={()=>showReview(item,design)}><WandIcon name="palette" size={14}/>{design.items.length}</button>
       {/if}
