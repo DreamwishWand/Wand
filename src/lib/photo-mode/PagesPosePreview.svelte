@@ -62,7 +62,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if savedSkinAvailable}{copy.savedSkin}{/if} {#if index?.eyePalette}{copy.eyeDiagnostic}{/if} {#if savedFaceAvailable||savedHeadAvailable}{copy.faceDiagnostic}{/if} {#if savedBodyMorphAvailable}{copy.bodyMorphDiagnostic}{/if} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic}{/if}</p>
+      <p>{copy.note} {#if savedSkinAvailable}{copy.savedSkin}{/if} {#if index?.eyePalette}{copy.eyeDiagnostic}{/if} {#if savedFaceAvailable||savedHeadAvailable}{copy.faceDiagnostic}{/if} {#if index?.nativeFaceNormals&&row&&bodyTypes.some(b=>row[b]&&row[b]?.kind!=='mermaid')}{copy.nativeNormalDiagnostic}{/if} {#if savedBodyMorphAvailable}{copy.bodyMorphDiagnostic}{/if} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic}{/if}</p>
       {#if poses.length>1}
         <div class="pose-variants" aria-label={copy.pose}>
           {#each poses as _,i}
