@@ -68,3 +68,16 @@ test('free support swap exchanges different shapes atomically while retaining or
  assert.equal(supportFreeSwap({...tree,objects:[tree.objects[0],{...tree.objects[1],child:{...tree,objects:[]}}]},shapes,eligible,raster,0,1),null);
  assert.equal(supportFreeSwap(tree,{},eligible,raster,0,1),null);
 });
+
+test('support transfer targets retain exact local handles across rooms and exclude the source',async()=>{
+ const {supportTransferTargets}=await import('../src/lib/world/indoor-support.ts');
+ const a={localOrdinal:7,itemId:40000002,x:1,y:2,context:'House A · Floor 1 · Kitchen'},
+ b={...a,localOrdinal:8,context:'House A · Floor 2 · Study'},
+ c={...a,localOrdinal:9,context:'House B · Floor 1 · Kitchen'};
+ const names=new Map([[a.itemId,'Table']]);
+ assert.deepEqual(supportTransferTargets(a,[a,b,c,b],names,''),[b,c]);
+ assert.deepEqual(supportTransferTargets(a,[a,b,c],names,'study'),[b]);
+ assert.deepEqual(supportTransferTargets(a,[a,b,c],names,'ＴＡＢＬＥ'),[b,c]);
+ assert.deepEqual(supportTransferTargets(a,[a,b,c],names,'house b'),[c]);
+ assert.deepEqual(supportTransferTargets(null,[a,b,c],names,''),[]);
+});

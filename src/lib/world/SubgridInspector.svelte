@@ -6,7 +6,7 @@
  import type {GroupPickupRow} from './group-pickup.ts';
  import {supportSceneWords,supportSceneRootCounts,supportSceneTemplateCompatible,type SupportScene} from './support-scene.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
- import type {SupportParentWitness} from './indoor-support.ts';
+ import {supportTransferTargets,type SupportParentWitness,type SupportTransferTarget} from './indoor-support.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
@@ -23,6 +23,7 @@
  import {worldShortcut,NUDGE} from './world-shortcuts.ts';
  export let open=false,parent:MainlandSavedObject|null=null,file:File|null=null,worker:Worker|null=null;
  export let roomParent:SupportParentWitness|null=null,onItems:(ids:number[])=>void=()=>{};
+ export let roomTransferTargets:readonly SupportTransferTarget[]=[];
  export let roomPickupPlan:readonly GroupPickupRow[]|null=null,onRoomDuplicate:(needs:ReadonlyMap<number,number>)=>void=()=>{};
  export let roomDuplicateAllowed=false;
  export let initialFreePlacement=false;
@@ -57,9 +58,10 @@
  $: childPreview=dragPreview??hoverPreview;
  type TransferSource={index:number;object:SupportObject;path:number[]};
  type TransferDraft={index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;destination:{localOrdinal:number;itemId:number;expectedX:number;expectedY:number;terrainPath:string};x:number;y:number;orientation:string};
- let transferSource:TransferSource|null=null,transferTarget:MainlandSavedObject|null=null,transferDraft:TransferDraft|null=null,transferQuery='';
+ let transferSource:TransferSource|null=null,transferTarget:SupportTransferTarget|null=null,transferDraft:TransferDraft|null=null,transferQuery='';
  $: trw=supportTransferWords[locale];
- $: targets=supports.filter(p=>p.object.localOrdinal!==parent?.object.localOrdinal&&p.object.subgrid?.status==='resolved_full'&&(names.get(Number(p.object.itemId))??'—').normalize('NFKC').toLocaleLowerCase().includes(transferQuery.normalize('NFKC').toLocaleLowerCase().trim()));
+ $: outdoorTransferTargets=supports.filter(p=>p.object.subgrid?.status==='resolved_full').map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,context:''}));
+ $: targets=supportTransferTargets(identity,roomParent?roomTransferTargets:outdoorTransferTargets,names,transferQuery);
  $: transferEligible=!!tree&&!!terrain&&selected>=0&&!!tree.objects[selected]&&!tree.objects[selected].child&&moveAllowed.has(tree.objects[selected].itemId)&&removeAllowed.has(tree.objects[selected].itemId)&&Math.floor(tree.objects[selected].itemId/100000)===400&&isCardinal(tree.objects[selected].orientation);
  let counts=new Map<number,number>(),removable=new Set<number>(),freeLeafIds=new Set<number>(),catalogRequest=0,stockCatalog:{itemId:number;name:string;standard:boolean}[]=[],stockQuery='',stockOpen=false,stockId=0,stockPlacing=false,stockOrientation:typeof CARDINAL_ORIENTATIONS[number]='GridOrientation_Down',stockDraft:SupportStockPlan|null=null;
  $: stw=supportStockWords[locale];
@@ -107,19 +109,19 @@
   if(!tree||!transferEligible||!canMove||!mapInteractive||free||swap||stockPlacing)return;
   transferSource={index:selected,object:tree.objects[selected],path:[...path]};transferQuery='';transferTarget=null;transferDraft=null;hoverCell=null;error=false;
  }
- function chooseTransfer(p:MainlandSavedObject){
+ function chooseTransfer(p:SupportTransferTarget){
   const from=transferSource,source=file;if(!from||!source||!canMove||loading||copy||transferTarget||!targets.includes(p)||source!==activeFile)return;
   loading=true;error=false;const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
   const finish=(d:any)=>{
    session.terminate();if(own!==session||transferSource!==from||activeFile!==source)return;own=null;loading=false;
    try{if(d?.kind!=='subgrid-local')throw Error('receipt');const target=parseSupportTree(d.result);if(!target.sourcePath)throw Error('source path');
-    transferTarget=p;owners=[Number(p.object.itemId)];stack=[target];path=[];showTree(target);
+    transferTarget=p;owners=[p.itemId];stack=[target];path=[];showTree(target);
     stockId=from.object.itemId;stockOrientation=from.object.orientation as typeof CARDINAL_ORIENTATIONS[number];stockPlacing=true;requestShapes(target);
     const epoch=imageEpoch;void worldArtwork(base,stockId).then(url=>{if(url&&epoch===imageEpoch)images=new Map(images).set(from.object.itemId,url);}).catch(()=>{});
    }catch{error=true;}
   };
   session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);
-  session.postMessage({command:'inspect-subgrid',file:source,parent:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}});
+  session.postMessage({command:'inspect-subgrid',file:source,parent:{localOrdinal:p.localOrdinal,itemId:p.itemId,x:p.x,y:p.y}});
  }
  function beginPickup(){if(!pickup||loading||copy||!canMove)return;cancelStock();edits=null;free=false;swap=false;stockDraft=pickup;}
  function receive(e:MessageEvent){const d=e.data;if(catalogRequest&&d?.requestId===catalogRequest){catalogRequest=0;if(d.kind==='support-catalog'&&Array.isArray(d.items))stockCatalog=d.items;return;}if(!request||d?.requestId!==request)return;request=0;if(d.kind==='support-shapes'&&d.shapes&&typeof d.shapes==='object'&&Array.isArray(d.editable)){shapes=d.shapes;editable=new Set(d.editable.filter(Number.isSafeInteger));removable=new Set(Array.isArray(d.removable)?d.removable.filter(Number.isSafeInteger):[]);freeLeafIds=new Set(Array.isArray(d.freeEligible)?d.freeEligible.filter(Number.isSafeInteger):[]);terrain=d.terrain?.nativeFloorValues instanceof Uint32Array?d.terrain:null;}}
@@ -186,7 +188,7 @@
   if(stockPlacing&&transferSource){
    const from=transferSource,d=transferTarget;
    if(!d||!tree.sourcePath||!moveAllowed.has(stockId)||!removeAllowed.has(stockId)||!supportPlacementFits(tree,shapes,terrain,stockId,q.x,q.y,stockOrientation,nonstandard)){error=true;return;}
-   transferDraft={index:from.index,itemId:from.object.itemId,expectedX:from.object.x,expectedY:from.object.y,expectedOrientation:from.object.orientation,destination:{localOrdinal:d.object.localOrdinal,itemId:Number(d.object.itemId),expectedX:d.object.x,expectedY:d.object.y,terrainPath:tree.sourcePath},x:q.x,y:q.y,orientation:stockOrientation};
+   transferDraft={index:from.index,itemId:from.object.itemId,expectedX:from.object.x,expectedY:from.object.y,expectedOrientation:from.object.orientation,destination:{localOrdinal:d.localOrdinal,itemId:d.itemId,expectedX:d.x,expectedY:d.y,terrainPath:tree.sourcePath},x:q.x,y:q.y,orientation:stockOrientation};
    stockPlacing=false;hoverCell=null;error=false;return;
   }
   if(stockPlacing){const plan=nonstandard&&!moveAllowed.has(stockId)?null:supportStockPlacement(tree,shapes,terrain,stockId,counts.get(stockId)??0,q.x,q.y,stockOrientation,nonstandard);error=!plan;if(plan){stockDraft=plan;stockPlacing=false;hoverCell=null;}return;}
@@ -264,8 +266,8 @@
     {#if duplicateNeeds}<div class="support-list">{#each [...duplicateNeeds] as [id,n]}<small>{names.get(id)??'—'} · {dw[2]} {n}/{counts.get(id)??0}</small>{/each}</div>{/if}
    {/if}
    {#if (parent||roomParent)&&!loading&&!copy&&!placing&&!ghost&&!edits&&!swap&&!free&&!stockOpen&&!stockPlacing&&!stockDraft&&!transferSource&&!transferDraft}<button type="button" on:click={()=>sceneOpen=true}>{supportSceneWords[locale][0]}</button>{/if}
-   {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(Number(transferTarget.object.itemId))??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
-   {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(Number(p.object.itemId))??'—'} · {p.object.x}, {p.object.y}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
+   {#if transferSource}<div class="support-heading"><strong>{names.get(transferSource.object.itemId)??'—'} → {transferTarget?names.get(transferTarget.itemId)??'—':trw[1]}</strong><button type="button" disabled={loading} on:click={cancelStock}>{words[11]}</button></div>
+   {#if !transferTarget}<input type="search" bind:value={transferQuery} placeholder={trw[1]} aria-label={trw[1]}/><div class="support-list">{#each targets as p (p.localOrdinal)}<button type="button" disabled={loading} on:click={()=>chooseTransfer(p)}>{names.get(p.itemId)??'—'} · {p.x}, {p.y}{#if p.context}<small>{p.context}</small>{/if}</button>{/each}</div>{:else if !terrain&&!loading&&!request}<small>{trw[2]}</small>{/if}{/if}
    <div class="support-heading">{#if stack.length>1}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={back}>{words[11]}</button>{/if}<strong>{words[1]}</strong></div>
    {#if tree.objects.length||terrain}
     <button type="button" class="support-map-button" disabled={!mapKeyboard} aria-label={free||stockPlacing?sw[1]:cw[6]} aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown R Shift+R Delete Escape Enter" on:keydown={mapKeys} on:click={pickChild} on:pointerdown={startChildDrag} on:pointermove={hoverChild} on:pointerup={e=>finishChildDrag(e,true)} on:pointercancel={e=>finishChildDrag(e,false)} on:lostpointercapture={e=>finishChildDrag(e,false)} on:pointerleave={()=>{hoverCell=null;if(childDrag&&!childDrag.moved)childDrag=null;}}><svg bind:this={supportSvg} class="support-map" viewBox={extent.x+' '+extent.y+' '+extent.w+' '+extent.h} aria-label={words[1]} role="img">

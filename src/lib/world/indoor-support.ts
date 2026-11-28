@@ -4,6 +4,19 @@ import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
 import type {IndoorRoom} from './indoor-room-view.ts';
 export interface SupportParentWitness{localOrdinal:number;itemId:number;x:number;y:number}
+export interface SupportTransferTarget extends SupportParentWitness{context:string}
+/** The room projection and outdoor map share the same local native handle.
+ * Never resolve a destination by name or coordinates alone. */
+export function supportTransferTargets(source:SupportParentWitness|null,targets:readonly SupportTransferTarget[],names:ReadonlyMap<number,string>,query:string):SupportTransferTarget[]{
+ if(!source)return [];
+ const needle=query.normalize('NFKC').toLocaleLowerCase().trim();
+ const seen=new Set<number>([source.localOrdinal]);
+ return targets.filter(p=>{
+  if(seen.has(p.localOrdinal))return false;
+  seen.add(p.localOrdinal);
+  return ((names.get(p.itemId)??'')+' '+p.context).normalize('NFKC').toLocaleLowerCase().includes(needle);
+ });
+}
 export type IndoorSupportWitness=SupportParentWitness&{roomOrdinal:number;surfaceOrdinal:number;index:number};
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;
