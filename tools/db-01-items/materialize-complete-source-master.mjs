@@ -1390,12 +1390,12 @@ function memoryAppearanceSources(rows,source){
     ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
+function writeFieldColumns(project,rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
   const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
   const storyUnlock=buildStoryUnlockSources(rows,source,questFlows.questKinds,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
-  const villageMemories=buildInitialVillageMemoryTreasures(process.cwd(),rows,source,memoryAppearance);
+  const villageMemories=buildInitialVillageMemoryTreasures(project,rows,source,memoryAppearance);
   const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
   const memoryDefaults=buildMemoryDefaultContent(rows,source,memoryAppearance,questFlows,questObjectiveGrants);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
@@ -2306,7 +2306,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
+    writeFieldColumns(project,rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
