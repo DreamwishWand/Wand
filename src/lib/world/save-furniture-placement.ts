@@ -13,7 +13,7 @@ export type StockPlan={action:'place';itemId:string;x:number;y:number;orientatio
 export interface StockCandidate{area:string;x:number;y:number;factor:1|2;shape:SourceObjectShape;plan:StockPlan;destination:StockDestination|null}
 export const ordinaryFurniture=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===400;
 export function stockSourceEligible(p:MainlandSavedObject|null,free=false):p is MainlandSavedObject{
- return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&p.object.layer==='furniture'&&!p.object.subgrid&&(isCardinal(p.object.orientation)||free&&p.factor===1&&isEightWay(p.object.orientation))&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
+ return !!p?.shape&&ordinaryFurniture(Number(p.object.itemId))&&(p.object.layer==='furniture'||free&&p.object.layer==='surface')&&!p.object.subgrid&&(isCardinal(p.object.orientation)||free&&p.factor===1&&isEightWay(p.object.orientation))&&(free||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove'));
 }
 export const landscapeId=(id:number)=>Number.isSafeInteger(id)&&Math.floor(id/100000)===402;
 export function landscapePlacementEligible(g:DesignItemGeometry,free=false){return landscapeId(g.itemId)&&g.layer==='landscape'&&!g.surfaceCapable&&!g.supportPath&&(free||g.editRestrictions?.remove==='allowedFlag'&&!nativeActionBlocked(g.editRestrictions,'select'));}
@@ -100,7 +100,7 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  const at=placementAnchor(grids,rasters,wx,wy,free);if(!at)return null;
  const {g,r,x,y}=at,def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
  if(!isCardinal(orientation)&&(g.factor!==1||!bindMainlandGrid(g)||def?.surfaceCapable||def?.supportPath))return null;
- if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
+ if(!r||!def||def.itemId!==id||(landscape?def.layer!=='landscape':def.layer!=='furniture'&&!(free&&def.layer==='surface'))||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
  if(landscape){if(!landscapePlacementEligible(def,free)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&!free&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
  if(!free&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length))return null;
  let count=0;
