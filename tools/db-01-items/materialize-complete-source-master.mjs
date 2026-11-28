@@ -1205,10 +1205,56 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
   }
   return byItem;
 }
+// A positive explicit standard-store display assignment and a positive
+// Star Coin purchase configuration, together with all reviewed exclusion
+// and visibility gates clear, support a static ordinary store route.
+// The pre-DLC list alone and a generated layout match are not sufficient.
+// No assertion of a transaction, live rotation or exclusive acquisition.
+function ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices){
+  const result=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'||
+    source.sourceFilesSha256.Furniture!=='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196'||
+    source.sourceFilesSha256.Clothing!=='a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946')return result;
+  for(const row of rows){
+    if(!['Furniture','Clothing'].includes(row.nativeCategory))continue;
+    const id=row.itemId,display=protoAcquisition.shopDisplay.get(id);
+    // Do not assume pre-DLC list membership or generic display sequences
+    // establish the ordinary default store route.
+    if(!display||display.sourceId!=='Store_Default')continue;
+    const screen=catalogFacts.storeScreens.get(id),facts=catalogFacts.facts.get(id);
+    if(screen?.status!=='not_excluded_by_reviewed_gates'||!facts?.flagsKnown||
+      facts.exclusionFlags.length||facts.gateStatus!=='empty_source_gate')continue;
+    const override=row.sourceAttributes?.PriceOverride??row.nativeProperties?.PriceOverride;
+    const price=override?.Price;
+    const provider=originalPrices.items.get(id);
+    const cost=price?.Id===80000000&&Number.isSafeInteger(price.Amount)?
+      {amount:price.Amount,source:'explicit_override'}:
+      {amount:provider?.purchaseCosts.find(c=>c.currencyItemId===80000000&&c.amountFieldPresent)?.amount,
+        source:provider?.providerKind};
+    // A nonempty explicit price override for another currency is not
+    // interpreted as a positive default Star Coin purchase.
+    if(override&&Object.keys(override).length&&price?.Id!==80000000)continue;
+    if(!ID(cost.amount)||!['explicit_override','static','dynamic_cache'].includes(cost.source))continue;
+    result.set(id,{kind:'ordinary_configured_store_display',display,
+      purchaseCurrencyItemId:80000000,configuredPurchaseAmount:cost.amount,priceSource:cost.source,
+      sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256[row.nativeCategory],
+      ordinaryConfiguredRoute:true,storeMembershipVerified:false,liveTransactionVerified:false,currentAvailabilityVerified:false});
+  }
+  return result;
+}
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
+  const ordinaryStore=ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices);
+  const existingCategories=id=>new Set([...(acquisition?.summary.get(id)?.categories??[]),
+    ...((protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)?['ordinary_gameplay']:[]),
+    ...(questFlows.conditionalQuest.get(id)??[]).map(l=>l.category),
+    ...(premiumBundles?.byItem.get(id)?.currentBundleIds.length?['premium_shop']:[])]);
+  const storeNew=[...ordinaryStore.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay'));
+  console.log('DB01_ORDINARY_EXPLICIT_STORE '+JSON.stringify({items:ordinaryStore.size,newOrdinaryCategory:storeNew.length,
+    previouslyUnclassified:storeNew.filter(id=>existingCategories(id).size===0).length}));
   const critterNew=[...ordinaryCritters.keys()].filter(id=>!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
     !(protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)&&!questFlows.ordinaryIntro.has(id)&&!progression.has(id)&&!ordinaryProduction.has(id));
   console.log('DB01_ORDINARY_CRITTER '+JSON.stringify({items:ordinaryCritters.size,newOrdinaryCategory:critterNew.length,
@@ -1487,6 +1533,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(conditionalQuest?.length){
       add('acquisition.conditionalQuestSources',row.itemId,conditionalQuest);
       for(const evidence of conditionalQuest)categorySet.add(evidence.category);
+    }
+    const configuredStore=ordinaryStore.get(row.itemId);
+    if(configuredStore){
+      add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
+      categorySet.add('ordinary_gameplay');
     }
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
     const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
