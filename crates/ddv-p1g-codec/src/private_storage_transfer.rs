@@ -209,6 +209,28 @@ mod tests{
   }
   root
  }
+ #[test]fn region_stage_authenticates_exact_backup_pose_and_preserves_unselected_furniture(){
+  let mut original=fixture();
+  let chest=json!({"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
+  let outside=json!({"ID":2,"ItemID":40000001,"X":50,"Y":50,"Orientation":"GridOrientation_Down"});
+  original["World"]["GridCollection"]["Grids"]["44"]["Objects"]=json!({"1":chest,"2":outside});
+  let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&HashSet::from(["44:1".to_owned()]))).unwrap();
+  let mut moved=original.clone();
+  moved["World"]["GridCollection"]["Grids"]["44"]["Objects"]["1"]["X"]=10.into();
+  let raw=moved.to_string();
+  let scope=json!({"kind":"region-poses","areas":[{"destination":{"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100},"poses":[{"item":40001680,"x":1,"y":2,"orientation":"GridOrientation_Down"}]}]});
+  let grids=crate::private_storage_scope::resolve_region_stage(raw.as_bytes(),&scope,&backup).unwrap();
+  assert!(crate::private_storage_scope::resolve(raw.as_bytes(),&scope.to_string()).is_err());
+  let (stage,normalized)=stage_decoration(&raw,&backup,&grids).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&stage).unwrap(),original);
+  let exact=crate::private_storage_scope::resolve(stage.as_bytes(),&scope.to_string()).unwrap().unwrap();
+  assert_eq!(exact,HashSet::from(["44:1".to_owned()]));
+  assert_eq!(ddv_save_patch::storage_backup::restore_scoped_mode(&stage,&normalized,Some(&exact),true,true).unwrap(),stage);
+  let mut wrong=scope.clone();wrong["areas"][0]["poses"][0]["x"]=2.into();
+  assert!(crate::private_storage_scope::resolve_region_stage(raw.as_bytes(),&wrong,&backup).is_err());
+  wrong=scope.clone();wrong["areas"][0]["poses"]=json!([]);
+  assert!(crate::private_storage_scope::resolve_region_stage(raw.as_bytes(),&wrong,&backup).is_err());
+ }
  #[test]fn decoration_stage_preserves_inventory_and_rebinds_native_witnesses(){
   let mut original=fixture();
   let chest=json!({"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
