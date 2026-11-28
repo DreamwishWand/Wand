@@ -82,12 +82,13 @@ if __name__=='__main__':
     p.add_argument('--head-geometry',type=Path,help='Local copy of the approved head geometry archive')
     p.add_argument('--body-morphs',type=Path,help='Local copy of the approved body morph archive')
     p.add_argument('--expression-weights',type=Path,help='Local copy of the approved expression weights archive')
-    p.add_argument('--makeup',type=Path,help='Local copy of pinned converted avatar makeup archive')
     p.add_argument('--face-layers',type=Path,help='Local copy of approved native normal face layer archive')
+    p.add_argument('--makeup',type=Path,help='Local copy of pinned converted avatar makeup archive')
+    p.add_argument('--native-materials',type=Path,help='Local approved native material archive')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs or a.expression_weights or a.face_layers or a.makeup: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs or a.expression_weights or a.face_layers or a.native_materials or a.makeup: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -161,6 +162,8 @@ if __name__=='__main__':
 
         from prepare_face_layers import download_face_layers,apply_face_layers
         apply_face_layers(a.face_layers.read_bytes() if a.face_layers else download_face_layers(),a.dest)
-        if a.makeup:
-            from prepare_avatar_makeup import apply_makeup
-            apply_makeup(a.makeup.read_bytes(),a.dest)
+
+        from prepare_native_face_materials import download_native_materials,apply_native_materials
+        apply_native_materials(a.native_materials.read_bytes() if a.native_materials else download_native_materials(),a.dest,head_source)
+        from prepare_avatar_makeup import download_makeup,apply_makeup
+        apply_makeup(a.makeup.read_bytes() if a.makeup else download_makeup(),a.dest)
