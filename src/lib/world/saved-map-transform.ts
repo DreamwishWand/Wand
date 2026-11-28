@@ -7,7 +7,7 @@ export const EIGHT_WAY_ORIENTATIONS=['GridOrientation_Up','GridOrientation_UpRig
 export type EightWay=typeof EIGHT_WAY_ORIENTATIONS[number];
 export function isEightWay(v:unknown):v is EightWay{return EIGHT_WAY_ORIENTATIONS.some(x=>x===v);}
 export function worldOrientationCode(v:unknown):number|null{return isEightWay(v)?EIGHT_WAY_ORIENTATIONS.indexOf(v)*2:null;}
-export function eightWayFurniture(o:SavedShapeObject|null):boolean{return !!o&&!o.subgrid&&!o.storage&&!o.storageKnown&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.shapeKey!==null;}
+export function eightWayFurniture(o:SavedShapeObject|null):boolean{return !!o&&!o.subgrid&&!o.storage&&!o.storageKnown&&(o.layer==='furniture'||o.layer==='surface')&&Math.floor(Number(o.itemId)/100000)===400&&o.shapeKey!==null;}
 export function worldOrientationAllowed(o:SavedShapeObject|null,v:unknown,free=false):v is EightWay{return isCardinal(v)||free&&eightWayFurniture(o)&&isEightWay(v);}
 const int32=(n:unknown):n is number=>typeof n==='number'&&Number.isInteger(n)&&n>=-2147483648&&n<=2147483647;
 /** Mirror the source-verified DB-01 type/subtype contract for immediate

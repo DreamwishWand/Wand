@@ -1865,6 +1865,19 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_GRID_TRANSFER_PLAN_INVALID");
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
             let o=v.as_object().ok_or_else(invalid)?;
+            if o.contains_key("freePlacement"){
+                if o.get("freePlacement").and_then(|v|v.as_bool())!=Some(true)||o.contains_key("crossWorld"){return Err(invalid());}
+                let mut row=o.clone();row.remove("freePlacement");
+                let original=match self.kind{
+                    InputKind::PlainJson=>self.pending.as_slice(),
+                    InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_GRID_TRANSFER_SESSION_INVALID"))?.profile.as_slice()
+                };
+                let group=serde_json::json!({"freePlacement":true,"rows":[row]});
+                let mut patched_json=grid_instance_preview::group_cut_candidate(original,&group.to_string())
+                    .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?;
+                if validate_profile(patched_json.as_bytes()).is_err(){patched_json.zeroize();return Err(fail("DB05_GRID_TRANSFER_INVALID_DRAFT"));}
+                return Ok(ddv_save_patch::GridCoordinateDraft{patched_json,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false});
+            }
             let world_change=match o.get("crossWorld"){None=>None,Some(v)=>Some(v.as_str().filter(|s|matches!(*s,"move"|"duplicate")).ok_or_else(invalid)?)};
             if o.len()!=9+usize::from(world_change.is_some())||o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"crossWorld")){return Err(invalid());}
             let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;

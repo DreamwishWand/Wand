@@ -6,7 +6,7 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;includeSupport?:true;includeStorage?:true}
 export function emptyStoragePickupEligible(p:MainlandSavedObject,free=false):boolean{
  const o=p.object;
- return !!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
+ return !!p.shape&&(o.layer==='furniture'||free&&o.layer==='surface')&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
 }
 /** A selection is either entirely eligible or entirely refused. Do not
  * silently skip a locked/unknown/stateful object or partially return stock. */
@@ -15,7 +15,7 @@ export function groupPickupPlan(items:readonly MainlandSavedObject[],free=false)
  const seen=new Set<number>(),out:GroupPickupRow[]=[];
  for(const p of items){
   const o=p.object;
-  const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
+  const support=!!p.shape&&(o.layer==='furniture'||free&&o.layer==='surface')&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
   const storage=emptyStoragePickupEligible(p,free);
   const other=free&&(landscapeSourceEligible(p,free)||buildingSourceEligible(p));
   if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!other&&!(stockSourceEligible(p,free)&&isCardinal(o.orientation)))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
