@@ -1529,6 +1529,19 @@ mod browser_amount_preview {
             let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?;
             ddv_save_patch::storage_backup::export_scoped(std::str::from_utf8(source).map_err(|_|invalid())?,grids.as_ref()).map_err(|_|invalid())
         }
+        pub fn list_field_recovery_destinations(&self)->Result<String,JsValue>{
+            let invalid=||fail("DB05_FIELD_RECOVERY_INVALID");
+            if !self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            grid_instance_preview::field_recovery_destinations_json(source).map_err(|_|invalid())
+        }
+        pub fn prepare_activity_recovery_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_FIELD_RECOVERY_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=grid_instance_preview::activity_recovery_candidate(source,plan).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
         pub fn prepare_private_decoration_copy(&mut self,kind:&str,plan:&str,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_PRIVATE_DECORATION_INVALID");
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>4*1024*1024||backup.len()>4*1024*1024{return Err(invalid());}
