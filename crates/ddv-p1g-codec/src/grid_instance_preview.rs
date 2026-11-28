@@ -328,6 +328,21 @@ pub(super) fn resolve_grid_mixed_targets(
     profile:&[u8],
     selections:&[(usize,u64,(i32,i32),String,Option<String>)]
 )->Result<Vec<GridCoordinateTarget>,CodecError>{
+    resolve_grid_mixed_targets_mode(profile,selections,false)
+}
+/// Identity-preserving transforms may retain an owned support tree.
+/// Stock/structure operations still require their own mutation contract.
+pub(super) fn resolve_grid_transform_targets(
+    profile:&[u8],
+    selections:&[(usize,u64,(i32,i32),String,Option<String>)]
+)->Result<Vec<GridCoordinateTarget>,CodecError>{
+    resolve_grid_mixed_targets_mode(profile,selections,true)
+}
+fn resolve_grid_mixed_targets_mode(
+    profile:&[u8],
+    selections:&[(usize,u64,(i32,i32),String,Option<String>)],
+    retain_owned_tree:bool
+)->Result<Vec<GridCoordinateTarget>,CodecError>{
     if selections.is_empty()||selections.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         return Err(CodecError::Bounds);
     }
@@ -356,6 +371,7 @@ pub(super) fn resolve_grid_mixed_targets(
             return Err(CodecError::Json);
         }
         if scan.subgrid_parents.contains(ordinal){
+            if !retain_owned_tree{return Err(CodecError::Json);}
             validate_owned_transform_root(profile,target)?;
         }else if target.item_id/10_000_000==2{
             validate_building_transform(profile,target)?;
@@ -412,8 +428,8 @@ pub(super) fn building_transform_grid_size(root:&Value,gid:&str)->Result<(u64,u6
 }
 
 /// Common coordinate transform guard for an existing owned stateful root.
- /// Category does not determine the State discriminant; only a resolved
- /// native root with a known state envelope and valid ownership can pass.
+/// Category does not determine the State discriminant; only a resolved
+/// native root with a known state envelope and valid ownership can pass.
 fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Result<(),CodecError>{
     let bad=CodecError::Json;
     let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
@@ -4375,7 +4391,7 @@ mod terrain_session_tests{
         // The same mixed writer now accepts a support root and ordinary root
         // together, without allocating new IDs or touching the child's state.
         let selectors=vec![(1,40005160,(4,6),"full".into(),Some("GridOrientation_Down".into())),(2,40005161,(5,6),"full".into(),Some("GridOrientation_Down".into()))];
-        let targets=resolve_grid_mixed_targets(input.as_bytes(),&selectors).unwrap();
+        let targets=resolve_grid_transform_targets(input.as_bytes(),&selectors).unwrap();
         let edits=targets.into_iter().zip([(4,6),(5,6)]).map(|(target,expected)|ddv_save_patch::GridMixedEdit{target,expected,position:Some((expected.0+1,expected.1+1)),orientation:Some(("GridOrientation_Down".into(),"GridOrientation_Left".into()))}).collect::<Vec<_>>();
         validate_oblique_grid_edits(input.as_bytes(),&edits).unwrap();
         let mixed=ddv_save_patch::preview_existing_grid_mixed_batch(&input,&edits).unwrap();
@@ -4383,7 +4399,7 @@ mod terrain_session_tests{
         for (id,x) in [("1",5),("2",6)]{let o=&mut expected["World"]["GridCollection"]["Grids"]["7"]["Objects"][id];o["X"]=x.into();o["Y"]=7.into();o["Orientation"]="GridOrientation_Left".into();}
         assert_eq!(serde_json::from_str::<Value>(&mixed.patched_json).unwrap(),expected);
         let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":1}]);
-        assert!(resolve_grid_mixed_targets(blocked.to_string().as_bytes(),&selectors).is_err());
+        assert!(resolve_grid_transform_targets(blocked.to_string().as_bytes(),&selectors).is_err());
         let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":7,"GridObjectID":2}]);
         assert!(validate_oblique_grid_edits(blocked.to_string().as_bytes(),&edits).is_err());
         let mut unsafe_pose=edits.clone();unsafe_pose[0].position=Some((196,0));
