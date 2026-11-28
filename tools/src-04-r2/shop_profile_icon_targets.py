@@ -39,7 +39,7 @@ def read_clothing(raw, dump):
     check(body is not None,"Missing ClothingItemData declaration")
     fields={k.decode():int(v) for k,v in re.findall(rb"public const int (\w+)FieldNumber = (\d+);",body[1])}
     check(all(fields.get(k)==v for k,v in {"ID":1,"IconAddress":4,"MaleIconAddress":18,"EvolvingConditions":32}.items()),"Source schema mismatch")
-    evolve=re.search(rb"^public sealed class EvolveClothData\s*:[^\n]*\n\{([\s\S]*?)\n\}",dump,re.M)
+    evolve=re.search(rb"^public sealed class EvolveClothingData\s*:[^\n]*\n\{([\s\S]*?)\n\}",dump,re.M)
     check(evolve is not None and b"public const int EvolvesIntoFieldNumber = 14;" in evolve[1],"Evolution source schema mismatch")
     result={}
     for item,record in frames(raw,50000000):
