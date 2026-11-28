@@ -28,6 +28,33 @@ fn main(){
  let source:Value=serde_json::from_slice(&bytes).unwrap();
  assert_eq!(source["schema"],"wand.item-master.reviewed-structure-groups@1");
  assert_eq!(source["gameVersion"],"1.26.2");
+ // Reuse the SHA-verified DB01 field census. Only class-400 items with
+ // GridAreaData and no reviewed interaction/special-state definition qualify.
+ // A new unrecognized Furniture field is conservatively treated as special.
+ let fields=source["fields"].as_object().unwrap();
+ let mut geometry=std::collections::BTreeSet::<u64>::new();
+ let mut special=std::collections::BTreeSet::<u64>::new();
+ for (key,entry) in fields{
+  if !key.starts_with("Furniture."){continue;}
+  assert_eq!(entry["category"],"Furniture");
+  if matches!(key.as_str(),"Furniture.CatalogVisibilityConditions"|"Furniture.PriceOverride"|"Furniture.GridEditRestriction"|"Furniture.CollectionVisibility"){continue;}
+  let mut raw=Vec::new();
+  ZlibDecoder::new(decode64(entry["packed"].as_str().unwrap()).as_slice()).take(32*1024*1024).read_to_end(&mut raw).unwrap();
+  let decoded:Value=serde_json::from_slice(&raw).unwrap();
+  let pairs=decoded.as_array().unwrap();assert_eq!(pairs.len() as u64,entry["count"].as_u64().unwrap());
+  let mut id=0u64;
+  for pair in pairs{
+   id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();
+   if id/100_000!=400{continue;}
+   if key=="Furniture.GridAreaData"{geometry.insert(id);}else{special.insert(id);}
+  }
+ }
+ assert!(geometry.len()>1000&&special.len()>100);
+ let plain=geometry.difference(&special).copied().collect::<Vec<_>>();
+ assert!(plain.len()>1000&&!plain.contains(&40000047));
+ println!("cargo:warning=Source-backed plain furniture candidates: {}",plain.len());
+ let out=PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+ fs::write(out.join("plain-furniture-source.json"),serde_json::to_vec(&plain).unwrap()).unwrap();
  let entry=&source["fields"]["Furniture.Container"];
  assert_eq!(entry["category"],"Furniture");assert_eq!(entry["field"],"Container");assert_eq!(entry["declaredType"],"ContainerInteraction");
  let mut raw=Vec::new();ZlibDecoder::new(decode64(entry["packed"].as_str().unwrap()).as_slice()).take(32*1024*1024).read_to_end(&mut raw).unwrap();
