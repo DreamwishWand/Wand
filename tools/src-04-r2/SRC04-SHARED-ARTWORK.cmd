@@ -24,8 +24,8 @@ function Run([string[]]$argv) {
     if ($LASTEXITCODE -ne 0) { throw ('Python failed: '+$argv[0]) }
 }
 try {
-    $mode=Read-Host 'UI = register prepared original UI images; SHOP = extract all current catalog references privately'
-    if ($mode -notin @('UI','SHOP')) { throw 'Select UI or SHOP.' }
+    $mode=Read-Host 'UI = register prepared original UI images; SHOP = extract current and historical catalog references privately; STAGE = reuse resolved images for an explicitly selected private target set'
+    if ($mode -notin @('UI','SHOP','STAGE')) { throw 'Select UI, SHOP or STAGE.' }
     $homePath=Join-Path $env:USERPROFILE 'Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2'
     New-Item -ItemType Directory -Path $homePath -Force | Out-Null
     $ledger=Join-Path $homePath 'source-image-ledger.json'
@@ -33,7 +33,7 @@ try {
     if ($alternate) { $ledger=(Resolve-Path -LiteralPath $alternate).Path }
     $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/eae8c60c90bcda6cd32d2a15a3392c474e8519ad/tools/src-04-r2/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/b1447e9f42969ac21e14cd512749c8e6dd64bf69/tools/src-04-r2/'
     foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
@@ -61,6 +61,14 @@ try {
         }
         Write-Host "Return this verified index to SRC-04: $release"
         Write-Host "Keep the receipt, CDN readback and ledger privately: $root ; $ledger"
+    } elseif ($mode -eq 'STAGE') {
+        $sourceRoot=ReadPath 'Existing shared extraction directory (including incomplete extraction)'
+        $selection=ReadPath 'Reviewed target JSON (explicit GUID scope)'
+        $root=Join-Path $homePath ('shop-stage-'+[guid]::NewGuid().ToString('N').Substring(0,12))
+        Run @($delta,'stage','--root',$root,'--existing-root',$sourceRoot,'--targets',$selection,'--ledger',$ledger)
+        Run @($delta,'plan','--root',$root,'--ledger',$ledger)
+        Write-Host "Private staged output: $root"
+        Write-Host 'No network or publication was performed.'
     } else {
         $aa=ReadPath 'Steam game root or ddv_Data\StreamingAssets\aa folder'
         $child=Join-Path $aa 'ddv_Data\StreamingAssets\aa'
