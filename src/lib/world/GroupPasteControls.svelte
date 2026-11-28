@@ -160,7 +160,7 @@
   if(plainLocalOnly&&duplicate&&items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400||p.object.storageKnown&&!p.object.storage||p.object.subgrid&&p.object.subgrid.status!=='resolved_full'))return false;
   const native=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?nativeDuplicateSelection(items,freePlacement,plainLocalOnly):null;
   if(!native&&duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.subgrid))return beginLocalSupportDuplicate();
-  const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
+  const storage=!native&&duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(native?.clip??storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!areaDoc||data.some((p,i)=>!Number.isInteger(p.orientation)&&(!!cut?.rows[i]?.supportFactor||!!cut?.rows[i]?.storage||!!supportDoc?.items[i]?.support||!!localStorageSources?.[i]))))return false;
   if(plainLocalOnly&&(!freePlacement||native?.sources.some(r=>r.roomSource||r.supportSource)||!!storage||!!supportDoc||!!areaDoc||!!localStorageSources||data.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation))||cut?.rows.some(r=>r.roomSource||r.supportSource)))return false;
