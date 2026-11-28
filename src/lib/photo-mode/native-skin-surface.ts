@@ -39,3 +39,28 @@ vec3 wandSkinWorldNormal(vec4 packedNormal,vec3 n,vec4 t,float objectHandedness)
  float signT=(t.w>0.?1.:-1.)*(objectHandedness>=0.?1.:-1.);
  return normalize(t.xyz*p.x+cross(n,t.xyz)*(signT*p.y)+n*p.z);
 }`;
+
+
+/** Direct-light BRDF arithmetic from the same native pixel program,
+ * instructions 81–89, 109, 116–134. The caller supplies sampled surface
+ * gloss, world-space dot products and linear material colors. Environment
+ * reflection, light probes, cascaded shadows and additional scene lights
+ * are deliberately not inferred. */
+const saturate=(x:number)=>Math.min(1,Math.max(0,x));
+export function nativeSkinDirectSpecular(gloss:number,noH:number,loH:number,globalGlossBias=0):number{
+ const roughness=1-saturate(gloss+globalGlossBias),a=Math.max(roughness*roughness,0.0078125),a2=a*a;
+ const nh=saturate(noH),lh=saturate(loH),d=nh*nh*(a2-1)+1.00001;
+ return a2/(d*d*Math.max(0.1,lh*lh)*(4*a+2));
+}
+export function nativeSkinGradientU(noL:number,lightAttenuation:number):number{
+ return (noL+1)*lightAttenuation*.5;
+}
+export const nativeSkinDirectGLSL=`
+float wandSkinDirectSpecular(float gloss,float noH,float loH,float globalGlossBias){
+ float roughness=1.-clamp(gloss+globalGlossBias,0.,1.);
+ float a=max(roughness*roughness,.0078125),a2=a*a;
+ float nh=clamp(noH,0.,1.),lh=clamp(loH,0.,1.),d=nh*nh*(a2-1.)+1.00001;
+ return a2/(d*d*max(.1,lh*lh)*(4.*a+2.));
+}
+float wandSkinGradientU(float noL,float lightAttenuation){return (noL+1.)*lightAttenuation*.5;}
+`;
