@@ -2,7 +2,7 @@ import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,type MainlandGrid
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
-import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isCardinal,isEightWay,worldOrientationCode} from './saved-map-transform.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {stockFootprintFeedback} from './save-furniture-placement.ts';
 export interface SupportTree{factor:1|2;objects:SupportObject[];sourcePath:string|null}
@@ -20,9 +20,15 @@ export function parseSupportTree(value:unknown):SupportTree{
  }
  return visit(value.tree,0);
 }
-export function supportShapeKey(o:SupportObject){return isCardinal(o.orientation)?o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation)*4:null;}
+export function supportShapeKey(o:SupportObject){const code=worldOrientationCode(o.orientation);return code===null?null:o.itemId+':'+code;}
+export function supportOrientationAllowed(factor:1|2,v:unknown,free=false):v is typeof EIGHT_WAY_ORIENTATIONS[number]{return isCardinal(v)||free&&factor===1&&isEightWay(v);}
+export function supportTurnOrientation(factor:1|2,v:unknown,turn:-1|0|1,free=false,group=false){
+ if(!supportOrientationAllowed(factor,v,free))return null;
+ const step=free&&factor===1&&!group?1:2;
+ return EIGHT_WAY_ORIENTATIONS[(EIGHT_WAY_ORIENTATIONS.indexOf(v)+turn*step+8)%8];
+}
 export function supportItems(tree:SupportTree){
- return tree.objects.flatMap(o=>{return isCardinal(o.orientation)?[0,4,8,12].map(orientationCode=>({itemId:o.itemId,orientationCode})):[]});
+ return tree.objects.flatMap(o=>{return isEightWay(o.orientation)?(tree.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).map(orientationCode=>({itemId:o.itemId,orientationCode})):[]});
 }
 export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>){
  let left=0,top=0,right=1,bottom=1;
@@ -109,8 +115,8 @@ function supportAnchorFits(tree:SupportTree,raster:TerrainRaster,x:number,y:numb
  return Number.isSafeInteger(x)&&Number.isSafeInteger(y)&&x>=0&&y>=0&&x<raster.sizeX*tree.factor&&y<raster.sizeY*tree.factor&&raster.nativeFloorValues.length===raster.sizeX*raster.sizeY;
 }
 export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,raster:TerrainRaster,index:number,x:number,y:number,orientation:string,nonstandard=false):SupportChildEdit[]|null{
- const a=tree.objects[index];if(!a||a.child||Math.floor(a.itemId/100000)!==400||!editable.has(a.itemId)||!isCardinal(a.orientation)||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x===a.x&&y===a.y&&orientation===a.orientation)return null;
- const oldKey=supportShapeKey(a),before=oldKey?shapes[oldKey]:null,shape=shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ const a=tree.objects[index];if(!a||a.child||Math.floor(a.itemId/100000)!==400||!editable.has(a.itemId)||!supportOrientationAllowed(tree.factor,a.orientation,nonstandard)||!supportOrientationAllowed(tree.factor,orientation,nonstandard)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x===a.x&&y===a.y&&orientation===a.orientation)return null;
+ const oldKey=supportShapeKey(a),before=oldKey?shapes[oldKey]:null,shape=shapes[a.itemId+':'+worldOrientationCode(orientation)];
  if(!shape||!before||!shape.cellCount||!before.cellCount||shape.cellCount>65536||before.cellCount>65536)return null;
  if(nonstandard){
   if(!supportAnchorFits(tree,raster,a.x,a.y)||!supportAnchorFits(tree,raster,x,y))return null;
@@ -130,8 +136,8 @@ export function supportFreeGroupTransform(tree:SupportTree,shapes:Readonly<Recor
  const a=tree.objects[anchor];if(!a||!indices.includes(anchor)||indices.length<2||indices.length>32||new Set(indices).size!==indices.length||![x,y].every(Number.isSafeInteger))return null;
  const out:SupportChildEdit[]=[];
  for(const index of indices){
-  const o=tree.objects[index];if(!o||o.child||!eligible.has(o.itemId)||!isCardinal(o.orientation))return null;
-  const dx=o.x-a.x,dy=o.y-a.y,px=x+(turn===1?-dy:turn===-1?dy:dx),py=y+(turn===1?dx:turn===-1?-dx:dy),orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4];
+  const o=tree.objects[index];if(!o||o.child||!eligible.has(o.itemId)||!supportOrientationAllowed(tree.factor,o.orientation,true))return null;
+  const dx=o.x-a.x,dy=o.y-a.y,px=x+(turn===1?-dy:turn===-1?dy:dx),py=y+(turn===1?dx:turn===-1?-dx:dy),orientation=supportTurnOrientation(tree.factor,o.orientation,turn,true,true);if(!orientation)return null;
   if(px===o.x&&py===o.y&&orientation===o.orientation){const key=supportShapeKey(o),s=key?shapes[key]:null;if(!s?.cellCount||s.cellCount>65536||!supportAnchorFits(tree,raster,o.x,o.y))return null;continue;}
   const edit=supportFreeEdit(tree,shapes,eligible,raster,index,px,py,orientation,true);if(!edit)return null;out.push(...edit);
  }
@@ -160,15 +166,15 @@ export function supportGroupStockPlan(tree:SupportTree,shapes:Readonly<Record<st
   if(!o||o.child||!eligible.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!key||!shapes[key]?.cellCount||!supportAnchorFits(tree,raster,o.x,o.y))return null;
   const count=stock.get(o.itemId);
   if(count===undefined)return null;
-  const plan=destination&&anchor?supportStockPlacement(tree,shapes,raster,o.itemId,count,destination.x+o.x-anchor.x,destination.y+o.y-anchor.y,o.orientation,true):supportStockPickup(tree,index,stock,eligible);
+  const plan=destination&&anchor?supportStockPlacement(tree,shapes,raster,o.itemId,count,destination.x+o.x-anchor.x,destination.y+o.y-anchor.y,o.orientation,true):supportStockPickup(tree,index,stock,eligible,true);
   if(!plan)return null;out.push(plan);stock.set(o.itemId,count+(plan.action==='place'?-1:1));
  }
  return out;
 }
 export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
 export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string,nonstandard=false):boolean{
- if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
- const shape=shapes[itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4];
+ if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!supportOrientationAllowed(tree.factor,orientation,nonstandard)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
+ const shape=shapes[itemId+':'+worldOrientationCode(orientation)];
  if(!shape||!shape.cellCount||shape.cellCount>65536)return false;
  if(nonstandard)return supportAnchorFits(tree,raster,x,y);
  if(shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster,factor:tree.factor,verifiedGridOrdinals:[]},shape,x,y).length)return false;
@@ -192,8 +198,8 @@ export const supportTransferWords={
  'zh-CN':['移动到其他家具','选择目标家具','目标支撑面不可用。'],
  'pt-BR':['Mover para outro móvel','Escolher móvel de destino','Suporte de destino indisponível.']
 } as const;
-export function supportStockPickup(tree:SupportTree,index:number,counts:ReadonlyMap<number,number>,removable:ReadonlySet<number>):SupportStockPlan|null{
- const o=tree.objects[index];if(!o||o.child||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!isCardinal(o.orientation))return null;
+export function supportStockPickup(tree:SupportTree,index:number,counts:ReadonlyMap<number,number>,removable:ReadonlySet<number>,free=false):SupportStockPlan|null{
+ const o=tree.objects[index];if(!o||o.child||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!supportOrientationAllowed(tree.factor,o.orientation,free))return null;
  const count=counts.get(o.itemId);if(count===undefined||count>=2147483647)return null;
  return {action:'pickup',itemId:o.itemId,expectedStock:count,index,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation};
 }

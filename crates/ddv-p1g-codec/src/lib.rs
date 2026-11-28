@@ -1938,7 +1938,8 @@ mod browser_amount_preview {
         }
         pub fn prepare_support_child_experimental_copy(&mut self,plan:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_SUPPORT_CHILD_EDIT_INVALID");
-            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>8192{return Err(invalid());}
+            // Up to 32 exact source witnesses, including nested support paths.
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>32768{return Err(invalid());}
             let v:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let draft=grid_instance_preview::support_child_candidate(source,&v).map_err(|_|invalid())?;

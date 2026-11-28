@@ -1746,7 +1746,7 @@ fn validate_local_grid_destination_mode(source:&str,d:&PlainGridDestination,item
     !d.data_path.starts_with(prefix)||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
     xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
-    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&prefix=="GridData/Rooms/"&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(PatchError::InvalidTarget);}
+    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&matches!(prefix,"GridData/Rooms/"|"GridData/Furniture/")&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(PatchError::InvalidTarget);}
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let g=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
@@ -1763,7 +1763,7 @@ pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }
-/// Explicit free placement on a codec-verified support surface; cardinal only.
+/// Explicit free placement on a codec-verified support surface; eight-way for factor one.
 pub fn preview_free_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
  validate_local_grid_destination_mode(source,d,item_id,xy,orientation,"GridData/Furniture/",true)?;
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
