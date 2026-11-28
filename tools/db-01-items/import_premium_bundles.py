@@ -253,7 +253,8 @@ def merge(source_bytes, report_bytes, legacy_bytes, previous=None):
             'serverDefinitions': observations, 'steamRevisions': revisions, 'legacyDefinitions': legacy,
             'historicalSteamItems': historical_items,
             'steamObservationsBySource': observation_history,
-            'missingSteamObservationSourceSha256s': missing_observation_sources}
+            'missingSteamObservationSourceSha256s': missing_observation_sources,
+            **({'weeklyCache': previous['weeklyCache']} if previous and 'weeklyCache' in previous else {})}
 
 
 def opt(obj, keys):
