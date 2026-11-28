@@ -50,7 +50,8 @@ def build(paths,out):
                 require(body in ("male","female") and name.endswith(("_Body","_Face","_Head")) and pid in address,"material role")
                 g=address[pid];key=digest(raw);require(re.fullmatch("[a-f0-9]{32}",g) and g not in guids and key not in materials,"material identity");guids.add(g)
                 fl=mat["floats"];require(fl["_FACE"] in (0.,1.) and fl["_SkinGlossMultiplier"]==0.800000011920929,"skin material values")
-                materials[key]={"guid":g,"body":body,"role":role,"name":name,"spec":target(t[MAPS[0]]),"normal":target(t[MAPS[1]]),"shadow":target(t[MAPS[2]]),"faceFlag":fl["_FACE"],"glossMultiplier":fl["_SkinGlossMultiplier"],"shadowTerminatorIntensity":fl["_ShadowTerminatorIntensity"]}
+                require(set(mat["colors"])=={"_SkinSpecularColor","_SkinAmbientColor"},"skin color properties")
+                materials[key]={"specularColor":mat["colors"]["_SkinSpecularColor"],"ambientColor":mat["colors"]["_SkinAmbientColor"],"guid":g,"body":body,"role":role,"name":name,"spec":target(t[MAPS[0]]),"normal":target(t[MAPS[1]]),"shadow":target(t[MAPS[2]]),"faceFlag":fl["_FACE"],"glossMultiplier":fl["_SkinGlossMultiplier"],"shadowTerminatorIntensity":fl["_ShadowTerminatorIntensity"]}
         if path.name.startswith("common_") or ASSETS.fullmatch(path.name):
             require(cab not in texture_pins,"duplicate texture bundle")
             texture_pins[cab]=pin;sources[cab]=(obs,files)
@@ -75,7 +76,7 @@ def build(paths,out):
             row.update({"payloadSha256":digest(payload),"mipByteLengths":[len(x) for x in rgba],"rgbaSha256":digest(pixels),"asset":{"sha256":sha,"bytes":len(data)}})
         textures[key]=row
     require(len(blobs)==6 and sum("reuse" in r for r in textures.values())==5,"deduplicated texture coverage")
-    manifest={"schema":"wand.photo-mode.native-skin-inputs@1","gameVersion":"1.26.2","encoding":"deflate-rgba8-mip-chain","coordinateSpace":"UnityTextureRows","lightingParityVerified":False,"materialSourcePins":material_pins,"textureSourcePins":texture_pins,"materials":materials,"textures":textures}
+    manifest={"schema":"wand.photo-mode.native-skin-inputs@2","gameVersion":"1.26.2","encoding":"deflate-rgba8-mip-chain","coordinateSpace":"UnityTextureRows","lightingParityVerified":False,"materialSourcePins":material_pins,"textureSourcePins":texture_pins,"materials":materials,"textures":textures}
     with zipfile.ZipFile(out,"x",compression=zipfile.ZIP_STORED) as z:
         z.writestr("avatar-skin-inputs.json",json.dumps(manifest,separators=(",",":"),sort_keys=True,allow_nan=False))
         for key,data in sorted(blobs.items()):z.writestr(key+".wsi",data)
