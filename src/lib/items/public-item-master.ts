@@ -536,6 +536,10 @@ export interface PremiumBundleRevision {
   readonly description?:string|null;
   readonly language?:string|null;
   readonly titleKey?:string|null;
+  readonly descriptionKey?:string|null;
+  readonly gameVersion?:string;
+  readonly capturedUnixSeconds?:number;
+  readonly detailCaptureSha256?:string;
   readonly minGameVersion?:string|null;
   readonly artwork?:Readonly<Record<string,unknown>>;
 }

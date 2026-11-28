@@ -49,7 +49,8 @@ export function loadPremiumBundleColumns(project,pin,rows){
   }
   const c=catalog.counts;
   check(c.publicDefinitions===catalog.definitions.length&&c.publicDistinctItems===all.size&&
-    c.steam===currentCount&&c.shared===commonCount&&c.switch===oldCount+c.withheldDefinitions&&
+    c.steam===currentCount+c.withheldCurrentDefinitions&&c.shared===commonCount+c.withheldSharedDefinitions&&c.switch===oldCount+c.withheldLegacyDefinitions&&
+    c.withheldDefinitions===c.withheldCurrentDefinitions+c.withheldLegacyDefinitions-c.withheldSharedDefinitions&&
     c.total===c.publicDefinitions+c.withheldDefinitions&&c.legacyOnly===c.switch-c.shared&&c.steamOnly===c.steam-c.shared,'CENSUS');
   return {catalog,byItem,coverage:{...c,canonicalItemCount:byItem.size,unindexedItemCount:all.size-byItem.size,
     canonicalCurrentItemCount:[...byItem.values()].filter(x=>x.currentBundleIds.length).length,
