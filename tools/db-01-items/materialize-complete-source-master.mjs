@@ -20,6 +20,7 @@ import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
+import {buildMemoryNativeReferences} from './memory-native-references.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1714,6 +1715,14 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
         if(prefix==='source')addSource(prefix+'.'+name,row.itemId,part);
         else add(prefix+'.'+name,row.itemId,part);
       }
+    }
+  }
+  const memoryReferences=buildMemoryNativeReferences(source,rows,memoryAppearance);
+  for(const row of rows){
+    const links=memoryReferences.get(row.itemId);
+    if(links?.length){
+      add('acquisition.memoryNativeReferences',row.itemId,links);
+      add('acquisition.memoryNativeSourceItemIds',row.itemId,[...new Set(links.map(l=>l.sourceItemId))].sort((a,b)=>a-b));
     }
   }
   const refs=buildReferenceColumns(rows);
