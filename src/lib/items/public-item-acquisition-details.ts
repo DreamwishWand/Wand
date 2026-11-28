@@ -57,6 +57,7 @@ const extensionFields={
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   questLoot:'acquisition.questAdditionalLootSources',
+  profileLevel:'acquisition.profileLevelRewardSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
 } as const;
 export type ClassificationExtensionFamily=keyof typeof extensionFields;
@@ -211,6 +212,21 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           typeof evidence.sourcePath==='string'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(evidence.sourcePath)&&
           evidence.guaranteedGrantVerified===false,'EXTENSION_QUEST_ADDITIONAL_LOOT');
         output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
+      if(family==='profileLevel'){
+        const designer=evidence.kind==='designer_level_reward';
+        check(categories.includes('ordinary_gameplay')&&evidence.category==='ordinary_gameplay'&&
+          (designer||evidence.kind==='player_level_reward')&&id(evidence.targetItemId)&&id(evidence.configuredAmount)&&
+          typeof evidence.level==='number'&&Number.isSafeInteger(evidence.level)&&evidence.level>=2&&evidence.level<=(designer?10:49)&&
+          id(evidence.configuredPoints)&&evidence.pointKind===(designer?'pixel_dust':'xp')&&
+          evidence.sourceRecord===(designer?'DesignerLevelInfo':'PlayerInfo')&&evidence.sourceRecordIndex===(designer?230:401)&&
+          evidence.sourceRecordSha256===(designer?'200d4eec21f964b1746920771f371497245fd7ff3d3dd7d4a5d4c58af0ae56a6':'bc6f11a35b1bf3ca70c15a02ce1ae56981b2fcfbfdfc061b7852ed1ec925817a')&&
+          evidence.sourcePayloadSha256===(designer?'a4c350f1a891437e5b9c55c8b427502fb2d15d8952fe53372157786cb55f93b9':'47f95b74ada81d0a435b93b9636e3aa5105898ad3c5757816c7ffbb394471f7b')&&
+          evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&typeof evidence.sourcePath==='string'&&
+          (designer?/^DesignerLevels\[\d+\]\.ItemReward$/:/^PlayerLevels\[\d+\]\.ItemRewards\[\d+\]$/).test(evidence.sourcePath)&&
+          evidence.selectionRule==='old_level_exclusive_new_level_inclusive'&&evidence.guaranteedGrantVerified===false,'EXTENSION_PROFILE_LEVEL');
+        output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
       }
       if(family==='historicalStarpath'){
         check(evidence.sourcePlatform==='Switch'&&(

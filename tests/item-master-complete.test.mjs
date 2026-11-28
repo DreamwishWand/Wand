@@ -497,6 +497,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of stores.keys())expected.add(id);
   const feeding=fields.has('acquisition.ordinaryCritterFeedingSources')?new Map(await master.getFieldRows('acquisition.ordinaryCritterFeedingSources')):new Map();
   for(const id of feeding.keys())expected.add(id);
+  const profileLevels=fields.has('acquisition.profileLevelRewardSources')?new Map(await master.getFieldRows('acquisition.profileLevelRewardSources')):new Map();
+  for(const id of profileLevels.keys())expected.add(id);
   const historicStar=new Map(await master.getFieldRows('acquisition.historicalStarpathSources'));
   for(const id of historicStar.keys())expected.add(id);
   const storyUnlock=fields.has('acquisition.storyUnlockSources')?new Map(await master.getFieldRows('acquisition.storyUnlockSources')):new Map();
@@ -527,6 +529,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id)||critter.has(id)||stores.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     for(const link of questLoot.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
+    if(profileLevels.has(id)&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     if(historicStar.has(id)&&!want.includes('star_path'))want.push('star_path');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if((loot.has(id)||feeding.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');

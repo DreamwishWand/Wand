@@ -81,7 +81,7 @@ test('all classification extensions preserve original evidence and localized sou
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
     eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
-    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',questLoot:'acquisition.questAdditionalLootSources',historicalStarpath:'acquisition.historicalStarpathSources'};
+    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',questLoot:'acquisition.questAdditionalLootSources',profileLevel:'acquisition.profileLevelRewardSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
   const expected=new Map(),counts={};
   for(const [family,field] of Object.entries(fields)){
@@ -105,7 +105,7 @@ test('all classification extensions preserve original evidence and localized sou
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
-      if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
+      if(ext.family==='configuredStore'||ext.family==='historicalStarpath'||ext.family==='profileLevel')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
       const related=ext.family==='progression'&&ev.rankActivity?[ev.rankActivity.preConditionItemId,ev.rankActivity.unlockMissionItemId]:ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,

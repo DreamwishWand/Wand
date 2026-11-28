@@ -23,6 +23,7 @@ import {buildCharacterUnlockSources} from './character-unlock-sources.mjs';
 import {buildStoryUnlockSources} from './story-unlock-sources.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
+import {buildProfileLevelRewards} from './profile-level-rewards.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
 import {buildMemoryLootSources} from './memory-loot-sources.mjs';
 import {buildMemoryDefaultContent} from './memory-default-content.mjs';
@@ -1387,7 +1388,7 @@ function memoryAppearanceSources(rows,source){
     ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
   const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
   const storyUnlock=buildStoryUnlockSources(rows,source,questFlows.questKinds,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
@@ -1696,6 +1697,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       categorySet.add('in_game_limited_event');
     }
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
+    const levelRewards=profileLevels.get(row.itemId);
+    if(levelRewards?.length){
+      add('acquisition.profileLevelRewardSources',row.itemId,levelRewards);
+      categorySet.add('ordinary_gameplay');
+    }
     const critters=ordinaryCritters.get(row.itemId);
     if(critters?.length){
       add('acquisition.ordinaryCritterSources',row.itemId,critters);
@@ -2150,6 +2156,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const questFlows=loadQuestFlowColumns(project,source,rows);
   const historicalStarpath=loadHistoricalStarpathRewards(project,source,rows);
   const evolution=loadEvolutionSources(project,source,rows);
+  const profileLevels=buildProfileLevelRewards(project,source,rows,"dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623");
   const starpathFilters=loadStarpathRewardFilters(project,source,rows,historicalStarpath);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
@@ -2231,7 +2238,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
