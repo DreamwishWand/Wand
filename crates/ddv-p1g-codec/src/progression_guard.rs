@@ -1,0 +1,139 @@
+//! Common final-copy guard for ordinary editing (not a quest writer).
+//! Exact serialized state and address preservation; not proof of quest
+//! completion, item requirements, or game-runtime compatibility.
+use super::CodecError;
+use serde_json::Value;
+use std::collections::HashSet;
+
+fn world_field<'a>(root:&'a Value,key:&str)->Option<&'a Value>{
+    root.get("World").and_then(|w|w.get(key))
+}
+
+fn collect_addresses(value:&Value,addresses:&mut HashSet<(u64,u64)>)->Result<(),CodecError>{
+    let mut stack=vec![(value,0usize)];
+    let mut visited=0usize;
+    while let Some((v,depth))=stack.pop(){
+        visited+=1;
+        if visited>2_000_000||depth>256{return Err(CodecError::Bounds);}
+        match v{
+            Value::Object(o)=>{
+                // Exact paired native address, not a bare local ordinal or
+                // a quest ItemID. Accept observed case variants only.
+                let grid=o.get("GridID").or_else(||o.get("GridId")).and_then(Value::as_u64);
+                let object=o.get("GridObjectID").or_else(||o.get("GridObjectId")).and_then(Value::as_u64);
+                if let (Some(grid),Some(object))=(grid,object){
+                    if grid>0{
+                        addresses.insert((grid,object));
+                        if addresses.len()>100_000{return Err(CodecError::Bounds);}
+                    }
+                }
+                stack.extend(o.values().map(|v|(v,depth+1)));
+            },
+            Value::Array(a)=>stack.extend(a.iter().map(|v|(v,depth+1))),
+            _=>{}
+        }
+    }
+    Ok(())
+}
+
+fn grid<'a>(root:&'a Value,kind:&str,id:&str)->Option<&'a Value>{
+    world_field(root,"GridCollection")?.get(kind)?.get(id)
+}
+
+fn removed(grid:Option<&Value>,id:&str,number:u64)->bool{
+    match grid.and_then(|g|g.get("RemovedObjects")){
+        Some(Value::Array(rows))=>rows.iter().any(|v|v.as_u64()==Some(number)||v.get("ID").and_then(Value::as_u64)==Some(number)),
+        Some(Value::Object(rows))=>rows.contains_key(id)||rows.values().any(|v|v.as_u64()==Some(number)||v.get("ID").and_then(Value::as_u64)==Some(number)),
+        _=>false
+    }
+}
+
+fn same_address(before:&Value,after:&Value,g:u64,o:u64)->bool{
+    let gid=g.to_string();let oid=o.to_string();
+    for (kind,objects) in [("Grids","Objects"),("DiffGrids","ModifiedObjects")]{
+        let a=grid(before,kind,&gid);let b=grid(after,kind,&gid);
+        let record=|grid:Option<&Value>|grid.and_then(|v|v.get(objects)).and_then(|v|v.get(&oid)).cloned();
+        let old=record(a);let new=record(b);
+        if old!=new{return false;}
+        // Only compare grid metadata for a materialized referenced record.
+        // Unrelated objects and counters on the same grid remain editable.
+        if old.is_some(){
+            for key in ["ID","GridDataPath","GridDefaultLayoutPath","TessellationFactor"]{
+                if a.and_then(|v|v.get(key))!=b.and_then(|v|v.get(key)){return false;}
+            }
+        }
+        if kind=="DiffGrids"&&removed(a,&oid,o)!=removed(b,&oid,o){return false;}
+    }
+    true
+}
+
+pub(super) fn preserve_progression(source:&[u8],candidate:&[u8])->Result<(),CodecError>{
+    let before:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+    let after:Value=serde_json::from_slice(candidate).map_err(|_|CodecError::Json)?;
+    for key in ["MissionSlots","QuestInfo"]{
+        if world_field(&before,key)!=world_field(&after,key){return Err(CodecError::Patch);}
+    }
+    if before.get("ConditionalEventHistory")!=after.get("ConditionalEventHistory"){return Err(CodecError::Patch);}
+    let mut addresses=HashSet::new();
+    if let Some(slots)=world_field(&before,"MissionSlots"){collect_addresses(slots,&mut addresses)?;}
+    // Archived source/save contract identifies ActiveEvents.SpawnState.
+    // Protect exact addresses only; do not infer ownership from ItemID.
+    if let Some(events)=before.get("ConditionalEventHistory").and_then(|v|v.get("ActiveEvents")).and_then(Value::as_object){
+        for event in events.values(){
+            if let Some(spawned)=event.get("SpawnState").and_then(|v|v.get("SpawnedObjects")){
+                collect_addresses(spawned,&mut addresses)?;
+            }
+        }
+    }
+    if addresses.into_iter().any(|(g,o)|!same_address(&before,&after,g,o)){
+        return Err(CodecError::Patch);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use serde_json::json;
+    fn fixture()->Value{
+        json!({"World":{
+          "MissionSlots":{"a":{"Slots":[{"MissionId":123,"State":"MissionSlotState_OnGoing","Target":{"GridID":10,"GridObjectID":2},"MissionSteps":[{"SubSteps":[{"Objectives":[{"GridObjectIdsCollected":[3]}]}]}]}]}},
+          "QuestInfo":{"MissionsCompleted":[123]},
+          "GridCollection":{"Grids":{
+            "10":{"ID":10,"GridDataPath":"a","Objects":{"2":{"ID":2,"X":1},"3":{"ID":3,"X":1}}},
+            "20":{"ID":20,"Objects":{"2":{"ID":2,"X":1},"4":{"ID":4,"X":1}}}
+          },"DiffGrids":{"10":{"ModifiedObjects":{},"RemovedObjects":[]}}}
+        },"ConditionalEventHistory":{"ActiveEvents":{"a":{"SpawnState":{"SpawnedObjects":[{"GridID":20,"GridObjectID":4},{"GridID":10,"GridObjectID":9}]}}}},
+        "Player":{"Stock":1}})
+    }
+    fn check(a:&Value,b:&Value)->bool{
+        preserve_progression(&serde_json::to_vec(a).unwrap(),&serde_json::to_vec(b).unwrap()).is_ok()
+    }
+    #[test]
+    fn independent_objects_history_and_stock_remain_editable(){
+        let a=fixture();let mut b=a.clone();
+        b["World"]["GridCollection"]["Grids"]["10"]["Objects"]["3"]["X"]=9.into();
+        b["World"]["GridCollection"]["Grids"]["20"]["Objects"]["2"]["X"]=9.into();
+        b["Player"]["Stock"]=99.into();
+        assert!(check(&a,&b));
+    }
+    #[test]
+    fn protects_quest_state_active_object_and_missing_reference(){
+        let a=fixture();let mut b=a.clone();
+        b["World"]["MissionSlots"]["a"]["Slots"][0]["State"]="MissionSlotState_Available".into();assert!(!check(&a,&b));
+        b=a.clone();b["World"]["QuestInfo"]["MissionsCompleted"]=json!([]);assert!(!check(&a,&b));
+        b=a.clone();b["ConditionalEventHistory"]=json!({});assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["X"]=9.into();assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["20"]["Objects"].as_object_mut().unwrap().remove("4");assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["Objects"]["9"]=json!({"ID":9});assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["DiffGrids"]["10"]["RemovedObjects"]=json!([2]);assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["GridDataPath"]="other".into();assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=99.into();assert!(check(&a,&b));
+    }
+    #[test]
+    fn absent_progress_fields_do_not_disable_editing(){
+        let a=json!({"World":{},"Player":{"Stock":1}});let mut b=a.clone();
+        b["Player"]["Stock"]=2.into();assert!(check(&a,&b));
+        b["World"]["QuestInfo"]=json!({});assert!(!check(&a,&b));
+    }
+}
