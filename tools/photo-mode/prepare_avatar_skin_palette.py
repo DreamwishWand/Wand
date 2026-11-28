@@ -58,3 +58,4 @@ def apply_skin_palette(raw,dest,base_source):
     public["skinPalette"]=rows
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Saved skin palette: 30 native indices, both body types, 120 face/body textures; 4 reused PNGs, 116 lossless WebPs")
+    return m
