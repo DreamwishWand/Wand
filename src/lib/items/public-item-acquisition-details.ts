@@ -40,6 +40,7 @@ export interface OrdinaryProductionEvidence {
   readonly currentAvailabilityVerified:false;
 }
 const extensionFields={
+  storyUnlock:'acquisition.storyUnlockSources',
   characterUnlock:'acquisition.characterUnlockSources',
   questObjective:'acquisition.questObjectiveGrantSources',
   progression:'acquisition.ordinaryProgressionSources',
@@ -167,6 +168,36 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           relatedIds.push(evidence.missionItemId);
         }
         output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds});continue;
+      }
+      if(family==='storyUnlock'){
+        const event=evidence.routeKind==='festival_puzzle',category=event?'in_game_limited_event':'ordinary_gameplay';
+        check(categories.includes(category)&&evidence.category===category&&
+          id(evidence.sourceItemId)&&id(evidence.targetItemId)&&
+          (evidence.kind==='story_puzzle_unlock'&&evidence.sourceItemId===evidence.targetItemId||
+           event&&evidence.kind==='story_event_completion_reward'&&evidence.targetItemId===evidence.rewardItemId&&
+           id(evidence.configuredAmount)&&object(evidence.originalReward)&&evidence.originalReward.ItemID===evidence.targetItemId&&
+           evidence.originalReward.Amount===evidence.configuredAmount&&evidence.sourcePath==='source.Reward.ItemID')&&
+          evidence.sourceStorySha256===sha?.Story&&evidence.sourceMissionSha256===sha?.Mission&&
+          evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&
+          evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.guaranteedGrantVerified===false&&typeof evidence.isMissionItem==='boolean'&&
+          object(evidence.visibilityConditions)&&object(evidence.unlockConditions)&&
+          Array.isArray(evidence.unlockCosts)&&Array.isArray(evidence.missionItemIds)&&
+          evidence.missionItemIds.every(id)&&Array.isArray(evidence.conditionItemIds)&&evidence.conditionItemIds.every(id)&&
+          (event?evidence.isMissionItem===true&&evidence.unlockCosts.length===0&&evidence.missionItemIds.length===0&&
+            id(evidence.rewardItemId)&&id(evidence.conditionItemId)&&evidence.conditionItemIds.includes(evidence.conditionItemId)&&
+            ['ParksFloatingFestival','HauntedFloatingFestival2026'].includes(String(evidence.eventName))&&
+            evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+            Array.isArray(evidence.resolvedConditions)&&evidence.resolvedConditions.length>0:
+            evidence.routeKind==='snippet_cost'?evidence.unlockCosts.length>0&&evidence.missionItemIds.length===0:
+            evidence.routeKind==='quest_conditions'&&evidence.missionItemIds.length>0),
+          'EXTENSION_STORY_UNLOCK');
+        const relatedIds:number[]=[...evidence.missionItemIds,...evidence.conditionItemIds];
+        for(const cost of evidence.unlockCosts){
+          check(object(cost)&&id(cost.Id)&&id(cost.Amount),'EXTENSION_STORY_COST');relatedIds.push(cost.Id);
+        }
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[...new Set(relatedIds)]});continue;
       }
       if(family==='questLoot'){
         const category=evidence.category;
@@ -549,7 +580,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='storyUnlock'?['Story']:e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});

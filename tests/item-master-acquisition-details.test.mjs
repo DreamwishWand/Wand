@@ -77,7 +77,7 @@ test('ordinary category extensions resolve every quest and production source usi
 test('all classification extensions preserve original evidence and localized source and related identities',async()=>{
   const requests=[],fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
   const db=await openCurrentItemDatabase('',fetcher);
-  const fields={characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
+  const fields={storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
     eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
@@ -93,7 +93,7 @@ test('all classification extensions preserve original evidence and localized sou
       if(list.length)expected.set(id,list);
     }
   }
-  assert.equal(counts.progression,126);assert.equal(counts.critterBefriending,100);
+  assert.equal(counts.progression,124);assert.equal(counts.critterBefriending,100);
   assert(counts.conditionalQuest>=5);assert.equal(counts.configuredStore,134);assert.equal(counts.lootPresent,24);
   const ids=[...expected.keys()].sort((a,b)=>a-b);
   const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');
@@ -113,7 +113,7 @@ test('all classification extensions preserve original evidence and localized sou
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
         ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId,...(ev.precursors?[ev.inventoryItemId,ev.blockerItemId,...ev.precursors.flatMap(p=>[p.sourceItemId,...(p.missionItemId?[p.missionItemId]:[])])]:[])])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:(ext.family==='storeGeneratedShelf'||ext.family==='storeGeneratedStage')?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[]),...(ev.catalogGate?.targetItemId?[ev.catalogGate.targetItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
-      assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),related);
+      assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),ext.family==='storyUnlock'?[...new Set([...ev.missionItemIds,...ev.conditionItemIds,...ev.unlockCosts.map(c=>c.Id)])]:related);
       assert(ext.relatedIdentities.every(i=>i.locale==='ja'));
     }
   }

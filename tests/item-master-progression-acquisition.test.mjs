@@ -14,7 +14,7 @@ test('ordinary progression reward evidence matches every positive original rewar
   const positive=v=>Number.isSafeInteger(v)&&v>0;
   const categories=new Map(await db.getFieldRows('nativeCategory'));
   for(const [source,r] of await db.getFieldRows('source.Reward')){
-    if(classes.get(source)==='StoryItemData'&&positive(r?.ItemID)&&positive(r?.Amount)&&categories.has(r.ItemID)&&r.ItemID!==source)
+    if(classes.get(source)==='StoryItemData'&&![200000049,200000058].includes(source)&&positive(r?.ItemID)&&positive(r?.Amount)&&categories.has(r.ItemID)&&r.ItemID!==source)
       expected.push(key(r.ItemID,source,'story_progress_reward','source.Reward.ItemID',r.Amount,null));
   }
   for(const [source,ms] of await db.getFieldRows('source.Milestones')){

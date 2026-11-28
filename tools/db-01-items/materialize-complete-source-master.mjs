@@ -20,6 +20,7 @@ import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {buildQuestObjectiveGrants} from './quest-objective-grants.mjs';
 import {buildCharacterUnlockSources} from './character-unlock-sources.mjs';
+import {buildStoryUnlockSources} from './story-unlock-sources.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
@@ -1200,7 +1201,7 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
   };
   for(const row of rows){
     const p={...row.nativeProperties,...row.sourceAttributes};
-    if(row.nativeCategory==='Story'&&row.sourceClass==='StoryItemData'){
+    if(row.nativeCategory==='Story'&&row.sourceClass==='StoryItemData'&&!row.nativeKey?.startsWith('Event!')){
       emit(row,p.Reward?.ItemID,'story_progress_reward','source.Reward.ItemID',p.Reward?.Amount);
     }
     if(row.nativeCategory==='DutyAch'&&row.sourceClass==='AchievementItemData'){
@@ -1342,6 +1343,7 @@ function memoryAppearanceSources(rows,source){
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
   const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
+  const storyUnlock=buildStoryUnlockSources(rows,source,questFlows.questKinds,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
   const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
@@ -1632,6 +1634,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    const storySources=storyUnlock.get(row.itemId);
+    if(storySources?.length){
+      add('acquisition.storyUnlockSources',row.itemId,storySources);
+      for(const l of storySources)categorySet.add(l.category);
+    }
     const recurringLoot=eventRecurringLoot.get(row.itemId);
     if(recurringLoot?.length){
       add('acquisition.eventRecurringLootSources',row.itemId,recurringLoot);
