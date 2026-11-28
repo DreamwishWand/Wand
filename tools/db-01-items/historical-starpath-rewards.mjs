@@ -90,3 +90,43 @@ export function loadHistoricalStarpathRewards(project,source,rows){
   console.log('DB01_HISTORICAL_STARPATH '+JSON.stringify(coverage));
   return {byItem,alternates,coverage};
 }
+
+/** Merge configured primary reward filter keys, not source records. The
+ * per-season access key prevents cross-season false matches when an item
+ * is free in one season and premium in another. Vault alternatives and
+ * premium access currency are deliberately excluded. */
+export function loadStarpathRewardFilters(project,source,rows,historical){
+  const result=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2')return result;
+  const known=new Set(rows.map(r=>r.itemId));
+  const add=(itemId,seasonId,premium,kind)=>{
+    check(id(itemId)&&name(seasonId)&&typeof premium==='boolean'&&['normal','bonus','vault'].includes(kind),'FILTER_REWARD');
+    if(!known.has(itemId))return;
+    const access=premium?'premium':'free';
+    const entry=result.get(itemId)??{seasons:new Set(),access:new Set(),keys:new Set()};
+    entry.seasons.add(seasonId);entry.access.add(access);
+    entry.keys.add(seasonId+':'+access);
+    result.set(itemId,entry);
+  };
+  for(const [itemId,rewards] of historical.byItem)for(const r of rewards)add(itemId,r.seasonId,r.premiumOnly,r.kind);
+  const bytes=readFileSync(join(project,'static/guide/public/starpath-cache-2026-11-22.json'));
+  check(bytes.length===34617&&createHash('sha256').update(bytes).digest('hex')==='78819b4d36042e3c60b576583149e58541d3ca297fa0c3ba8a9a775009614198','FILTER_CURRENT_SHA');
+  const snapshot=JSON.parse(bytes);
+  check(snapshot.schema==='wand.db03.public-starpath-cache@1'&&snapshot.source.platform==='Steam'&&
+    snapshot.source.ownerDeclaredGameVersion==='1.26.2'&&snapshot.source.fileSha256==='4168d6ec580b04893f701dec5f0509589d39fb2e838d08bac724a9720caecf14'&&
+    snapshot.source.seasonCatalogComplete===false&&snapshot.seasons.length===2,'FILTER_CURRENT_SOURCE');
+  let occurrences=0;
+  for(const s of snapshot.seasons){
+    check(['HauntingElegance2026','Seafaring2026'].includes(s.id),'FILTER_CURRENT_SEASON');
+    for(const [kind,rewards] of [['normal',s.rewardPages.flatMap(p=>p.rewards)],['bonus',s.bonusPages.flatMap(p=>p.rewards)],['vault',s.vaultRewards]]){
+      for(const r of rewards){
+        check(typeof r.itemId==='string'&&String(Number(r.itemId))===r.itemId&&id(r.amount),'FILTER_CURRENT_ID');
+        add(Number(r.itemId),s.id,r.premium,kind);occurrences++;
+      }
+    }
+  }
+  check(occurrences===67,'FILTER_CURRENT_CENSUS');
+  for(const [itemId,r] of result)result.set(itemId,{seasons:[...r.seasons].sort(),access:[...r.access].sort(),keys:[...r.keys].sort()});
+  console.log('DB01_STARPATH_FILTERS '+JSON.stringify({items:result.size,seasons:new Set([...result.values()].flatMap(r=>r.seasons)).size,free:[...result.values()].filter(r=>r.access.includes('free')).length,premium:[...result.values()].filter(r=>r.access.includes('premium')).length}));
+  return result;
+}
