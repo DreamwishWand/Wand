@@ -23,12 +23,15 @@ export async function checkLinearSceneComposite(page){
   target.dispose();
   // A synthetic LUT with independently varying red, green and blue axes exercises the actual final pass.
   const lut=new Uint8Array(98304);for(let b=0;b<32;b++)for(let g=0;g<32;g++)for(let r=0;r<32;r++){const j=(g*1024+b*32+r)*3;lut[j]=Math.round(255*b/31);lut[j+1]=Math.round(255*r/31);lut[j+2]=Math.round(255*g/31)}
-  const graded=new Target(gl,lut);graded.begin(16,16);draw([.125,.25,.375,.5],false);graded.present();const gradedPixel=pixel();graded.dispose();gl.deleteProgram(program);gl.deleteVertexArray(vao);return {shadow,additive,transparent,clear,gradedPixel,error:gl.getError()};
+  const graded=new Target(gl,lut);graded.begin(16,16);draw([.125,.25,.375,.5],false);graded.present();const gradedPixel=pixel();
+  // Radiance >1 must survive until after the translucent shadow pass.
+  graded.begin(16,16);draw([1.5,.8,.2,1],false);draw([0,0,0,.5],true);graded.present();const hdrPixel=pixel(),hdr=graded.hdr;
+  graded.dispose();gl.deleteProgram(program);gl.deleteVertexArray(vao);return {shadow,additive,transparent,clear,gradedPixel,hdrPixel,hdr,error:gl.getError()};
  },source);
  const srgb=x=>Math.round(255*(x<=.0031308?12.92*x:1.055*x**(1/2.4)-.055));
- for(const [name,expected] of Object.entries({shadow:[srgb(.25),srgb(.25),srgb(.25),255],additive:[srgb(.5),srgb(.35),srgb(.25),255],transparent:[srgb(.25),srgb(.5),0,128],clear:[0,0,0,0],gradedPixel:[srgb(.75),srgb(.25),srgb(.5),128]})){
+ for(const [name,expected] of Object.entries({shadow:[srgb(.25),srgb(.25),srgb(.25),255],additive:[srgb(.5),srgb(.35),srgb(.25),255],transparent:[srgb(.25),srgb(.5),0,128],clear:[0,0,0,0],gradedPixel:[srgb(.75),srgb(.25),srgb(.5),128],hdrPixel:[srgb(.1),srgb(result.hdr?.75:.5),srgb(.4),255]})){
   assert.ok(result[name].every((v,i)=>Math.abs(v-expected[i])<=3),name+' linear composite '+JSON.stringify(result[name])+' expected '+JSON.stringify(expected));
  }
  assert.equal(result.error,0);
- console.log('Linear scene composite: eye shadow, additive highlight, straight-alpha canvas and resize verified');
+ console.log('Linear scene composite: eye shadow, additive highlight, straight-alpha canvas, resize and '+(result.hdr?'HDR retention':'SDR fallback')+' verified');
 }

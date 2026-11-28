@@ -4,6 +4,9 @@ import {studioLutGLSL} from './native-studio-assets.ts';
  * Only the final fullscreen pass converts to the straight-alpha canvas.
  * Use the common supported MSAA sample count for color and depth; do not
  * require float-render-target extensions on tablets or integrated GPUs.
+ * When studio HDR assets are active, prefer RGBA16F so the linear blend
+ * retains radiance above 1 until the final LUT/output pass. On devices
+ * without float color attachments, keep the compatible SDR target.
  */
 export class LinearSceneTarget {
  private color:WebGLTexture|null=null;
@@ -16,12 +19,16 @@ export class LinearSceneTarget {
  private vao:WebGLVertexArrayObject|null=null;
  private width=0;private height=0;
  private samples:number;
+ private format:number;
+ readonly hdr:boolean;
  private gl:WebGL2RenderingContext;
  constructor(gl:WebGL2RenderingContext,lut?:Uint8Array<ArrayBuffer>){
   this.gl=gl;
   const counts=(format:number)=>Array.from(gl.getInternalformatParameter(gl.RENDERBUFFER,format,gl.SAMPLES) as Int32Array);
+  this.hdr=!!lut&&!!(gl.getExtension('EXT_color_buffer_float')||gl.getExtension('EXT_color_buffer_half_float'));
+  this.format=this.hdr?gl.RGBA16F:gl.SRGB8_ALPHA8;
   const depth=counts(gl.DEPTH_COMPONENT24);
-  this.samples=Math.max(0,...counts(gl.SRGB8_ALPHA8).filter(n=>n<=4&&depth.includes(n)));
+  this.samples=Math.max(0,...counts(this.format).filter(n=>n<=4&&depth.includes(n)));
   const shaders:WebGLShader[]=[];
   try{
    this.program=gl.createProgram();this.vao=gl.createVertexArray();
@@ -43,12 +50,12 @@ export class LinearSceneTarget {
   try{
    if(!Number.isSafeInteger(w)||!Number.isSafeInteger(h)||w<1||h<1||Math.max(w,h)>Math.min(g.getParameter(g.MAX_TEXTURE_SIZE),g.getParameter(g.MAX_RENDERBUFFER_SIZE)))throw Error('Unsupported scene target size');
    this.color=g.createTexture();this.fb=g.createFramebuffer();this.depth=g.createRenderbuffer();if(!this.color||!this.fb||!this.depth)throw Error('Scene target allocation failed');
-   g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,this.color);g.texStorage2D(g.TEXTURE_2D,1,g.SRGB8_ALPHA8,w,h);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.NEAREST);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.NEAREST);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);
+   g.activeTexture(g.TEXTURE0);g.bindTexture(g.TEXTURE_2D,this.color);g.texStorage2D(g.TEXTURE_2D,1,this.format,w,h);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.NEAREST);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.NEAREST);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);
    g.bindFramebuffer(g.FRAMEBUFFER,this.fb);g.framebufferTexture2D(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.TEXTURE_2D,this.color,0);
    if(this.samples){
     if(g.checkFramebufferStatus(g.FRAMEBUFFER)!==g.FRAMEBUFFER_COMPLETE)throw Error('Scene resolve framebuffer unavailable');
     this.ms=g.createFramebuffer();this.msColor=g.createRenderbuffer();if(!this.ms||!this.msColor)throw Error('Multisample scene allocation failed');
-    g.bindFramebuffer(g.FRAMEBUFFER,this.ms);g.bindRenderbuffer(g.RENDERBUFFER,this.msColor);g.renderbufferStorageMultisample(g.RENDERBUFFER,this.samples,g.SRGB8_ALPHA8,w,h);g.framebufferRenderbuffer(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.RENDERBUFFER,this.msColor);
+    g.bindFramebuffer(g.FRAMEBUFFER,this.ms);g.bindRenderbuffer(g.RENDERBUFFER,this.msColor);g.renderbufferStorageMultisample(g.RENDERBUFFER,this.samples,this.format,w,h);g.framebufferRenderbuffer(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.RENDERBUFFER,this.msColor);
    }
    g.bindRenderbuffer(g.RENDERBUFFER,this.depth);
    if(this.samples)g.renderbufferStorageMultisample(g.RENDERBUFFER,this.samples,g.DEPTH_COMPONENT24,w,h);else g.renderbufferStorage(g.RENDERBUFFER,g.DEPTH_COMPONENT24,w,h);
