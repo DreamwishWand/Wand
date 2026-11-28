@@ -78,7 +78,8 @@ test('all classification extensions preserve original evidence and localized sou
   const requests=[],fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
   const db=await openCurrentItemDatabase('',fetcher);
   const fields={progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
-    conditionalQuest:'acquisition.conditionalQuestSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+    conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',
+    eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
   const expected=new Map(),counts={};
@@ -87,8 +88,8 @@ test('all classification extensions preserve original evidence and localized sou
     counts[family]=rows.length;
     for(const [id,v] of rows){
       const list=expected.get(id)??[];
-      for(const evidence of family==='configuredStore'?[v]:v)list.push({family,evidence});
-      expected.set(id,list);
+      for(const evidence of family==='configuredStore'?[v]:v)if(evidence.category!==null)list.push({family,evidence});
+      if(list.length)expected.set(id,list);
     }
   }
   assert.equal(counts.progression,126);assert.equal(counts.critterBefriending,100);
@@ -97,15 +98,19 @@ test('all classification extensions preserve original evidence and localized sou
   const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');
   assert.equal(rows[ids.length],null);assert.deepEqual(rows.at(-1),rows[0]);
   for(const row of rows.slice(0,ids.length)){
-    assert.deepEqual(row.classificationExtensions.map(({family,evidence})=>({family,evidence})),expected.get(row.itemId));
-    for(const [family,field] of Object.entries(fields))assert.equal(row.classificationExtensionStatus[family],catalog.has(field)?'indexed':'not_indexed');
+    const byFamily=(a,b)=>a.family.localeCompare(b.family);
+    assert.deepEqual(row.classificationExtensions.map(({family,evidence})=>({family,evidence})).sort(byFamily),expected.get(row.itemId).sort(byFamily));
+    for(const [family,field] of Object.entries(fields))if(Object.hasOwn(row.classificationExtensionStatus,family))assert.equal(row.classificationExtensionStatus[family],catalog.has(field)?'indexed':'not_indexed');
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
       if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
+      const ev=ext.evidence;
       const related=ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
-        [...new Set(ext.evidence.questGates.map(g=>g.questId))]:ext.evidence.tableItemId?[ext.evidence.tableItemId]:[];
+        [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
+        [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
+        ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId])]:ev.tableItemId?[ev.tableItemId]:[];
       assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),related);
       assert(ext.relatedIdentities.every(i=>i.locale==='ja'));
     }
