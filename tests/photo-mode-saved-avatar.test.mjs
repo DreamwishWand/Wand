@@ -46,3 +46,15 @@ test('independent position morphs combine without mutating cached geometry',()=>
  for(let i=0;i<21;i++){const active=[1,9,20].includes(i);v.setUint32(off,Number(active),true);off+=4;if(active){v.setUint32(off,i===20?1:0,true);v.setFloat32(off+4,i===1?.25:i===9?.5:1,true);off+=16}}
  const base=new Float32Array([0,0,0,1,0,0]);assert.deepEqual([...applyFaceMorphs(bytes,base,[2,3,7])],[.75,0,0,2,0,0]);assert.deepEqual([...base],[0,0,0,1,0,0]);assert.throws(()=>applyFaceMorphs(bytes.slice(0,-1),base,[2,3,7]));assert.throws(()=>applyFaceMorphs(bytes,base,[8,0,0]));
 });
+import {savedHeadIndex,decodeHeadPart,selectHead} from '../src/lib/photo-mode/head-geometry.ts';
+test('saved head is selected independently per form and exact model',()=>{
+ const a=sanitizeSavedAvatarAppearance({...value,avatars:{female:{FaceType:{'0':7}},femaleMermaid:{FaceType:{'0':0}},male:{FaceType:{'0':8}}}});
+ assert.equal(savedHeadIndex(a,'female',false),7);assert.equal(savedHeadIndex(a,'female',true),0);assert.equal(savedHeadIndex(a,'male',false),undefined);
+ const head={heads:{female:Array.from({length:8},(_,i)=>({i}))},targets:{abc:{body:'female',index:0,slots:{}}}};
+ assert.equal(selectHead(head,'abc','female',7).row.i,7);assert.equal(selectHead(head,'abc','female',0),undefined);assert.equal(selectHead(head,'abc','male',7),undefined);
+});
+test('head geometry parser preserves independent skin and vertex arrays',()=>{
+ const n=1,ic=3,jc=1,b=new ArrayBuffer(16+56*n+2*ic+64*jc),v=new DataView(b);[0x31474857,n,ic,jc].forEach((x,i)=>v.setUint32(4*i,x,true));v.setFloat32(16,1.25,true);v.setFloat32(16+40,1,true);
+ const p={vertices:n,indices:ic,jointPaths:['root/x'],asset:{bytes:b.byteLength,sha256:'a'.repeat(64)}};
+ const slot={mesh:1,primitive:2},r=decodeHeadPart(b,p,slot);assert.equal(r.positions[0],1.25);assert.deepEqual([...r.indices],[0,0,0]);assert.deepEqual([...r.weights],[1,0,0,0]);assert.equal(r.inverseBind.length,16);r.positions[0]=99;assert.equal(v.getFloat32(16,true),1.25);v.setUint16(16+32,1,true);assert.throws(()=>decodeHeadPart(b,p,slot));
+});
