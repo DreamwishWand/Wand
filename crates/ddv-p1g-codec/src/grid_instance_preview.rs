@@ -945,7 +945,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
 
    if row.len()!=8+usize::from(row.contains_key("supportSource"))||row.contains_key("roomSource")==row.contains_key("localOrdinal")||row.contains_key("roomSource")&&row.contains_key("supportSource")||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
-   let expected=(int(value,"expectedX")?,int(stock,"expectedY")?);
+   let expected=(int(value,"expectedX")?,int(value,"expectedY")?);
    let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
    // The support writer remains cardinal-only, including its source witness.
    if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
