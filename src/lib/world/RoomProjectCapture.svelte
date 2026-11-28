@@ -57,22 +57,22 @@
   });
  }
  onDestroy(()=>{alive=false;epoch++;seen?.removeEventListener('message',receive);for(const p of requests.values())p.reject(Error('closed'));requests.clear();reader?.terminate();reader=null;rejectRead?.(Error('closed'));rejectRead=null;writer?.terminate();if(copy)URL.revokeObjectURL(copy.url);});
- async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>,backup=false):Promise<IndoorBackupRoom>{
+ async function readRoom(target:IndoorRoom,templates:RoomDesignTemplate[],own:Worker,source:File,valid:()=>boolean,finishIds:Map<string,Set<number>>,backup=false,privateContents=false):Promise<IndoorBackupRoom>{
   if(!target.surfaces.length||target.surfaces.length>9)throw Error('surfaces');
   const out:RoomProjectSurface[]=[];
    for(const face of target.surfaces){
     if(!valid())throw Error('changed');const template=captureRoomTemplate(face,templates);if(!template)throw Error('terrain');
     const supportParents=witnesses.filter(p=>p.roomOrdinal===target.ordinal&&p.surfaceOrdinal===face.ordinal),scenes=new Map<number,SupportScene>();
     for(let i=0;i<supportParents.length;i+=16){const batch=await readSupports(source,supportParents.slice(i,i+16));if(!valid())throw Error('changed');for(const [id,scene] of batch)scenes.set(id,scene);}
-    const rows=captureRoomRows(target,face,template,supportParents,scenes);if(!rows)throw Error('poses');
+    const rows=captureRoomRows(target,face,template,supportParents,scenes,privateContents);if(!rows)throw Error('poses');
     const itemIds=[...new Set(rows.map(p=>p.itemId))],defs=new Map<number,DesignItemGeometry>();
     if(itemIds.length){const d=await request(own,{command:'design-shapes',key:template.grid.key,itemIds,roomBackup:backup&&indoorFreeFloor(face),supportAttachments:designAttachments(rows)});if(!valid()||d.kind!=='design-shapes'||d.key!==template.grid.key||!Array.isArray(d.result)||d.result.length!==itemIds.length)throw Error('geometry');for(const g of d.result as DesignItemGeometry[])defs.set(g.itemId,g);}
     if(face.finish&&!finishIds.has(face.kind)){const d=await request(own,{command:'room-finish-catalog',kind:face.kind,locale});if(!valid()||d.kind!=='room-finish-catalog'||d.surface!==face.kind||!Array.isArray(d.items))throw Error('finish');finishIds.set(face.kind,new Set(d.items.map((p:{itemId:number})=>p.itemId)));}
     const native=backup&&indoorFreeFloor(face)?await nativeGeometry(face,itemIds,own,valid,defs,true):undefined;
-    const captured=captureRoomSurface(face,template,rows,defs,finishIds.get(face.kind)??new Set(),native);if(!captured)throw Error('validation');out.push(captured);
+    const captured=captureRoomSurface(face,template,rows,defs,finishIds.get(face.kind)??new Set(),native,privateContents);if(!captured)throw Error('validation');out.push(captured);
    }
 
-  if(!capturedRoomDocument(target,out,templates,backup))throw Error('room');
+  if(!capturedRoomDocument(target,out,templates,backup,privateContents))throw Error('room');
   return {room:target,surfaces:out};
  }
  async function nativeGeometry(face:IndoorRoom['surfaces'][number],ids:readonly number[],own:Worker,valid:()=>boolean,design:ReadonlyMap<number,DesignItemGeometry>,free=false):Promise<RoomApplySurfaceGeometry>{
@@ -89,7 +89,7 @@
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
    const loaded=mode==='restore'&&chosen?await readDecorationFile(chosen,INDOOR_BACKUP_LIMIT):null,incomingRaw=loaded?.text??null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw&&!loaded?.storage)void rememberPreset(chosen,incomingRaw).catch(()=>{});
-   for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds,mode!=='design'));
+   for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds,mode!=='design',mode==='backup'&&includeContents));
    if(!valid())throw Error('changed');
    if(mode==='restore'){
     if(!incoming)throw Error('file');

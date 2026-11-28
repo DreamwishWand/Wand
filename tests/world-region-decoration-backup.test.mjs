@@ -63,6 +63,8 @@ test('area preset returns reconstructible empty storage, but never removes nonem
  const rows=[empty,full,unknown,noncanonical];
  const capture=biomeFurnitureSnapshot(g,rows,0,false,undefined,true);
  assert.ok(capture);assert.deepEqual(capture.editable,[empty]);assert.deepEqual(capture.protectedObjects,[full,unknown,noncanonical]);
+ const privateCapture=biomeFurnitureSnapshot(g,rows,0,false,undefined,true,true);
+ assert.ok(privateCapture);assert.deepEqual(privateCapture.editable,[empty,full,noncanonical]);assert.deepEqual(privateCapture.protectedObjects,[unknown]);
  const review=biomeFurnitureReplacement(g,[g],new Map(),rows,0,[],new Map(),new Map([[40001680,0]]),false,undefined,true);
  assert.ok(review);assert.deepEqual(review.removed,[empty]);assert.equal(review.plan.remove[0].includeStorage,true);assert.equal(review.returned.get(40001680),1);assert.equal(review.protectedObjects.length,3);
 });

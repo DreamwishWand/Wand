@@ -18,7 +18,7 @@
  import {captureIslandDecoration,parseIslandDecoration,reviewIslandDecoration,islandDecorationWords,ISLAND_DECORATION_FILE_LIMIT,WORLD_DECORATION_FILE_LIMIT,worldDecorationWords} from './island-decoration-preset.ts';
  import {networkRows,type NetworkPose} from './biome-network-preset.ts';
  import {biomeDecorationWords} from './biome-decoration-preset.ts';
- import {islandSaveSnapshot,parseIslandSavePreset,islandSaveReplacement,islandSaveWords} from './island-save-preset.ts';
+ import {islandSaveSnapshot,privateIslandFurnitureText,parseIslandSavePreset,islandSaveReplacement,islandSaveWords} from './island-save-preset.ts';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import {DESIGN_FILE_LIMIT,type DesignItemGeometry} from './design-layout.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
@@ -137,7 +137,7 @@
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  async function exportPreset(){
-  if(!snapshot||blocked||busy||includeNetworks&&!selectedSnapshot)return;const text=region?(regionCapture?.text??null):includeNetworks?selectedSnapshot!.text:snapshot.text;if(!text){error=true;return;}if(includeContents&&file){if(region&&!privateRegion){error=true;return;}const f=file,token=epoch,scope=region?JSON.stringify({kind:'region',objects:privateRegion}):outdoorPrivateScope(grids);reading=true;try{await savePrivateDecoration(f,scope,text,region?'wand-private-region.json':'wand-private-outdoor.json',()=>file===f&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}return;}savePresetFile(text,region?'wand-region-decoration.json':world?'wand-world-'+grids[0].layoutId.split('/')[1]+'-decoration.json':'wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json');
+  if(!snapshot||blocked||busy||includeNetworks&&!selectedSnapshot)return;const text=includeContents?(region?(supportTrees?reviewRegionCapture(region,grids,snapshot,networks,supportTrees,world,landscapes,freePlacement&&world,true)?.text??null:null):includeNetworks?captureIslandDecoration(grids,snapshot,networks,includeSupport?supportTrees:undefined,world,landscapes,world,true)?.text??null:privateIslandFurnitureText(grids,snapshot)):region?(regionCapture?.text??null):includeNetworks?selectedSnapshot!.text:snapshot.text;if(!text){error=true;return;}if(includeContents&&file){if(region&&!privateRegion){error=true;return;}const f=file,token=epoch,scope=region?JSON.stringify({kind:'region',objects:privateRegion}):outdoorPrivateScope(grids);reading=true;try{await savePrivateDecoration(f,scope,text,region?'wand-private-region.json':'wand-private-outdoor.json',()=>file===f&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}return;}savePresetFile(text,region?'wand-region-decoration.json':world?'wand-world-'+grids[0].layoutId.split('/')[1]+'-decoration.json':'wand-island-'+(includeNetworks?'decoration-':'furniture-')+grids[0].layoutId.split('/')[2]+'.json');
  }
  async function open(e:Event){
   const el=e.currentTarget as HTMLInputElement,preset=el.files?.[0];el.value='';if(preset)void openPreset(preset);

@@ -41,7 +41,7 @@
  let privateStorage:string|null=null,includeContents=false;
  $: privateWords=privateDecorationWords[locale];
  function cancel(){privateStorage=null;epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
- async function exportPreset(){if(!snapshot||!grid||blocked||busy||!file)return;if(includeContents){const f=file,g=grid,token=epoch;reading=true;try{await savePrivateDecoration(f,outdoorPrivateScope([g]),snapshot.text,'wand-private-biome-'+g.key+'.json',()=>file===f&&key===g.key&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}}else savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
+ async function exportPreset(){if(!snapshot||!grid||blocked||busy||!file)return;if(includeContents){const f=file,g=grid,token=epoch;reading=true;try{const privateSnapshot=biomeFurnitureSnapshot(g,objects,omitted,false,undefined,false,true);if(!privateSnapshot)throw Error('private snapshot');await savePrivateDecoration(f,outdoorPrivateScope([g]),privateSnapshot.text,'wand-private-biome-'+g.key+'.json',()=>file===f&&key===g.key&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}}else savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
  async function open(e:Event){
   const element=e.currentTarget as HTMLInputElement,f=element.files?.[0];element.value='';if(f)void openFile(f);
  }
