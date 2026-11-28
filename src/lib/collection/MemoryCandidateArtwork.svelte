@@ -98,10 +98,10 @@
   {/if}
 </span>
 <style>
-  .memory-candidate{position:relative;display:grid;place-items:center;width:100%;height:100%;min-width:0;min-height:0}
-  canvas{display:block;width:100%;height:100%;object-fit:contain}
+  .memory-candidate{position:relative;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}
+  canvas{position:absolute;inset:0;display:block;width:100%;height:100%;min-width:0;min-height:0;object-fit:contain;object-position:center}
   canvas[hidden]{display:none}
-  .memory-fallback{width:100%;height:100%;min-width:0;min-height:0;display:grid;place-items:center}
+  .memory-fallback{width:100%;height:100%;min-width:0;min-height:0;display:grid;grid-template:minmax(0,1fr)/minmax(0,1fr);place-items:center;overflow:hidden}
   .memory-fallback.concealed{opacity:.25;filter:grayscale(1)}
   .memory-uncertain{position:absolute;inset-inline-end:4px;inset-block-end:4px;display:grid;place-items:center;width:1.4em;height:1.4em;border-radius:50%;color:#fff;background:#34465c;border:1px solid #91b9dc;font-size:.85em;font-weight:700;pointer-events:none}
   .piece-hit{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent;cursor:crosshair}
