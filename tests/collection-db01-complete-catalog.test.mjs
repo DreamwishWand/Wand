@@ -82,7 +82,14 @@ test('all verified collectible native classes are recovered from canonical sourc
   assert.equal(index.sourceItemCount,full.rows.length);
   const base=projectCompleteCollection(source);
   assert(index.sourceItemCount>=base.sourceItemCount);
-  for(const id of base.rootsByItem.keys())assert(index.rootsByItem.has(id));
+  for(const id of base.rootsByItem.keys())assert(index.rootsByItem.has(id),'original collectible candidates must not disappear due to missing names');
+  for(const root of ['memories','touch-of-magic']){
+    const expected=base.itemsByRoot.get(root)??[];
+    assert(expected.length>0,root+' is an existing product category');
+    assert(expected.every(id=>index.rootsByItem.get(id)===root));
+  }
+  assert.equal(index.rootsByItem.get(130000001),'memories');
+  assert(full.rows.some(row=>row.id==='40005160'),'named real furniture remains visible');
   const worlds=buildWorldBrowseIndex(index);
   for(const [key,scope] of worlds){
     for(const root of COLLECTION_TOP_CATEGORIES){

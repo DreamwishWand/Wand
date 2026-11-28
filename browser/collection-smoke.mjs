@@ -601,19 +601,26 @@ try{
   await deep.goto(url+'?item=40005160');
   await deep.locator('.item-inspector h2').waitFor({timeout:30000});
   assert.match(await deep.locator('.item-inspector h2').innerText(),/ガラスの靴|Glass Shoe/);
-  // Source-native DB-01 Item master is joined only when an item is opened.
-  // The pinned 1.26.2 master resolves exact original Tags and 8-language
-  // names by Item ID without treating source Tags as Collection membership.
-  const db01Details=deep.locator('.collection-item-master[data-item-id="40005160"]');
-  await db01Details.waitFor({timeout:30000});
-  assert.match(await db01Details.innerText(),/White/);
-  await db01Details.locator('summary').click();
-  assert.match(await db01Details.innerText(),/Bedroom/);
-  assert.match(await db01Details.innerText(),/Glass Shoe/);
-  const currentFacts=deep.locator('.collection-current-facts');
-  await currentFacts.locator('summary').click();
-  await currentFacts.locator('.fact-note').waitFor({timeout:60000});
-  await currentFacts.locator('summary').click();
+  await deep.locator('.collection-current-facts').waitFor({timeout:30000});
+  assert.equal(await deep.locator('.item-inspector details').count(),0,'Quick View must not hide item facts');
+  const itemPageLink=deep.locator('.item-page-link');
+  assert.equal(await itemPageLink.getAttribute('href'),'/Wand/ja/40005160/');
+  const full=await context.newPage();
+  await full.goto('http://127.0.0.1:4173/Wand/ja/40005160/');
+  await full.locator('[data-item-page="40005160"] h1').waitFor({timeout:60000});
+  assert.match(await full.locator('h1').innerText(),/ガラスの靴|Glass Shoe/);
+  assert.equal(await full.locator('.item-inspector').count(),0);
+  await full.locator('.fact-note').waitFor({timeout:60000});
+  await full.getByRole('checkbox',{name:'Expert Mode'}).check();
+  await full.locator('.collection-item-master').waitFor({timeout:30000});
+  assert.match(await full.locator('.collection-item-master').innerText(),/White/);
+  assert.match(await full.locator('.collection-item-master').innerText(),/Bedroom/);
+  await full.close();
+  await itemPageLink.click();
+  await deep.locator('[data-item-page="40005160"] h1').waitFor({timeout:60000});
+  await deep.goBack();
+  await deep.locator('.item-inspector h2').waitFor({timeout:60000});
+  await deep.waitForFunction(()=>document.querySelector('.toolbar input[type=search]')?.value==='40005160');
   // Intrinsic image dimensions must not enlarge the grid track or overlap the name.
   const artworkBounds=await deep.evaluate(()=>{
     const frames=[...document.querySelectorAll('.item-icon,.inspector-art')];
@@ -636,7 +643,6 @@ try{
     ['.item-inspector h2','color','--wand-text'],
     ['.inspector-meta','color','--wand-muted'],
     ['.ownership-actions button','color','--wand-text'],
-    ['.collection-item-master','color','--wand-text'],
     ['.inspector-art','background-color','--wand-surface-raised'],
   ]);
 
@@ -670,7 +676,6 @@ try{
   await deep.goto(url+'?item=40001569');
   await deep.locator('.item-inspector h2').waitFor({timeout:30000});
   const distributionPanel=deep.locator('.collection-acquisition');
-  await distributionPanel.locator('summary').click();
   await distributionPanel.locator('.distribution-groups li').first()
     .waitFor({timeout:60000});
   const rows=await distributionPanel.locator('.distribution-groups li').allTextContents();
@@ -683,8 +688,7 @@ try{
   await deep.locator('.language-popover').getByRole('button',{name:'English',exact:true}).click();
   await deep.waitForFunction(()=>document.querySelector('.distribution-groups')?.textContent
     ?.includes('Real-world and online distribution sources'));
-  assert.equal(await distributionPanel.getAttribute('open'),'',
-    'switching language must not close the source evidence');
+  assert.equal(await distributionPanel.locator('h3').count(),1);
   await deep.locator('.header-language-button').click();
   await deep.locator('.language-popover').getByRole('button',{name:'日本語',exact:true}).click();
   assert.deepEqual(await readLocalState(deep),initialDeepStore,
@@ -720,9 +724,6 @@ try{
   // TypeScript Worker. Opening one published Item must never claim live stock.
   const acquisitionPanel=page.locator('.collection-acquisition');
   assert.equal(await acquisitionPanel.count(),1);
-  assert.equal(acquisitionAssets.length,0,
-    'source-only acquisition files must remain lazy until the panel opens');
-  await acquisitionPanel.locator('summary').click();
   await acquisitionPanel.locator('.evidence-status').filter({
     hasText:/原本上の経路・候補です|現在の販売・入手可否は未確認です|経路は重複します|登録済みの入手元情報はありません/
   }).waitFor({timeout:60000});
@@ -735,33 +736,8 @@ try{
     assert.equal(loaded.length,1,file+' must be loaded only on demand');
     assert.equal(loaded[0].status,200,'source asset must be published');
   }
-  // Acquisition initializes a single SHA-verified public DB-00 reader.
-  // The Quest accordion must reuse that Worker, not re-download 13k Items.
-  const sharedCatalogAfterAcquisition=sharedCatalogAssets.length;
-  assert(sharedCatalogAfterAcquisition>0,
-    'the public DB-00 source is actually loaded during Collection browsing');
-  // Source classification lives in the Worker and must remain stable while
-  // the eight localized panel labels update without another download.
-  const relatedQuests=page.locator('.collection-related-quests');
-  assert.equal(await relatedQuests.count(),1);
-  assert.equal(questAssets.length,0,
-    'Quest evidence must not fetch optional conditions before opening');
-  await relatedQuests.locator('summary').click();
-  await relatedQuests.locator('.quest-evidence-status').filter({
-    hasText:/原本の静的な参照です|原本に関連クエストの記録はありません/
-  }).waitFor({timeout:60000});
-  assert.equal(await relatedQuests.getByRole('alert').count(),0);
-  assert.equal(questAssets.length,1);
-  assert.equal(questAssets[0].status,200);
-  assert.equal(sharedCatalogAssets.length,sharedCatalogAfterAcquisition,
-    'related Quests must reuse the existing DB-00 source Worker and Item shards');
-  for(const anchor of await relatedQuests.locator('.quest-evidence-section a').all()){
-    const href=await anchor.getAttribute('href');
-    assert(/^\/Wand\/guide\/quests\/\?quest=[1-9][0-9]*&(target|item)=40005160$/.test(href),
-      'only exact native Quest IDs and the selected Item ID may be linked');
-  }
+  assert.equal(await page.locator('.collection-related-quests').count(),0,'related quest details belong on the Item Page');
   const acquisitionFetchCount=acquisitionAssets.length;
-  const questFetchCount=questAssets.length;
   for(const {language,title,questTitle} of [
     {language:'English',title:'How to obtain',questTitle:'Related quests'},
     {language:'Français',title:'Comment obtenir',questTitle:'Quêtes associées'},
@@ -774,9 +750,7 @@ try{
   ]){
     await setItemLanguage(language);
     await page.waitForFunction(expected=>
-      document.querySelector('.collection-acquisition summary')?.textContent?.trim()===expected,title);
-    await page.waitForFunction(expected=>
-      document.querySelector('.collection-related-quests summary')?.textContent?.trim()===expected,questTitle);
+      document.querySelector('.collection-acquisition h3')?.textContent?.trim()===expected,title);
     const copy=collectionInterfaceCopy(({
       'English':'en','Français':'fr','Italiano':'it','Deutsch':'de',
       'Español':'es-ES','简体中文':'zh-CN','Português':'pt-BR','日本語':'ja'
@@ -794,14 +768,9 @@ try{
       'manual status actions must preserve their meaning in all 8 languages');
     assert.equal(await page.locator('.toolbar .subtle-button').innerText(),
       copy.filters+' ▾','filter control must update without resetting the Item');
-    assert.equal(await acquisitionPanel.getAttribute('open'),'',
-      'locale switch must not close the acquisition panel');
-    assert.equal(await relatedQuests.getAttribute('open'),'',
-      'locale switch must not close the related Quest panel');
+    assert.equal(await acquisitionPanel.locator('h3').count(),1);
     assert.equal(acquisitionAssets.length,acquisitionFetchCount,
       'locale change must never refetch immutable acquisition evidence');
-    assert.equal(questAssets.length,questFetchCount,
-      'locale change must never refetch immutable Quest evidence');
   }
   await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
@@ -859,6 +828,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.close();
   await page.reload();
+  // History snapshots restore the search rather than resetting to categories.
+  await page.waitForFunction(()=>document.querySelector('.toolbar input[type=search]')?.value==='40005160'&&document.querySelectorAll('.item-card').length===1,{},{timeout:60000});
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.facet-card').first().waitFor({timeout:60000});
   const persisted=await readLocalState(page);
   assert.equal(persisted.workspaces[0].entries['40005160'].status,'missing');
@@ -1494,6 +1466,14 @@ try{
   await memoryToolbar.getByRole('button',{name:'すべて解除'}).click();
   await memoryToolbar.getByRole('button',{name:'ピース 1',exact:true,pressed:false}).waitFor();
   assert.equal(await memoryToolbar.locator('strong').innerText(),'0 / 10');
+  // The same unnamed, source-backed Memory identity must open as a
+  // service-neutral Item Page and retain the shared manual piece record.
+  await memoryPage.locator('.item-page-link').click();
+  await memoryPage.locator('[data-item-page="130000001"] .item-page-actions').first().waitFor({timeout:60000});
+  await memoryPage.getByRole('button',{name:'ピース 1',exact:true}).waitFor({timeout:30000});
+  assert.equal(await memoryPage.getByRole('button',{name:'ピース 1',exact:true}).getAttribute('aria-pressed'),'false');
+  await memoryPage.goBack();
+  await memoryPage.locator('.memory-piece-toolbar').waitFor({timeout:30000});
   await memoryPage.goto(url+'?memoryPreview=1&item=130000001');
   await memoryPage.locator('.item-inspector').waitFor({timeout:25000});
   await memoryPage.locator('.item-inspector [data-memory-view="manual"]').waitFor({timeout:25000});

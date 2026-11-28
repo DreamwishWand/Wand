@@ -1721,6 +1721,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.eventRecurringLootSources',row.itemId,recurringLoot);
       categorySet.add('in_game_limited_event');
     }
+    const keyholeTransforms=protoAcquisition.keyholeTransforms.get(row.itemId);
+    if(keyholeTransforms?.length)add('acquisition.keyholeTransformSources',row.itemId,keyholeTransforms);
     const miniEventRewards=protoAcquisition.miniEventRewards.get(row.itemId);
     if(miniEventRewards?.length){
       add('acquisition.miniEventRewardSources',row.itemId,miniEventRewards);
@@ -2270,7 +2272,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
       index.shards[path]=write(path,{schema:'wand.item-master.shard@1',bucket:key,items:buckets[i]},buckets[i].length);
     }
-    write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
+    index.assets['explore.json']=write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
       universeTags:source.universeTags},explore.length);
     index.assets['collection-facets.json']=write('collection-facets.json',f,f.sourceItemCount);
     if(premiumBundles)index.assets['premium-bundles.json']=write('premium-bundles.json',{...premiumBundles.catalog,release:e.release},premiumBundles.catalog.definitions.length);

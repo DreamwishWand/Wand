@@ -1,8 +1,7 @@
-"""Publish only the pinned, derived hair test package when present.
-No native shader bytes or Unity source archives. Missing optional release
-asset preserves the previous preview; a present invalid archive fails closed.
+"""Publish the required pinned, derived hair test package.
+No native shader bytes or Unity source archives. Missing or invalid archives fail closed.
 """
-import io,json,urllib.request,urllib.error,zipfile,struct,zlib
+import io,json,urllib.request,zipfile,struct,zlib
 from prepare_release_preview import digest,require
 NAME="Dreamwish-Wand-avatar-hair-preview-20261128.zip"
 URL="https://github.com/DreamwishWand/Wand/releases/download/photo-mode-assets-20261127/"+NAME
@@ -10,11 +9,7 @@ SIZE=93906691
 SHA="bec811d5160ee4ce0ba6bc3f2bf0459f054dba708072b604315f26e8cf29d132"
 
 def download_hair_assets():
-    try:
-        with urllib.request.urlopen(urllib.request.Request(URL,headers={"User-Agent":"Dreamwish-Wand-Pages"}),timeout=120) as f:return f.read(SIZE+1)
-    except urllib.error.HTTPError as e:
-        if e.code==404:return None
-        raise
+    with urllib.request.urlopen(urllib.request.Request(URL,headers={"User-Agent":"Dreamwish-Wand-Pages"}),timeout=120) as f:return f.read(SIZE+1)
 
 def apply_hair_assets(raw,dest):
     require(len(raw)==SIZE and digest(raw)==SHA,'hair archive identity')

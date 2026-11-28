@@ -179,4 +179,4 @@ if __name__=='__main__':
         apply_studio_assets(a.studio_assets.read_bytes() if a.studio_assets else download_studio_assets(), a.dest)
         from prepare_hair_assets import download_hair_assets, apply_hair_assets
         hair=a.hair_assets.read_bytes() if a.hair_assets else download_hair_assets()
-        if hair is not None:apply_hair_assets(hair,a.dest)
+        apply_hair_assets(hair,a.dest)

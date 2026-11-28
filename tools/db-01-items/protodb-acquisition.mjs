@@ -10,6 +10,7 @@ import {loadConfiguredInventorySources} from './configured-inventory-sources.mjs
 import {loadContainerFurnitureSources} from './container-furniture-sources.mjs';
 import {loadMiniEventRewards} from './mini-event-rewards.mjs';
 import {loadProfileUpdateGrants} from './profile-update-grants.mjs';
+import {loadKeyholeTransforms} from './keyhole-transform-sources.mjs';
 const SHA=/^[a-f0-9]{64}$/;
 const check=(ok,code)=>{if(!ok)throw Error('DB01_PROTODB_ACQUISITION_'+code)};
 const digest=b=>createHash('sha256').update(b).digest('hex');
@@ -17,7 +18,7 @@ export function loadProtoDbAcquisition(project,source,byId){
   const version=source.target.gameVersion;
   check(/^\d+\.\d+\.\d+$/.test(version),'VERSION');
   const path=join(project,'data/ddv/item-master','original-protodb-acquisition-steam-'+version+'.json');
-  const result={byItem:new Map(),byOwner:new Map(),shopDisplay:new Map(),preDlc:new Map(),designUnlock:new Map(),inventoryTemplates:new Map(),containerFurniture:new Map(),miniEventRewards:new Map(),profileUpdateGrants:new Map()};
+  const result={byItem:new Map(),byOwner:new Map(),shopDisplay:new Map(),preDlc:new Map(),designUnlock:new Map(),inventoryTemplates:new Map(),containerFurniture:new Map(),miniEventRewards:new Map(),profileUpdateGrants:new Map(),keyholeTransforms:new Map()};
   if(!existsSync(path))return result;
   const d=JSON.parse(readFileSync(path,'utf8'));
   check(d.schema==='wand.db01.original-protodb-acquisition@1'&&d.target.platform==='Steam'&&
@@ -79,6 +80,7 @@ export function loadProtoDbAcquisition(project,source,byId){
   }
   result.miniEventRewards=loadMiniEventRewards(project,source,byId,d.sourceProtoDbSha256);
   result.profileUpdateGrants=loadProfileUpdateGrants(project,source,byId,d.sourceProtoDbSha256);
+  result.keyholeTransforms=loadKeyholeTransforms(project,source,byId,d.sourceProtoDbSha256);
   result.inventoryTemplates=loadConfiguredInventorySources(project,source,byId,d.sourceProtoDbSha256);
   result.containerFurniture=loadContainerFurnitureSources(project,source,byId,d.sourceProtoDbSha256,result.inventoryTemplates);
   console.log('DB01_PROTO_ACQUISITION '+JSON.stringify({friendshipItems:result.byItem.size,

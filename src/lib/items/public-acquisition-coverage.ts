@@ -9,6 +9,25 @@ export interface AcquisitionCoverageCounts {
   readonly newlyClassifiedSinceLegacy:number;
   readonly byCategory:Readonly<Record<GameNativeItemCategory,number>>;
 }
+export interface NativeCollectionCoverageCounts {
+  readonly candidates:number;
+  readonly eligible:number;
+  readonly excluded:number;
+  readonly unknown:number;
+  readonly eligibleClassified:number;
+  readonly eligibleUnclassified:number;
+  readonly excludedClassified:number;
+  readonly excludedUnclassified:number;
+  readonly unknownClassified:number;
+  readonly unknownUnclassified:number;
+}
+export interface NativeCollectionCoverage {
+  readonly total:Readonly<NativeCollectionCoverageCounts>;
+  readonly byNativeCategory:Readonly<Record<string,Readonly<NativeCollectionCoverageCounts>>>;
+  readonly eligibleUnclassifiedItemIds:readonly number[];
+  readonly unknownUnclassifiedItemIds:readonly number[];
+  readonly runtimeMembershipVerified:false;
+}
 export interface CurrentAcquisitionCoverage {
   readonly sourceGameVersion:string;
   readonly release:string;
@@ -18,6 +37,10 @@ export interface CurrentAcquisitionCoverage {
   readonly byNativeCategory:Readonly<Record<string,Readonly<AcquisitionCoverageCounts>>>;
   readonly collectionCandidatesByNativeCategory:Readonly<Record<string,Readonly<AcquisitionCoverageCounts>>>;
   readonly collectionSourceCandidates:Readonly<AcquisitionCoverageCounts>|null;
+  /** Only the verified CharacterItemData.CanBeCollected predicate, not full collection UI membership. */
+  readonly nativeCharacterCollectionPredicate:Readonly<{definitions:number;eligible:number;excluded:number;eligibleClassified:number;eligibleUnclassified:number}>|null;
+  /** Static native predicates only; absent or unresolved predicates remain unknown. */
+  readonly nativeCollectionCoverage:Readonly<NativeCollectionCoverage>|null;
   readonly unresolvedOnlineHintItemIds:number|null;
   readonly missingItemIdMeans:'unclassified_not_unobtainable';
   readonly runtimeMembershipVerified:false;
@@ -36,10 +59,12 @@ export async function readCurrentAcquisitionCoverage(db:PublicCompleteItemMaster
     missingItemIdMeans:'unclassified_not_unobtainable' as const,runtimeMembershipVerified:false as const,currentAvailabilityVerified:false as const};
   if(!required.every(f=>fields.has(f)))return Object.freeze({...base,status:'not_indexed' as const,all:null,
     byDefinitionScope:Object.freeze({}),byNativeCategory:Object.freeze({}),collectionCandidatesByNativeCategory:Object.freeze({}),
-    collectionSourceCandidates:null,unresolvedOnlineHintItemIds:null});
-  const [families,scopeRows,effectiveRows,legacyRows,hints]=await Promise.all([
+    collectionSourceCandidates:null,nativeCharacterCollectionPredicate:null,nativeCollectionCoverage:null,unresolvedOnlineHintItemIds:null});
+  const [families,scopeRows,effectiveRows,legacyRows,hints,characterModes,predicateRows]=await Promise.all([
     db.getFieldRows('nativeCategory'),db.getFieldRows('definitionScope'),db.getFieldRows('acquisition.effectiveCategories'),
-    db.getFieldRows('acquisition.categories'),fields.has('acquisition.onlineHints')?db.getFieldRows('acquisition.onlineHints'):[]]);
+    db.getFieldRows('acquisition.categories'),fields.has('acquisition.onlineHints')?db.getFieldRows('acquisition.onlineHints'):[],
+    fields.has('acquisition.characterUnlockMode')?db.getFieldRows('acquisition.characterUnlockMode'):[],
+    fields.has('collection.nativeCanBeCollected')?db.getFieldRows('collection.nativeCanBeCollected'):[]]);
   const scopeById=new Map(scopeRows),effective=new Map(effectiveRows),legacy=new Map(legacyRows);
   const all=create(),collection=create(),byScope=new Map<string,Counts>(scopes.map(s=>[s,create()]));
   const byCategory=new Map<string,Counts>(),byCollectionCategory=new Map<string,Counts>();
@@ -61,9 +86,60 @@ export async function readCurrentAcquisitionCoverage(db:PublicCompleteItemMaster
     if(scope==='source_candidate'){bump(collection,categories,newly);bump(group(byCollectionCategory,family),categories,newly);}
   }
   check(scopeById.size===seen.size&&[...effective.keys(),...legacy.keys()].every(id=>seen.has(id)),'CENSUS');
+  let nativeCharacterCollectionPredicate:CurrentAcquisitionCoverage['nativeCharacterCollectionPredicate']=null;
+  const characterFamilies=families.filter(([,family])=>family==='Character');
+  if(characterModes.length&&characterModes.length===characterFamilies.length){
+    const characterIds=new Set(characterFamilies.map(([id])=>id));
+    let eligible=0,excluded=0,eligibleClassified=0,verified=0;
+    for(const [id,mode] of characterModes){
+      check(characterIds.has(id),'CHARACTER_MODE_ID');
+      if(!mode||typeof mode!=='object'||Array.isArray(mode))continue;
+      const value=mode as Readonly<Record<string,unknown>>;
+      if(value.nativeCollectionPredicateVerified!==true||value.nativeCollectionPredicate!=='not_is_debug'||typeof value.nativeCanBeCollected!=='boolean')continue;
+      check(typeof value.debug==='boolean'&&value.nativeCanBeCollected===!value.debug,'CHARACTER_PREDICATE');
+      verified++;
+      if(value.nativeCanBeCollected){eligible++;if(effective.has(id))eligibleClassified++;}
+      else excluded++;
+    }
+    if(verified===characterModes.length)nativeCharacterCollectionPredicate=Object.freeze({
+      definitions:verified,eligible,excluded,eligibleClassified,eligibleUnclassified:eligible-eligibleClassified});
+  }
+  let nativeCollectionCoverage:CurrentAcquisitionCoverage['nativeCollectionCoverage']=null;
+  if(fields.has('collection.nativeCanBeCollected')){
+    const predicates=new Map<number,boolean>();
+    for(const [id,value] of predicateRows){
+      check(seen.has(id)&&typeof value==='boolean'&&!predicates.has(id),'NATIVE_COLLECTION_PREDICATE');
+      predicates.set(id,value);
+    }
+    type MutableNativeCounts={-readonly [K in keyof NativeCollectionCoverageCounts]:NativeCollectionCoverageCounts[K]};
+    const newCounts=():MutableNativeCounts=>({candidates:0,eligible:0,excluded:0,unknown:0,eligibleClassified:0,
+      eligibleUnclassified:0,excludedClassified:0,excludedUnclassified:0,unknownClassified:0,unknownUnclassified:0});
+    const total=newCounts(),groups=new Map<string,MutableNativeCounts>();
+    const eligibleUnclassifiedItemIds:number[]=[],unknownUnclassifiedItemIds:number[]=[];
+    const count=(c:MutableNativeCounts,value:boolean|undefined,classified:boolean)=>{
+      c.candidates++;
+      if(value===true){c.eligible++;if(classified)c.eligibleClassified++;else c.eligibleUnclassified++;}
+      else if(value===false){c.excluded++;if(classified)c.excludedClassified++;else c.excludedUnclassified++;}
+      else{c.unknown++;if(classified)c.unknownClassified++;else c.unknownUnclassified++;}
+    };
+    for(const [id,family] of families){
+      if(scopeById.get(id)!=='source_candidate')continue;
+      check(typeof family==='string','NATIVE_COLLECTION_FAMILY');
+      const value=predicates.get(id),classified=effective.has(id);
+      let counts=groups.get(family);if(!counts){counts=newCounts();groups.set(family,counts);}
+      count(total,value,classified);count(counts,value,classified);
+      if(!classified&&value===true)eligibleUnclassifiedItemIds.push(id);
+      else if(!classified&&value===undefined)unknownUnclassifiedItemIds.push(id);
+    }
+    check(total.candidates===collection.definitions&&total.eligibleUnclassified+total.excludedUnclassified+total.unknownUnclassified===collection.unclassified,'NATIVE_COLLECTION_CENSUS');
+    nativeCollectionCoverage=Object.freeze({total:Object.freeze(total),
+      byNativeCategory:Object.freeze(Object.fromEntries([...groups].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,Object.freeze(v)]))),
+      eligibleUnclassifiedItemIds:Object.freeze(eligibleUnclassifiedItemIds.sort((a,b)=>a-b)),
+      unknownUnclassifiedItemIds:Object.freeze(unknownUnclassifiedItemIds.sort((a,b)=>a-b)),runtimeMembershipVerified:false});
+  }
   const freezeMap=(m:Map<string,Counts>)=>Object.freeze(Object.fromEntries([...m].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,freeze(v)])));
   return Object.freeze({...base,status:'indexed' as const,all:freeze(all),byDefinitionScope:freezeMap(byScope),
     byNativeCategory:freezeMap(byCategory),collectionCandidatesByNativeCategory:freezeMap(byCollectionCategory),
-    collectionSourceCandidates:freeze(collection),
+    collectionSourceCandidates:freeze(collection),nativeCharacterCollectionPredicate,nativeCollectionCoverage,
     unresolvedOnlineHintItemIds:fields.has('acquisition.onlineHints')?hints.filter(([id,v])=>!effective.has(id)&&Array.isArray(v)&&v.length>0).length:null});
 }

@@ -26,13 +26,13 @@ test('original character modes and native character unlock action cover all dire
    assert.equal(link.currentAvailabilityVerified,false);assert.equal(link.guaranteedGrantVerified,false);
    if(link.category!==null)assert(effective.get(target).includes(link.category));
   }
- assert.equal(direct,35);assert.equal(fallback,26);assert.equal(sources.size,79);
+ assert.equal(direct,35);assert.equal(fallback,26);assert.equal(sources.size,80);
  const raw=new Map(await db.getFieldRows('source.SecretCharacterData'));
  const secretLinks=[...sources].flatMap(([,ls])=>ls.filter(l=>l.kind==='character_secret_condition_unlock'));
- assert.equal(secretLinks.length,30);
- assert.equal(secretLinks.filter(l=>!sources.get(l.targetItemId).some(r=>r.kind==='character_quest_unlock')).length,14);
+ assert.equal(secretLinks.length,31);
+ assert.equal(secretLinks.filter(l=>!sources.get(l.targetItemId).some(r=>r.kind==='character_quest_unlock')).length,15);
  const newlyCovered=secretLinks.filter(l=>!sources.get(l.targetItemId).some(r=>r.kind==='character_quest_unlock')).map(l=>l.targetItemId);
- assert.deepEqual(newlyCovered.sort((a,b)=>a-b),[10000027,10000029,10000038,10000043,10000046,10000060,10000061,10000062,10000063,10000070,10000073,10000103,10000114,10000133]);
+ assert.deepEqual(newlyCovered.sort((a,b)=>a-b),[10000027,10000029,10000038,10000043,10000046,10000060,10000061,10000062,10000063,10000070,10000073,10000103,10000114,10000133,10000209]);
  for(const l of secretLinks){
    const data=raw.get(l.targetItemId);
    assert.deepEqual(l.original,data.CharacterUnlockCondition);
@@ -47,6 +47,19 @@ test('original character modes and native character unlock action cover all dire
    assert(effective.get(l.targetItemId).includes(l.category));
  }
  assert(residents.every(([id])=>sources.get(id)?.some(l=>l.category==='ordinary_gameplay')));
+ const debugFlags=new Map(await db.getFieldRows('source.IsDebug'));
+ for(const [id,mode] of modes){
+   assert.equal(mode.nativeCanBeCollected,debugFlags.get(id)!==true);
+   assert.equal(mode.nativeCollectionPredicateVerified,true);
+   assert.equal(mode.nativeCollectionPredicate,'not_is_debug');
+ }
+ assert.equal([...modes.values()].filter(m=>!m.nativeCanBeCollected).length,60);
+ const dory=modes.get(10000209),doryLink=sources.get(10000209).find(l=>l.kind==='character_secret_condition_unlock');
+ assert.equal(dory.residentRouteEligible,false);assert.equal(dory.sidekick,true);
+ assert.equal(dory.nativeCanBeCollected,true);
+ assert.equal(doryLink.sidekick,true);assert.equal(doryLink.missionItemId,2070001508);assert.equal(doryLink.missionStepId,2);
+ assert.equal(doryLink.category,'ordinary_gameplay');
+ assert.equal([...modes].filter(([id,m])=>m.nativeCanBeCollected&&!effective.has(id)).length,0);
  for(const [id,ls] of sources)for(const l of ls)assert.equal(l.targetItemId,id);
  const ids=[...sources].filter(([,ls])=>ls.some(x=>x.category!==null)).map(([id])=>id);
  const details=await readItemAcquisitionSourceDetails(db,ids,'ja');

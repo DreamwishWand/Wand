@@ -39,6 +39,10 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
   const eligible=!debug&&!sidekick&&!syncOnline&&onlineCategory===0&&!generatorExcluded;
   const mode={unlockConditionCode:code,unlockCondition:names[code],sourcePath:'source.UnlockCondition',
     sourceFieldPresent:row.observedFields.some(([n])=>n===16),debug,sidekick,syncOnline,onlineCategory,generatorExcluded,
+    // CharacterItemData.get_CanBeCollected RVA 3D128B0 returns !IsDebug
+    // (byte at +0x52). This is only that native predicate, not full UI visibility.
+    nativeCanBeCollected:!debug,nativeCollectionPredicateVerified:true,
+    nativeCollectionPredicate:'not_is_debug',nativeAssemblySha256:NATIVE,
     residentRouteEligible:eligible,houseItemId:scalar('House',0)||null,villageSceneItemId:scalar('Village',0)||null,
     sourceGameVersion:source.target.gameVersion,sourceCharacterSha256:CHARACTER,currentAvailabilityVerified:false};
   modes.set(row.itemId,mode);
@@ -82,10 +86,13 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
  // Unlike a generic quest objective, this is an actual unlock route.
  // Keep the entire original precondition tree; it is not a substitute
  // for the final unlock predicate and is not claimed to be satisfied.
- let secretConditions=0,newSecretTargets=0;
+ let secretConditions=0,newSecretTargets=0,sidekickSecretTargets=0;
  const secretKinds={};
  for(const [target,mode] of modes){
-  if(!mode.residentRouteEligible||mode.unlockConditionCode!==4)continue;
+  // Non-debug, non-online sidekicks can have the same configured native
+  // secret-condition unlock route. Keep them distinct from resident modes.
+  const sidekickEligible=mode.sidekick&&!mode.debug&&!mode.syncOnline&&mode.onlineCategory===0&&!mode.generatorExcluded;
+  if((!mode.residentRouteEligible&&!sidekickEligible)||mode.unlockConditionCode!==4)continue;
   const data=props(known.get(target)).SecretCharacterData,tree=data?.CharacterUnlockCondition;
   if(tree===undefined||keys(tree,['Operator','Conditions'])&&(!tree.Conditions||!tree.Conditions.length))continue;
   check(keys(tree,['Operator','Conditions'])&&[undefined,0].includes(tree.Operator)&&
@@ -108,7 +115,12 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
    check(Number.isSafeInteger(stepId)&&stepId>=0&&
      props(mission).Steps?.filter(st=>(st.StepID??0)===stepId).length===1,'SECRET_STEP_ID');
   }else check(false,'SECRET_KIND');
+  if(sidekickEligible){
+   check(target===10000209&&p.Mission===2070001508&&kind==='MissionStepStatus'&&stepId===2&&p.Status===4,'SIDEKICK_SECRET_GATE');
+   sidekickSecretTargets++;
+  }
   emit(target,{kind:'character_secret_condition_unlock',category,sourceItemId:target,
+    sidekick:mode.sidekick,
     sourcePath:'source.SecretCharacterData.CharacterUnlockCondition',original:tree,
     preConditions:data.PreConditions??null,missionItemId:p.Mission,missionStepId:stepId,
     predicateKind:kind,unlockConditionCode:4,sourceMissionSha256:MISSION,nativeAssemblySha256:NATIVE});
@@ -116,11 +128,11 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
   secretKinds[kind]=(secretKinds[kind]??0)+1;
   if(!targets.has(target))newSecretTargets++;
  }
- check(secretConditions===30&&newSecretTargets===14&&byItem.size===79&&
-   secretKinds.MissionStatus===10&&secretKinds.MissionStepStatus===10&&
+ check(secretConditions===31&&newSecretTargets===15&&byItem.size===80&&sidekickSecretTargets===1&&
+   secretKinds.MissionStatus===10&&secretKinds.MissionStepStatus===11&&
    secretKinds.MissionStepCompleted===8&&secretKinds.MissionCompleted===2,'SECRET_CENSUS');
  console.log('DB01_CHARACTER_UNLOCK '+JSON.stringify({definitions:modes.size,residentModes:counts,questSteps:steps,ownerFallback,
    distinctQuestTargets:targets.size,classifiedQuestTargets:classified,automatic:counts.Automatic,
-   secretConditions,secretKinds,newSecretTargets,coveredResidents:byItem.size}));
+   secretConditions,secretKinds,newSecretTargets,coveredResidents:byItem.size-sidekickSecretTargets,sidekickSecretTargets,nonCollectibleByNativePredicate:[...modes.values()].filter(m=>!m.nativeCanBeCollected).length}));
  return result;
 }
