@@ -6,6 +6,7 @@ import {chromium} from 'playwright';
 import {checkLinearSceneComposite} from './photo-mode-linear-composite-smoke.mjs';
 import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
 import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.mjs';
+import {checkNativeHairSurface} from './photo-mode-native-hair-smoke.mjs';
 
 const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
 assert.equal(index.schema,'wand.photo-mode.pages-test@2');
