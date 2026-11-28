@@ -85,10 +85,12 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
       if(family==='initialInventory'){
         const groups=['Backpack','HomeStorage','Catalog','Wardrobe','Pantry','Makeup','Trimming','Buildings','Decals','Skins','AvatarFeatures','Figurines','PhotoMode','MountGear','EnvironmentalFX'];
-        check(evidence.kind==='ordinary_initial_list_inventory'&&evidence.category==='ordinary_gameplay'&&categories.includes('ordinary_gameplay')&&
+        check((evidence.kind==='ordinary_initial_list_inventory'||evidence.kind==='ordinary_initial_container_inventory')&&evidence.category==='ordinary_gameplay'&&categories.includes('ordinary_gameplay')&&
           id(evidence.targetItemId)&&id(evidence.configuredAmount)&&typeof evidence.sourcePosition==='number'&&Number.isSafeInteger(evidence.sourcePosition)&&evidence.sourcePosition>=0&&
-          evidence.sourceInventoryType==='list'&&typeof evidence.sourceFieldNumber==='number'&&Number.isSafeInteger(evidence.sourceFieldNumber)&&
-          evidence.sourceFieldNumber>=3&&evidence.sourceFieldNumber<=15&&evidence.sourceId===groups[evidence.sourceFieldNumber-1]&&
+          typeof evidence.sourceFieldNumber==='number'&&Number.isSafeInteger(evidence.sourceFieldNumber)&&
+          (evidence.kind==='ordinary_initial_list_inventory'&&evidence.sourceInventoryType==='list'&&evidence.sourceFieldNumber>=3&&evidence.sourceFieldNumber<=15||
+           evidence.kind==='ordinary_initial_container_inventory'&&evidence.sourceInventoryType==='container'&&evidence.sourceFieldNumber>=1&&evidence.sourceFieldNumber<=2)&&
+          evidence.sourceId===groups[evidence.sourceFieldNumber-1]&&
           evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.sourceRecordIndex===97&&
           evidence.sourceRecordSha256==='9ef61e35f310002608496d9748673eaa48051444f3083752cbe3c111f039940c'&&
           evidence.sourcePayloadSha256==='d4fc13504131da7f0cb47f5b41e612e73b19936b6e4d3b858e7178c1b614a7b7'&&
