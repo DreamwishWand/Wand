@@ -43,3 +43,26 @@ test('unnamed single-component offers use only the canonical requested-locale it
     assert.equal(catalog.definitions.filter(b=>b.current?.localizedText?.[locale]?.description).length,9);
   }
 });
+
+test('canonical component descriptions are deduplicated, locale-specific and preserve positions',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const catalog=await db.getPremiumBundleCatalog();
+  assert.equal(catalog.componentDescriptionTexts.length,47);
+  const current=catalog.definitions.filter(b=>b.current);
+  const expected={en:941,fr:935,it:935,de:941,'es-ES':871,ja:812,'zh-CN':869,'pt-BR':868};
+  for(const [locale,count] of Object.entries(expected)){
+    const rows=await db.getPremiumBundleLocalizedText(current.map(b=>b.bundleId),locale);
+    let actual=0;
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i].current;
+      assert.equal(r.componentDescriptions.length,current[i].current.components.length);
+      actual+=r.componentDescriptions.filter(x=>x!==null).length;
+      assert(Object.isFrozen(r.componentDescriptions));
+    }
+    assert.equal(actual,count,locale);
+  }
+  const [alice,placeholder]=await db.getPremiumBundleLocalizedText(['Bundle_AliceCuriousLabyrinth','Bundle_ArtDeco'],'ja');
+  assert.equal(alice.current.title,'アリスの不思議なラビリンスパック');
+  assert.equal(placeholder.legacy.description,null);
+  assert(placeholder.legacy.title);
+});

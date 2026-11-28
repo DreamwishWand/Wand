@@ -1,5 +1,5 @@
 import unittest
-from localize_premium_bundles import enrich, LOCALES, PUBLIC_SCHEMA
+from localize_premium_bundles import enrich, attach_component_texts, LOCALES, PUBLIC_SCHEMA
 
 class PremiumLocalizationTests(unittest.TestCase):
     def test_current_exact_text_and_legacy_exact_key_are_independent(self):
@@ -30,3 +30,22 @@ class PremiumLocalizationTests(unittest.TestCase):
         self.assertEqual(a['current']['localizedText']['ja'], {'title': 'Exact-ja'})
         self.assertNotIn('localizedText', b['current'])
         self.assertNotIn('localizedText', c['current'])
+
+    def test_component_text_locale_consensus_never_selects_ambiguous_translation(self):
+        a = ('Liveops.locbin', 'Exact')
+        b = ('ProtoDB/ShopConfigs_Global.locbin', 'Generic')
+        tables = {l: {a: 'Same' if l == 'en' else 'Text-' + l,
+                      b: 'Same' if l == 'en' else 'Text-' + l} for l in LOCALES}
+        tables['ja'][b] = 'Different'
+        del tables['de'][b]
+        catalog = {'source': {'bundleLocalization': {}}, 'definitions': [
+            {'current': {'language': 'en-US', 'components': [
+                {'description': 'Same'}, {'description': 'Same'}, {'description': 'Unmatched'}]}},
+            {'current': {'language': 'fr', 'components': [{'description': 'Other'}]}}]}
+        rows = attach_component_texts(catalog, tables)['componentDescriptionTexts']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 'Same')
+        self.assertEqual(rows[0][2]['en'], 'Same')
+        self.assertEqual(rows[0][2]['fr'], 'Text-fr')
+        self.assertNotIn('ja', rows[0][2])
+        self.assertNotIn('de', rows[0][2])

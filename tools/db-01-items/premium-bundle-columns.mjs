@@ -47,6 +47,21 @@ export function loadPremiumBundleColumns(project,pin,rows){
       }
     }
   }
+  if(catalog.componentDescriptionTexts!==undefined){
+    const descriptions=new Set(catalog.definitions.flatMap(b=>b.current?.language==='en-US'
+      ?b.current.components.flatMap(c=>typeof c.description==='string'?[c.description]:[]):[]));
+    const locales=new Set(['en','fr','it','de','es-ES','ja','zh-CN','pt-BR']);
+    const members=new Set(['Liveops.locbin','ProtoDB/ShopConfigs_Global.locbin','ProtoDB/IapData_Global.locbin','menu.locbin']);
+    const seen=new Set();
+    check(Array.isArray(catalog.componentDescriptionTexts),'COMPONENT_TEXT_ROWS');
+    for(const [english,keys,translations] of catalog.componentDescriptionTexts){
+      check(descriptions.has(english)&&!seen.has(english)&&Array.isArray(keys)&&keys.length>0&&
+        keys.every(k=>Array.isArray(k)&&k.length===2&&members.has(k[0])&&typeof k[1]==='string'&&k[1].length>0)&&
+        translations?.en===english&&Object.entries(translations).every(([l,t])=>locales.has(l)&&typeof t==='string'&&t.trim()),
+        'COMPONENT_TEXT_ROW');
+      seen.add(english);
+    }
+  }
   const c=catalog.counts;
   check(c.publicDefinitions===catalog.definitions.length&&c.publicDistinctItems===all.size&&
     c.steam===currentCount+c.withheldCurrentDefinitions&&c.shared===commonCount+c.withheldSharedDefinitions&&c.switch===oldCount+c.withheldLegacyDefinitions&&
