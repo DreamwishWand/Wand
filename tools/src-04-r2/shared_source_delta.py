@@ -509,7 +509,7 @@ def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.
             # Curl's write-out must indicate no HTTP response; never retry
             # HTTP errors, invalid headers or bytes, or certificate failures.
             transient=isinstance(exc,URLError) and bool(re.search(
-                r"HTTP/connection result=000 \\d+.*curl: \\((?:5|6|7|18|28|35|52|55|56)\\)",str(exc)))
+                r"HTTP/connection result=000 \d+.*curl: \((?:5|6|7|18|28|35|52|55|56)\)",str(exc)))
             if transient and attempt<3:
                 attempt+=1
                 delay=(2,5,10)[attempt-1]
