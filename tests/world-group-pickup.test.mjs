@@ -24,3 +24,14 @@ test('free pickup releases native game flags but retains structural constraints'
  assert.equal(groupPickupPlan([fixed,p(2)]),null);assert.equal(groupPickupPlan([fixed,p(2)],true).length,2);
  assert.equal(groupPickupPlan([{...table,object:{...table.object,subgrid:{status:'unresolved',objectCount:null}}}],true),null);
 });
+
+test('free group removal includes mixed landscape and building instances without inventory flags',()=>{
+ const landscape={...p(2,'40200001'),object:{...p(2,'40200001').object,layer:'landscape'}};
+ const building={...p(3,'20000001'),object:{...p(3,'20000001').object,nativeType:'Building',layer:'other'}};
+ const rows=groupPickupPlan([p(1),landscape,building],true);
+ assert.deepEqual(rows?.map(r=>r.itemId),['40000001','40200001','20000001']);
+ assert.ok(rows.every(r=>!r.includeStorage&&!r.includeSupport));
+ assert.equal(groupPickupPlan([p(1),landscape,building]),null);
+ assert.equal(groupPickupPlan([p(1),{...building,object:{...building.object,itemId:'20400001'}}],true),null);
+ assert.equal(groupPickupPlan([p(1),landscape,{...building,object:{...building.object,subgrid:{status:'unresolved',objectCount:null}}}],true),null);
+});

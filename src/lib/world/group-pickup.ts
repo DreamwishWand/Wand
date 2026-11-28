@@ -1,6 +1,6 @@
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {isCardinal} from './saved-map-transform.ts';
-import {stockSourceEligible} from './save-furniture-placement.ts';
+import {stockSourceEligible,landscapeSourceEligible,buildingSourceEligible} from './save-furniture-placement.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;includeSupport?:true;includeStorage?:true}
@@ -17,7 +17,8 @@ export function groupPickupPlan(items:readonly MainlandSavedObject[],free=false)
   const o=p.object;
   const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
   const storage=emptyStoragePickupEligible(p,free);
-  if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!(stockSourceEligible(p,free)&&isCardinal(o.orientation)))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
+  const other=free&&(landscapeSourceEligible(p,free)||buildingSourceEligible(p));
+  if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!other&&!(stockSourceEligible(p,free)&&isCardinal(o.orientation)))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
   seen.add(o.localOrdinal);
   out.push({localOrdinal:o.localOrdinal,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(support?{includeSupport:true as const}:{}),...(storage?{includeStorage:true as const}:{})});
  }
@@ -43,4 +44,16 @@ export const supportPickupWords={
  'es-ES':['Recoger mueble y objetos','Devolver el mueble y todos sus objetos al inventario.'],
  'zh-CN':['收回支撑家具和物品','将支撑家具及其所有物品收回库存。'],
  'pt-BR':['Recolher móvel e objetos','Recolher o móvel e todos os seus objetos ao inventário.']
+} as const;
+
+/** Non-stock removals must not be presented as returning items to inventory. */
+export const mixedPickupWords={
+ ja:['選択物を一括撤去','家具は在庫へ戻し、景観・建物は既存の撤去契約に従って取り除きます。'],
+ en:['Remove selected objects','Return furniture to stock; remove landscape and buildings using their native removal rules.'],
+ fr:['Retirer les objets sélectionnés','Ranger les meubles et retirer les paysages et bâtiments selon leurs règles natives.'],
+ it:['Rimuovi oggetti selezionati','Riponi i mobili e rimuovi paesaggi ed edifici secondo le regole native.'],
+ de:['Auswahl entfernen','Möbel ins Inventar legen, Landschaft und Gebäude nach ihren nativen Regeln entfernen.'],
+ 'es-ES':['Retirar objetos seleccionados','Devolver muebles al inventario y retirar paisajes y edificios según sus reglas nativas.'],
+ 'zh-CN':['批量移除所选物件','家具返回库存，景观和建筑按原生移除规则处理。'],
+ 'pt-BR':['Remover objetos selecionados','Devolver móveis ao inventário e remover paisagens e edifícios pelas regras nativas.']
 } as const;

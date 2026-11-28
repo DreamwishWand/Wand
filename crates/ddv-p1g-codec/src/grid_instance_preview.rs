@@ -1646,7 +1646,61 @@ pub(super) fn landscape_candidate(profile:&[u8],plan:&str,destination:&str)->Res
 pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,CodecError>{
     let rows:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
     let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
+    let selection=rows.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(CodecError::Bounds)?;
+    if selection.iter().any(|r|r.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok()).is_some_and(|id|id/100_000!=400)){
+        return mixed_grid_removal(profile,selection);
+    }
     group_pickup_for_scope(profile,plan,if single{1}else{2},None)
+}
+
+/// A single atomic removal across native record contracts. Resolve every
+/// selection against the immutable input before making a private candidate.
+/// Furniture returns stock; stateless landscape and checked buildings use
+/// their existing native removal contracts. Never reuse shifted UI ordinals.
+fn mixed_grid_removal(profile:&[u8],rows:&[Value])->Result<String,CodecError>{
+    use zeroize::{Zeroize,Zeroizing};
+    let bad=CodecError::Json;
+    if rows.len()<2||rows.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS{return Err(bad);}
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(bad);}
+    let mut seen=HashSet::new();
+    let mut furniture=Vec::new();
+    let mut other=Vec::new();
+    for row in rows{
+        let o=row.as_object().filter(|o|(o.len()==5||o.len()==6&&(o.get("includeSupport").and_then(Value::as_bool)==Some(true)||o.get("includeStorage").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"includeSupport"|"includeStorage"))).ok_or(bad)?;
+        let ord=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0&&seen.insert(*n)).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s)).ok_or(bad)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+        let xy=(int("expectedX")?,int("expectedY")?);
+        let orientation=o.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+        let (target,observed)=scan.private_targets.get(ord-1).ok_or(bad)?;
+        if target.kind!=GridObjectKind::Full||target.item_id!=item||*observed!=Some(xy)||scan.rows.get(ord-1).and_then(|r|r.get("orientation")).and_then(Value::as_str)!=Some(orientation){return Err(bad);}
+        if item/100_000==400{furniture.push(row.clone());continue;}
+        if !matches!(item/100_000,200..=203|205|402)||o.len()!=5||scan.subgrid_parents.contains(&ord){return Err(bad);}
+        other.push((target.clone(),xy,orientation.to_owned()));
+    }
+    let original=std::str::from_utf8(profile).map_err(|_|bad)?;
+    let mut working=Zeroizing::new(if furniture.is_empty(){original.to_owned()}else{
+        group_pickup_for_scope(profile,&serde_json::to_string(&furniture).map_err(|_|bad)?,1,None)?
+    });
+    for (target,xy,orientation) in other{
+        // Rebind by native identity after previous removals, including any
+        // removed child grids. The original ordinal is never reused.
+        let (now,_)=scan_grid_instances(working.as_bytes())?;
+        if now.sampled||now.invalid>0{return Err(bad);}
+        let mut matches=now.private_targets.iter().enumerate().filter(|(_, (t,pos))|t.kind==target.kind&&t.grid_id==target.grid_id&&t.object_id==target.object_id&&t.item_id==target.item_id&&*pos==Some(xy));
+        let (index,_)=matches.next().ok_or(bad)?;
+        if matches.next().is_some()||now.rows.get(index).and_then(|r|r.get("orientation")).and_then(Value::as_str)!=Some(orientation.as_str()){return Err(bad);}
+        let id=target.item_id.to_string();
+        let next=match target.item_id/100_000{
+            402=>landscape_candidate(working.as_bytes(),&serde_json::json!({"action":"remove","localOrdinal":index+1,"itemId":id,"expectedX":xy.0,"expectedY":xy.1,"x":null,"y":null}).to_string(),"null")?,
+            205=>player_house_duplicate_candidate(working.as_bytes(),&serde_json::json!({"localOrdinal":index+1,"itemId":id,"expectedX":xy.0,"expectedY":xy.1,"orientation":orientation}),true)?,
+            200..=203=>building_duplicate_candidate(working.as_bytes(),&serde_json::json!({"localOrdinal":index+1,"itemId":id,"expectedX":xy.0,"expectedY":xy.1,"orientation":orientation}),true)?,
+            _=>return Err(bad)
+        };
+        working.zeroize();*working=next;
+    }
+    Ok(std::mem::take(&mut *working))
 }
 pub(super) fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize,limit:usize)->Result<(),CodecError>{
  let bad=CodecError::Json;
@@ -3181,6 +3235,32 @@ mod tests{
         let mut invalid:Value=serde_json::from_slice(raw).unwrap();
         invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":5});
         assert!(group_pickup_candidate(&serde_json::to_vec(&invalid).unwrap(),&rows.to_string()).is_err());
+    }
+
+    #[test]
+    fn mixed_removal_uses_native_identity_and_stock_semantics_atomically(){
+        let mut source=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2},"40200001":{"Amount":7}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{
+            "1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},
+            "2":{"ID":2,"ItemID":40200001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"},
+            "3":{"ID":3,"ItemID":20000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","State":null},
+            "4":{"ID":4,"ItemID":40200001,"X":4,"Y":4,"Orientation":"GridOrientation_Down"}
+        }}}}}});
+        let rows=serde_json::json!([
+            {"localOrdinal":3,"itemId":"20000001","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Down"},
+            {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down"},
+            {"localOrdinal":2,"itemId":"40200001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}
+        ]);
+        let d=group_pickup_candidate(source.to_string().as_bytes(),&rows.to_string()).unwrap();
+        let after:Value=serde_json::from_str(&d).unwrap();
+        let g=&after["World"]["GridCollection"]["Grids"]["42"];
+        assert_eq!(g["Objects"].as_object().unwrap().len(),1);assert_eq!(g["Objects"]["4"],source["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]);
+        assert_eq!(g["NextGridObjectID"],5);
+        assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],3);
+        assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40200001"]["Amount"],7);
+        source["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
+        assert!(group_pickup_candidate(source.to_string().as_bytes(),&rows.to_string()).is_err());
+        let mut stale=rows.clone();stale[0]["expectedX"]=4.into();
+        assert!(group_pickup_candidate(source.to_string().as_bytes(),&stale.to_string()).is_err());
     }
 
     #[test]
