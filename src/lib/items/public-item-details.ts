@@ -19,6 +19,7 @@ import {
   type ItemFieldProjection,
 } from './public-item-master.ts';
 import {readItemPriceDetails,type ItemPriceDetails} from './public-item-price-details.ts';
+import {readCurrentAcquisitionCoverage,type CurrentAcquisitionCoverage} from './public-acquisition-coverage.ts';
 import {readStoreItemSourceEvidence,type StoreItemSourceEvidence} from './public-store-source-evidence.ts';
 import {createCanonicalRecipeReader,type CanonicalRecipe} from '../acquisition/canonical-recipes.ts';
 import {
@@ -187,7 +188,9 @@ export interface PublicItemDetailsClient {
   listItemIdsByAcquisition(
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
+  /** Historical pinned projection coverage; use getCurrentAcquisitionCoverage for the current master. */
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  getCurrentAcquisitionCoverage(): Promise<Readonly<CurrentAcquisitionCoverage>>;
   /** Resolve source evidence and original localized identities without sidecars. */
   getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemAcquisitionSourceDetails>|null)[]>;
   getConditionalEventSources(eventIds:readonly number[]):Promise<readonly (Readonly<ConditionalEventSource>|null)[]>;
@@ -431,6 +434,9 @@ export async function openPublicItemDetails(
     },
     async getItemConditionalEventSources(itemIds:readonly number[]){
       return createConditionalEventSourceReader(await complete()).getForItems(itemIds);
+    },
+    async getCurrentAcquisitionCoverage(){
+      return readCurrentAcquisitionCoverage(await complete());
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
