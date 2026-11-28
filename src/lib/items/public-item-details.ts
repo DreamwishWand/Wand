@@ -38,6 +38,7 @@ import {
 } from '../acquisition/db01-item-source-relations.ts';
 
 import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from './public-item-acquisition-details.ts';
+import {createConditionalEventSourceReader,type ConditionalEventSource,type ConditionalItemSourceEvidence} from './public-conditional-event-sources.ts';
 import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-taxonomy-details.ts';
 import {createProductionSourceReader,type ProductionItemEvidence} from './public-production-sources.ts';
 import {createLootSourceReader,type LootItemEvidence,type LootReferrerEvidence} from './public-loot-sources.ts';
@@ -188,6 +189,8 @@ export interface PublicItemDetailsClient {
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
   /** Resolve source evidence and original localized identities without sidecars. */
   getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemAcquisitionSourceDetails>|null)[]>;
+  getConditionalEventSources(eventIds:readonly number[]):Promise<readonly (Readonly<ConditionalEventSource>|null)[]>;
+  getItemConditionalEventSources(itemIds:readonly number[]):Promise<readonly (Readonly<ConditionalItemSourceEvidence>|null)[]>;
   /** Canonical source tags, series, worlds and browse universe with one locale. */
   getItemTaxonomyDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemTaxonomyDetails>|null)[]>;
   getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
@@ -420,6 +423,12 @@ export async function openPublicItemDetails(
     },
     async getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
       return readItemAcquisitionSourceDetails(await complete(),itemIds,locale);
+    },
+    async getConditionalEventSources(eventIds:readonly number[]){
+      return createConditionalEventSourceReader(await complete()).getForEvents(eventIds);
+    },
+    async getItemConditionalEventSources(itemIds:readonly number[]){
+      return createConditionalEventSourceReader(await complete()).getForItems(itemIds);
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
