@@ -215,7 +215,7 @@ $: cutWords=groupCutWords[locale];
  function plainLocalSelection(items:readonly MainlandSavedObject[]){return items.every(p=>Math.floor(Number(p.object.itemId)/100000)===400&&!p.object.storageKnown&&!p.object.storage&&!p.object.subgrid&&isCardinal(p.object.orientation));}
  $: localPlainSelection=plainLocalSelection(pasteSelection);
  $: batchReady=stockReady&&(!underwaterLocal||localPlainSelection);
- $: canCutFurniture=testExport&&batchReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection,freePlacement);
+ $: canCutFurniture=testExport&&stockReady&&(!underwaterLocal||pasteSelection.every(p=>Math.floor(Number(p.object.itemId)/100000)===400&&isCardinal(p.object.orientation)&&(!p.object.storageKnown||p.object.storage)&&(!p.object.subgrid||p.object.subgrid.status==='resolved_full')))&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection,freePlacement);
  $: canDuplicateFurniture=testExport&&batchReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&(!!nativeDuplicateSelection(pasteSelection,freePlacement)||!!localSupportDuplicateSelection(pasteSelection,freePlacement)||!!storageGroupSelection(pasteSelection,freePlacement)||!!captureFurnitureGroup(pasteSelection,false,freePlacement));
  $: canCopyFurniture=testExport&&batchReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection,false,freePlacement);
  function beginPaste(){closeBiome();closeCaptureRegion();resetEditSymmetry();closeSupport();closeRoad();closeFurniture();clearGroup();stopMove();selected=null;preciseOpen=false;searchOpen=false;layersOpen=false;multiMode=false;}
