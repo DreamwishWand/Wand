@@ -8,7 +8,8 @@ export type NativeEyeParams={maxHorizontalAngle:number;reflectionStrength:number
 export type EyeMouthIndex={eyes:Record<string,EyeMouthMap>;eyeParams:NativeEyeParams;teeth:{normal:EyeMouthMap;diffuse:EyeMouthMap;spec:EyeMouthMap};eyelashColor:EyeRGBA;lightingParityVerified:false};
 export type LoadedHeadMap=LoadedSkinMap&{colorSpace:0|1};
 export type NativeEyeMaterial={mask:LoadedHeadMap;colors:EyeSelection['colors'];params:NativeEyeParams};
-export type NativeTeethMaterial={diffuse:LoadedHeadMap;normal:LoadedHeadMap;spec:LoadedHeadMap};
+/** The other verified maps remain indexed until the generic PBR stages are reconstructed. */
+export type NativeTeethMaterial={diffuse:LoadedHeadMap};
 const hash=(x:unknown)=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x);
 export function validEyeMouthMap(x:unknown):x is EyeMouthMap{
  if(!x||typeof x!=='object')return false;const m=x as EyeMouthMap;
