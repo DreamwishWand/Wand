@@ -80,3 +80,33 @@ test('canonical loot referrers retain original occurrence paths and optional loc
   assert.deepEqual(await details.getItemLootSources([31700169],'ja'),[item]);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
 });
+
+test('forward loot source lookup joins every canonical referrer occurrence without names or item shards',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{
+    requests.push(url);return new Response(await readFile('static'+url),{status:200});
+  });
+  const reader=createLootSourceReader(db);
+  const ids=await db.findItemIdsByField('nativeCategory',{kind:'equals',value:'LootTable'});
+  const contexts=await reader.getTableReferrers(ids,'ja');
+  const expected=contexts.flatMap(c=>c.referrers.map(r=>[r.sourceItemId,c.tableItemId,r.sourcePath,r.role]));
+  const sources=[...new Set(expected.map(e=>e[0]))].sort((a,b)=>a-b);
+  requests.length=0;
+  const forward=await reader.getForReferrers(sources);
+  assert(forward.every(r=>r.status==='indexed'&&r.coverageComplete===false&&r.actualDropVerified===false&&r.currentAvailabilityVerified===false));
+  const actual=forward.flatMap(r=>r.references.map(e=>[r.sourceItemId,e.definition.tableItemId,e.sourcePath,e.role]));
+  assert.deepEqual(actual.map(JSON.stringify).sort(),expected.map(JSON.stringify).sort());
+  const bySource=new Map(forward.map(r=>[r.sourceItemId,r]));
+  for(const [id,table,role] of [[31400007,2090000111,'loot_present'],[40600126,2090000292,'blocker_reward'],
+    [2070000620,2090000173,'quest_override_reward'],[2010000003,2090000003,'recurring_weed_override']]){
+    const ref=bySource.get(id).references.find(r=>r.definition.tableItemId===table&&r.role===role);
+    assert(ref);assert(ref.definition.groups.length>0);
+    assert.equal(ref.definition.guaranteedRewardVerified,false);
+    assert(Object.isFrozen(ref)&&Object.isFrozen(ref.definition));
+  }
+  const [a,missing,b]=await reader.getForReferrers([31400007,99999999,31400007]);
+  assert.equal(missing,null);assert.deepEqual(a,b);
+  assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/fields/names.')||u.includes('/acquisition/public/')));
+  const details=await (await import('../src/lib/items/public-item-details.ts')).openCurrentItemDetails('',async url=>new Response(await readFile('static'+url),{status:200}));
+  assert.deepEqual(await details.getLootSourcesForReferrers([31400007]),[a]);
+});
