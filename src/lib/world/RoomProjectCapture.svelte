@@ -1,5 +1,6 @@
 <script lang="ts">
  import PrivateStorageBackup from './PrivateStorageBackup.svelte';
+ import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope} from './private-decoration-backup.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -31,7 +32,9 @@
  $: bw=indoorBackupWords[locale];
  $: testExport=browser&&testSaveExportEnabled(window.location);
  $: targets=indoorBackupRooms(scope,room,rooms);
- function reset(){review=null;error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
+ let privateStorage:string|null=null,includeContents=false;
+ $: privateWords=privateDecorationWords[locale];
+ function reset(){privateStorage=null;review=null;error=false;if(copy)URL.revokeObjectURL(copy.url);copy=null;}
  let busy=false,error=false,alive=true,epoch=0,seen:Worker|null=null,reader:Worker|null=null,rejectRead:((e:Error)=>void)|null=null;
  const requests=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void}>();
  $: w=roomCaptureWords[locale];
@@ -85,7 +88,7 @@
    if(!group.length)throw Error('scope');
    const reply=await request(own,{command:'room-design-templates'});if(!valid()||reply.kind!=='room-design-templates'||!Array.isArray(reply.templates))throw Error('templates');
    const templates=reply.templates as RoomDesignTemplate[],entries:IndoorBackupRoom[]=[],finishIds=new Map<string,Set<number>>();
-   const incomingRaw=mode==='restore'&&chosen?await readPresetText(chosen,INDOOR_BACKUP_LIMIT):null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw)void rememberPreset(chosen,incomingRaw).catch(()=>{});
+   const loaded=mode==='restore'&&chosen?await readDecorationFile(chosen,INDOOR_BACKUP_LIMIT):null,incomingRaw=loaded?.text??null,incoming=incomingRaw?parseIndoorBackup(incomingRaw,selectedScope,group,templates):null;if(chosen&&incomingRaw&&!loaded?.storage)void rememberPreset(chosen,incomingRaw).catch(()=>{});
    for(const targetRoom of group)entries.push(await readRoom(targetRoom,templates,own,source,valid,finishIds,mode!=='design'));
    if(!valid())throw Error('changed');
    if(mode==='restore'){
@@ -108,18 +111,19 @@
      }
      inputs.push({room:entry.room,before:entry.surfaces,after,geometry,...(ceiling===undefined?{}:{ceiling})});
     }
-    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');return;
+    if(!valid())throw Error('changed');review=buildIndoorRestore(selectedScope,inputs,stock,new Set(owned),selectedFree);if(!review)throw Error('plan');privateStorage=loaded?.storage??null;return;
    }
    const raw=mode==='design'?capturedRoomDocument(target,entries[0].surfaces,templates):serializeIndoorBackup(selectedScope,entries,templates);if(!valid()||!raw)throw Error('document');
-   savePresetFile(raw,mode==='design'?'wand-room-design.json':'wand-indoor-'+selectedScope+'-backup.json');
+   if(mode==='backup'&&includeContents)await savePrivateDecoration(source,JSON.stringify({kind:selectedScope,roomOrdinal:target.ordinal}),raw,'wand-private-indoor-'+selectedScope+'.json',valid);
+   else savePresetFile(raw,mode==='design'?'wand-room-design.json':'wand-indoor-'+selectedScope+'-backup.json');
   }catch{if(valid())error=true;}finally{if(alive&&epoch===token)busy=false;}
  }
  function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)openBackup(f);}
  function openBackup(f:File){if(busy||blocked||copy)return;if(f.size>INDOOR_BACKUP_LIMIT){error=true;return;}void run('restore',f);}
- function validate(){if(!testExport||blocked||busy||!review?.changed||!review.plan||review.missing.length||copy)return;
-  busy=true;const source=file,target=room,plan=review.plan,own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});writer=own;
+ function validate(){if(!testExport||blocked||busy||!review||!review.changed&&!privateStorage||!review.plan||review.missing.length||copy)return;
+  busy=true;const source=file,target=room,plan=review.changed?review.plan:null,own=new Worker(new URL('./indoor-room-view.worker.ts',import.meta.url),{type:'module'});writer=own;
   const done=(d:any)=>{own.terminate();if(writer!==own)return;writer=null;busy=false;if(!alive||file!==source||room!==target||blocked){d?.bytes?.fill(0);return;}try{if(d?.kind!=='indoor-room-project-copy')throw Error('receipt');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'indoor-room-project-export',file:source,plan,allowExperimentalCopy:true});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'indoor-room-project-export',file:source,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:JSON.stringify({kind:scope,roomOrdinal:target.ordinal})}:{})});
  }
  function apply(){if(!testExport||blocked||busy||!copy||!commitWorldCheckpoint(file,copy.file)){error=true;return;}reset();}
 </script>
@@ -127,10 +131,11 @@
 <div class="indoor-backup">
  {#if targets.some(r=>r.surfaces.some(f=>f.positions.some(roomBackupProtected)))}<small>{protectedRoomWords[locale]}</small>{/if}
  <label>{bw[0]} <select bind:value={scope} disabled={busy||blocked||!!copy} on:change={reset}><option value="room">{bw[1]}</option><option value="floor">{bw[2]}</option><option value="building">{bw[3]}</option></select></label>
+ <label><input type="checkbox" bind:checked={includeContents} disabled={busy||blocked}/>{privateWords[0]}</label>
  <button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>run('backup')}>{bw[4]}</button>
- {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/>{/if}
+ {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/><button type="button" disabled={busy||blocked||!!copy} on:click={()=>input.click()}>{privateWords[1]}</button>{/if}
  {#if targets.length}<PrivateStorageBackup {file} {locale} blocked={busy||blocked||!!copy} scopeJson={JSON.stringify({kind:scope,roomOrdinal:room.ordinal})}/>{/if}
- {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small><RestoreStockReview rows={restoreStockRows([review],review.missing,review.finishItems)} {locale}/>{#if review.missing.length}<small role="alert">{bw[13]}</small>{/if}{#if !review.changed}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy||!review.plan||!!review.missing.length} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
+ {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small><RestoreStockReview rows={restoreStockRows([review],review.missing,review.finishItems)} {locale}/>{#if review.missing.length}<small role="alert">{bw[13]}</small>{/if}{#if !review.changed&&!privateStorage}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy||!review.plan||!!review.missing.length} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
  {#if error}<small role="alert">{bw[13]}</small>{/if}
 </div>
 <style>.indoor-backup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.indoor-backup section{display:flex;flex-direction:column;gap:4px;border:1px solid var(--wand-line);padding:5px}</style>

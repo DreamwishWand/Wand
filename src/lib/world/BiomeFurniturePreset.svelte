@@ -1,5 +1,6 @@
 <script lang="ts">
  import PrivateStorageBackup from './PrivateStorageBackup.svelte';
+ import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope} from './private-decoration-backup.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -37,17 +38,19 @@
  $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
- function cancel(){epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
- function exportPreset(){if(!snapshot||!grid||blocked||busy)return;savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
+ let privateStorage:string|null=null,includeContents=false;
+ $: privateWords=privateDecorationWords[locale];
+ function cancel(){privateStorage=null;epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
+ async function exportPreset(){if(!snapshot||!grid||blocked||busy||!file)return;if(includeContents){const f=file,g=grid,token=epoch;reading=true;try{await savePrivateDecoration(f,outdoorPrivateScope([g]),snapshot.text,'wand-private-biome-'+g.key+'.json',()=>file===f&&key===g.key&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}}else savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
  async function open(e:Event){
   const element=e.currentTarget as HTMLInputElement,f=element.files?.[0];element.value='';if(f)void openFile(f);
  }
  async function openFile(f:File){if(!file||!worker||!grid||!snapshot||blocked||!allowed||busy||copy)return;
   cancel();const own=worker,g=grid,activeFile=file,activeObjects=objects,token=epoch;source=activeFile;sourceObjects=activeObjects;sourceKey=g.key;reading=true;
   try{
-   if(f.size>DESIGN_FILE_LIMIT)throw Error('size');const raw=await readPresetText(f,DESIGN_FILE_LIMIT),rows=parseWholeArea(raw,g,'biome');void rememberPreset(f,raw).catch(()=>{});
+   const loaded=await readDecorationFile(f,DESIGN_FILE_LIMIT),raw=loaded.text,rows=parseWholeArea(raw,g,'biome');if(!loaded.storage)void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
-   incoming=rows;
+   incoming=rows;privateStorage=loaded.storage;
    if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))],eightWay:rows.some(p=>!Number.isInteger(p.orientation))});}else defs=new Map();
    const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
    const done=(d:any)=>{read.terminate();if(stockWorker!==read||source!==activeFile)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
@@ -56,10 +59,10 @@
  }
  function receive(e:MessageEvent){const d=e.data;if(!shapeRequest||d?.requestId!==shapeRequest)return;shapeRequest=0;if(d.kind!=='design-shapes'||d.key!==key||!Array.isArray(d.result)){error=true;return;}defs=new Map<number,DesignItemGeometry>(d.result.map((x:DesignItemGeometry)=>[x.itemId,x]));}
  function validate(){
-  if(!allowed||blocked||busy||copy||!file||source!==file||sourceObjects!==objects||!result?.changed||result.missing.length)return;
-  const f=file,plan=result.plan,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writeWorker=own;error=false;
+  if(!allowed||blocked||busy||copy||!file||source!==file||sourceObjects!==objects||!result||!result.changed&&!privateStorage||result.missing.length||!grid)return;
+  const f=file,plan=result.changed?result.plan:null,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writeWorker=own;error=false;
   const done=(d:any)=>{own.terminate();if(writeWorker!==own||source!==f||file!==f||sourceObjects!==objects){d?.bytes?.fill(0);return;}writeWorker=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'biome-furniture-export',file:f,plan,allowExperimentalCopy:true});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'biome-furniture-export',file:f,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:outdoorPrivateScope([grid])}:{})});
  }
  function apply(){if(!allowed||blocked||!copy||!file||source!==file||sourceObjects!==objects||sourceKey!==key)return;if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}cancel();onClose();}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});
@@ -70,15 +73,16 @@
  <small>{w[11]}</small>
  {#if snapshot}<small>{w[15]} {snapshot.editable.length} · {w[7]} {snapshot.protectedObjects.length}</small>{/if}
  <input class="biome-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
- <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={['biome']} disabled={!snapshot||blocked||busy||!!copy} label={w[3]} onPick={f=>void openFile(f)}/>{/if}</div>
+ <label><input type="checkbox" bind:checked={includeContents} disabled={blocked||busy}/>{privateWords[0]}</label>
+ <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={['biome']} disabled={!snapshot||blocked||busy||!!copy} label={w[3]} onPick={f=>void openFile(f)}/><button type="button" disabled={blocked||busy||!!copy} on:click={()=>input.click()}>{privateWords[1]}</button>{/if}</div>
  {#if file&&grid}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'outdoor',destinations:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY}]})}/>{/if}
  {#if busy}<small role="status">{w[14]}</small>{/if}
  {#if result}
   <small>{w[4]} {result.retained.length} · {w[5]} {result.removed.length} · {w[6]} {result.plan.add.length} · {w[7]} {result.protectedObjects.length}</small>
   <RestoreStockReview rows={restoreStockRows([result],result.missing)} {locale}/>
   {#if result.missing.length}<small role="alert">{w[8]} · {result.missing.reduce((n,p)=>n+p.quantity,0)}</small>{/if}
-  {#if !result.changed}<small>{w[13]}</small>{/if}
-  {#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed||!!result.missing.length} on:click={validate}>{w[9]}</button>{/if}
+  {#if !result.changed&&!privateStorage}<small>{w[13]}</small>{/if}
+  {#if allowed&&!copy}<button type="button" disabled={blocked||busy||!result.changed&&!privateStorage||!!result.missing.length} on:click={validate}>{w[9]}</button>{/if}
  {:else if incoming&&!busy}<small role="alert">{w[12]}</small>{/if}
  {#if copy}<small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
  {#if error||!snapshot}<small role="alert">{w[12]}</small>{/if}

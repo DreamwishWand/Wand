@@ -85,6 +85,9 @@ fn replacement_key(row:&Value)->Option<String>{
 }
 pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{restore_scoped(source,backup,None)}
 pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
+ restore_scoped_mode(source,backup,scope,false)
+}
+pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>>,allow_noop:bool)->Result<String,PatchError>{
  if backup.len()>LIMIT{return Err(BAD);}
  validate_json_without_edit(source)?;validate_json_without_edit(backup)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
@@ -100,7 +103,7 @@ pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->R
  let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
  locator.amount_path=vec![Segment::Index(usize::MAX)];
  let mut changes=Vec::new();let mut seen=HashSet::new();let mut destination_ids=HashSet::new();
- for r in b["rows"].as_array().filter(|a|!a.is_empty()&&a.len()<=8192).ok_or(BAD)?{
+ for r in b["rows"].as_array().filter(|a|(allow_noop||!a.is_empty())&&a.len()<=8192).ok_or(BAD)?{
   let n=id(&r["id"]).filter(|n|seen.insert(*n)).ok_or(BAD)?;
   if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!simple_inventory(&r["inventory"]){return Err(BAD);}
   let c=if let Some(c)=available.get(&n){
@@ -120,7 +123,7 @@ pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->R
   let p=vec![k("Player"),k("ContainerInventories"),k(&dest.to_string()),k("Inventory")];
   locator.capture.insert(p.clone(),None);changes.push((p,r["inventory"].to_string()));
  }
- if changes.is_empty(){return Err(BAD);}
+ if changes.is_empty(){return if allow_noop{Ok(source.to_owned())}else{Err(BAD)};}
  locator.walk_complete()?;
  let mut edits=changes.into_iter().map(|(p,v)|Ok((locator.capture.get(&p).and_then(Clone::clone).ok_or(BAD)?,v))).collect::<Result<Vec<_>,PatchError>>()?;
  edits.sort_unstable_by_key(|(r,_)|r.start);
