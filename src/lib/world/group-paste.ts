@@ -148,11 +148,11 @@ export const groupPasteWords={
 } as const;
 
 /** Native source witnesses remain local to this exact opened Save. */
-export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false){
+export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false,ownedScene=false){
  if(!free||!items.length||items.some(p=>!isCardinal(p.object.orientation)))return null;
  // Existing native mixed route also authenticates ordinary cardinal source
  // records; keep the specialized support/storage-only paths unchanged.
- if(!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)&&items.some(p=>p.object.subgrid||p.object.storage||p.object.storageKnown))return null;
+ if(!ownedScene&&!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)&&items.some(p=>p.object.subgrid||p.object.storage||p.object.storageKnown))return null;
  const clip=captureFurnitureGroup(items,true,true,true),sources=captureCutWitness(items,true);
  return clip&&sources?{clip,sources}:null;
 }
