@@ -39,7 +39,11 @@ export function validBodyGeometry(v:unknown):v is BodyGeometry{
 }
 export function skinMaterialFor(index:NativeSkinIndex|undefined,skin:number|undefined,body:Body,role:Role){return index?.rows[skin??1]?.[body]?.[role]}
 export async function decodeSkinMap(raw:ArrayBuffer,m:NativeSkinMap,signal:AbortSignal):Promise<LoadedSkinMap>{
- check(validSkinMap(m,m.height===8)&&raw.byteLength===m.asset.bytes,'Invalid native skin map');
+ check(validSkinMap(m,m.height===8),'Invalid native skin map');return decodeVerifiedSurfaceMap(raw,m,signal);
+}
+/** Shared bounded decoder; callers validate the original texture layout before using it. */
+export async function decodeVerifiedSurfaceMap(raw:ArrayBuffer,m:NativeSkinMap,signal:AbortSignal):Promise<LoadedSkinMap>{
+ check(raw.byteLength===m.asset.bytes&&m.mipByteLengths.length===m.mips&&m.mipByteLengths.every((n,i)=>n===4*Math.max(1,m.width>>i)*Math.max(1,m.height>>i)),'Invalid native surface map');
  const size=m.mipByteLengths.reduce((s,n)=>s+n,0),pixels=new Uint8Array(size);let offset=0;
  const reader=new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate')).getReader();
  try{while(true){signal.throwIfAborted();const {value,done}=await reader.read();if(done)break;check(offset+value.length<=size,'Excess native skin data');pixels.set(value,offset);offset+=value.length}}
