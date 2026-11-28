@@ -26,6 +26,7 @@ import {attachOriginalFurnitureProduction} from './original-furniture-production
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
+import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1332,6 +1333,7 @@ function memoryAppearanceSources(rows,source){
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
   const memoryAppearance=memoryAppearanceSources(rows,source);
+  const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1665,6 +1667,15 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const tagId=({...row.nativeProperties,...row.sourceAttributes}).MemoryShardTagItemID;
       if(ID(tagId))add('acquisition.memoryShardTagItemId',row.itemId,tagId);
       if(memory.category)categorySet.add(memory.category);
+      const spawns=memorySpawn.get(row.itemId);
+      if(spawns?.length){
+        add('acquisition.memorySpawnSources',row.itemId,spawns);
+        const verified=spawns.filter(s=>s.category!==null);
+        if(verified.length){
+          add('acquisition.classifiedMemorySpawnSources',row.itemId,verified);
+          for(const s of verified)categorySet.add(s.category);
+        }
+      }
     }
     const historicStar=historicalStarpath.byItem.get(row.itemId);
     if(historicStar?.length){
