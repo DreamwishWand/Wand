@@ -10,6 +10,8 @@
  */
 import {createItemFieldReader,type ItemFieldReader,type ItemFieldFilter,type ItemFieldValue} from './item-field-reader.ts';
 import {DB02_SOURCE_KINDS,DB02_SOURCE_ROLES,type Db01SourceKind,type Db01SourceRole} from '../acquisition/db01-item-source-relations.ts';
+import {resolvePremiumBundleText,singleComponentNameId,type PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
+export type {PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
 export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch,ItemFieldFilter} from './item-field-reader.ts';
 
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
@@ -542,6 +544,7 @@ export interface PremiumBundleRevision {
   readonly detailCaptureSha256?:string;
   readonly minGameVersion?:string|null;
   readonly artwork?:Readonly<Record<string,unknown>>;
+  readonly localizedText?:Readonly<Partial<Record<ItemMasterLocale,Readonly<{title?:string;description?:string}>>>>;
 }
 export interface PremiumBundleDefinition {
   readonly bundleId:string;
@@ -583,6 +586,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   /** Match confirmed Item content release, never offer dates, versions or candidate attribution. */
   findPremiumBundlesByContentRelease(releaseId:string):Promise<Readonly<PremiumBundleContentQueryResult>>;
   getPremiumBundleDefinitions(bundleIds:readonly string[]):Promise<readonly (Readonly<PremiumBundleDefinition>|null)[]>;
+  /** Ordered batch, requested locale only, no cross-revision or invented translation fallback. */
+  getPremiumBundleLocalizedText(bundleIds:readonly string[],locale:ItemMasterLocale):Promise<readonly (Readonly<PremiumBundleLocalizedText>|null)[]>;
   getPremiumBundleMembership(itemIds:readonly number[]):Promise<readonly (Readonly<PremiumBundleMembership>|null)[]>;
   getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
   getOriginalItemSaleFlags(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemSaleFlags>|null)[]>;
@@ -1422,6 +1427,21 @@ export async function openPublicItemMaster(
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
       await premiumCatalog();
       return Object.freeze(ids.map(id=>premiumIndex?.get(id)??null));
+    },
+    async getPremiumBundleLocalizedText(ids:readonly string[],locale:ItemMasterLocale){
+      assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+      assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
+      if(ids.length)await premiumCatalog();
+      const definitions=ids.map(id=>premiumIndex?.get(id));
+      const itemIds=[...new Set(definitions.flatMap(b=>b?[singleComponentNameId(b.current),singleComponentNameId(b.legacy)].filter(ID):[]))];
+      const names=new Map<number,string>(),field='names.'+locale;
+      if(itemIds.length&&(await fieldReader.getFieldCatalog()).some(f=>f.field===field)){
+        for(const row of await fieldReader.getItemFields(itemIds,[field])){
+          const name=row?.values[field];
+          if(row&&typeof name==='string'&&name.trim())names.set(row.itemId,name);
+        }
+      }
+      return Object.freeze(definitions.map(b=>b?resolvePremiumBundleText(b,locale,names):null));
     },
     async getPremiumBundleMembership(ids:readonly number[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(ID),'INVALID_ITEM_BATCH');
