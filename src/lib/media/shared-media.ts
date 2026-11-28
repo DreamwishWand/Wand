@@ -2,6 +2,7 @@
  * Private extraction metadata and candidates are never accepted as releases.
  * A publisher must pin the verified, publicly readable group indexes.
  */
+import uiRelease from '../../../data/ddv/media/shared-ui-steam-1.26.2.json' with {type:'json'};
 import {publicImageUrl,publicMediaOrigin} from './public-image-key.ts';
 export type SharedMediaGroup = 'ui' | 'maps' | 'memories';
 export type SharedMediaKind = 'Sprite' | 'Texture2D';
@@ -59,7 +60,18 @@ export function parseSharedMediaIndex(doc:unknown,group:SharedMediaGroup,version
   }
   return result;
 }
-export function createSharedMediaClient(activation:SharedMediaActivation=SHARED_MEDIA_ACTIVATION,fetcher:typeof fetch=fetch){
+/** Static app-host UI index avoids one more R2 request and reuses the named-image reader. */
+export function parseStaticUiRelease(doc:unknown):ReadonlyMap<string,readonly SharedMediaImage[]>|null{
+  assert(record(doc),'static UI release');
+  if(doc.state==='unpublished'){assert(Object.keys(doc).length===1,'unpublished UI release');return null;}
+  assert(Object.keys(doc).sort().join(',')==='index,publicReadbackVerified,publicationAuthorized,state'&&
+    doc.state==='published'&&doc.publicationAuthorized===true&&doc.publicReadbackVerified===true&&
+    record(doc.index)&&typeof doc.index.gameVersion==='string'&&VERSION.test(doc.index.gameVersion)&&record(doc.index.entries),'unverified static UI release');
+  return parseSharedMediaIndex(doc.index,'ui',doc.index.gameVersion,Object.keys(doc.index.entries).length);
+}
+export function createSharedMediaClient(activation:SharedMediaActivation=SHARED_MEDIA_ACTIVATION,fetcher:typeof fetch=fetch,staticUi:unknown=uiRelease){
+  const ui=activation===SHARED_MEDIA_ACTIVATION?parseStaticUiRelease(staticUi):null;
+  const uiOrigin='https://media.dreamwishwand.com';
   const cache=new Map<SharedMediaGroup,Promise<ReadonlyMap<string,readonly SharedMediaImage[]>>>();
   const empty:ReadonlyMap<string,readonly SharedMediaImage[]>=new Map();
   let origin:string|null=null;
@@ -72,6 +84,7 @@ export function createSharedMediaClient(activation:SharedMediaActivation=SHARED_
     }
   } else {assert(activation.state==='unpublished','invalid activation');}
   async function load(group:SharedMediaGroup):Promise<ReadonlyMap<string,readonly SharedMediaImage[]>>{
+    if(group==='ui'&&ui)return ui;
     if(activation.state!=='published'||!origin)return empty;
     const pin=activation.groups[group];if(!pin)return empty;
     const previous=cache.get(group);if(previous)return previous;
@@ -90,7 +103,7 @@ export function createSharedMediaClient(activation:SharedMediaActivation=SHARED_
   return {
     async find(group:SharedMediaGroup,name:string,kind:SharedMediaKind='Sprite'){
       const index=await load(group);
-      return (index.get(name)??[]).filter(row=>row.kind===kind).map(image=>({...image,url:sharedMediaUrl(origin!,image)}));
+      return (index.get(name)??[]).filter(row=>row.kind===kind).map(image=>({...image,url:sharedMediaUrl(group==='ui'&&ui?uiOrigin:origin!,image)}));
     },
     async unique(group:SharedMediaGroup,name:string,kind:SharedMediaKind='Sprite'){
       const matches=await this.find(group,name,kind);
