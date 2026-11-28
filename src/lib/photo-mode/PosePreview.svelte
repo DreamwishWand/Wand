@@ -1,5 +1,6 @@
 <script lang="ts">
-  import {onMount} from 'svelte';
+  import {onMount,untrack} from 'svelte';
+  import {selectAppearanceOption} from './saved-avatar-appearance.ts';
   import {poseSpeeds,type PoseSpeed,type PosePlaybackState} from './playback';
   import {PoseSceneSession,type PoseScene,type PoseComparison} from './scene-session';
   import {GpuPoseRenderer} from './gpu-renderer';
@@ -7,7 +8,10 @@
   type BodyOption={id:string;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>};
   type Copy={play:string;pause:string;restart:string;loop:string;speed:string;time:string;zoom:string;resetView:string;orbit:string;loading:string;unavailable:string;bodyType:string};
   // The caller must provide verified native body icons and approved scene sources.
-  let {options,copy,preferredBody}:{options:readonly BodyOption[];copy:Copy;preferredBody?:string}=$props();
+  let {options,copy,preferredBody,appearanceKey}:{options:readonly BodyOption[];copy:Copy;preferredBody?:string;appearanceKey?:string}=$props();
+  let mounted=$state(false);
+  let appliedAppearanceKey:string|undefined;
+  let appliedPreferredBody:string|undefined;
   let canvas:HTMLCanvasElement;
   let session:PoseSceneSession|undefined;
   let selected=$state('');
@@ -22,8 +26,8 @@
   let pointer:{id:number;x:number;y:number}|undefined;
   function refresh(){if(session){snapshot=session.state;hidden=session.hiddenActors;zoom=session.camera.zoom}}
   function release(){session?.dispose();session=undefined}
-  async function choose(option:BodyOption){
-    if(selected===option.id&&status!=='error')return;
+  async function choose(option:BodyOption,refreshAppearance=false){
+    if(!refreshAppearance&&selected===option.id&&status!=='error')return;
     selected=option.id;status='loading';const token=++generation;abort?.abort();abort=new AbortController();
     if(session)comparison=session.comparison(comparison);release();actors=[];hidden=[];last=undefined;let scene:PoseScene|undefined;let renderer:GpuPoseRenderer|undefined;
     try{
@@ -40,8 +44,17 @@
   function move(e:PointerEvent){if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;pointer.x=e.clientX;pointer.y=e.clientY;const r=canvas.getBoundingClientRect();if(r.width&&r.height)act(s=>s.move(dx,dy,r.width,r.height))}
   function up(e:PointerEvent){if(pointer?.id===e.pointerId)pointer=undefined}
   function key(e:KeyboardEvent){const r=canvas.getBoundingClientRect();if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home')act(s=>s.resetView());else if(r.width&&r.height)act(s=>s.move(e.key==='ArrowLeft'?-r.width/24:e.key==='ArrowRight'?r.width/24:0,e.key==='ArrowUp'?-r.height/24:e.key==='ArrowDown'?r.height/24:0,r.width,r.height))}
-  function lost(e:Event){e.preventDefault();release();status='error'}
-  onMount(()=>{canvas.addEventListener('webglcontextlost',lost);const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);if(options.length)void choose(options.find(o=>o.id===preferredBody)??options[0]);else status='error';frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);release()}});
+  function lost(e:Event){e.preventDefault();generation++;abort?.abort();if(session)comparison=session.comparison(comparison);release();status='error'}
+  $effect(()=>{
+    const key=appearanceKey,preferred=preferredBody;
+    if(!mounted||key===appliedAppearanceKey&&preferred===appliedPreferredBody)return;
+    untrack(()=>{
+      const option=selectAppearanceOption(options,selected,appliedPreferredBody,preferred);
+      appliedAppearanceKey=key;appliedPreferredBody=preferred;
+      if(option)void choose(option,true);
+    });
+  });
+  onMount(()=>{canvas.addEventListener('webglcontextlost',lost);const observer=new ResizeObserver(()=>act(s=>s.redraw()));observer.observe(canvas);appliedAppearanceKey=appearanceKey;appliedPreferredBody=preferredBody;const initial=selectAppearanceOption(options,'',undefined,preferredBody);if(initial)void choose(initial);else status='error';mounted=true;frame=requestAnimationFrame(tick);return()=>{generation++;abort?.abort();cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);release()}});
 </script>
 
 <section class="pose-preview" aria-label={copy.bodyType}>
