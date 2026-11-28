@@ -473,7 +473,7 @@ export interface ItemContentOrigin {
 }
 export type ItemContentFilter=
   |{readonly kind:'confirmed_release'|'unconfirmed_candidate'|'source_release';readonly releaseId:string}
-  |{readonly kind:'introduced_version'|'first_observed_version';readonly version:string}
+  |{readonly kind:'introduced_version'|'first_observed_version'|'switch_first_observed_version'|'switch_observed_version';readonly version:string}
   |{readonly kind:'release_kind';readonly releaseKind:ItemContentReleaseKind}
   |{readonly kind:'unassigned_release'|'unknown_introduction'};
 export interface ItemContentQueryResult {
@@ -1261,6 +1261,12 @@ export async function openPublicItemMaster(
         case 'first_observed_version':
           assert(typeof filter.version==='string'&&GAME_VERSION.test(filter.version),'INVALID_CONTENT_VERSION');
           equals(filter.kind==='introduced_version'?'introducedVersion':'firstObservedVersion',filter.version);
+          break;
+        case 'switch_first_observed_version':
+        case 'switch_observed_version':
+          assert(typeof filter.version==='string'&&GAME_VERSION.test(filter.version),'INVALID_CONTENT_VERSION');
+          if(filter.kind==='switch_first_observed_version')equals('switchFirstObservedVersion',filter.version);
+          else filters.push({field:'history.switchObservedVersions',anyOf:[{kind:'contains',value:filter.version}]});
           break;
         case 'release_kind':
           assert(filter.releaseKind==='paid_dlc'||filter.releaseKind==='free_update','INVALID_CONTENT_KIND');
