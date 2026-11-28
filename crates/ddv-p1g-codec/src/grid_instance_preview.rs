@@ -995,7 +995,24 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
  let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
  let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
- serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false})).map_err(|_|CodecError::Json)
+ // Keep local selection witnesses outside the portable support-tree schema.
+ fn recovery_paths(root:&Value,gid:&str,oid:&str,ordinals:&HashMap<(String,String),usize>,path:&mut Vec<usize>,rows:&mut Vec<Value>){
+  let grids=&root["World"]["GridCollection"]["Grids"];
+  let Some(child)=grids[gid]["Objects"][oid]["State"]["SubGrid"]["GridID"].as_u64().map(|n|n.to_string())else{return;};
+  let Some(objects)=grids[&child]["Objects"].as_object()else{return;};
+  for (index,(key,obj)) in objects.iter().enumerate(){
+   path.push(index);
+   if let Some(ordinal)=ordinals.get(&(child.clone(),key.clone())){
+    rows.push(serde_json::json!({"path":path,"ordinal":ordinal}));
+   }
+   if obj["State"].get("SubGrid").is_some()&&path.len()<=8{recovery_paths(root,&child,key,ordinals,path,rows);}
+   path.pop();
+  }
+ }
+ let ordinals=field_recovery_ordinals(profile)?;
+ let mut recovery=Vec::new();
+ recovery_paths(&root,&target.grid_id,&target.object_id,&ordinals,&mut Vec::new(),&mut recovery);
+ serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false,"recoveryOrdinals":recovery})).map_err(|_|CodecError::Json)
 }
 /// Resolve a plain leaf within an exact, exclusively owned support hierarchy.
 fn support_leaf_orientation(factor:u64,orientation:&str,free:bool)->bool{ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)}
@@ -3620,6 +3637,74 @@ fn mission_items_referenced(root:&Value,items:&HashSet<u64>)->Result<bool,CodecE
  }
  Ok(false)
 }
+fn recovery_root_bounds(root:&Value,gid:&str)->Result<(u64,u64,u64),CodecError>{
+ let grid=&root["World"]["GridCollection"]["Grids"][gid];
+ if grid["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/")){
+  crate::indoor_room_view::recovery_surface_bounds(root,gid)
+ }else{let (_,_,f,x,y)=plain_scene_identity(root,gid)?;Ok((f,x,y))}
+}
+/// A recoverable support surface must have an exclusive Full Grid owner
+/// chain terminating on an authenticated outdoor or room surface.
+fn support_recovery_bounds(root:&Value,gid:&str)->Result<(u64,u64,u64),CodecError>{
+ let bad=CodecError::Json;
+ let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+ let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(bad)).transpose()?;
+ let mut owners=HashMap::<String,Vec<(String,String,bool)>>::new();
+ let mut total=0usize;
+ for (scope,field,is_diff) in [(Some(grids),"Objects",false),(diff,"ModifiedObjects",true)]{
+  for (g,v) in scope.into_iter().flatten(){
+   if let Some(objects)=v.get(field){for (o,value) in objects.as_object().ok_or(bad)?{
+    total+=1;if total>MAX_SCANNED_OBJECTS{return Err(CodecError::Bounds);}
+    if let Some(id)=value["State"]["SubGrid"]["GridID"].as_u64(){
+     owners.entry(id.to_string()).or_default().push((g.clone(),o.clone(),is_diff));
+    }
+   }}
+  }
+ }
+ let mut room_grids=HashSet::new();
+ if let Some(houses)=root["World"].get("PlayerHouses"){
+  for house in houses.as_array().ok_or(bad)?{
+   if let Some(floors)=house.get("Floors"){for floor in floors.as_array().ok_or(bad)?{
+    if let Some(rooms)=floor.get("Rooms"){for room in rooms.as_object().ok_or(bad)?.values(){
+     if let Some(id)=room["FloorGridID"].as_u64(){room_grids.insert(id);}
+     if let Some(walls)=room.get("WallGridIDs"){for v in walls.as_object().ok_or(bad)?.values(){if let Some(id)=v.as_u64(){room_grids.insert(id);}}}
+    }}
+   }}
+  }
+ }
+ static CATALOG:std::sync::OnceLock<Value>=std::sync::OnceLock::new();
+ let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).unwrap_or(Value::Null));
+ let child_bounds=|id:&str|->Result<(u64,u64,u64),CodecError>{
+  let g=grids.get(id).ok_or(bad)?;
+  if g["ID"].as_u64()!=key_id(id)||key_id(id).is_none_or(|n|n==0||room_grids.contains(&n))||diff.is_some_and(|d|d.contains_key(id)){return Err(bad);}
+  let path=g["GridDataPath"].as_str().filter(|p|p.starts_with("GridData/Furniture/")).ok_or(bad)?;
+  let f=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
+  let row=catalog["grids"].as_array().and_then(|a|a.iter().find(|v|v[0].as_str()==Some(path))).ok_or(bad)?;
+  let size=|i:usize|row[i].as_u64().filter(|n|(1..=256).contains(n)).ok_or(bad);
+  Ok((f,size(1)?,size(2)?))
+ };
+ let result=child_bounds(gid)?;
+ let mut current=gid.to_owned();let mut visited=HashSet::new();
+ for _ in 0..=8{
+  if !visited.insert(current.clone()){return Err(bad);}
+  let links=owners.get(&current).filter(|v|v.len()==1).ok_or(bad)?;
+  let (parent,object,is_diff)=&links[0];
+  if *is_diff||diff.is_some_and(|d|d.contains_key(parent)){return Err(bad);}
+  let g=grids.get(parent).ok_or(bad)?;
+  let obj=g["Objects"].get(object).ok_or(bad)?;
+  if g["ID"].as_u64()!=key_id(parent)||obj["ID"].as_u64()!=key_id(object)||key_id(object).is_none_or(|n|n==0)||
+   obj["ItemID"].as_u64().is_none_or(|n|n/100_000!=400)||obj["State"].as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid"))||
+   !obj["Orientation"].as_str().is_some_and(|o|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&o)){return Err(bad);}
+  let nested=owners.contains_key(parent);
+  let (f,sx,sy)=if nested{child_bounds(parent)?}else{recovery_root_bounds(root,parent)?};
+  let (x,y)=observed_coordinates(obj.as_object().ok_or(bad)?).ok_or(bad)?;
+  if x<0||y<0||x as u64>=f*sx||y as u64>=f*sy{return Err(bad);}
+  if !nested{subgrid_tree(c,parent,object)?;return Ok(result);}
+  current=parent.clone();
+ }
+ Err(bad)
+}
 fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec<(GridCoordinateTarget,(i32,i32),String)>,CodecError>{
  let bad=CodecError::Json;
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(bad);}
@@ -3642,9 +3727,9 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
  for (t,s) in targets.iter().zip(&selections){
   let (factor,sx,sy)=if let Some(b)=bounds.get(&t.grid_id){*b}else{
    let grid=&root["World"]["GridCollection"]["Grids"][&t.grid_id];
-   let b=if grid["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/")){
-    crate::indoor_room_view::recovery_surface_bounds(root,&t.grid_id)?
-   }else{let (_,_,f,x,y)=plain_scene_identity(root,&t.grid_id)?;(f,x,y)};
+   let b=if grid["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Furniture/")){
+    support_recovery_bounds(root,&t.grid_id)?
+   }else{recovery_root_bounds(root,&t.grid_id)?};
    bounds.insert(t.grid_id.clone(),b);b
   };
   let (x,y)=s.2;
