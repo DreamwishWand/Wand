@@ -859,8 +859,7 @@ pub fn preview_free_outdoor_world_transfer(source:&str,target:&GridCoordinateTar
  let layout=from["GridDefaultLayoutPath"].as_str().ok_or(PatchError::InvalidTarget)?;
  let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
  if house_exterior_world(layout,data).is_none()||from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok(){return Err(PatchError::InvalidTarget);}
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 fn outdoor_world_path(scope:&str,path:&str)->bool{
     if path.contains("..")||path.contains('\\')||!path.ends_with(".json"){return false;}
@@ -945,27 +944,25 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
        collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&target.grid_id)||g.contains_key(&destination.grid_id))){
         return Err(PatchError::AmbiguousTarget);
     }
-    // The existing removal contract proves the source is a plain, exact
-    // five-field record, and the byte locator rejects duplicate JSON keys.
-    // Preserve the exact lexical State of the parent, not a reserialized or synthesized child reference.
-    let state=if support_parent{
-        if target.item_id/100_000!=400||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation)){return Err(PatchError::InvalidTarget);}
-        let mut locator=JsonLocator::grid_axis(source,target,"X")?;
-        locator.signed_path=None;locator.item_path=None;
-        let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
-        locator.capture.insert(path.clone(),None);locator.walk_complete()?;
-        let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
-        Some(&source[range])
-    }else if target.item_id/100_000==402&&from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("State")).is_some_and(|v|v.is_null()){
-        Some("null")
-    }else{None};
+    if support_parent&&(target.item_id/100_000!=400||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(destination.tessellation))){return Err(PatchError::InvalidTarget);}
     if support_parent&&!free&&to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::AmbiguousTarget);}
-    let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,support_parent)?;
-    insert_grid_record(&removed.patched_json,destination,target.item_id,replacement,orientation,state)
+    relocate_grid_record(source,target,expected,destination,replacement,orientation,support_parent,false)
 }
 
 /// Private common allocator, including an empty Objects map.
 /// It is called only after the destination witness has been validated.
+/// Relocate an existing record after independent destination validation.
+/// Preserve State presence and lexical bytes, including explicit null.
+fn relocate_grid_record(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support:bool,storage:bool)->Result<GridCoordinateDraft,PatchError>{
+    if target.grid_id==destination.grid_id||support&&storage{return Err(PatchError::InvalidTarget);}
+    let mut locator=JsonLocator::grid_axis(source,target,"X")?;
+    locator.signed_path=None;locator.item_path=None;
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+    locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+    let state=locator.capture.get(&path).and_then(|v|v.clone()).map(|r|&source[r]);
+    let removed=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,support,storage)?;
+    insert_grid_record(&removed.patched_json,destination,target.item_id,replacement,orientation,state)
+}
 fn insert_plain_grid_record(intermediate:&str,destination:&PlainGridDestination,item_id:u64,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     insert_grid_record(intermediate,destination,item_id,replacement,orientation,None)
 }
@@ -1802,36 +1799,32 @@ fn outdoor_to_indoor_transfer_mode(source:&str,target:&GridCoordinateTarget,expe
     grids.values().filter(|v|v.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&v.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{
      return Err(PatchError::InvalidTarget);
  }
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 /// The codec resolves exact room ownership and source pose before either transfer.
 pub fn preview_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!full_grid_scope(&d.layout_path).is_some_and(|scope|outdoor_world_path(scope,&d.data_path)){return Err(PatchError::InvalidTarget);}
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- preview_plain_grid_place(&removed.patched_json,d,target.item_id,xy,orientation)
+ validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 /// Free room export to a verified outdoor terrain grid. The codec proves
 /// native dimensions and the exclusive room identity before calling this.
 pub fn preview_free_indoor_to_outdoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
  validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 pub fn preview_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 /// Free transfer between codec-resolved exclusive room floors. The source
 /// leaf removal keeps all unrelated records and does not touch stock.
 pub fn preview_free_indoor_to_indoor_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||!d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",true)?;
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 /// Relocate an existing support parent between two exact owned room floors.
 /// The codec checks exclusive subtree ownership and external references.
@@ -1871,12 +1864,7 @@ fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
   if (if free{house_exterior_world(layout,data).is_none()}else{!saved_outdoor_scope(layout,data).is_some_and(|scope|outdoor_world_path(scope,data))})||grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(layout)&&g.get("GridDataPath").and_then(|v|v.as_str())==Some(data)).count()!=1{return Err(PatchError::InvalidTarget);}
  }
  if !free&&!to_room&&grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("ItemID").and_then(|v|v.as_u64()).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(|v|v.as_i64())==Some(i64::from(xy.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(xy.1)))){return Err(PatchError::AmbiguousTarget);}
- let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
- let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
- locator.capture.insert(path.clone(),None);locator.walk_complete()?;
- let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
- let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,true)?;
- insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
+ relocate_grid_record(source,target,expected,d,xy,orientation,true,false)
 }
 // A storage root may share a container with another native object. A
 // coordinate-only edit never reallocates, copies, or mutates that container.
@@ -2036,28 +2024,21 @@ pub fn preview_storage_transfer(source:&str,target:&GridCoordinateTarget,expecte
  let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
  let layout=from["GridDefaultLayoutPath"].as_str().unwrap_or("");
  if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||!(data.starts_with("GridData/Rooms/Room")&&data.ends_with("-GridData.json")&&!data.contains("..")||house_exterior_world(layout,data).is_some()){return Err(PatchError::InvalidTarget);}
- let mut locator=JsonLocator::grid_axis(source,target,"X")?;locator.signed_path=None;locator.item_path=None;
- let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
- locator.capture.insert(path.clone(),None);locator.walk_complete()?;
- let range=locator.capture.get(&path).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget)?;
- let removed=preview_grid_structure_mode(source,target,expected,PlainGridStructureAction::Remove,false,true)?;
- insert_grid_record(&removed.patched_json,d,target.item_id,xy,orientation,Some(&source[range]))
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,true)
 }
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.
 /// Grid-local identities are allocated from the destination counter; stock is untouched.
 pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
  validate_support_grid_destination(source,d,target.item_id,xy,orientation)?;
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 
 /// Explicit free transfer between codec-verified support surfaces; preserve stock.
 pub fn preview_free_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
  validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Furniture/",true)?;
- let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
- insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+ relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 
 /// One atomic stock+placement candidate. Never create an absent stock entry:
