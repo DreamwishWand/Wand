@@ -16,7 +16,7 @@ scope.onmessage=async({data})=>{
   wasm=new WasmAmountPreview(detectLocalSaveFormat(bytes));
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
-  if(recoveryTargets){scope.postMessage({kind:'activity-recovery-destinations',result:JSON.parse(wasm.list_field_recovery_destinations())});return;}
+  if(recoveryTargets){scope.postMessage({kind:'activity-recovery-destinations',result:JSON.parse(wasm.list_field_recovery_destinations(JSON.stringify(data.plan)))});return;}
   if(inspectBatch){const plans=data.plan;if(!Array.isArray(plans)||plans.length<1||plans.length>64||new Set(plans.map(p=>p?.key)).size!==plans.length)throw Error('network batch');const receipts=[];for(const p of plans){if(typeof p?.key!=='string'||p.key.length>256)throw Error('network key');try{receipts.push({key:p.key,rows:JSON.parse(wasm.inspect_area_network(JSON.stringify(p.destination))),...(data.includeLandscape===true?{landscape:JSON.parse(wasm.inspect_area_landscape(JSON.stringify(p.destination)))}:{})});}catch{/* Unverified grids retain their original footprint rendering. */}}scope.postMessage({kind:'map-networks',receipts});return;}
   if(inspect){scope.postMessage({kind:'area-network',rows:JSON.parse(wasm.inspect_area_network(JSON.stringify(data.plan))),...(data.includeLandscape===true?{landscape:JSON.parse(wasm.inspect_area_landscape(JSON.stringify(data.plan)))}:{})});return;}
   if(exporting){
