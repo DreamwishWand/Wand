@@ -227,10 +227,26 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           check(category==='in_game_limited_event'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
             evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
             evidence.sourceLootTableSha256===sha?.LootTable&&id(evidence.bagItemId)&&id(evidence.tableItemId)&&
-            ['event_loot_present_spawn','event_loot_present_reward','event_loot_present_memory_payload'].some(k=>k===evidence.kind)&&
+            ['event_loot_present_spawn','event_loot_present_override','event_loot_present_reward','event_loot_present_memory_payload'].some(k=>k===evidence.kind)&&
             typeof evidence.eventName==='string'&&evidence.eventName.length>0&&object(evidence.conditions)&&
-            evidence.spawnSourcePath==='source.Spawn.LootPresentItem.Item.Item.Item','EXTENSION_EVENT_LOOT');
+            (evidence.spawnSourcePath==='source.Spawn.LootPresentItem.Item.Item.Item'||
+             evidence.spawnSourcePath==='source.Spawn.RewardOverride.ItemID'&&id(evidence.inventoryItemId)&&id(evidence.blockerItemId)&&
+             evidence.sourceFurnitureSha256===sha?.Furniture&&evidence.sourceMissionSha256===sha?.Mission&&
+             evidence.sourceActivityDataSha256===sha?.ActivityData&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+             object(evidence.rewardOverride)&&evidence.rewardOverride.ItemID===evidence.bagItemId&&Array.isArray(evidence.precursors)&&evidence.precursors.length>0),
+             'EXTENSION_EVENT_LOOT');
           relatedIds.push(evidence.bagItemId,evidence.tableItemId);
+          if(evidence.spawnSourcePath==='source.Spawn.RewardOverride.ItemID'){
+            check(id(evidence.inventoryItemId)&&id(evidence.blockerItemId)&&Array.isArray(evidence.precursors),'EXTENSION_EVENT_OVERRIDE');
+            relatedIds.push(evidence.inventoryItemId,evidence.blockerItemId);
+            for(const p of evidence.precursors){
+              check(object(p)&&id(p.sourceItemId)&&['event_fishing_result','event_quest_blocker_note'].some(k=>k===p.kind)&&
+                p.eventName===evidence.eventName&&object(p.originalConditions)&&
+                (p.kind==='event_fishing_result'?p.sourceFileSha256===sha?.ActivityData:p.sourceFileSha256===sha?.ConditionalEvent&&id(p.missionItemId)),'EXTENSION_EVENT_PRECURSOR');
+              relatedIds.push(p.sourceItemId);
+              if(id(p.missionItemId))relatedIds.push(p.missionItemId);
+            }
+          }
         }else if(family==='memorySpawn'){
           const realm=evidence.kind==='realm_fixed_memory_spawn';
           check((evidence.kind==='quest_gated_memory_spawn'||realm&&evidence.sourceSceneSha256===sha?.Scene)&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
