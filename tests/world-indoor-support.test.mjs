@@ -91,7 +91,7 @@ test('single room floor cut can be reused by support paste without stock or nati
  assert.equal(supportFloorCut({...cut,rows:[row,row]},file),null);
 });
 
-test('support cut uses a parent witness and cannot accidentally enter outdoor paste',async()=>{
+test('support cut uses a parent witness and enters outdoor paste only in free mode',async()=>{
  const {indoorGroupTransfer}=await import('../src/lib/world/indoor-room-view.ts');
  const {groupCutPlan,cutClipboardMatches}=await import('../src/lib/world/group-paste.ts');
  const id=40000002,orientation='GridOrientation_Down',supportSource={parentItemId:40000003,parentX:1,parentY:2,path:[0],index:0};
@@ -103,6 +103,16 @@ test('support cut uses a parent witness and cannot accidentally enter outdoor pa
  const moves=indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,true);
  assert.equal(moves?.[0].localOrdinal,7);assert.deepEqual(moves?.[0].supportSource,supportSource);
  const file=new File(['save'],'local.json');
- assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],true),false);
+ assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],true),true);
+ assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],false),false);
  assert.equal(groupCutPlan([row],{rows:[]},true),null);
+});
+
+test('support paste accepts ordinary outdoor and support leaf cuts on the same file',async()=>{
+ const {supportFloorCut}=await import('../src/lib/world/indoor-support.ts');
+ const file=new File(['save'],'local.json'),row={localOrdinal:7,itemId:'40000002',expectedX:3,expectedY:4,expectedOrientation:'GridOrientation_Down',area:'Village04'},cut={file,scope:'Village04',rows:[row]};
+ assert.equal(supportFloorCut(cut,file)?.localOrdinal,7);
+ const supportSource={parentItemId:40000003,parentX:0,parentY:0,path:[],index:1};
+ assert.deepEqual(supportFloorCut({...cut,rows:[{...row,supportSource}]},file)?.supportSource,supportSource);
+ assert.equal(supportFloorCut({...cut,rows:[{...row,supportFactor:1}]},file),null);
 });

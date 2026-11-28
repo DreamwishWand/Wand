@@ -984,12 +984,21 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    return ddv_save_patch::preview_furniture_stock_transaction(source,amount,ddv_save_patch::FurnitureStockAction::Pickup{target:&target,expected}).map_err(|_|CodecError::Patch);
   }
   let floor_source=if floor_transfer{
-   if row.len()!=8||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
+   if row.len()!=8+usize::from(row.contains_key("supportSource"))||row.contains_key("roomSource")==row.contains_key("localOrdinal")||row.contains_key("roomSource")&&row.contains_key("supportSource")||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
    let expected=(int(stock,"expectedX")?,int(stock,"expectedY")?);
    let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
    // The support writer remains cardinal-only, including its source witness.
    if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
-   let t=crate::indoor_room_view::resolve_room_cut_source(profile,&root,row.get("roomSource").ok_or(bad)?,id,expected,old,None,true,false)?;
+   let t=if let Some(w)=row.get("roomSource"){crate::indoor_room_view::resolve_room_cut_source(profile,&root,w,id,expected,old,None,true,false)?}else{
+    let ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+    if let Some(w)=row.get("supportSource"){resolve_support_leaf_cut(profile,ordinal,w,id,expected,old)?}else{
+     let t=resolve_grid_orientation_target(profile,ordinal,id,expected,"full",old)?;
+     let (_,_,f,sx,sy)=house_exterior_identity(&root,&t.grid_id)?;
+     if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}
+     let refs=grid_identity_dependencies(profile,&t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+     t
+    }
+   };
    Some((t,expected))
   }else{
    if action!="place"||row.len()!=6||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))||amount==0{return Err(bad);}
@@ -2816,6 +2825,28 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let free=value.is_object();
     let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
     let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+    if rows.iter().any(|r|r.get("supportSource").is_some()){
+        if !free||rows.len()!=1{return Err(bad);}
+        let row=&rows[0];let o=row.as_object().filter(|o|o.len()==10&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+        let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
+        let expected=(int("expectedX")?,int("expectedY")?);
+        let target=resolve_support_leaf_cut(profile,ordinal,o.get("supportSource").ok_or(bad)?,item,expected,o.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?)?;
+        let d=resolve_plain_grid_destination(profile,o.get("destination").ok_or(bad)?)?;
+        let (scope,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+        let xy=(int("x")?,int("y")?);
+        let orientation=o.get("orientation").and_then(Value::as_str).ok_or(bad)?;
+        if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1)||xy.0<0||xy.1<0||xy.0 as u64>=sx*factor||xy.1 as u64>=sy*factor||
+          !(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||factor==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(bad);}
+        let grid=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
+        let next=grid.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
+        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[next.to_string()])?;
+        if refs.blocking()>0||refs.historical>0{return Err(bad);}
+        let draft=ddv_save_patch::preview_free_indoor_to_outdoor_transfer(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
+        return Ok(draft.patched_json);
+    }
     if rows.iter().any(|r|r.get("roomSource").is_some()){
         if rows.len()>32{return Err(bad);}
         // All source indices refer to one unchanged room; remove highest first
