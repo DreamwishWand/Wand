@@ -15,6 +15,8 @@ mod mission_slot_audit;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
 mod storage_source;
+#[cfg(feature="wasm")]
+mod private_storage_scope;
 mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
@@ -1507,6 +1509,45 @@ mod browser_amount_preview {
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>128*1024{return Err(invalid());}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let patched=indoor_room_view::room_project_candidate(source,plan).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
+        pub fn export_private_storage_contents(&self,scope:&str)->Result<String,JsValue>{
+            let invalid=||fail("DB05_STORAGE_BACKUP_INVALID");
+            if !self.ready||self.closed{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?;
+            ddv_save_patch::storage_backup::export_scoped(std::str::from_utf8(source).map_err(|_|invalid())?,grids.as_ref()).map_err(|_|invalid())
+        }
+        pub fn prepare_private_decoration_copy(&mut self,kind:&str,plan:&str,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_PRIVATE_DECORATION_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||plan.len()>4*1024*1024||backup.len()>4*1024*1024{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
+            let scope_kind=scope_value["kind"].as_str().ok_or_else(invalid)?;
+            if !matches!((kind,scope_kind),("indoor-room-project-export","room"|"floor"|"building")|("biome-furniture-export"|"island-furniture-export"|"island-decoration-export","outdoor")|("island-decoration-export","region-poses")){return Err(invalid());}
+            let grid_scope=if scope_kind=="region-poses"{
+                let areas=scope_value["areas"].as_array().ok_or_else(invalid)?;
+                serde_json::json!({"kind":"outdoor","destinations":areas.iter().map(|a|a["destination"].clone()).collect::<Vec<_>>()}).to_string()
+            }else{scope.to_owned()};
+            let grids=crate::private_storage_scope::resolve(source,&grid_scope).map_err(|_|invalid())?;
+            let draft=zeroize::Zeroizing::new(if plan=="null"{std::str::from_utf8(source).map_err(|_|invalid())?.to_owned()}else{match kind{
+              "indoor-room-project-export"=>indoor_room_view::room_project_candidate(source,plan),
+              "biome-furniture-export"=>grid_instance_preview::biome_furniture_candidate(source,plan),
+              "island-furniture-export"=>grid_instance_preview::island_furniture_candidate(source,plan),
+              "island-decoration-export"=>grid_instance_preview::island_decoration_candidate(source,plan),
+              _=>return Err(invalid())
+            }.map_err(|_|invalid())?});
+            let after=crate::private_storage_scope::resolve(draft.as_bytes(),scope).map_err(|_|invalid())?;
+            if grids!=crate::private_storage_scope::resolve(draft.as_bytes(),&grid_scope).map_err(|_|invalid())?{return Err(invalid());}
+            let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,after.as_ref(),plan!="null",true).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
+        pub fn prepare_private_storage_contents_copy(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_STORAGE_RESTORE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?;
+            let patched=ddv_save_patch::storage_backup::restore_scoped(std::str::from_utf8(source).map_err(|_|invalid())?,backup,grids.as_ref()).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{

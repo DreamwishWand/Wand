@@ -63,6 +63,25 @@ test('area preset returns reconstructible empty storage, but never removes nonem
  const rows=[empty,full,unknown,noncanonical];
  const capture=biomeFurnitureSnapshot(g,rows,0,false,undefined,true);
  assert.ok(capture);assert.deepEqual(capture.editable,[empty]);assert.deepEqual(capture.protectedObjects,[full,unknown,noncanonical]);
+ const privateCapture=biomeFurnitureSnapshot(g,rows,0,false,undefined,true,true);
+ assert.ok(privateCapture);assert.deepEqual(privateCapture.editable,[empty,full,noncanonical]);assert.deepEqual(privateCapture.protectedObjects,[unknown]);
  const review=biomeFurnitureReplacement(g,[g],new Map(),rows,0,[],new Map(),new Map([[40001680,0]]),false,undefined,true);
  assert.ok(review);assert.deepEqual(review.removed,[empty]);assert.equal(review.plan.remove[0].includeStorage,true);assert.equal(review.returned.get(40001680),1);assert.equal(review.protectedObjects.length,3);
+});
+
+test('private region restore resolves exact poses only inside selected footprint',async()=>{
+ const {privateRegionPoses,privateRegionRestoreScope,regionStorageWitnesses}=await import('../src/lib/world/region-decoration-backup.ts');
+ const g=catalog.entries.flatMap(e=>e.grids).map(bindFloatingIslandGrid).filter(Boolean)[0],scope=[g],r={x:0,y:-2/g.factor,w:1/g.factor,h:2/g.factor};
+ const pose={item:40001680,x:0,y:0,orientation:'GridOrientation_Down'};
+ const root={path:g.gridDataPath,pose},doc={schema:'wand.private.storage-contents@2',skipped:0,rows:[{roots:[root]}]};
+ const areas=privateRegionPoses(JSON.stringify(doc),r,scope);assert.ok(areas);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:''};
+ const geometry=new Map([[g.key,new Map([[40001680,{shapes:{'40001680:8':shape}}]])]]);
+ const plan=JSON.parse(privateRegionRestoreScope(r,areas,geometry));assert.equal(plan.kind,'region-poses');assert.deepEqual(plan.areas[0].poses,[pose]);
+ assert.equal(privateRegionRestoreScope({...r,x:1},areas,geometry),null);
+ assert.equal(privateRegionRestoreScope(r,areas,new Map([[g.key,new Map()]])),null);
+ const duplicate={...doc,rows:[{roots:[root,root]}]};assert.equal(privateRegionPoses(JSON.stringify(duplicate),r,scope),null);
+ const p={area:g.key,factor:g.factor,x:0,y:0,shape,object:{storageKnown:true,storage:true,localOrdinal:1,itemId:'40001680',x:0,y:0,orientation:'GridOrientation_Down'}};
+ assert.equal(regionStorageWitnesses(r,scope,new Map([[g.key,[p]]])).length,1);
+ assert.equal(regionStorageWitnesses(r,scope,new Map([[g.key,[{...p,object:{...p.object,storage:false}}]]])),null);
 });

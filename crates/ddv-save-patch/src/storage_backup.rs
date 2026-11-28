@@ -1,0 +1,197 @@
+use super::{JsonLocator,QuantityTarget,Segment,k,validate_json_without_edit,storage_pose,PatchError};
+use serde_json::{Value,json};
+use std::collections::{BTreeMap,HashMap,HashSet};
+const BAD:PatchError=PatchError::InvalidTarget;
+const LIMIT:usize=4*1024*1024;
+const SCHEMA:&str="wand.private.storage-contents@2";
+const OLD_SCHEMA:&str="wand.private.storage-contents@1";
+fn id(v:&Value)->Option<u32>{v.as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0)}
+fn bounded_inventory(v:&Value)->bool{
+ v.as_array().is_some_and(|a|a.len()<=8192&&a.iter().all(|s|s.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
+ s["ItemID"].as_u64().is_some_and(|n|n<=u32::MAX as u64)&&s["Amount"].as_u64().is_some_and(|n|n<=i32::MAX as u64)&&s.get("State").is_none_or(|s|s.is_null()||s.is_object())))
+}
+fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
+ match v{
+  Value::Object(m)=>for(k,v)in m{let k=k.to_ascii_lowercase();if k!="nextcontainerinventoryid"{count_refs(v,marked||k.contains("container")&&k.contains("id"),counts);}},
+  Value::Array(a)=>for v in a{count_refs(v,marked,counts);},
+  _=>if marked{if let Some(n)=id(v){*counts.entry(n).or_default()+=1;}}
+ }
+}
+fn in_scope(scope:Option<&HashSet<String>>,gid:&str,oid:&str)->bool{
+ scope.is_none_or(|s|s.contains(gid)||s.contains(&format!("{gid}:{oid}")))
+}
+fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError>{
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(BAD);}
+ let collection=&root["World"]["GridCollection"];
+ let grids=collection["Grids"].as_object().filter(|m|m.len()<=100_000).ok_or(BAD)?;
+ let diff=collection.get("DiffGrids");if diff.is_some_and(|v|!v.is_object()){return Err(BAD);}
+ let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<=8192).ok_or(BAD)?;
+ let mut refs=HashMap::new();count_refs(root,false,&mut refs);
+ let mut roots=BTreeMap::<u32,Vec<Value>>::new();let mut rejected=HashSet::new();let mut scoped=HashSet::new();let mut total=0usize;
+ for(gid,g)in grids{
+  let Some(objects)=g["Objects"].as_object()else{continue;};
+  total=total.checked_add(objects.len()).filter(|n|*n<=200_000).ok_or(BAD)?;
+  for(oid,o)in objects{
+   let Some(n)=id(&o["State"]["Storage"]["ContainerInventoryID"])else{continue;};
+   if in_scope(scope,gid,oid){scoped.insert(n);}
+   let st=&o["State"]["Storage"];
+   let path=g["GridDataPath"].as_str().filter(|s|s.len()<=1024);
+   let item=id(&o["ItemID"]);
+   if !storage_pose(root,o)||id(&g["ID"]).is_none_or(|v|v.to_string()!=*gid)||id(&o["ID"]).is_none_or(|v|v.to_string()!=*oid)||diff.is_some_and(|v|v.get(gid).is_some())||
+     item.is_none_or(|v|v/100_000!=400)||path.is_none()||
+     st!=&json!({"ContainerInventoryID":n,"DefaultContainerInventoryData":st["DefaultContainerInventoryData"],"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}){
+    rejected.insert(n);continue;
+   }
+   if o["X"].as_i64().is_none()||o["Y"].as_i64().is_none()||!super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or("")){rejected.insert(n);continue;}
+   roots.entry(n).or_default().push(json!({"grid":gid,"object":oid,"path":path.unwrap(),"state":o["State"],"pose":{"item":item.unwrap(),"x":o["X"],"y":o["Y"],"orientation":o["Orientation"]}}));
+  }
+ }
+ let mut rows=Vec::new();let mut skipped=0usize;
+ for(n,mut witnesses)in roots{
+  let c=&containers[&n.to_string()];
+  let size=id(&c["Size"]);let parent=id(&c["ParentItemID"]);
+  if !scoped.contains(&n){continue;}
+  if witnesses.iter().any(|w|!in_scope(scope,w["grid"].as_str().unwrap_or(""),w["object"].as_str().unwrap_or("")))||rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
+    c.as_object().is_none_or(|m|m.len()!=7||m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))||
+    c["BlockMoveTo"].as_bool()!=Some(false)||c["ExtraSize"].as_u64().is_none()||!bounded_inventory(&c["Inventory"]){skipped+=1;continue;}
+  witnesses.sort_by_cached_key(Value::to_string);
+  let mut metadata=c.clone();metadata.as_object_mut().ok_or(BAD)?.remove("Inventory");
+  rows.push(json!({"id":n,"metadata":metadata,"roots":witnesses,"inventory":c["Inventory"]}));
+ }
+ // Unmatched or unverified player-owned containers are not silently restored.
+ let included:HashSet<_>=rows.iter().filter_map(|r|id(&r["id"])).collect();
+ skipped=if scope.is_some(){scoped.iter().filter(|n|!included.contains(n)).count()}else{containers.iter().filter(|(_,c)|c["BelongsToPlayer"].as_bool()==Some(true)&&id(&c["ID"]).is_none_or(|n|!included.contains(&n))).count().max(skipped)};
+ Ok(json!({"schema":SCHEMA,"version":643,"skipped":skipped,"rows":rows}))
+}
+pub fn export(source:&str)->Result<String,PatchError>{export_scoped(source,None)}
+pub fn export_scoped(source:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
+ validate_json_without_edit(source)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
+ let raw=snapshot(&root,scope)?.to_string();if raw.len()>LIMIT{return Err(BAD);}Ok(raw)
+}
+fn identity_roots(row:&Value)->Option<Vec<Value>>{
+ let mut out=row["roots"].as_array()?.clone();
+ for w in &mut out{w.as_object_mut()?.remove("pose");}
+ out.sort_by_cached_key(Value::to_string);Some(out)
+}
+fn replacement_key(row:&Value)->Option<String>{
+ let mut metadata=row["metadata"].as_object()?.clone();metadata.remove("ID")?;
+ let roots=row["roots"].as_array().filter(|a|a.len()==1)?;
+ let mut w=roots[0].as_object()?.clone();w.remove("object")?;
+ let pose=w.get("pose")?.as_object()?;
+ if pose.len()!=4||pose["item"].as_u64()!=metadata.get("ParentItemID")?.as_u64()||pose["x"].as_i64().is_none()||pose["y"].as_i64().is_none()||!super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&pose["orientation"].as_str()?){return None;}
+ w.get_mut("state")?.get_mut("Storage")?.as_object_mut()?.remove("ContainerInventoryID")?;
+ Some(json!([metadata,w]).to_string())
+}
+pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{restore_scoped(source,backup,None)}
+pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
+ restore_scoped_mode(source,backup,scope,false,false)
+}
+pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>>,allow_noop:bool,strict_pose:bool)->Result<String,PatchError>{
+ if backup.len()>LIMIT{return Err(BAD);}
+ validate_json_without_edit(source)?;validate_json_without_edit(backup)?;
+ let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
+ let b:Value=serde_json::from_str(backup).map_err(|_|BAD)?;
+ let schema=b["schema"].as_str().filter(|s|matches!(*s,SCHEMA|OLD_SCHEMA)).ok_or(BAD)?;
+ if b.as_object().is_none_or(|m|m.len()!=4)||b["version"].as_u64()!=Some(643)||b["skipped"].as_u64().is_none(){return Err(BAD);}
+ let current=snapshot(&root,scope)?;
+ let available:HashMap<_,_>=current["rows"].as_array().ok_or(BAD)?.iter().map(|r|(id(&r["id"]).unwrap(),r)).collect();
+ let mut replacements=HashMap::<String,Option<&Value>>::new();
+ for c in available.values(){
+  if let Some(key)=replacement_key(c){replacements.entry(key).and_modify(|v|*v=None).or_insert(Some(*c));}
+ }
+ let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mut changes=Vec::new();let mut seen=HashSet::new();let mut destination_ids=HashSet::new();
+ for r in b["rows"].as_array().filter(|a|(allow_noop||!a.is_empty())&&a.len()<=8192).ok_or(BAD)?{
+  let n=id(&r["id"]).filter(|n|seen.insert(*n)).ok_or(BAD)?;
+  if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!bounded_inventory(&r["inventory"]){return Err(BAD);}
+  let c=if let Some(c)=available.get(&n){
+   if r["metadata"]!=c["metadata"]||identity_roots(r).ok_or(BAD)?!=identity_roots(c).ok_or(BAD)?||strict_pose&&(schema!=SCHEMA||r["roots"]!=c["roots"]){return Err(BAD);}
+   *c
+  }else{
+   // Rebind only a removed source to one newly allocated empty storage at
+   // the exact original native grid/pose. Never overwrite another chest.
+   if schema!=SCHEMA||root["Player"]["ContainerInventories"].get(n.to_string()).is_some()||super::player_house_create::container_ref(&root,n,false){return Err(BAD);}
+   let key=replacement_key(r).ok_or(BAD)?;
+   let c=replacements.get(&key).copied().flatten().ok_or(BAD)?;
+   if id(&c["id"]).is_none_or(|id|id<=n)||c["inventory"].as_array().is_none_or(|a|!a.is_empty()){return Err(BAD);}
+   c
+  };
+  let dest=id(&c["id"]).filter(|id|destination_ids.insert(*id)).ok_or(BAD)?;
+  if r["inventory"]==c["inventory"]{continue;}
+  // Opaque native item state is preserved only when its exact slot remains
+  // unchanged. Ordinary stacks in the same container can still be restored.
+  let old=c["inventory"].as_array().ok_or(BAD)?;
+  let next=r["inventory"].as_array().ok_or(BAD)?;
+  for i in 0..old.len().max(next.len()){
+   let a=old.get(i);let b=next.get(i);
+   let stateful=|v:Option<&Value>|v.is_some_and(|v|v.get("State").is_some_and(|s|!s.is_null()));
+   if (stateful(a)||stateful(b))&&a!=b{return Err(BAD);}
+  }
+  let p=vec![k("Player"),k("ContainerInventories"),k(&dest.to_string()),k("Inventory")];
+  locator.capture.insert(p.clone(),None);changes.push((p,r["inventory"].to_string()));
+ }
+ if changes.is_empty(){return if allow_noop{Ok(source.to_owned())}else{Err(BAD)};}
+ locator.walk_complete()?;
+ let mut edits=changes.into_iter().map(|(p,v)|Ok((locator.capture.get(&p).and_then(Clone::clone).ok_or(BAD)?,v))).collect::<Result<Vec<_>,PatchError>>()?;
+ edits.sort_unstable_by_key(|(r,_)|r.start);
+ let mut out=String::new();let mut last=0;
+ for(r,v)in edits{if r.start<last{return Err(BAD);}out.push_str(&source[last..r.start]);out.push_str(&v);last=r.end;}
+ out.push_str(&source[last..]);validate_json_without_edit(&out)?;Ok(out)
+}
+#[cfg(test)]
+mod tests{
+ use super::*;
+ const SAVE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
+ #[test]fn private_storage_roundtrip_preserves_unrelated_bytes(){
+  let backup=export(SAVE).unwrap();let doc:Value=serde_json::from_str(&backup).unwrap();assert_eq!(doc["rows"].as_array().unwrap().len(),1);
+  let changed=SAVE.replace("\"Amount\":5","\"Amount\":3");
+  let restored=restore(&changed,&backup).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&restored).unwrap(),serde_json::from_str::<Value>(SAVE).unwrap());
+  let original=r#"[{"ItemID":30000001,"Amount":3,"State":null}]"#;
+  assert_eq!(restored,changed.replace(original,&doc["rows"][0]["inventory"].to_string()));
+  assert!(restore(SAVE,&backup).is_err());
+  let relocated=changed.replace("\"X\":1","\"X\":3");
+  assert!(restore(&relocated,&backup).is_ok());
+  assert!(restore_scoped_mode(&relocated,&backup,None,true,true).is_err());
+  let mut recreated:Value=serde_json::from_str(SAVE).unwrap();
+  let mut new_container=recreated["Player"]["ContainerInventories"].as_object_mut().unwrap().remove("9").unwrap();
+  new_container["ID"]=10.into();new_container["Inventory"]=json!([]);
+  recreated["Player"]["ContainerInventories"]["10"]=new_container;
+  let objects=recreated["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object_mut().unwrap();
+  let mut obj=objects.remove("1").unwrap();obj["ID"]=2.into();obj["State"]["Storage"]["ContainerInventoryID"]=10.into();objects.insert("2".into(),obj);
+  let restored:Value=serde_json::from_str(&restore(&recreated.to_string(),&backup).unwrap()).unwrap();
+  assert_eq!(restored["Player"]["ContainerInventories"]["10"]["Inventory"],doc["rows"][0]["inventory"]);
+  assert!(restored["Player"]["ContainerInventories"].get("9").is_none());
+  let mut occupied=recreated.clone();occupied["Player"]["ContainerInventories"]["10"]["Inventory"]=json!([{"ItemID":30000002,"Amount":1}]);
+  assert!(restore(&occupied.to_string(),&backup).is_err());
+  let mut moved=recreated.clone();moved["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=3.into();
+  assert!(restore(&moved.to_string(),&backup).is_err());
+  let scope=HashSet::from(["42".to_owned()]);
+  assert_eq!(export_scoped(SAVE,Some(&scope)).unwrap(),backup);
+  assert_eq!(export_scoped(SAVE,Some(&HashSet::from(["42:1".to_owned()]))).unwrap(),backup);
+  assert!(restore_scoped(&changed,&backup,Some(&HashSet::from(["42:2".to_owned()]))).is_err());
+  let other=HashSet::from(["43".to_owned()]);
+  assert!(restore_scoped(&changed,&backup,Some(&other)).is_err());
+  let mut alias:Value=serde_json::from_str(SAVE).unwrap();
+  let mut g=alias["World"]["GridCollection"]["Grids"]["42"].clone();g["ID"]=43.into();
+  alias["World"]["GridCollection"]["Grids"]["43"]=g;
+  let doc:Value=serde_json::from_str(&export_scoped(&alias.to_string(),Some(&scope)).unwrap()).unwrap();
+  assert_eq!(doc["rows"],json!([]));assert_eq!(doc["skipped"],1);
+  assert!(restore(&changed.replace("\"Size\":48","\"Size\":32"),&backup).is_err());
+  let unknown=changed.replace("\"State\":null","\"State\":{\"Unknown\":1}");
+  assert!(restore(&unknown,&backup).is_err());
+  let extra=changed.replace("\"Marker\":1e2","\"OtherContainerInventoryID\":9,\"Marker\":1e2");
+  assert!(restore(&extra,&backup).is_err());
+  let v:Value=serde_json::from_str(&export(&unknown).unwrap()).unwrap();assert_eq!(v["skipped"],0);assert_eq!(v["rows"][0]["inventory"][0]["State"],json!({"Unknown":1}));
+  // Capture state losslessly, without accepting changed or newly inserted
+  // opaque state. An ordinary stack beside it remains independently editable.
+  let mixed=unknown.replace(r#""Inventory":["#,r#""Inventory":[{"ItemID":30000002,"Amount":7},"#);
+  let mix_backup=export(&mixed).unwrap();
+  let mix_changed=mixed.replace("\"Amount\":7","\"Amount\":4");
+  let recovered=restore(&mix_changed,&mix_backup).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&recovered).unwrap(),serde_json::from_str::<Value>(&mixed).unwrap());
+  assert!(restore(&mix_changed.replace("\"Unknown\":1","\"Unknown\":2"),&mix_backup).is_err());
+ }
+}

@@ -40,3 +40,12 @@ test('same-name different pixels are not silently selected',async()=>{
   assert.equal(await c.unique('maps','bg_map_test'),null);
   assert.equal((await c.find('maps','bg_map_test')).length,2);
 });
+
+test('static original UI release requires byte-verified publication and never fetches index',async()=>{
+  const index={...document,group:'ui',entries:{icon_furniture:[image]}};
+  const release={state:'published',publicationAuthorized:true,publicReadbackVerified:true,index};
+  const c=createSharedMediaClient(undefined,()=>{throw Error('unexpected network');},release);
+  assert.equal((await c.unique('ui','icon_furniture')).url,sharedMediaUrl(config.origin,image));
+  assert.equal(await c.unique('ui','missing'),null);
+  assert.throws(()=>createSharedMediaClient(undefined,fetch,{...release,publicReadbackVerified:false}),/static UI release/);
+});
