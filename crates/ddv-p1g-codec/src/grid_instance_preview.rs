@@ -1643,8 +1643,16 @@ fn saved_db04_source_projection(
                     let object=grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id));
                     let storage_known=crate::storage_source::is_storage(target.item_id)||object.is_some_and(|o|o.get("State").and_then(|s|s.get("Storage")).is_some());
                     let storage_pose=aligned&&target.item_id/100_000==400&&object.is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o));
+                    // Structural candidate only: the selected batch still
+                    // checks active mission, exact identity and destination
+                    // capacity before any copy can be produced.
+                    let recovery=aligned&&activity_item_id(target.item_id)&&
+                        !scan.subgrid_parents.contains(&(i+1))&&
+                        xy.is_some_and(|p|source.size.zip(factor).is_some_and(|((sx,sy),f)|p.0>=0&&p.1>=0&&(p.0 as u64)<u64::from(sx)*u64::from(f)&&(p.1 as u64)<u64::from(sy)*u64::from(f))&&
+                            scan.rows[i].get("orientation").and_then(Value::as_str).is_some_and(|ori|recovery_item_with_source(&root,target,p,ori).is_some()));
                     bindings.push(serde_json::json!({
                         "localOrdinal":i+1,
+                        "recoveryCandidate":recovery,
                         "sourceRefIndex":witness_index,
                         "savedFactor":factor,
                         "sourceLocalCoordinateMappingVerified":aligned,
