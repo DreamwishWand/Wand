@@ -35,9 +35,10 @@ test('current acquisition coverage distinguishes collectible source candidates, 
   assert.equal(c.collectionSourceCandidates.definitions,scopes.filter(([,s])=>s==='source_candidate').length);
   assert.equal(c.collectionSourceCandidates.classified,effective.filter(([id])=>scope.get(id)==='source_candidate').length);
   assert.equal(c.runtimeMembershipVerified,false);
+  assert.deepEqual(c.nativeCharacterCollectionPredicate,{definitions:142,eligible:82,excluded:60,eligibleClassified:82,eligibleUnclassified:0});
   const details=await openCurrentItemDetails('',fetcher);
   assert.deepEqual(await details.getCurrentAcquisitionCoverage(),c);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
   console.log('DB01_CURRENT_ACQUISITION_COVERAGE '+JSON.stringify({all:c.all,collection:c.collectionSourceCandidates,
-    byCollectionCategory:c.collectionCandidatesByNativeCategory,unresolvedOnlineHintItemIds:c.unresolvedOnlineHintItemIds}));
+    byCollectionCategory:c.collectionCandidatesByNativeCategory,nativeCharacterCollectionPredicate:c.nativeCharacterCollectionPredicate,unresolvedOnlineHintItemIds:c.unresolvedOnlineHintItemIds}));
 });
