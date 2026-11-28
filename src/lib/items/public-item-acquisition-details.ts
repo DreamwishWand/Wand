@@ -144,7 +144,10 @@ export interface MemoryAppearanceEvidence {
   readonly configuredShardCount:number;
   readonly consummableOverrideItemId:number|null;
   readonly consummableOverrideResolved:boolean;
-  readonly category:'ordinary_gameplay'|null;
+  readonly resolvedGate:Readonly<{
+    commonConditionItemId:number;original:ItemFieldValue;sourceConditionSha256:string;
+  } & ({kind:'expansion_required';expansionName:string}|{kind:'floating_festival_playable';eventName:string;sceneItemId:number;missionItemId:number})>|null;
+  readonly category:'ordinary_gameplay'|'in_game_limited_event'|null;
   readonly sourceGameVersion:string;
   readonly sourceFileSha256:string;
   readonly sourceIl2cppDumpSha256:string;
@@ -237,7 +240,10 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
       memory.sourceGameVersion===db.release.target.gameVersion&&memory.sourceFileSha256===db.release.sourceFilesSha256?.MemoryShard&&
       memory.sourceIl2cppDumpSha256===db.release.sourceIl2cppDumpSha256&&
       memory.guaranteedGrantVerified===false&&memory.currentAvailabilityVerified===false&&
-      (memory.category===null||memory.category==='ordinary_gameplay'&&categories.includes(memory.category))&&
+      (memory.category===null||(['ordinary_gameplay','in_game_limited_event'].includes(memory.category)&&categories.includes(memory.category)))&&
+      (!memory.resolvedGate||id(memory.resolvedGate.commonConditionItemId)&&memory.resolvedGate.sourceConditionSha256===db.release.sourceFilesSha256?.Condition&&
+        (memory.resolvedGate.kind==='expansion_required'&&/^Expansion0[1-4]$/.test(memory.resolvedGate.expansionName)&&memory.category==='ordinary_gameplay'||
+         memory.resolvedGate.kind==='floating_festival_playable'&&typeof memory.resolvedGate.eventName==='string'&&id(memory.resolvedGate.sceneItemId)&&id(memory.resolvedGate.missionItemId)&&memory.category==='in_game_limited_event'))&&
       (memory.consummableOverrideItemId===null||id(memory.consummableOverrideItemId)),'MEMORY_APPEARANCE');
     return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories),memory};
   });
