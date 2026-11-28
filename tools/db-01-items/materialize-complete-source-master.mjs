@@ -39,6 +39,7 @@ import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-l
 import {eventLootPresentLinks} from './event-loot-present.mjs';
 import {eventRecurringLootLinks} from './event-recurring-loot.mjs';
 import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
+import {buildInitialVillageMemoryTreasures} from './initial-village-memory-treasures.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1389,11 +1390,12 @@ function memoryAppearanceSources(rows,source){
     ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
+function writeFieldColumns(project,rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
   const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
   const storyUnlock=buildStoryUnlockSources(rows,source,questFlows.questKinds,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
+  const villageMemories=buildInitialVillageMemoryTreasures(project,rows,source,memoryAppearance);
   const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
   const memoryDefaults=buildMemoryDefaultContent(rows,source,memoryAppearance,questFlows,questObjectiveGrants);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
@@ -1814,6 +1816,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(characterSources?.length){
       add('acquisition.characterUnlockSources',row.itemId,characterSources);
       for(const link of characterSources)if(link.category!==null)categorySet.add(link.category);
+    }
+    const villageMemory=villageMemories.get(row.itemId);
+    if(villageMemory?.length){
+      add('acquisition.initialVillageMemoryTreasureSources',row.itemId,villageMemory);
+      categorySet.add('ordinary_gameplay');
     }
     const memory=memoryAppearance.get(row.itemId);
     if(memory){
@@ -2299,7 +2306,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
+    writeFieldColumns(project,rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));

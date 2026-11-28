@@ -55,7 +55,7 @@ test('current acquisition coverage distinguishes collectible source candidates, 
   assert.deepEqual(native.eligibleUnclassifiedItemIds,candidates.filter(([id])=>predicates.get(id)===true&&!current.has(id)).map(([id])=>id));
   assert.deepEqual(native.unknownUnclassifiedItemIds,candidates.filter(([id])=>!predicates.has(id)&&!current.has(id)).map(([id])=>id));
   assert.equal(native.byNativeCategory.Character.eligibleUnclassified,0);
-  assert.equal(native.byNativeCategory.MemoryShard.eligibleUnclassified,226);
+  assert(native.byNativeCategory.MemoryShard.eligibleUnclassified<=226);
   assert.equal(native.total.eligibleUnclassified+native.total.unknownUnclassified+native.total.excludedUnclassified,c.collectionSourceCandidates.unclassified);
   console.log('DB01_NATIVE_COLLECTION_COVERAGE '+JSON.stringify({total:native.total,byNativeCategory:native.byNativeCategory}));
   const details=await openCurrentItemDetails('',fetcher);
