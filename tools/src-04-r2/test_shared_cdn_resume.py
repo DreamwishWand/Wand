@@ -52,7 +52,7 @@ class SharedCdnResumeTests(unittest.TestCase):
                 self.assertEqual(len(calls),1+retries)
                 self.assertEqual(delays,[2,5,10,30,60] if retries else [])
 
-    def test_session_size_bounded(self):
+    def test_healthy_session_is_not_split_at_128(self):
         pending,expected,raws=self.fixture(260)
         sizes=[]
         @contextmanager
@@ -62,7 +62,7 @@ class SharedCdnResumeTests(unittest.TestCase):
                 raw=raws[sha];budget[0]-=len(raw);return raw
             yield read
         verified,errors,count=curl_readback(pending,expected,{},lambda v,e:None,factory,lambda n:None)
-        self.assertEqual(sizes,[128,128,4])
+        self.assertEqual(sizes,[260])
         self.assertEqual(verified,expected)
         self.assertEqual(count,260)
         self.assertFalse(errors)
