@@ -33,7 +33,7 @@ fn main(){
  // A new unrecognized Furniture field is conservatively treated as special.
  let fields=source["fields"].as_object().unwrap();
  let mut geometry=std::collections::BTreeSet::<u64>::new();
- let mut special=std::collections::BTreeSet::<u64>::new();
+ let mut special=std::collections::BTreeSet::<u64>::new();let mut support_extra=std::collections::BTreeSet::<u64>::new();
  for (key,entry) in fields{
   if !key.starts_with("Furniture."){continue;}
   assert_eq!(entry["category"],"Furniture");
@@ -46,7 +46,7 @@ fn main(){
   for pair in pairs{
    id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();
    if id/100_000!=400{continue;}
-   if key=="Furniture.GridAreaData"{geometry.insert(id);}else{special.insert(id);}
+   if key=="Furniture.GridAreaData"{geometry.insert(id);}else{special.insert(id);if key!="Furniture.SubGrid"{support_extra.insert(id);}}
   }
  }
  assert!(geometry.len()>1000&&special.len()>100);
@@ -68,4 +68,23 @@ fn main(){
  assert_eq!(rows[&40000047]["DefaultContainerInventoryData"],"Furniture_16Slot");
  println!("cargo:warning=Verified storage ContainerInteraction rows: {}",rows.len());
  fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("storage-source.json"),serde_json::to_vec(&rows).unwrap()).unwrap();
+ // Exact owner/path binding from the same pinned DB01 reviewed source.
+ // Landscaping SubGrid definitions and other interaction kinds are excluded.
+ let entry=&source["fields"]["Furniture.SubGrid"];
+ assert_eq!(entry["category"],"Furniture");assert_eq!(entry["declaredType"],"SubGridInteraction");
+ let mut raw=Vec::new();ZlibDecoder::new(decode64(entry["packed"].as_str().unwrap()).as_slice()).take(32*1024*1024).read_to_end(&mut raw).unwrap();
+ let decoded:Value=serde_json::from_slice(&raw).unwrap();
+ let pairs=decoded.as_array().unwrap();assert_eq!(pairs.len() as u64,entry["count"].as_u64().unwrap());
+ let mut owners=std::collections::BTreeMap::<u64,String>::new();let mut id=0u64;
+ for pair in pairs{
+  id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();
+  let m=pair[1].as_object().unwrap();
+  if id/100_000!=400||!geometry.contains(&id)||m.len()!=1{continue;}
+  let Some(path)=m.get("SubGridDataPath").and_then(Value::as_str)else{continue;};
+  if path.starts_with("GridData/Furniture/")&&path.ends_with(".json")&&!path.contains("..")&&!path.contains('\\'){assert!(owners.insert(id,path.to_owned()).is_none());}
+ }
+ println!("cargo:warning=Verified support SubGridInteraction rows: {}",owners.len());
+ fs::write(out.join("support-source.json"),serde_json::to_vec(&owners).unwrap()).unwrap();
+ let init=owners.keys().filter(|id|!support_extra.contains(id)).copied().collect::<Vec<_>>();
+ fs::write(out.join("support-initial-source.json"),serde_json::to_vec(&init).unwrap()).unwrap();
 }

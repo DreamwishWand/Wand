@@ -1,7 +1,7 @@
 export const PRESET_SCHEMAS=[
  'wand.preset.scene@1','wand.preset.mixed-scene@1','wand.preset.area-scene@1','wand.preset.support-scene@1',
  'wand.preset.whole-area-design@1','wand.preset.biome-network@1','wand.preset.biome-decoration@1',
- 'wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.world-decoration@1',
+ 'wand.preset.floating-island-design@1','wand.preset.floating-island-decoration@1','wand.preset.world-decoration@1','wand.preset.world-grid-decoration@1',
  'wand.preset.region-decoration@1','wand.preset.indoor-decoration@1','wand.room-design@1','wand.world-design@1','wand.mainland-design@1','wand.world-scope-design@1','wand.preset.native-backup@1','wand.preset.game-code@1'
 ] as const;
 export type PresetSchema=typeof PRESET_SCHEMAS[number];
@@ -35,6 +35,7 @@ export function presetHeader(raw:string):PresetHeader{
   case 'wand.preset.biome-network@1':if(!Array.isArray(v.rows))throw Error('PRESET_NETWORK');kind='network';break;
   case 'wand.preset.biome-decoration@1':if(!v.furniture||!v.network)throw Error('PRESET_AREA');kind='biome';break;
   case 'wand.preset.floating-island-design@1':case 'wand.preset.floating-island-decoration@1':if(!Array.isArray(v.areas))throw Error('PRESET_AREA');kind='island';break;
+  case 'wand.preset.world-grid-decoration@1':if(!v.furniture||!v.network)throw Error('PRESET_AREA');kind='world';break;
   case 'wand.preset.world-decoration@1':if(!Array.isArray(v.areas))throw Error('PRESET_AREA');kind='world';break;
   case 'wand.preset.region-decoration@1':if(!v.region||!!v.world===!!v.island)throw Error('PRESET_REGION');kind='region';break;
   case 'wand.preset.indoor-decoration@1':if(!Array.isArray(v.rooms)||!['room','floor','building'].includes(v.scope))throw Error('PRESET_ROOM');kind=v.scope;break;

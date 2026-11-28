@@ -23,11 +23,15 @@ export const furnitureStockWords={
 
 /** The local WASM guard supplies the candidate set alongside exact counts.
  * Do not recompute eligibility from display categories in the UI. */
-export function parseLocalPlainStock(value:unknown):Set<number>{
+export function parseLocalPlainStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localPlainItemIds');}
+export function parseLocalSupportStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localSupportItemIds');}
+export function parseLocalStorageStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localStorageItemIds');}
+export function parseLocalRestorableStorageStock(value:unknown):Set<number>{return parseLocalStockIds(value,'localRestorableStorageItemIds');}
+function parseLocalStockIds(value:unknown,field:string):Set<number>{
  const counts=parseFurnitureStock(value);
- if(!record(value)||!Array.isArray(value.localPlainItemIds)||value.localPlainItemIds.length>counts.size)throw Error('FURNITURE_PLAIN_STOCK_INVALID');
+ if(!record(value)||!Array.isArray(value[field])||value[field].length>counts.size)throw Error('FURNITURE_PLAIN_STOCK_INVALID');
  const ids=new Set<number>();
- for(const id of value.localPlainItemIds){
+ for(const id of value[field]){
   if(typeof id!=='number'||!counts.has(id)||ids.has(id))throw Error('FURNITURE_PLAIN_STOCK_ID_INVALID');
   ids.add(id);
  }

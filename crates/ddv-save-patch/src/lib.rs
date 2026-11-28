@@ -1977,7 +1977,7 @@ pub fn preview_initial_storage(source:&str,d:&PlainGridDestination,item:u64,xy:(
  let bad=PatchError::InvalidTarget;
  if item/100_000!=400||!standard_storage_capacity(template,capacity)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
  if room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}validate_local_grid_destination_mode(source,d,item,xy,orientation,"GridData/Rooms/",free)?;}
- else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,item,xy,orientation)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(free&&d.tessellation==1&&underwater_plain_path(&d.layout_path,&d.data_path)){return Err(bad);}validate_plain_grid_destination(source,d,item,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|bad)?;
  let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<8192).ok_or(bad)?;
  let fresh=root["Player"]["NextContainerInventoryID"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>=2&&*n<u32::MAX).ok_or(bad)?;

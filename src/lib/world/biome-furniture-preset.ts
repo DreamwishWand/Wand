@@ -16,21 +16,21 @@ export const storageAreaEligible=(p:MainlandSavedObject)=>p.object.storageRestor
 export const areaFurnitureEligible=(p:MainlandSavedObject,diagonal:boolean)=>{if(p.object.storage||p.object.storageKnown)return storageAreaEligible(p);const ordinary:boolean=stockSourceEligible(p);return ordinary||diagonal&&!isCardinal(p.object.orientation)&&!p.object.surfaceCapable&&stockSourceEligible(p,true)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');};
 export const privateStoragePoseEligible=(p:MainlandSavedObject)=>!!p.shape&&p.object.storage===true&&p.object.layer==='furniture'&&Math.floor(Number(p.object.itemId)/100000)===400&&!p.object.subgrid&&isCardinal(p.object.orientation);
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
-export function supportAreaEligible(p:MainlandSavedObject){return !!p.object.subgrid&&!!groupPickupPlan([p]);}
+export function supportAreaEligible(p:MainlandSavedObject,free=false){return !!p.object.subgrid&&!!groupPickupPlan([p],free);}
 export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
 export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false,supports?:SupportAreaTrees,world=false,privateContents=false,localPlain?:ReadonlySet<number>){
- if(omitted||(localPlain?!nativeUnderwaterDesignGrid(grid)||!!supports||privateContents:world?!bindMainlandGrid(grid):island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
+ if(omitted||(localPlain?!nativeUnderwaterDesignGrid(grid)||privateContents:world?!bindMainlandGrid(grid):island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
  const diagonal=!island&&grid.factor===1&&!!bindMainlandGrid(grid);
- const editable=area.filter(p=>localPlain?localPlain.has(Number(p.object.itemId))&&stockSourceEligible(p,true)&&isCardinal(p.object.orientation)&&!p.object.storage&&!p.object.storageKnown&&!p.object.subgrid:areaFurnitureEligible(p,diagonal)||privateContents&&privateStoragePoseEligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
- if(supports&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
+ const editable=area.filter(p=>localPlain?(localPlain.has(Number(p.object.itemId))&&(p.object.storage||p.object.storageKnown?storageAreaEligible(p):stockSourceEligible(p,true)&&isCardinal(p.object.orientation)&&!p.object.subgrid)||!!supports?.has(p.object.localOrdinal)&&supportAreaEligible(p,true)):areaFurnitureEligible(p,diagonal)||privateContents&&privateStoragePoseEligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
+ if(supports&&!localPlain&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:(worldOrientationCode(p.object.orientation)??-4)/4}));
  try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,localPlain||world?'world-grid':island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
 }
 export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,objects:readonly MainlandSavedObject[],omitted:number,incoming:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,stock:ReadonlyMap<number,number>,island=false,supports?:{before:SupportAreaTrees;after:SupportAreaTrees},world=false,free=false,localPlain?:ReadonlySet<number>){
  const snapshot=biomeFurnitureSnapshot(grid,objects,omitted,island,supports?.before,world,false,localPlain);if(!snapshot)return null;
- if(incoming.some(p=>{const d=defs.get(p.itemId);if(localPlain)return !localPlain.has(p.itemId)||!Number.isInteger(p.orientation)||!d||!['furniture','surface'].includes(d.layer)||!!d.supportPath||d.surfaceCapable&&d.layer!=='surface'||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];return !Number.isInteger(p.orientation)&&(island||grid.factor!==1||!bindMainlandGrid(grid)||d?.surfaceCapable||d?.supportPath||supports?.after.has(p.id))||!d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
+ if(incoming.some(p=>{const d=defs.get(p.itemId);if(localPlain){const scene=supports?.after.get(p.id);return (!scene&&!localPlain.has(p.itemId))||!Number.isInteger(p.orientation)||!d||!['furniture','surface'].includes(d.layer)||(!!scene?d.supportPath!==scene.tree.sourcePath:!!d.supportPath||d.surfaceCapable&&d.layer!=='surface')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}return !Number.isInteger(p.orientation)&&(island||grid.factor!==1||!bindMainlandGrid(grid)||d?.surfaceCapable||d?.supportPath||supports?.after.has(p.id))||!d||d.layer!=='furniture'||nativeActionBlocked(d.editRestrictions,'select')||nativeActionBlocked(d.editRestrictions,'remove')||Math.floor(p.itemId/100000)!==400||!d.shapes[p.itemId+':'+p.orientation*4];}))return null;
  const sceneKey=(scene:SupportScene|undefined)=>{
   if(!scene)return '';
   // Stable semantic identity independent of JSON key ordering and the order
@@ -56,7 +56,7 @@ export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly Mainl
  const positions=added.map(p=>({itemId:p.itemId,...mainlandMapAnchor(grid,p.x,p.y),orientation:p.orientation}));
  const freeIndices=new Set(added.flatMap((p,i)=>{const d=defs.get(p.itemId);return localPlain||free&&!island&&d&&!d.surfaceCapable&&!d.supportPath&&!supports?.after.has(p.id)?[i]:[];}));
  const ordinary=positions.filter((_,i)=>freeIndices.has(i)),strict=positions.filter((_,i)=>!freeIndices.has(i));
- const loose=ordinary.length?groupAbsoluteCandidate(ordinary,[grid],rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,true,true):{rows:[],ghosts:[]};
+ const loose=ordinary.length?groupAbsoluteCandidate(ordinary,[grid],rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,true,true,new Set(added.filter(p=>supports?.after.has(p.id)).map(p=>p.itemId))):{rows:[],ghosts:[]};
  if(!loose)return null;
  const fixed=strict.length?groupAbsoluteCandidate(strict,grids,rasters,geometry,required,remaining,omitted,BIOME_CHANGE_LIMIT,false,!island&&grid.factor===1):{rows:[],ghosts:[]};
  if(!fixed)return null;
