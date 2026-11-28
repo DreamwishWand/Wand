@@ -108,7 +108,8 @@ test('all classification extensions preserve original evidence and localized sou
       if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
-      const related=ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId,ev.tableItemId]:ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
+      const related=ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
+          ...(ev.boundedLocalDateGate?[ev.boundedLocalDateGate.conditionItemId,ev.boundedLocalDateGate.missionItemId]:[]),...(ev.orbItemId?[ev.orbItemId]:[])]:ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
         ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId,...(ev.precursors?[ev.inventoryItemId,ev.blockerItemId,...ev.precursors.flatMap(p=>[p.sourceItemId,...(p.missionItemId?[p.missionItemId]:[])])]:[])])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:(ext.family==='storeGeneratedShelf'||ext.family==='storeGeneratedStage')?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[]),...(ev.catalogGate?.targetItemId?[ev.catalogGate.targetItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
