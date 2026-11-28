@@ -28,7 +28,7 @@ export function roomSupportPickupPlan(face:IndoorSurface|null,witnesses:readonly
  const rows:GroupPickupRow[]=[];
  for(const index of indices){
   const p=face.positions[index],w=witnesses.find(w=>w.index===index&&w.surfaceOrdinal===face.ordinal);
-  if(!p||!w||w.itemId!==p.itemId||w.x!==p.x||w.y!==p.y||Math.floor(p.itemId/100000)!==400||p.orientationCode===null||!shapes[p.itemId+':'+p.orientationCode]||!removable.has(p.itemId))return null;
+  if(!p||!w||w.itemId!==p.itemId||w.x!==p.x||w.y!==p.y||Math.floor(p.itemId/100000)!==400||p.orientationCode===null||p.orientationCode%4!==0||p.plain===true||p.storage===true||!shapes[p.itemId+':'+p.orientationCode]||!removable.has(p.itemId))return null;
   rows.push({localOrdinal:w.localOrdinal,itemId:String(p.itemId),expectedX:p.x,expectedY:p.y,expectedOrientation:CARDINAL_ORIENTATIONS[p.orientationCode/4],includeSupport:true});
  }
  return new Set(rows.map(r=>r.localOrdinal)).size===rows.length?rows.sort((a,b)=>a.localOrdinal-b.localOrdinal):null;

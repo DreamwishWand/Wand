@@ -22,6 +22,8 @@ test('room support pickup keeps exact ordinal and cardinal pose and rejects stal
  assert.equal(roomSupportPickupPlan(face,[w],[0],shapes,new Set()),null);
  assert.equal(roomSupportPickupPlan(face,[{...w,x:3}],[0],shapes,allowed),null);
  assert.equal(roomSupportPickupPlan(face,[w],[0,0],shapes,allowed),null);
+ assert.equal(roomSupportPickupPlan({...face,positions:[{...face.positions[0],orientationCode:10}]},[w],[0],{'40000002:10':shapes['40000002:8']},allowed),null);
+ assert.equal(roomSupportPickupPlan({...face,positions:[{...face.positions[0],plain:true}]},[w],[0],shapes,allowed),null);
 });
 
 test('support free placement permits overlap and terrain holes but requires native bounds and known shape',async()=>{

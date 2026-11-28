@@ -446,3 +446,16 @@ test('local indoor mixed duplication carries separate support and storage witnes
  assert.deepEqual(q.map(p=>p.expectedStock),[1,1,1]);assert.deepEqual(q[0].supportSource,source);assert.deepEqual(q[1].storageSource,{...storage,copyContents:true});assert.equal(q[2].storageSource,undefined);
  assert.equal(indoorMixedPlacement(f,shapes,allowed,stock,clip,scene,'corner',1,3,[source,null,null],[null,{...storage,expectedX:99},null],true),null);
 });
+
+test('single support duplication uses free room pose without relaxing cardinal or source identity',async()=>{
+ const {indoorSupportDuplicatePlacement}=await import('../src/lib/world/indoor-room-view.ts');
+ const id=40000001,full={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions:[{itemId:id,x:1,y:1,orientationCode:8,plain:false}],missingPositions:0,terrain:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64)}};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:''},shapes={[id+':8']:shape,[id+':10']:shape},stock=new Map([[id,2]]),allowed=new Set([id]);
+ const w={index:0,expectedX:1,expectedY:1,expectedOrientation:'GridOrientation_Down'};
+ assert.equal(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,w,1,1,'GridOrientation_Down'),null);
+ assert.deepEqual(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,w,1,1,'GridOrientation_Down',true),{itemId:id,expectedStock:2,x:1,y:1,orientation:'GridOrientation_Down',supportSource:w});
+ assert.equal(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,w,1,1,'GridOrientation_DownLeft',true),null);
+ assert.equal(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,{...w,expectedX:2},1,1,'GridOrientation_Down',true),null);
+ assert.equal(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,w,8,1,'GridOrientation_Down',true),null);
+ assert.equal(indoorSupportDuplicatePlacement({...full,positions:[{...full.positions[0],plain:true}]},shapes,allowed,stock,id,w,1,1,'GridOrientation_Down',true),null);
+});
