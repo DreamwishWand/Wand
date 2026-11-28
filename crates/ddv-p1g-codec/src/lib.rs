@@ -1550,7 +1550,7 @@ mod browser_amount_preview {
             }.map_err(|_|invalid())?});
             let after=crate::private_storage_scope::resolve(draft.as_bytes(),scope).map_err(|_|invalid())?;
             if grids!=crate::private_storage_scope::resolve(draft.as_bytes(),&grid_scope).map_err(|_|invalid())?{return Err(invalid());}
-            let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,after.as_ref(),plan!="null",true).map_err(|_|invalid())?;
+            let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,after.as_ref(),true,true).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
         pub fn stage_private_decoration(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<String,JsValue>{
@@ -1560,10 +1560,10 @@ mod browser_amount_preview {
             let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
             if !matches!(scope_value["kind"].as_str(),Some("outdoor"|"room"|"floor"|"building")){return Err(invalid());}
             let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?;
-            let (patched,normalized)=crate::private_storage_transfer::stage_decoration(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
+            let (mut patched,normalized)=crate::private_storage_transfer::stage_decoration(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
             let normalized=zeroize::Zeroizing::new(normalized);
             let changed=patched.as_bytes()!=source;
-            let length=if changed{self.prepare_copy_from_patched(patched,true)?}else{0};
+            let length=if changed{self.prepare_copy_from_patched(patched,true)?}else{patched.zeroize();0};
             Ok(serde_json::json!({"length":length,"storage":&*normalized}).to_string())
         }
         pub fn prepare_private_storage_pose_copy(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
