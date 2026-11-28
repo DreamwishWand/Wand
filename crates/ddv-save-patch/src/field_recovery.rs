@@ -81,7 +81,7 @@ pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
  }
  rows.sort_by_key(|r|r.container_id.parse::<u32>().unwrap_or(u32::MAX));Ok(rows)
 }
-pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->bool{
+fn valid_field_object(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->bool{
  if target.kind!=GridObjectKind::Full||target.item_id==0||target.item_id>u32::MAX as u64||key_id(&target.object_id).is_none_or(|n|n==0)||key_id(&target.grid_id).is_none(){return false;}
  let collection=&root["World"]["GridCollection"];let g=&collection["Grids"][&target.grid_id];let o=&g["Objects"][&target.object_id];
  root["GameInfo"]["Version"].as_u64()==Some(643)&&g["ID"].as_u64()==key_id(&target.grid_id).map(u64::from)&&
@@ -89,7 +89,30 @@ pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:
  o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
- super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
+ super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)
+}
+
+/// Exact native 1.26.2 metadata:
+/// GridState.ItemAmountState (tag 2) is Definitions.Items.AmountWithState.
+/// AmountWithState.Amount (tag 1, Nullable<int>), State (tag 2, ItemState),
+/// AssignedPlayer (tag 3, Nullable<int>). ItemInstance.State is the same
+/// native ItemState type. No conversion of unrelated GridState discriminants.
+/// Do not infer a missing quantity or discard a player assignment.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct RecoveryItem{pub item_id:u64,pub amount:u64,pub state:Value}
+pub fn field_recovery_item(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Option<RecoveryItem>{
+ if !valid_field_object(root,target,expected,orientation){return None;}
+ let o=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+ if empty_grid_state(o.get("State")){return Some(RecoveryItem{item_id:target.item_id,amount:1,state:Value::Null});}
+ let state=o["State"].as_object().filter(|m|m.len()==1)?;
+ let wrapped=state.get("ItemAmountState")?.as_object()?;
+ if wrapped.keys().any(|k|!matches!(k.as_str(),"Amount"|"State"|"AssignedPlayer"))||
+  wrapped.get("AssignedPlayer").is_some_and(|v|!v.is_null()){return None;}
+ let amount=wrapped.get("Amount")?.as_u64().filter(|n|*n>0&&*n<=i32::MAX as u64)?;
+ let state=wrapped.get("State").cloned().unwrap_or(Value::Null);
+ let row=json!({"ItemID":target.item_id,"Amount":amount,"State":state});
+ if !super::storage_backup::independent_item_state(&row){return None;}
+ Some(RecoveryItem{item_id:target.item_id,amount,state})
 }
 /// Only plain, structurally known stacks may receive a recovered plain item.
 fn plain_stack_headroom(row:&Value)->Option<(u64,u64)>{
@@ -99,23 +122,40 @@ fn plain_stack_headroom(row:&Value)->Option<(u64,u64)>{
  let amount=row["Amount"].as_u64().filter(|n|*n>0&&*n<i32::MAX as u64)?;
  Some((item,i32::MAX as u64-amount))
 }
-/// Compute final occupied slots using the same stack compatibility contract
-/// as the writer. A full container can still receive matching plain stacks.
-pub fn projected_used(root:&Value,dest:&RecoveryDestination,items:&[u64])->Option<u32>{
- if items.is_empty()||items.len()>super::MAX_GRID_MIXED_EDITS{return None;}
- let rows=root["Player"]["ContainerInventories"][&dest.container_id]["Inventory"].as_array()?;
- let mut headroom=std::collections::HashMap::<u64,u64>::new();
- for row in rows{
-  if let Some((item,room))=plain_stack_headroom(row){let n=headroom.entry(item).or_default();*n=n.saturating_add(room);}
+/// One common inventory simulation for capacity preview and the writer.
+/// A variant retains its own slot and exact amount/state; we do not infer
+/// that two equal-looking non-null states can be safely coalesced.
+fn stage_recovery(rows:&mut Vec<Value>,capacity:u32,items:&[RecoveryItem])->Result<(),PatchError>{
+ if items.is_empty()||items.len()>super::MAX_GRID_MIXED_EDITS{return Err(BAD);}
+ for item in items{
+  if item.item_id==0||item.item_id>u32::MAX as u64||item.amount==0||item.amount>i32::MAX as u64{return Err(BAD);}
+  let mut remaining=item.amount;
+  if item.state.is_null(){
+   for row in rows.iter_mut(){
+    if remaining==0{break;}
+    if let Some((_,room))=plain_stack_headroom(row).filter(|(id,_)|*id==item.item_id){
+     let added=remaining.min(room);
+     row["Amount"]=(i32::MAX as u64-room+added).into();
+     remaining-=added;
+    }
+   }
+  }
+  if remaining==0{continue;}
+  let entry=json!({"ItemID":item.item_id,"Amount":remaining,"State":item.state});
+  if let Some(i)=rows.iter().position(empty_slot){rows[i]=entry;}
+  else{if rows.len()>=capacity as usize{return Err(BAD);}rows.push(entry);}
  }
- let mut used=dest.used;
- for &item in items{
-  if item==0||item>u32::MAX as u64{return None;}
-  let room=headroom.entry(item).or_default();
-  if *room>0{*room-=1;}
-  else{used=used.checked_add(1)?;if used>dest.capacity{return None;}*room=i32::MAX as u64-1;}
- }
- Some(used)
+ Ok(())
+}
+pub fn projected_recovery_used(root:&Value,dest:&RecoveryDestination,items:&[RecoveryItem])->Option<u32>{
+ let mut rows=root["Player"]["ContainerInventories"][&dest.container_id]["Inventory"].as_array()?.clone();
+ stage_recovery(&mut rows,dest.capacity,items).ok()?;
+ u32::try_from(rows.iter().filter(|row|!empty_slot(row)).count()).ok()
+}
+#[cfg(test)]
+fn projected_used(root:&Value,dest:&RecoveryDestination,items:&[u64])->Option<u32>{
+ let items=items.iter().map(|&item_id|RecoveryItem{item_id,amount:1,state:Value::Null}).collect::<Vec<_>>();
+ projected_recovery_used(root,dest,&items)
 }
 /// Recover a selection in one transaction. All source witnesses and destination
 /// capacity are checked against the original document; only the changed slot
@@ -127,25 +167,14 @@ pub fn recover_batch(source:&str,targets:&[(GridCoordinateTarget,(i32,i32),Strin
  let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let dest=destinations(&root)?.into_iter().find(|r|r.container_id==container).ok_or(BAD)?;
  let mut groups=BTreeMap::<String,HashSet<String>>::new();
+ let mut items=Vec::with_capacity(targets.len());
  for (target,expected,orientation) in targets{
-  if !stateless_field_object(&root,target,*expected,orientation)||
-   !groups.entry(target.grid_id.clone()).or_default().insert(target.object_id.clone()){return Err(BAD);}
+  if !groups.entry(target.grid_id.clone()).or_default().insert(target.object_id.clone()){return Err(BAD);}
+  items.push(field_recovery_item(&root,target,*expected,orientation).ok_or(BAD)?);
  }
  let original=root["Player"]["ContainerInventories"][container]["Inventory"].as_array().ok_or(BAD)?.clone();
  let rows=root["Player"]["ContainerInventories"][container]["Inventory"].as_array_mut().ok_or(BAD)?;
- // Preserve first-compatible-stack behavior, including a stack at the
- // representable maximum, and never merge a variant with a plain instance.
- for (target,_,_) in targets{
-  if let Some((i,n))=rows.iter().enumerate().find_map(|(i,row)|{
-   plain_stack_headroom(row).filter(|(item,_)|*item==target.item_id).map(|(_,room)|(i,i32::MAX as u64-room))
-  }){
-   rows[i]["Amount"]=(n+1).into();
-  }else{
-   let entry=json!({"ItemID":target.item_id,"Amount":1,"State":null});
-   if let Some(i)=rows.iter().position(empty_slot){rows[i]=entry;}
-   else{if rows.len()>=dest.capacity as usize{return Err(BAD);}rows.push(entry);}
-  }
- }
+ stage_recovery(rows,dest.capacity,&items)?;
  let inv_path=vec![k("Player"),k("ContainerInventories"),k(container),k("Inventory")];
  let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
  locator.amount_path=vec![Segment::Index(usize::MAX)];
@@ -332,6 +361,27 @@ mod tests{
   root["Player"]["ContainerInventories"]["0"]["Inventory"][1]["State"]=json!({"Unknown":true});
   assert!(!destinations(&root).unwrap().iter().any(|r|r.container_id=="0"));
   assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").is_err());
+ }
+ #[test]fn amount_state_recovers_exact_quantity_and_independent_variant(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"ItemAmountState":{"Amount":9,"State":null,"AssignedPlayer":null}});
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000001,"Amount":i32::MAX-3,"State":null}]);
+  let item=field_recovery_item(&root,&target(),(1,2),"GridOrientation_Down").unwrap();
+  let dest=destinations(&root).unwrap().remove(0);
+  assert_eq!(projected_recovery_used(&root,&dest,&[item]),Some(2));
+  let out:Value=serde_json::from_str(&recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000001,"Amount":i32::MAX,"State":null},{"ItemID":30000001,"Amount":6,"State":null}]));
+  let mut meal=target();meal.item_id=30300001;
+  let state=json!({"MealData":{"IngredientsUsed":[30200001,31100001],"SceneRestriction":null}});
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["ItemID"]=meal.item_id.into();
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"ItemAmountState":{"Amount":3,"State":state}});
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":meal.item_id,"Amount":2,"State":state}]);
+  let out:Value=serde_json::from_str(&recover(&root.to_string(),&meal,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":meal.item_id,"Amount":2,"State":state},{"ItemID":meal.item_id,"Amount":3,"State":state}]));
+  for bad in [json!({"Amount":3,"AssignedPlayer":1,"State":state}),json!({"Amount":null,"State":state}),json!({"Amount":0,"State":state}),json!({"Amount":3,"State":{"Unknown":1}}),json!({"Amount":3,"State":state,"Unknown":0})]{
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"ItemAmountState":bad});
+   assert!(recover(&root.to_string(),&meal,(1,2),"GridOrientation_Down","0").is_err());
+  }
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
