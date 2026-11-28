@@ -146,3 +146,10 @@ export const groupPasteWords={
  'zh-CN':['复制家具','粘贴','创建副本','已复制','选择目标位置','库存或目标位置不可用。','验证形状和库存…','确认放置','取消','向左旋转','向右旋转'],
  'pt-BR':['Copiar móveis','Colar','Duplicar','Copiado','Escolher destino','Estoque ou destino indisponível.','Verificando…','Revisar posição','Cancelar','Girar esquerda','Girar direita']
 } as const;
+
+/** Native source witnesses remain local to this exact opened Save. */
+export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false){
+ if(!free||!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)||items.some(p=>!isCardinal(p.object.orientation)))return null;
+ const clip=captureFurnitureGroup(items,true,true,true),sources=captureCutWitness(items,true);
+ return clip&&sources?{clip,sources}:null;
+}
