@@ -49,6 +49,7 @@ const extensionFields={
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
   memoryDefaultContent:'acquisition.memoryDefaultContentSources',
+  miniEventReward:'acquisition.miniEventRewardSources',
   eventLootPresent:'acquisition.eventLootPresentSources',
   eventRecurringLoot:'acquisition.eventRecurringLootSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
@@ -102,6 +103,21 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           evidence.nativeInitializationVerified===true&&evidence.guaranteedGrantVerified===false&&
           evidence.grantVerified===false&&evidence.playerOwnershipVerified===false,'EXTENSION_INITIAL_INVENTORY');
         output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
+      }
+      if(family==='miniEventReward'){
+        check(categories.includes('in_game_limited_event')&&evidence.category==='in_game_limited_event'&&
+          evidence.kind==='mini_event_reward_association'&&id(evidence.targetItemId)&&
+          typeof evidence.eventId==='string'&&/^[A-Za-z][A-Za-z0-9_]+$/.test(evidence.eventId)&&evidence.eventId!=='TestEv'&&
+          (evidence.configuredAmount===null||id(evidence.configuredAmount))&&(evidence.featuringPriority===null||id(evidence.featuringPriority))&&
+          typeof evidence.sourcePosition==='number'&&Number.isSafeInteger(evidence.sourcePosition)&&evidence.sourcePosition>=0&&
+          evidence.sourcePath==='Rewards['+evidence.sourcePosition+'].ItemId'&&typeof evidence.sourceRecordIndex==='number'&&
+          Number.isSafeInteger(evidence.sourceRecordIndex)&&evidence.sourceRecordIndex>=1947&&evidence.sourceRecordIndex<=1965&&evidence.sourceRecordIndex!==1949&&
+          typeof evidence.sourceRecordSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourceRecordSha256)&&
+          typeof evidence.sourcePayloadSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourcePayloadSha256)&&
+          evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.nativeTimeLimitedMembershipVerified===true&&
+          evidence.exactGrantMechanismVerified===false&&evidence.guaranteedGrantVerified===false,'EXTENSION_MINI_EVENT_REWARD');
+        output.push({family,category:'in_game_limited_event',evidence,sourceId:null,relatedIds:[]});continue;
       }
       if(family==='eventRecurringLoot'){
         const bounded=evidence.boundedLocalDateGate,blocker=evidence.kind==='event_recurring_blocker_loot';

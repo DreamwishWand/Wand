@@ -513,6 +513,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of memoryDefaults.keys())expected.add(id);
   const recurringLoot=fields.has('acquisition.eventRecurringLootSources')?new Map(await master.getFieldRows('acquisition.eventRecurringLootSources')):new Map();
   for(const id of recurringLoot.keys())expected.add(id);
+  const miniEventRewards=fields.has('acquisition.miniEventRewardSources')?new Map(await master.getFieldRows('acquisition.miniEventRewardSources')):new Map();
+  for(const id of miniEventRewards.keys())expected.add(id);
   const eventLoot=fields.has('acquisition.eventLootPresentSources')?new Map(await master.getFieldRows('acquisition.eventLootPresentSources')):new Map();
   for(const id of eventLoot.keys())expected.add(id);
   const objectiveGrants=new Map(await master.getFieldRows('acquisition.questObjectiveGrantSources'));
@@ -543,7 +545,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     if(memoryCategory&&!want.includes(memoryCategory))want.push(memoryCategory);
     for(const link of memorySpawn.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     for(const link of memoryDefaults.get(id)??[])if(!want.includes(link.category))want.push(link.category);
-    if((eventLoot.has(id)||recurringLoot.has(id))&&!want.includes('in_game_limited_event'))want.push('in_game_limited_event');
+    if((miniEventRewards.has(id)||eventLoot.has(id)||recurringLoot.has(id))&&!want.includes('in_game_limited_event'))want.push('in_game_limited_event');
     for(const link of objectiveGrants.get(id)??[])if(link.category!==null&&!want.includes(link.category))want.push(link.category);
     if((initialInventory.has(id)||storeSequence.has(id)||generatedShelf.has(id)||generatedStage.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     for(const link of evolutionAcquisition.get(id)??[])if(!want.includes(link.category))want.push(link.category);
