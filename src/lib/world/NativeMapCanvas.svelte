@@ -60,7 +60,7 @@
   stage.addEventListener('webglcontextrestored',contextRestored);
   startRenderer();
  }
- function retry(){
+ export function retry(){
   if(closed)return;
   stopRender();detachStage();createStage();
  }
@@ -139,10 +139,10 @@
   style:visibility={rect?'visible':'hidden'}></canvas>
  </div>
  {#if showLoading&&loading&&!error}<NativeMapLoading {locale} {progress} compact={completeFrame}/>{/if}
- {#if error}<div class="error"><span role="alert">{error}</span><button type="button" on:click={retry}>{retryLabels[locale]??retryLabels.en}</button></div>{/if}
+ {#if error&&showLoading}<div class="error"><span role="alert">{error}</span><button type="button" on:click={retry}>{retryLabels[locale]??retryLabels.en}</button></div>{/if}
 </div>
 <style>
- .native-canvas{position:absolute;inset:0;overflow:hidden;pointer-events:none;min-width:0;min-height:0;contain:layout paint}
+ .native-canvas{position:absolute;inset:0;overflow:hidden;pointer-events:none;min-width:0;min-height:0;}
  .frame-clip{position:absolute;inset:0;pointer-events:none}
  canvas{position:absolute;display:block;max-width:none;max-height:none;min-width:0;min-height:0;pointer-events:none;user-select:none;-webkit-user-drag:none}
  .error{position:absolute;inset:auto 8px 8px;padding:8px;background:#181820;color:white;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;pointer-events:auto;z-index:4}
