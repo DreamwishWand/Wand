@@ -27,7 +27,7 @@
   'zh-CN':['回收并存储','存储位置','背包/物品栏','储物箱','验证回收','处理中…','无法安全回收或目标已满。','关闭'],
   'pt-BR':['Recolher e guardar','Destino','Inventário','Baú','Verificar','Processando…','Recolhimento inseguro ou destino cheio.','Fechar']
  } as const;
- interface Destination{ordinal:number;kind:'inventory'|'home-storage'|'chest'|'unlinked-chest';capacity:number;used:number;parentItemId:number|null;owner:null|{itemId:number;gridDataPath:string;x:number;y:number}}
+ interface Destination{ordinal:number;kind:'inventory'|'home-storage'|'chest'|'unlinked-chest';capacity:number;used:number;afterUsed:number|null;parentItemId:number|null;owner:null|{itemId:number;gridDataPath:string;x:number;y:number}}
  const homeStorageWords={ja:'自宅収納',en:'Home Storage',fr:'Rangement de la maison',it:'Deposito di casa',de:'Heimlager','es-ES':'Almacenamiento de casa','zh-CN':'家中储物箱','pt-BR':'Armazenamento de casa'} as const;
  const unlinkedWords={ja:'配置先未確認',en:'Location unverified',fr:'Emplacement non vérifié',it:'Posizione non verificata',de:'Standort ungeprüft','es-ES':'Ubicación sin verificar','zh-CN':'位置未验证','pt-BR':'Local não verificado'} as const;
  let artwork=new Map<number,string>(),requested=new Set<number>();
@@ -45,20 +45,20 @@
  $: if(source&&(source!==file||expected!==key||blocked))cancel();
  function cancel(){worker?.terminate();worker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;expected='';rows=[];destination=0;open=false;error=false;}
  function request(list:boolean){
-  if(!allowed||blocked||!file||!plan||worker||copy||!list&&!rows.some(r=>r.ordinal===destination))return;
+  if(!allowed||blocked||!file||!plan||worker||copy||!list&&!rows.some(r=>r.ordinal===destination&&r.afterUsed!==null))return;
   if(list){cancel();open=true;source=file;expected=key;}
   const f=file,k=key,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});worker=own;error=false;
   const done=(d:any)=>{own.terminate();if(worker!==own||source!==f||file!==f||expected!==k||key!==k||blocked){d?.bytes?.fill(0);return;}worker=null;
    try{if(list){
-    if(d?.kind!=='activity-recovery-destinations'||d.result?.contract!=='wand.db05.field-recovery-destinations@1'||!Array.isArray(d.result.rows)||d.result.rows.length>8192)throw Error('destinations');
+    if(d?.kind!=='activity-recovery-destinations'||d.result?.contract!=='wand.db05.field-recovery-destinations@2'||!Array.isArray(d.result.rows)||d.result.rows.length>8192)throw Error('destinations');
     const result=d.result.rows as Destination[];
-    if(result.some((r,i)=>r.ordinal!==i+1||!['inventory','home-storage','chest','unlinked-chest'].includes(r.kind)||!Number.isSafeInteger(r.capacity)||r.capacity<1||r.capacity>8192||!Number.isSafeInteger(r.used)||r.used<0||r.used>8192||r.used>r.capacity||(['chest','unlinked-chest'].includes(r.kind)?!Number.isSafeInteger(r.parentItemId)||Number(r.parentItemId)<1:r.parentItemId!==null)||r.kind==='unlinked-chest'&&r.owner!==null||r.kind==='chest'&&(!r.owner||r.owner.itemId!==r.parentItemId||typeof r.owner.gridDataPath!=='string'||!Number.isSafeInteger(r.owner.x)||!Number.isSafeInteger(r.owner.y))))throw Error('destination');
-    rows=result;destination=rows[0]?.ordinal??0;if(!rows.length)error=true;
+    if(result.some((r,i)=>r.ordinal!==i+1||!['inventory','home-storage','chest','unlinked-chest'].includes(r.kind)||!Number.isSafeInteger(r.capacity)||r.capacity<1||r.capacity>8192||!Number.isSafeInteger(r.used)||r.used<0||r.used>8192||r.used>r.capacity||r.afterUsed!==null&&(!Number.isSafeInteger(r.afterUsed)||r.afterUsed<r.used||r.afterUsed>r.capacity)||(['chest','unlinked-chest'].includes(r.kind)?!Number.isSafeInteger(r.parentItemId)||Number(r.parentItemId)<1:r.parentItemId!==null)||r.kind==='unlinked-chest'&&r.owner!==null||r.kind==='chest'&&(!r.owner||r.owner.itemId!==r.parentItemId||typeof r.owner.gridDataPath!=='string'||!Number.isSafeInteger(r.owner.x)||!Number.isSafeInteger(r.owner.y))))throw Error('destination');
+    rows=result;destination=rows.find(r=>r.afterUsed!==null)?.ordinal??0;if(!destination)error=true;
    }else{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}
    }catch{d?.bytes?.fill(0);error=true;}
   };
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);
-  own.postMessage({command:list?'activity-recovery-destinations':'activity-recovery-export',allowExperimentalCopy:true,file:f,plan:list?{}:{destinationOrdinal:destination,rows:plan}});
+  own.postMessage({command:list?'activity-recovery-destinations':'activity-recovery-export',allowExperimentalCopy:true,file:f,plan:list?plan:{destinationOrdinal:destination,rows:plan}});
  }
  function destinationLabel(r:Destination,lookup:ReadonlyMap<number,string>,language:WandLanguage,all:readonly Destination[]){
   const wordsFor=words[language];
@@ -80,9 +80,9 @@
  <div class="field-recovery">
   {#if !open}<button type="button" disabled={blocked} on:click={()=>request(true)}>{w[0]}</button>
   {:else}
-   {#if worker}<small role="status">{w[5]}</small>{:else if rows.length&&!copy}<div class="destination-list" role="group" aria-label={w[1]}>{#each rows as r (r.ordinal)}<button type="button" class="destination-row" aria-pressed={destination===r.ordinal} on:click={()=>destination=r.ordinal}>
+   {#if worker}<small role="status">{w[5]}</small>{:else if rows.length&&!copy}<div class="destination-list" role="group" aria-label={w[1]}>{#each rows as r (r.ordinal)}<button type="button" class="destination-row" aria-pressed={destination===r.ordinal} disabled={r.afterUsed===null} on:click={()=>destination=r.ordinal}>
     {#if r.parentItemId!==null&&artwork.get(r.parentItemId)}<img src={artwork.get(r.parentItemId)} alt="" loading="lazy"/>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V4h8v2M3 12h18M10 11v3h4v-3"/></svg>{/if}
-    <span><strong>{destinationLabel(r,names,locale,rows)}</strong>{#if r.parentItemId!==null}<small>{locationLabel(r,locale,grids,label)}</small>{/if}</span><span class="capacity">{r.used}/{r.capacity}</span>
+    <span><strong>{destinationLabel(r,names,locale,rows)}</strong>{#if r.parentItemId!==null}<small>{locationLabel(r,locale,grids,label)}</small>{/if}</span><span class="capacity">{r.used}{#if r.afterUsed!==null&&r.afterUsed!==r.used} → {r.afterUsed}{/if}/{r.capacity}</span>
    </button>{/each}</div><button type="button" disabled={blocked||!destination} on:click={()=>request(false)}>{w[4]}</button>{/if}
    {#if copy}<small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
    <button type="button" on:click={cancel}>{w[7]}</button>
