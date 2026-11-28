@@ -138,12 +138,30 @@
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
- export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null){
+ function beginMixedStorage(){
+  const captured=storageGroupSelection(items,freePlacement,true),f=file;
+  if(!captured||!f||!allowed||blocked||!worker||captureWorker)return false;
+  const selected=[...items],parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
+  if(!parents.length)return false;
+  const own=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});captureWorker=own;sceneError='';
+  const done=(d:any)=>{
+   own.terminate();if(captureWorker!==own)return;captureWorker=null;
+   if(file!==f||blocked||items.length!==selected.length||items.some((p,i)=>p.object.localOrdinal!==selected[i].object.localOrdinal))return;
+   try{
+    if(d?.kind!=='subgrids-local'||!Array.isArray(d.results)||d.results.length!==parents.length)throw Error('tree');
+    const supports=selected.map(p=>{if(!p.object.subgrid)return null;const match=d.results.find((x:any)=>x.localOrdinal===p.object.localOrdinal);const scene=captureSupportScene(Number(p.object.itemId),parseSupportTree(match?.result));if(!scene)throw Error('tree');return scene;});
+    if(!begin(true,null,mixedSceneFromClip(captured.clip,supports),null,captured.sources))throw Error('placement');
+   }catch{sceneError=gs[2];}
+  };
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'inspect-subgrids',file:f,parents});return true;
+ }
+ export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null,localStorageSources:StorageDuplicateSource[]| (StorageDuplicateSource|null)[]|null=null){
+  if(duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.storage)&&items.some(p=>p.object.subgrid))return beginMixedStorage();
   const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!r.supportFactor)||!!supportDoc||!!areaDoc))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
-  cancel();onBegin();source=file;active=true;clip=[...data];storageSources=storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
+  cancel();onBegin();source=file;active=true;clip=[...data];storageSources=localStorageSources??storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
   if(cutRows){counts=new Map();for(const p of clip)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);}
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;

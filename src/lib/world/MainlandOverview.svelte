@@ -205,7 +205,7 @@
 $: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
  $: canCutFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection,freePlacement);
- $: canDuplicateFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&(!!storageGroupSelection(pasteSelection,freePlacement)||!!captureFurnitureGroup(pasteSelection,false,freePlacement));
+ $: canDuplicateFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&(!!storageGroupSelection(pasteSelection,freePlacement,true)||!!captureFurnitureGroup(pasteSelection,false,freePlacement));
  $: canCopyFurniture=testExport&&furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureFurnitureGroup(pasteSelection,false,freePlacement);
  function beginPaste(){closeBiome();closeCaptureRegion();resetEditSymmetry();closeSupport();closeRoad();closeFurniture();clearGroup();stopMove();selected=null;preciseOpen=false;searchOpen=false;layersOpen=false;multiMode=false;}
  $: furnitureWords=stockToolWords[locale]??stockToolWords.en;

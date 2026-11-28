@@ -168,3 +168,13 @@ test('mixed storage duplication retains original source witnesses and explicit c
  assert.equal(storageGroupPlan(group.sources,q,false,true).storageGroup.rows[1].copyContents,false);
  assert.equal(storageGroupSelection([normal,{...storage,object:{...storage.object,storage:undefined}}]),null);
 });
+
+test('storage group plan retains support scene rows in the same local transaction',async()=>{
+ const {storageGroupPlan}=await import('../src/lib/world/group-paste.ts');
+ const storage={localOrdinal:1,itemId:'40001680',expectedX:1,expectedY:2,expectedOrientation:'GridOrientation_Down'};
+ const rows=[{itemId:'40001680',x:5,y:5,orientation:'GridOrientation_Down',destination:{}},{itemId:'40005160',x:6,y:5,orientation:'GridOrientation_Down',destination:{}}];
+ const scene={schema:'wand.preset.support-scene@1',ownerItemId:40005160};
+ const q={rows,ghosts:[],supportRows:[rows[0],{...rows[1],scene}]};
+ const result=storageGroupPlan([storage,null],q,false,false);assert.ok(result);assert.equal(result.storageGroup.rows[0].copyContents,false);assert.deepEqual(result.storageGroup.rows[1].scene,scene);
+ assert.equal(storageGroupPlan([storage,null],{...q,supportRows:[{...rows[0],scene},q.supportRows[1]]},false,false),null);
+});
