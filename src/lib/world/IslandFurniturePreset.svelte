@@ -188,7 +188,7 @@
     if(token!==epoch||ac.signal.aborted||file!==f||sessions!==ss||!snapshot)return;
     supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');
    }
-   if(localDoc){trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;await validateAreaSupportTrees(own,localDoc.supports!.values(),nextRequest,ac.signal);if(ac.signal.aborted||epoch!==token||file!==f)return;supportTrees=trees;}
+   if(localDoc){trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;await validateAreaSupportTrees(own,localDoc.supports!.values(),nextRequest,ac.signal);if(ac.signal.aborted||epoch!==token||file!==f||!snapshot)return;supportTrees=trees;const captured=captureBiomeDecoration(grids[0],snapshot.objects.get(grids[0].key)??[],0,[],false,trees,true,undefined,false,false,localPlainIds);if(!captured)throw Error('support');localSupportText=captured.text;}
    const stock=await readStock(f);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
    if(regionDoc){if(!trees||!current||!combined)throw Error('region');combined=mergeRegionDecoration(regionDoc.region,grids,snapshot,networks,trees,current,combined,definitions,world,landscapes,freePlacement&&world);if(!combined)throw Error('region boundary');}
