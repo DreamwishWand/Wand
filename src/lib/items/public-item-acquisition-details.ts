@@ -40,10 +40,12 @@ export interface OrdinaryProductionEvidence {
   readonly currentAvailabilityVerified:false;
 }
 const extensionFields={
+  questObjective:'acquisition.questObjectiveGrantSources',
   progression:'acquisition.ordinaryProgressionSources',
   critterBefriending:'acquisition.ordinaryCritterSources',
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
+  eventLootPresent:'acquisition.eventLootPresentSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   storeSequence:'acquisition.ordinaryStoreSequenceSources',
   lootPresent:'acquisition.ordinaryLootPresentSources',
@@ -87,7 +89,17 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         continue;
       }
       check(evidence.sourceGameVersion===db.release.target.gameVersion,'EXTENSION_VERSION');
-      const category=family==='conditionalQuest'||family==='memorySpawn'?evidence.category:'ordinary_gameplay';
+      if(family==='questObjective'){
+        const category=evidence.category;
+        if(category===null)continue;
+        check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
+          evidence.sourceMissionSha256===sha?.Mission&&id(evidence.sourceItemId)&&id(evidence.targetItemId)&&
+          id(evidence.configuredAmount)&&['TalkToCharacter','Chase'].some(k=>k===evidence.objectiveKind)&&
+          typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.Steps[')&&
+          typeof evidence.cleanupConfigured==='boolean'&&evidence.guaranteedGrantVerified===false,'EXTENSION_QUEST_OBJECTIVE');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
+      const category=family==='conditionalQuest'||family==='memorySpawn'||family==='eventLootPresent'?evidence.category:'ordinary_gameplay';
       check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category),'EXTENSION_CATEGORY');
       let sourceId:number|null=null;
       const relatedIds:number[]=[];
@@ -119,6 +131,14 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
             object(evidence.sequence)&&evidence.sequence.displayItemId===sourceId&&
             evidence.storeMembershipVerified===false&&evidence.liveTransactionVerified===false,'EXTENSION_STORE_SEQUENCE');
           relatedIds.push(evidence.buildingItemId,80000000);
+        }else if(family==='eventLootPresent'){
+          check(category==='in_game_limited_event'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
+            evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
+            evidence.sourceLootTableSha256===sha?.LootTable&&id(evidence.bagItemId)&&id(evidence.tableItemId)&&
+            ['event_loot_present_spawn','event_loot_present_reward','event_loot_present_memory_payload'].some(k=>k===evidence.kind)&&
+            typeof evidence.eventName==='string'&&evidence.eventName.length>0&&object(evidence.conditions)&&
+            evidence.spawnSourcePath==='source.Spawn.LootPresentItem.Item.Item.Item','EXTENSION_EVENT_LOOT');
+          relatedIds.push(evidence.bagItemId,evidence.tableItemId);
         }else if(family==='memorySpawn'){
           const realm=evidence.kind==='realm_fixed_memory_spawn';
           check((evidence.kind==='quest_gated_memory_spawn'||realm&&evidence.sourceSceneSha256===sha?.Scene)&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
@@ -371,8 +391,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'?['ConditionalEvent']:
-        e.family==='storeSequence'?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+        e.family==='questObjective'?['Mission']:e.family==='storeSequence'?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
       return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});

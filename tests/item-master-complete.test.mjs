@@ -502,7 +502,11 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of memory.keys())expected.add(id);
   const memorySpawn=fields.has('acquisition.classifiedMemorySpawnSources')?new Map(await master.getFieldRows('acquisition.classifiedMemorySpawnSources')):new Map();
   for(const id of memorySpawn.keys())expected.add(id);
-  const storeSequence=fields.has('acquisition.ordinaryStoreSequenceSources')?new Map(await master.getFieldRows('acquisition.ordinaryStoreSequenceSources')):new Map();
+  const eventLoot=fields.has('acquisition.eventLootPresentSources')?new Map(await master.getFieldRows('acquisition.eventLootPresentSources')):new Map();
+  for(const id of eventLoot.keys())expected.add(id);
+  const objectiveGrants=new Map(await master.getFieldRows('acquisition.questObjectiveGrantSources'));
+  for(const [id,links] of objectiveGrants)if(links.some(l=>l.category!==null))expected.add(id);
+  const storeSequence=new Map(await master.getFieldRows('acquisition.ordinaryStoreSequenceSources'));
   for(const id of storeSequence.keys())expected.add(id);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){
@@ -515,6 +519,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     const memoryCategory=memory.get(id)?.category;
     if(memoryCategory&&!want.includes(memoryCategory))want.push(memoryCategory);
     for(const link of memorySpawn.get(id)??[])if(!want.includes(link.category))want.push(link.category);
+    if(eventLoot.has(id)&&!want.includes('in_game_limited_event'))want.push('in_game_limited_event');
+    for(const link of objectiveGrants.get(id)??[])if(link.category!==null&&!want.includes(link.category))want.push(link.category);
     if(storeSequence.has(id)&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }

@@ -18,6 +18,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
+import {buildQuestObjectiveGrants} from './quest-objective-grants.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
@@ -28,7 +29,9 @@ import {attachOriginalFurnitureProduction} from './original-furniture-production
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 import {buildStoreSequenceSources} from './store-sequence-sources.mjs';
+import {buildInstalledShelfCandidates} from './store-installed-shelf-candidates.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
+import {eventLootPresentLinks} from './event-loot-present.mjs';
 import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -1337,11 +1340,13 @@ function memoryAppearanceSources(rows,source){
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
+  const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
   const ordinaryStore=ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices);
   const storeSequences=buildStoreSequenceSources(rows,source,catalogFacts,storeLayout,originalPrices);
+  const installedShelves=buildInstalledShelfCandidates(rows,source,storeLayout,catalogFacts);
   const existingCategories=id=>new Set([...(acquisition?.summary.get(id)?.categories??[]),
     ...((protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)?['ordinary_gameplay']:[]),
     ...(questFlows.conditionalQuest.get(id)??[]).map(l=>l.category),
@@ -1371,6 +1376,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const priorOrdinary=id=>acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')||
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
+  const eventLoot=eventLootPresentLinks(rows,source,memoryAppearance);
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
   const memoryLoot=buildMemoryLootSources(rows,source,memoryAppearance);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
@@ -1620,6 +1626,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    const eventLootSources=eventLoot.get(row.itemId);
+    if(eventLootSources?.length){
+      add('acquisition.eventLootPresentSources',row.itemId,eventLootSources);
+      categorySet.add('in_game_limited_event');
+    }
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
     const critters=ordinaryCritters.get(row.itemId);
     if(critters?.length){
@@ -1630,6 +1641,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(production?.length){
       add('acquisition.ordinaryProductionSources',row.itemId,production);
       categorySet.add('ordinary_gameplay');
+    }
+    const objectiveGrants=questObjectiveGrants.get(row.itemId);
+    if(objectiveGrants?.length){
+      add('acquisition.questObjectiveGrantSources',row.itemId,objectiveGrants);
+      for(const link of objectiveGrants)if(link.category!==null)categorySet.add(link.category);
     }
     const intro=questFlows.ordinaryIntro.get(row.itemId);
     if(intro?.length){
@@ -1661,6 +1677,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryStoreSequenceSources',row.itemId,sequenceSources);
       categorySet.add('ordinary_gameplay');
     }
+    const shelfCandidates=installedShelves.get(row.itemId);
+    if(shelfCandidates?.length)add('acquisition.storeInstalledShelfCandidates',row.itemId,shelfCandidates);
     const configuredStore=ordinaryStore.get(row.itemId);
     if(configuredStore){
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
