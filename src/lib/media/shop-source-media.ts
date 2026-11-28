@@ -56,6 +56,6 @@ export function createShopSourceReader(doc:unknown,version='1.26.2'){
 }
 let reader:Promise<ReturnType<typeof createShopSourceReader>>|undefined;
 export function loadShopSourceMedia(){
-  if(!reader)reader=import('../../../data/ddv/media/shop-sources-steam-1.26.2.json').then(m=>createShopSourceReader(m.default)).catch(e=>{reader=undefined;throw e;});
+  if(!reader)reader=import('../../../data/ddv/media/shop-sources-steam-1.26.2.json',{with:{type:'json'}}).then(m=>createShopSourceReader(m.default)).catch(e=>{reader=undefined;throw e;});
   return reader;
 }
