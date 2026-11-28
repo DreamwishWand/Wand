@@ -34,10 +34,16 @@ export function createDiffGridWitness(catalog:WorldPreviewCatalog,layoutId:strin
    if(!record(v)||!uint(v.gridObjectIdNative)||seen.has(v.gridObjectIdNative)||!uint(v.itemId)||v.itemId===0||
        !int(v.x)||!int(v.y)||!uint(v.orientationCode)||v.orientationCode>15)throw Error('DIFFGRID_DEFAULT_OBJECT_INVALID');
    seen.add(v.gridObjectIdNative);
-   return {gridObjectIdNative:v.gridObjectIdNative,itemId:v.itemId,x:v.x,y:v.y,orientationCode:v.orientationCode};
+   return {gridObjectIdNative:v.gridObjectIdNative,itemId:v.itemId,x:v.x,y:v.y,orientationCode:v.orientationCode,
+       plainSource:v.stateSha256===null&&v.stateByteCount===0&&v.fromNativeCode===null};
  });
+ const terrain=catalog.grids.get(entry.gridDataPath);
+ const factor=entry.tessellationFactor;
+ const gridBounds=terrain&&uint(terrain.sizeX)&&uint(terrain.sizeY)&&terrain.sizeX>0&&terrain.sizeY>0&&
+    terrain.sizeX<=65536&&terrain.sizeY<=65536&&terrain.sizeX*terrain.sizeY<=16777216&&(factor===1||factor===2)
+    ?{width:terrain.sizeX*factor,height:terrain.sizeY*factor,factor}:null;
  return {contract:'wand.db05.diffgrid-effective-witness@1',gameVersion,platform,layoutId,layoutType,nativeGridId,
-    hashes:[entry.defaultGridHashCode,entry.defaultGridDataHashCode],defaultObjects};
+    hashes:[entry.defaultGridHashCode,entry.defaultGridDataHashCode],defaultObjects,gridBounds};
 }
 
 export interface DiffGridPoint{readonly itemId:string;readonly x:number;readonly y:number;readonly orientation:string;readonly origin:'default'|'modified'|'added'}
