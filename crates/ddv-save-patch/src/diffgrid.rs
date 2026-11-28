@@ -273,6 +273,21 @@ mod tests{
         assert!(!result.draft.export_authorized);
     }
     #[test]
+    fn existing_transform_and_duplicate_preserve_unselected_bytes(){
+        let s=profile().replace("\"Future\":\"KEEP\"","\"Future\" : \"KEEP\"");
+        let i=identity();
+        let result=preview_diffgrid_batch(&s,&i,&[
+            DiffAction::Transform{id:FIRST_ADDED,expected:pose(3),x:7,y:2,orientation:"GridOrientation_Down".into()},
+            DiffAction::Duplicate{id:1,expected:pose(1),x:8,y:2,orientation:"GridOrientation_Up".into()}
+        ]).unwrap();
+        let root:Value=serde_json::from_str(&result.draft.patched_json).unwrap();
+        let g=&root["World"]["GridCollection"]["DiffGrids"]["8"];
+        assert_eq!(g["ModifiedObjects"][FIRST_ADDED.to_string()]["X"],7);
+        assert_eq!(g["ModifiedObjects"][(FIRST_ADDED+2).to_string()]["X"],8);
+        assert!(g["ModifiedObjects"].get("1").is_none());
+        assert!(result.draft.patched_json.contains("\"Future\" : \"KEEP\""));
+    }
+    #[test]
     fn rejects_wrong_hash_unknown_state_and_removed_targets(){
         let s=profile();let mut i=identity();i.grid_hash=9;
         let a=DiffAction::Remove{id:1,expected:pose(1)};
