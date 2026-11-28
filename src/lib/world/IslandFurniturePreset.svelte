@@ -1,6 +1,6 @@
 <script lang="ts">
  import PrivateStorageBackup from './PrivateStorageBackup.svelte';
- import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope} from './private-decoration-backup.ts';
+ import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope,stagePrivateDecoration,projectPrivateDecorationTerrain} from './private-decoration-backup.ts';
  import {regionStorageWitnesses,privateRegionPoses,privateRegionRestoreScope} from './region-decoration-backup.ts';
  import {verifiedLandscape,landscapeBackupWords,type LandscapePose} from './landscape-decoration-preset.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
@@ -43,7 +43,7 @@
  let includeSupport=false,supportTrees:SupportAreaTrees|undefined,supportAbort:AbortController|null=null,supportSnapshot:ReturnType<typeof captureIslandDecoration>=null;
  let landscapes=new Map<string,LandscapePose[]>();
  let includeNetworks=false,networkSnapshot:ReturnType<typeof captureIslandDecoration>=null,decorationReview:ReturnType<typeof reviewIslandDecoration>=null,networks=new Map<string,NetworkPose[]>();
- let privateStorage:string|null=null,privateScope:string|null=null,includeContents=false;
+ let privateStorage:string|null=null,privateScope:string|null=null,stagedFile:File|null=null,includeContents=false;
  $: privateWords=privateDecorationWords[locale];
  let input:HTMLInputElement,reading=true,error=false,source:File|null=null,sourceSessions:readonly TerrainScopeReceipt[]|null=null,epoch=0,writeWorker:Worker|null=null,stockWorker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null;
  const cancelRequests=new Set<()=>void>();
@@ -79,7 +79,7 @@
    own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'read-furniture-stock',file:f});
   });
  }
- function readNetworks(f:File,scope:readonly MainlandGrid[]):Promise<{networks:Map<string,NetworkPose[]>;landscapes:Map<string,LandscapePose[]>}>{
+ function readNetworks(f:File,scope:readonly MainlandGrid[],planningSnapshot=snapshot):Promise<{networks:Map<string,NetworkPose[]>;landscapes:Map<string,LandscapePose[]>}>{
   return new Promise((resolve,reject)=>{
    const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});
    const cleanup=()=>{clearTimeout(timer);own.terminate();cancelRequests.delete(cancel);};
@@ -88,7 +88,7 @@
    own.onmessage=e=>{cleanup();try{
     const data=e.data;if(data?.kind!=='map-networks'||!Array.isArray(data.receipts)||data.receipts.length!==scope.length)throw Error('network batch');
     const networks=new Map<string,NetworkPose[]>(),landscapes=new Map<string,LandscapePose[]>();
-    for(const g of scope){const rows=data.receipts.filter((p:{key?:string})=>p?.key===g.key);if(rows.length!==1)throw Error('network identity');const p=rows[0];networks.set(g.key,networkRows(p.rows,g));landscapes.set(g.key,verifiedLandscape(g,snapshot?.objects.get(g.key)??[],p.landscape,freePlacement&&world));}
+    for(const g of scope){const rows=data.receipts.filter((p:{key?:string})=>p?.key===g.key);if(rows.length!==1)throw Error('network identity');const p=rows[0];networks.set(g.key,networkRows(p.rows,g));landscapes.set(g.key,verifiedLandscape(g,planningSnapshot?.objects.get(g.key)??[],p.landscape,freePlacement&&world));}
     resolve({networks,landscapes});
    }catch(e){reject(e);}};
    own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'inspect-map-networks',file:f,includeLandscape:true,plan:scope.map(g=>({key:g.key,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY}}))});
@@ -110,9 +110,9 @@
    await loadNetworks(f,ss,token);
   }catch{if(epoch===token)error=true;}finally{if(epoch===token)reading=false;}
  }
- async function readSupports(f:File,own:Worker){
-  if(!snapshot)throw Error('snapshot');supportAbort?.abort();const ac=new AbortController();supportAbort=ac;
-  const trees=await readAreaSupportTrees(f,[...snapshot.objects.values()].flat().filter(p=>!localScene||localSupportIds?.has(Number(p.object.itemId))),own,nextRequest,ac.signal,localScene);
+ async function readSupports(f:File,own:Worker,planningSnapshot=snapshot){
+  if(!planningSnapshot)throw Error('snapshot');supportAbort?.abort();const ac=new AbortController();supportAbort=ac;
+  const trees=await readAreaSupportTrees(f,[...planningSnapshot.objects.values()].flat().filter(p=>!localScene||localSupportIds?.has(Number(p.object.itemId))),own,nextRequest,ac.signal,localScene);
   if(ac.signal.aborted)throw Error('cancel');return trees;
  }
  async function setSupports(value:boolean){
@@ -148,7 +148,7 @@
  }
  async function openPreset(preset:File){
   if(!snapshot||!file||!worker||blocked||!allowed||busy||copy)return;
-  const own=worker,f=file,ss=sessions,token=++epoch;reading=true;error=false;review=null;decorationReview=null;privateStorage=null;privateScope=null;
+  const own=worker,f=file,ss=sessions,token=++epoch;reading=true;error=false;review=null;decorationReview=null;privateStorage=null;privateScope=null;stagedFile=null;
   try{
    const loaded=await readDecorationFile(preset,world?WORLD_DECORATION_FILE_LIMIT:Math.max(ISLAND_DECORATION_FILE_LIMIT,DESIGN_FILE_LIMIT)),text=loaded.text;if(token!==epoch||file!==f||sessions!==ss)return;if(!loaded.storage)void rememberPreset(preset,text).catch(()=>{});
    const schema=JSON.parse(text)?.schema;if(localScene&&!['wand.preset.whole-area-design@1','wand.preset.world-grid-decoration@1'].includes(schema))throw Error('local scope');const localDoc=localScene&&schema==='wand.preset.world-grid-decoration@1'?parseBiomeDecoration(text,grids[0],false,true):null;if(localDoc&&(!localDoc.supports||localDoc.network.length||localDoc.houses!==undefined||localDoc.buildings!==undefined||localDoc.landscape!==undefined))throw Error('local support scope');const regionDoc=(world||region)&&schema==='wand.preset.region-decoration@1'?parseRegionDecoration(text,grids,world):null;
@@ -180,29 +180,49 @@
    }
    const restoredPrivateScope=privatePoses&&regionDoc?privateRegionRestoreScope(regionDoc.region,privatePoses,definitions):loaded.storage?outdoorPrivateScope(grids):null;
    if(loaded.storage&&!restoredPrivateScope)throw Error('private storage boundary');
+   let planningFile=f,planningSnapshot=snapshot,planningNetworks=networks,planningLandscapes=landscapes,normalized=loaded.storage;
+   const valid=()=>epoch===token&&file===f&&sessions===ss&&worker===own&&!blocked&&!!snapshot;
+   // Rectangular region restores retain the original object-scoped contract.
+   if(normalized&&!regionDoc&&restoredPrivateScope){
+    const stage=await stagePrivateDecoration(f,normalized,restoredPrivateScope,valid);
+    if(!valid())return;normalized=stage.storage;planningFile=stage.file;
+    if(planningFile!==f){
+     const receipts=await projectPrivateDecorationTerrain(planningFile,grids,valid),maps=new Map<string,SavedShapeMap>();
+     if(!valid())return;
+     for(const g of grids){
+      const s=receipts.find(x=>x.receipt.viewKey===g.key);
+      if(!s?.completeGridOrdinal||s.receipt.rowsWithoutCoordinates||s.receipt.dataSampled)throw Error('staged grid');
+      if(s.receipt.points.length){const d=await request(own,g.key,'shapes',{points:s.receipt.points});if(!valid())return;maps.set(g.key,d.result);}
+     }
+     planningSnapshot=islandSaveSnapshot(grids,receipts,maps,world,localScene?localPlainIds:undefined);
+     if(!planningSnapshot)throw Error('staged snapshot');
+     if(full){const staged=await readNetworks(planningFile,grids,planningSnapshot);if(!valid())return;planningNetworks=staged.networks;planningLandscapes=staged.landscapes;}
+    }
+   }
    let trees:SupportAreaTrees|undefined;
    if(combined&&[...combined.values()].some(v=>v.supports!==undefined)){
     if([...combined.values()].some(v=>v.supports===undefined))throw Error('support scope');
-    trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;
+    trees=planningFile!==f?await readSupports(planningFile,own,planningSnapshot):supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;
     await validateAreaSupportTrees(own,[...combined.values()].flatMap(v=>[...v.supports!.values()]),nextRequest,ac.signal);
     if(token!==epoch||ac.signal.aborted||file!==f||sessions!==ss||!snapshot)return;
-    supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');
+    if(planningFile===f){supportTrees=trees;supportSnapshot=captureIslandDecoration(grids,snapshot,networks,trees,world,landscapes,world&&!region);if(!supportSnapshot)throw Error('support');}
    }
-   if(localDoc){trees=supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;await validateAreaSupportTrees(own,localDoc.supports!.values(),nextRequest,ac.signal);if(ac.signal.aborted||epoch!==token||file!==f||!snapshot)return;supportTrees=trees;const captured=captureBiomeDecoration(grids[0],snapshot.objects.get(grids[0].key)??[],0,[],false,trees,true,undefined,false,false,localPlainIds);if(!captured)throw Error('support');localSupportText=captured.text;}
-   const stock=await readStock(f);
+   if(localDoc){trees=planningFile!==f?await readSupports(planningFile,own,planningSnapshot):supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;await validateAreaSupportTrees(own,localDoc.supports!.values(),nextRequest,ac.signal);if(ac.signal.aborted||epoch!==token||file!==f||!snapshot)return;if(planningFile===f){supportTrees=trees;const captured=captureBiomeDecoration(grids[0],snapshot.objects.get(grids[0].key)??[],0,[],false,trees,true,undefined,false,false,localPlainIds);if(!captured)throw Error('support');localSupportText=captured.text;}}
+   const stock=await readStock(planningFile);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
    if(regionDoc){if(!trees||!current||!combined)throw Error('region');combined=mergeRegionDecoration(regionDoc.region,grids,snapshot,networks,trees,current,combined,definitions,world,landscapes,freePlacement&&world);if(!combined)throw Error('region boundary');}
-   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,snapshot,networks,combined,definitions,stock,trees,world,landscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,snapshot,incoming,definitions,stock,localScene?localPlainIds:undefined,localDoc&&trees?{before:trees,after:localDoc.supports!}:undefined);if(!review)throw Error('plan');}
+   if(!planningSnapshot)throw Error('planning snapshot');
+   if(combined){decorationReview=reviewIslandDecoration(grids,rasters,planningSnapshot,planningNetworks,combined,definitions,stock,trees,world,planningLandscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,planningSnapshot,incoming,definitions,stock,localScene?localPlainIds:undefined,localDoc&&trees?{before:trees,after:localDoc.supports!}:undefined);if(!review)throw Error('plan');}
    // Do not change the confirmed rectangle or mode on a rejected import.
    if(regionDoc)region=regionDoc.region;
-   includeNetworks=full;includeSupport=!!trees;privateStorage=loaded.storage;privateScope=restoredPrivateScope;
+   includeNetworks=full;includeSupport=!!trees;privateStorage=normalized;privateScope=restoredPrivateScope;stagedFile=planningFile!==f?planningFile:null;
   }catch{if(token===epoch)error=true;}finally{if(token===epoch)reading=false;}
  }
  function validate(){
   if(!allowed||blocked||busy||copy||!file||file!==source||sessions!==sourceSessions||!result||!result.changed&&!privateStorage||result.missing.length)return;
   const f=file,plan=result.changed?result.plan:null,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writeWorker=own;error=false;
   const done=(d:any)=>{own.terminate();if(writeWorker!==own||file!==f||source!==f||sessions!==sourceSessions){d?.bytes?.fill(0);return;}writeWorker=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:includeNetworks?'island-decoration-export':'island-furniture-export',file:f,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope}:{})});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:includeNetworks?'island-decoration-export':'island-furniture-export',file:stagedFile??f,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope}:{})});
  }
  function apply(){if(!allowed||blocked||!copy||!file||file!==source||sessions!==sourceSessions)return;if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}onClose();}
  onMount(()=>{void load();});
