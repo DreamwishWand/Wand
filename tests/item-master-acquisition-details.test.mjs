@@ -72,3 +72,46 @@ test('ordinary category extensions resolve every quest and production source usi
   assert.deepEqual(await details.getItemAcquisitionSourceDetails(ids,'ja'),rows.slice(0,ids.length));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
 });
+
+
+test('all classification extensions preserve original evidence and localized source and related identities',async()=>{
+  const requests=[],fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
+  const db=await openCurrentItemDatabase('',fetcher);
+  const fields={progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
+    conditionalQuest:'acquisition.conditionalQuestSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources'};
+  const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
+  const expected=new Map(),counts={};
+  for(const [family,field] of Object.entries(fields)){
+    const rows=catalog.has(field)?await db.getFieldRows(field):[];
+    counts[family]=rows.length;
+    for(const [id,v] of rows){
+      const list=expected.get(id)??[];
+      for(const evidence of family==='configuredStore'?[v]:v)list.push({family,evidence});
+      expected.set(id,list);
+    }
+  }
+  assert.equal(counts.progression,126);assert.equal(counts.critterBefriending,100);
+  assert.equal(counts.conditionalQuest,5);assert.equal(counts.configuredStore,134);assert.equal(counts.lootPresent,24);
+  const ids=[...expected.keys()].sort((a,b)=>a-b);
+  const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');
+  assert.equal(rows[ids.length],null);assert.deepEqual(rows.at(-1),rows[0]);
+  for(const row of rows.slice(0,ids.length)){
+    assert.deepEqual(row.classificationExtensions.map(({family,evidence})=>({family,evidence})),expected.get(row.itemId));
+    for(const [family,field] of Object.entries(fields))assert.equal(row.classificationExtensionStatus[family],catalog.has(field)?'indexed':'not_indexed');
+    for(const ext of row.classificationExtensions){
+      assert(row.effectiveCategories.includes(ext.category));
+      assert.equal(ext.evidence.currentAvailabilityVerified,false);
+      if(ext.family==='configuredStore')assert.equal(ext.identity,null);
+      else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
+      const related=ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
+        [...new Set(ext.evidence.questGates.map(g=>g.questId))]:ext.evidence.tableItemId?[ext.evidence.tableItemId]:[];
+      assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),related);
+      assert(ext.relatedIdentities.every(i=>i.locale==='ja'));
+    }
+  }
+  const details=await openCurrentItemDetails('',fetcher);
+  assert.deepEqual(await details.getItemAcquisitionSourceDetails(ids.slice(0,2),'ja'),rows.slice(0,2));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
+  console.log('DB01_CLASSIFICATION_EXTENSIONS '+JSON.stringify({items:ids.length,counts}));
+});
