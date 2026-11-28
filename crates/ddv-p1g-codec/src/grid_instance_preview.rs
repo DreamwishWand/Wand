@@ -3920,6 +3920,36 @@ mod terrain_session_tests{
         assert!(group_paste_candidate(source,&rows.to_string()).is_err());
     }
     #[test]
+    fn free_outdoor_support_parent_preserves_children_and_allocates_independent_clone(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+            "7":{"ID":7,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005161,"X":5,"Y":6,"Orientation":"GridOrientation_Down"}}},
+            "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}
+        }}}});
+        let witness=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+        let input=raw.to_string();
+        let draft=free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(4,6),&witness,None,None,true,None).unwrap();
+        let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        let grids=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(grids["7"]["Objects"]["3"]["State"]["SubGrid"]["GridID"],20);
+        assert_eq!(grids["7"]["Objects"]["3"]["X"],4);
+        assert_eq!(grids["8"],raw["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(grids["20"]["Objects"],grids["8"]["Objects"]);
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+        assert!(support_parent_duplicate_candidate(input.as_bytes(),1,40005160,(4,6),(4,6),&witness,None,None).is_err());
+        let moved=free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(5,6),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None,false,None).unwrap();
+        let moved:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"],raw["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["8"],raw["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(moved["Player"],raw["Player"]);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["X"],5);
+        let mut invalid=witness.clone();invalid["sizeX"]=197.into();
+        assert!(free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(5,6),&invalid,None,None,false,None).is_err());
+        let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":7,"GridObjectID":1}]);
+        assert!(free_support_parent_candidate(linked.to_string().as_bytes(),1,40005160,(4,6),(5,6),&witness,None,None,false,None).is_err());
+    }
+    #[test]
     fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Other":1e2,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1},"40005162":{"Amount":2}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
           "7":{"ID":7,"GridDefaultLayoutPath":"SceneLayouts/Village04/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{
