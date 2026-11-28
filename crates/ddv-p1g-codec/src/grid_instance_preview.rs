@@ -3416,6 +3416,8 @@ mod tests{
         let raw=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/A.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},"2":{"ID":2,"ItemID":40000001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}},"43":{"ID":43,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}}}}}"#;
         let a=serde_json::json!({"layoutId":"SceneLayouts/Village04/A.json","gridDataPath":"GridData/A.json","factor":1,"sizeX":16,"sizeY":16});
         let b=serde_json::json!({"layoutId":"SceneLayouts/Village04/B.json","gridDataPath":"GridData/B.json","factor":1,"sizeX":16,"sizeY":16});
+        let original=std::str::from_utf8(raw).unwrap().replace(r#""X":2,"Y":2,"Orientation":"GridOrientation_Down"}"#,r#""X":2,"Y":2,"Orientation":"GridOrientation_Down","State":null}"#);
+        let raw=original.as_bytes();
         let mut plan=serde_json::json!([
           {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":a,"x":4,"y":4,"orientation":"GridOrientation_Left"},
           {"localOrdinal":2,"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":b,"x":5,"y":5,"orientation":"GridOrientation_Down"}
@@ -3426,6 +3428,7 @@ mod tests{
         assert_eq!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"],4);
         assert!(j["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("2").is_none());
         assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"]["ItemID"],40000001);
+        assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["Objects"]["5"].get("State"),Some(&Value::Null));
         assert_eq!(j["World"]["GridCollection"]["Grids"]["43"]["NextGridObjectID"],6);
         assert!(d.contains("\"Marker\":1e2"));
         let mut stale:Value=serde_json::from_slice(raw).unwrap();
