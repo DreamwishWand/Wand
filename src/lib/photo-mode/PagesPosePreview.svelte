@@ -10,15 +10,19 @@
   import {savedBodyPreference} from './saved-avatar-appearance.ts';
   import PosePreview from './PosePreview.svelte';
   import {loadPagesPoseIndex,bodyTypes,assetUrl,loadPreviewScene,relatedPoseMatches,collectionPoseHref,collectionPoseFromSearch,poseRows,type PreviewIndex} from './pages-preview.ts';
+  import {faceNumbers,type FaceNumber} from './face-layer.ts';
   import {poseCopy} from './preview-copy.ts';
   let {itemId,locale,getRelatedName}:{itemId:number;locale:string;getRelatedName?:(id:number,locale:string)=>Promise<string|null>}=$props();
   let index=$state<PreviewIndex|null>(null);
   let expanded=$state(false);
   let copy=$derived(poseCopy(locale));
   let selection=$state({itemId:0,pose:0});
+  let facialSelection=$state<FaceNumber|undefined>(undefined);
   let poses=$derived(index?poseRows(index,itemId):[]);
   let poseIndex=$derived(selection.itemId===itemId&&selection.pose<poses.length?selection.pose:0);
   let row=$derived(poses[poseIndex]);
+  let facialAvailable=$derived(!!index?.faceLayers&&bodyTypes.every(b=>row?.[b]&&row[b]?.kind!=='mermaid'));
+  let activeFace=$derived(facialAvailable?facialSelection:undefined);
   let appearance=$derived($localSaveSession.avatarAppearance);
   let skinKey=$derived(bodyTypes.map(b=>savedSkinIndex(appearance,b,row?.[b]?.kind==='mermaid')??'-').join(':'));
   let eyeKey=$derived(bodyTypes.map(b=>eyeMaterialKey(selectEyeMaterial(index?.eyePalette,appearance,b,row?.[b]?.kind==='mermaid'))).join('|'));
@@ -34,7 +38,7 @@
     if(!m||!r)return [];
     return bodyTypes.flatMap((b,i)=>{
       const entry=r[b],skin=savedSkinIndex(appearance,b,entry?.kind==='mermaid');
-      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'),savedHeadIndex(appearance,b,entry.kind==='mermaid'),savedBodyType(appearance,b,entry.kind==='mermaid'))}]:[];
+      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'),savedHeadIndex(appearance,b,entry.kind==='mermaid'),savedBodyType(appearance,b,entry.kind==='mermaid'),activeFace)}]:[];
     });
   });
   let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&(o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined||o?.kind==='mermaid'&&o.accessoryIncluded!==true)}));
@@ -64,8 +68,16 @@
           {/each}
         </div>
       {/if}
+      {#if facialAvailable}
+        <div class="pose-faces" aria-label={copy.expression}>
+          <label>{copy.expression}<select aria-label={copy.expression} value={activeFace===undefined?'pose':String(activeFace)} onchange={e=>facialSelection=e.currentTarget.value==='pose'?undefined:Number(e.currentTarget.value) as FaceNumber}>
+            <option value="pose">{copy.poseExpression}</option>
+            {#each faceNumbers as n}<option value={String(n)}>{copy.expression} {n+1}</option>{/each}
+          </select></label>
+        </div>
+      {/if}
       {#key itemId+':'+poseIndex}
-        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={skinKey+':'+eyeKey+':'+faceKey+':'+headKey+':'+bodyMorphKey}/>
+        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={skinKey+':'+eyeKey+':'+faceKey+':'+headKey+':'+bodyMorphKey+':'+(activeFace??'pose')}/>
       {/key}
       {#await names then items}
         {@const found=items.filter(x=>x.name)}
@@ -84,6 +96,9 @@
   .pose-test{margin:8px 0;color:var(--wand-text)}
   summary{cursor:pointer;font-weight:600}
   p{font-size:.8rem}
+  .pose-faces{display:flex;align-items:center;margin:4px 0}
+  .pose-faces label{display:flex;gap:6px;align-items:center;font-size:.85rem}
+  .pose-faces select{background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;min-height:36px;padding:4px 8px}
   .pose-variants{display:flex;gap:4px;margin:4px 0}
   .pose-variants button{background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;min-height:36px;padding:4px 8px}
   .pose-variants button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover)}
