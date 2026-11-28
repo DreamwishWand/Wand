@@ -35,3 +35,15 @@ test('reverse lookup verifies source fields and separates mount styles and gear'
  assert.deepEqual(await readNativeEntityRelations(db,2,{nativeType:'Companion',code:3}),{parent:null,styles:[4],gear:[5]});
  assert.deepEqual(await readNativeEntityRelations(db,4,{nativeType:'Skin',code:4}),{parent:2,styles:[],gear:[]});
 });
+
+import {readItemPlacementHint,readItemBundleContext} from '../src/lib/items/item-page-source-context.ts';
+test('ordinary placement reads the published source hint without guessing unknown placement',async()=>{
+ const db={getFieldCatalog:async()=>[{field:'placement.sourceOrdinaryScopeHint'}],getItemFields:async ids=>ids.map(itemId=>({itemId,values:{'placement.sourceOrdinaryScopeHint':itemId===1?'both':'unknown'}}))};
+ assert.equal(await readItemPlacementHint(db,1,'Furniture'),'both');
+ assert.equal(await readItemPlacementHint(db,2,'Furniture'),null);
+ assert.equal(await readItemPlacementHint(db,1,'ActivityItem'),null);
+});
+test('bundle display uses only revisions with actual membership and hides source IDs',async()=>{
+ const db={getPremiumBundleMembership:async()=>[{bundleIds:['a','b','c'],currentBundleIds:['a'],legacyBundleIds:['b','c']}],getPremiumBundleLocalizedText:async()=>[{bundleId:'a',current:{displayTitle:'New'},legacy:{displayTitle:'Old'}},{bundleId:'b',current:{displayTitle:'Unrelated'},legacy:{displayTitle:'Original'}},{bundleId:'c',current:{displayTitle:'Wrong'},legacy:{displayTitle:null}}]};
+ assert.deepEqual(await readItemBundleContext(db,1,'en'),{count:3,names:['New','Original']});
+});

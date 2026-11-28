@@ -828,6 +828,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.close();
   await page.reload();
+  // History snapshots restore the search rather than resetting to categories.
+  await page.waitForFunction(()=>document.querySelector('.toolbar input[type=search]')?.value==='40005160'&&document.querySelectorAll('.item-card').length===1,{},{timeout:60000});
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.facet-card').first().waitFor({timeout:60000});
   const persisted=await readLocalState(page);
   assert.equal(persisted.workspaces[0].entries['40005160'].status,'missing');

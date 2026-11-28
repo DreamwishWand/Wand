@@ -180,7 +180,7 @@
   // SvelteKit history-entry snapshot, not a second Collection record store.
   // Only browsing state is captured; the Rust/IndexedDB workspace is reloaded.
   function captureBrowse(){
-    return {viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
+    return {catalog:runtime?.metadata.snapshot??null,viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
       browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
       sourceChoices:{...sourceChoices},sourceTopCategory,sourceActivityType,sourceNativeSubtype,
       sourceUniverseSelection,acquisitionFilter,selectedItemId,showMemoryPieces,
@@ -199,6 +199,8 @@
     if(acquisitionLoad)await acquisitionLoad;
     if(runtime!==activeRuntime||pendingBrowseRestore!==value)return;
     pendingBrowseRestore=null;
+    // Never restore filters from a different verified catalog (including an owner-local catalog).
+    if(value.catalog!==activeRuntime.metadata.snapshot){restoreAddressSelection();return;}
     ({viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
       browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
       sourceChoices,sourceTopCategory,sourceActivityType,sourceNativeSubtype,
