@@ -77,3 +77,34 @@ test('all 24 historical Star Path seasons preserve exact normal, bonus and refer
   }
   console.log('DB01_HISTORICAL_STARPATH_VERIFIED '+JSON.stringify({matchedItems:result.length,matchedOccurrences:expected.length,unresolvedIds:historicalIds.size-result.length,alternateOccurrences:alternates.length}));
 });
+
+
+test('shared Star Path filter columns cover every primary reward from both source families without cross-season access leakage',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const historical=await db.getFieldRows('acquisition.historicalStarpathSources');
+  const known=new Set((await db.getFieldRows('itemId')).map(([id])=>id));
+  const current=JSON.parse(await readFile('static/guide/public/starpath-cache-2026-11-22.json','utf8'));
+  const keys=new Map();
+  const add=(id,season,premium)=>{
+    if(!known.has(id))return;
+    const set=keys.get(id)??new Set();set.add(season+':'+(premium?'premium':'free'));keys.set(id,set);
+  };
+  for(const [id,rows] of historical)for(const r of rows)add(id,r.seasonId,r.premiumOnly);
+  for(const s of current.seasons){
+    for(const r of [...s.rewardPages.flatMap(p=>p.rewards),...s.bonusPages.flatMap(p=>p.rewards),...s.vaultRewards])add(Number(r.itemId),s.id,r.premium);
+  }
+  const expected=[...keys].sort((a,b)=>a[0]-b[0]).map(([id,v])=>[id,[...v].sort()]);
+  const actual=await db.getFieldRows('acquisition.starpathSeasonAccessKeys');
+  assert.deepEqual(actual,expected);
+  assert.deepEqual(await db.getFieldRows('acquisition.starpathSeasonIds'),expected.map(([id,ks])=>[id,[...new Set(ks.map(k=>k.split(':')[0]))].sort()]));
+  assert.deepEqual(await db.getFieldRows('acquisition.starpathRewardAccess'),expected.map(([id,ks])=>[id,[...new Set(ks.map(k=>k.split(':')[1]))].sort()]));
+  const seasonKeys=[...new Set(expected.flatMap(([,v])=>v))];
+  assert.equal(new Set(seasonKeys.map(k=>k.split(':')[0])).size,26);
+  for(const key of seasonKeys){
+    const ids=await db.findItemIdsByField('acquisition.starpathSeasonAccessKeys',{kind:'contains',value:key});
+    assert.deepEqual(ids,expected.filter(([,ks])=>ks.includes(key)).map(([id])=>id));
+  }
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+  console.log('DB01_STARPATH_FILTER_VERIFIED '+JSON.stringify({items:actual.length,seasons:26,seasonAccessKeys:seasonKeys.length}));
+});

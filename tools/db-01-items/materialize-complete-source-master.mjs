@@ -18,7 +18,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
-import {loadHistoricalStarpathRewards} from './historical-starpath-rewards.mjs';
+import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1245,7 +1245,7 @@ function ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLa
   }
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters){
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1572,6 +1572,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.historicalStarpathSeasonIds',row.itemId,[...new Set(historicStar.map(l=>l.seasonId))].sort());
       categorySet.add('star_path');
     }
+    const starFilter=starpathFilters.get(row.itemId);
+    if(starFilter){
+      check(categorySet.has('star_path'),'STARPATH_FILTER_CATEGORY');
+      add('acquisition.starpathSeasonIds',row.itemId,starFilter.seasons);
+      add('acquisition.starpathRewardAccess',row.itemId,starFilter.access);
+      add('acquisition.starpathSeasonAccessKeys',row.itemId,starFilter.keys);
+    }
     const starAlternates=historicalStarpath.alternates.get(row.itemId);
     if(starAlternates?.length)add('acquisition.historicalStarpathAlternateSources',row.itemId,starAlternates);
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
@@ -1891,6 +1898,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const originalPrices=loadOriginalPriceFacts(project,source,byId);
   const questFlows=loadQuestFlowColumns(project,source,rows);
   const historicalStarpath=loadHistoricalStarpathRewards(project,source,rows);
+  const starpathFilters=loadStarpathRewardFilters(project,source,rows,historicalStarpath);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
@@ -1971,7 +1979,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
