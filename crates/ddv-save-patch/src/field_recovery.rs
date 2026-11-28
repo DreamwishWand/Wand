@@ -1,6 +1,6 @@
 //! Atomic field ItemInstance recovery. No game runtime or catalog authority
 //! is inferred here; the codec checks exact source definitions and references.
-use super::{GridCoordinateTarget,GridObjectKind,PatchError,QuantityTarget,JsonLocator,Segment,k,validate_json_without_edit,preview_existing_quantity,room_lexical_map_edit,storage_transform_pose};
+use super::{GridCoordinateTarget,GridObjectKind,PatchError,QuantityTarget,JsonLocator,Segment,k,validate_json_without_edit,storage_transform_pose};
 use serde_json::{Value,json};
 const BAD:PatchError=PatchError::InvalidTarget;
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -89,57 +89,169 @@ pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:
  o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
- super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
+ super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
 }
-/// Recover exactly one stateless field record as one item. A known existing
-/// null-State stack is incremented or a fresh row appended. No overwrite of
-/// another variant, no inferred stack limit, no allocation outside capacity.
-pub fn recover(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,container:&str)->Result<String,PatchError>{
+/// Recover a selection in one transaction. All source witnesses and destination
+/// capacity are checked against the original document; only the changed slot
+/// values and removed map members are spliced into its original bytes.
+pub fn recover_batch(source:&str,targets:&[(GridCoordinateTarget,(i32,i32),String)],container:&str)->Result<String,PatchError>{
+ use std::{collections::{BTreeMap,HashSet},ops::Range};
+ if targets.is_empty()||targets.len()>super::MAX_GRID_MIXED_EDITS{return Err(BAD);}
  validate_json_without_edit(source)?;
- let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
- if !stateless_field_object(&root,target,expected,orientation){return Err(BAD);}
+ let mut root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let dest=destinations(&root)?.into_iter().find(|r|r.container_id==container).ok_or(BAD)?;
- let inventory=&root["Player"]["ContainerInventories"][container]["Inventory"];
- let rows=inventory.as_array().ok_or(BAD)?;
- let mut expected_root=root.clone();
- let expected_inv=expected_root["Player"]["ContainerInventories"][container]["Inventory"].as_array_mut().ok_or(BAD)?;
- let stack=rows.iter().enumerate().find_map(|(i,row)|{
-  if row["ItemID"].as_u64()!=Some(target.item_id)||row.get("State").is_some_and(|s|!s.is_null())||row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State"))){return None;}
-  row["Amount"].as_u64().filter(|n|*n>0&&*n<i32::MAX as u64).map(|n|(i,n))
- });
- let with_item=if let Some((index,n))=stack{
-  expected_inv[index]["Amount"]=(n+1).into();
-  preview_existing_quantity(source,QuantityTarget::ChestSlot{container_id:container.into(),slot_index:index,item_id:target.item_id},n,n+1)?.patched_json
- }else{
-  if dest.used>=dest.capacity{return Err(BAD);}
-  let entry=json!({"ItemID":target.item_id,"Amount":1,"State":null});
-  let empty=rows.iter().take(dest.capacity as usize).position(empty_slot);
-  let mut path=vec![k("Player"),k("ContainerInventories"),k(container),k("Inventory")];
-  if let Some(i)=empty{path.push(Segment::Index(i));expected_inv[i]=entry.clone();}
-  else{if rows.len()>=dest.capacity as usize{return Err(BAD);}expected_inv.push(entry.clone());}
-  let mut loc=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
-  loc.amount_path=vec![Segment::Index(usize::MAX)];loc.capture.insert(path.clone(),None);loc.walk_complete()?;
-  let span=loc.capture.get(&path).and_then(|v|v.clone()).ok_or(BAD)?;
-  if empty.is_some(){
-   format!("{}{}{}",&source[..span.start],entry,&source[span.end..])
+ let mut groups=BTreeMap::<String,HashSet<String>>::new();
+ for (target,expected,orientation) in targets{
+  if !stateless_field_object(&root,target,*expected,orientation)||
+   !groups.entry(target.grid_id.clone()).or_default().insert(target.object_id.clone()){return Err(BAD);}
+ }
+ let original=root["Player"]["ContainerInventories"][container]["Inventory"].as_array().ok_or(BAD)?.clone();
+ let rows=root["Player"]["ContainerInventories"][container]["Inventory"].as_array_mut().ok_or(BAD)?;
+ // Preserve first-compatible-stack behavior, including a stack at the
+ // representable maximum, and never merge a variant with a plain instance.
+ for (target,_,_) in targets{
+  if let Some((i,n))=rows.iter().enumerate().find_map(|(i,row)|{
+   if row["ItemID"].as_u64()!=Some(target.item_id)||row.get("State").is_some_and(|s|!s.is_null())||
+    row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State"))){return None;}
+   row["Amount"].as_u64().filter(|n|*n>0&&*n<i32::MAX as u64).map(|n|(i,n))
+  }){
+   rows[i]["Amount"]=(n+1).into();
   }else{
-   let at=span.end.checked_sub(1).ok_or(BAD)?;
-   if source.as_bytes().get(at)!=Some(&b']'){return Err(BAD);}
-   format!("{}{}{}{}",&source[..at],if rows.is_empty(){""}else{","},entry,&source[at..])
+   let entry=json!({"ItemID":target.item_id,"Amount":1,"State":null});
+   if let Some(i)=rows.iter().position(empty_slot){rows[i]=entry;}
+   else{if rows.len()>=dest.capacity as usize{return Err(BAD);}rows.push(entry);}
   }
- };
- let parent=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
- let result=room_lexical_map_edit(&with_item,parent,&target.object_id,None)?;
- expected_root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"].as_object_mut().ok_or(BAD)?.remove(&target.object_id).ok_or(BAD)?;
- let actual:Value=serde_json::from_str(&result).map_err(|_|BAD)?;
- if actual!=expected_root{return Err(BAD);}
+ }
+ let inv_path=vec![k("Player"),k("ContainerInventories"),k(container),k("Inventory")];
+ let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+ locator.amount_path=vec![Segment::Index(usize::MAX)];
+ let mut changes=Vec::<(Vec<Segment>,String)>::new();
+ for (i,(old,new)) in original.iter().zip(rows.iter()).enumerate(){
+  if old==new{continue;}
+  let mut path=inv_path.clone();path.push(Segment::Index(i));
+  let value=if empty_slot(old){new.to_string()}else{path.push(k("Amount"));new["Amount"].to_string()};
+  locator.capture.insert(path.clone(),None);changes.push((path,value));
+ }
+ if rows.len()>original.len(){locator.capture.insert(inv_path.clone(),None);}
+ for gid in groups.keys(){
+  locator.capture.insert(vec![k("World"),k("GridCollection"),k("Grids"),k(gid),k("Objects")],None);
+ }
+ locator.walk_complete()?;
+ let mut patches=Vec::<(Range<usize>,String)>::new();
+ for (path,value) in changes{
+  patches.push((locator.capture.get(&path).and_then(|r|r.clone()).ok_or(BAD)?,value));
+ }
+ if rows.len()>original.len(){
+  let span=locator.capture.get(&inv_path).and_then(|r|r.clone()).ok_or(BAD)?;
+  let at=span.end.checked_sub(1).ok_or(BAD)?;
+  if source.as_bytes().get(at)!=Some(&b']'){return Err(BAD);}
+  let append=rows[original.len()..].iter().map(Value::to_string).collect::<Vec<_>>().join(",");
+  patches.push((at..at,format!("{}{}",if original.is_empty(){""}else{","},append)));
+ }
+ // Scan only affected maps for member spans. Coalesce consecutive deletions,
+ // preserving raw keys, values and separators of every unaffected member.
+ for (gid,ids) in groups{
+  let parent=vec![k("World"),k("GridCollection"),k("Grids"),k(&gid),k("Objects")];
+  let span=locator.capture.get(&parent).and_then(|r|r.clone()).ok_or(BAD)?;
+  let mut parser=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
+  parser.amount_path=vec![Segment::Index(usize::MAX)];parser.pos=span.start;parser.expect(b'{')?;
+  let mut members=Vec::<(usize,usize,Option<usize>,bool)>::new();
+  loop{
+   parser.space();
+   if parser.bytes.get(parser.pos)==Some(&b'}'){parser.pos+=1;break;}
+   let start=parser.pos;let key=parser.string()?;parser.expect(b':')?;
+   let mut path=parent.clone();path.push(k(&key));parser.value(&mut path)?;let end=parser.pos;
+   parser.space();
+   let comma=if parser.bytes.get(parser.pos)==Some(&b','){let p=parser.pos;parser.pos+=1;Some(p)}else{None};
+   members.push((start,end,comma,ids.contains(&key)));
+   if comma.is_none(){parser.expect(b'}')?;break;}
+  }
+  if parser.pos!=span.end||members.iter().filter(|m|m.3).count()!=ids.len(){return Err(BAD);}
+  let mut i=0;
+  while i<members.len(){
+   if !members[i].3{i+=1;continue;}
+   let first=i;while i+1<members.len()&&members[i+1].3{i+=1;}
+   let last=i;
+   let range=if let Some(comma)=members[last].2{members[first].0..comma+1}
+    else if first>0{members[first-1].2.ok_or(BAD)?..members[last].1}
+    else{members[first].0..members[last].1};
+   patches.push((range,String::new()));i+=1;
+  }
+  let objects=root["World"]["GridCollection"]["Grids"][&gid]["Objects"].as_object_mut().ok_or(BAD)?;
+  for id in ids{objects.remove(&id).ok_or(BAD)?;}
+ }
+ patches.sort_by_key(|(r,_)|r.start);
+ let mut result=String::with_capacity(source.len());
+ let mut cursor=0;
+ for (range,value) in patches{
+  if range.start<cursor||range.end<range.start||range.end>source.len(){return Err(BAD);}
+  result.push_str(&source[cursor..range.start]);result.push_str(&value);cursor=range.end;
+ }
+ result.push_str(&source[cursor..]);
+ validate_json_without_edit(&result)?;
+ if serde_json::from_str::<Value>(&result).map_err(|_|BAD)?!=root{return Err(BAD);}
  Ok(result)
+}
+/// Single recovery uses the same batch writer and validation.
+pub fn recover(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str,container:&str)->Result<String,PatchError>{
+ recover_batch(source,&[(target.clone(),expected,orientation.to_owned())],container)
 }
 #[cfg(test)]
 mod tests{
  use super::*;
  const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0},"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":30000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40001680,"X":3,"Y":4,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
  fn target()->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:"1".into(),item_id:30000001}}
+ #[test]fn batch_preserves_raw_unselected_members_across_grids_and_slots(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let objects=&mut root["World"]["GridCollection"]["Grids"]["42"]["Objects"];
+  for (id,x,item) in [(3,3,30000001),(4,4,30000002),(5,5,30000003),(6,6,30000001)]{
+   objects[id.to_string()]=json!({"ID":id,"ItemID":item,"X":x,"Y":2,"Orientation":"GridOrientation_Down","State":null});
+  }
+  objects["5"]["Unknown"]=json!({"raw":100.0});
+  root["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=7.into();
+  let mut other=root["World"]["GridCollection"]["Grids"]["42"].clone();
+  other["ID"]=43.into();other["Objects"]=json!({"1":{"ID":1,"ItemID":30000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}});
+  root["World"]["GridCollection"]["Grids"]["43"]=other;
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000001,"Amount":7,"State":null},{"ItemID":0,"Amount":0}]);
+  let raw=root.to_string().replace("100.0","1e2");
+  let make=|gid:&str,id:&str,x:i32,item:u64|(GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.into(),object_id:id.into(),item_id:item},(x,2),"GridOrientation_Down".to_owned());
+  let batch=vec![make("42","1",1,30000001),make("42","3",3,30000001),make("42","4",4,30000002),make("42","6",6,30000001),make("43","1",1,30000001)];
+  let out=recover_batch(&raw,&batch,"0").unwrap();
+  let actual:Value=serde_json::from_str(&out).unwrap();
+  assert_eq!(actual["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000001,"Amount":11,"State":null},{"ItemID":30000002,"Amount":1,"State":null}]));
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().len(),2);
+  assert!(actual["World"]["GridCollection"]["Grids"]["43"]["Objects"].as_object().unwrap().is_empty());
+  assert!(out.contains("\"raw\":1e2"));
+  assert_eq!(actual["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);
+  let mut duplicate=batch.clone();duplicate.push(batch[0].clone());assert!(recover_batch(&raw,&duplicate,"0").is_err());
+  let mut over=batch.clone();over.push(make("42","5",5,30000003));assert!(recover_batch(&raw,&over,"0").is_err());
+ }
+ #[test]fn maximum_batch_recovers_all_eight_saved_orientations_without_changing_other_state(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let mut targets=Vec::new();
+  for i in 0..super::super::MAX_GRID_MIXED_EDITS{
+   let oid=(i+3).to_string();
+   let orientation=super::super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS[i%8];
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"][&oid]=json!({"ID":i+3,"ItemID":30000001,"X":i,"Y":2,"Orientation":orientation});
+   targets.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:oid,item_id:30000001},(i as i32,2),orientation.to_owned()));
+  }
+  root["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=(targets.len()+3).into();
+  let out:Value=serde_json::from_str(&recover_batch(&root.to_string(),&targets,"0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],targets.len());
+  assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().len(),2);
+  assert_eq!(out["Player"]["ContainerInventories"]["9"],root["Player"]["ContainerInventories"]["9"]);
+  targets[0].2="GridOrientation_Unknown".into();assert!(recover_batch(&root.to_string(),&targets,"0").is_err());
+ }
+ #[test]fn batch_appends_only_missing_slots_and_rejects_capacity_without_partial_result(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]=json!({"ID":3,"ItemID":30000002,"X":3,"Y":2,"Orientation":"GridOrientation_Down"});
+  let mut second=target();second.object_id="3".into();second.item_id=30000002;
+  let targets=[(target(),(1,2),"GridOrientation_Down".into()),(second,(3,2),"GridOrientation_Down".into())];
+  let out:Value=serde_json::from_str(&recover_batch(&root.to_string(),&targets,"0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000001,"Amount":1,"State":null},{"ItemID":30000002,"Amount":1,"State":null}]));
+  root["Player"]["ContainerInventories"]["0"]["Size"]=1.into();
+  assert!(recover_batch(&root.to_string(),&targets,"0").is_err());
+ }
  #[test]fn recover_to_inventory_or_chest_preserves_unrelated_bytes(){
   let root:Value=serde_json::from_str(SOURCE).unwrap();assert_eq!(destinations(&root).unwrap().len(),2);
   for id in ["0","9"]{let result=recover(SOURCE,&target(),(1,2),"GridOrientation_Down",id).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);assert_eq!(v["Player"]["ContainerInventories"][id]["Inventory"][0]["Amount"],if id=="0"{1}else{6});assert!(result.contains("1e2"));}

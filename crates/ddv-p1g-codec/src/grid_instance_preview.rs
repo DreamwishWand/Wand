@@ -3605,7 +3605,6 @@ fn mission_item_referenced(root:&Value,item:u64)->Result<bool,CodecError>{
  Ok(false)
 }
 pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String,CodecError>{
- use zeroize::{Zeroize,Zeroizing};
  let bad=CodecError::Json;
  if plan.len()>128*1024{return Err(CodecError::Bounds);}
  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
@@ -3626,7 +3625,7 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
   let item=m["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&activity_item_id(*n))).ok_or(bad)?;
   if active_items.contains(&item)||checked.insert(item)&&mission_item_referenced(&root,item)?{return Err(bad);}
   let xy=(m["expectedX"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?,m["expectedY"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?);
-  let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+  let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
   selections.push((ord,item,xy,"full".to_owned(),Some(ori.to_owned())));
  }
  let targets=resolve_grid_mixed_targets(source,&selections)?;
@@ -3639,12 +3638,10 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
  }
  for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
 
- let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
- for (t,s) in targets.iter().zip(&selections){
-  let next=ddv_save_patch::field_recovery::recover(&working,t,s.2,s.4.as_deref().ok_or(bad)?,&dest.container_id).map_err(|_|CodecError::Patch)?;
-  working.zeroize();*working=next;
- }
- Ok(std::mem::take(&mut *working))
+ let batch=targets.into_iter().zip(selections).map(|(target,selection)|{
+  Ok((target,selection.2,selection.4.ok_or(bad)?))
+ }).collect::<Result<Vec<_>,CodecError>>()?;
+ ddv_save_patch::field_recovery::recover_batch(std::str::from_utf8(source).map_err(|_|bad)?,&batch,&dest.container_id).map_err(|_|CodecError::Patch)
 }
 
 #[cfg(test)]
@@ -3668,8 +3665,8 @@ mod tests{
         let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
         assert_eq!(ids.len(),4050);
         let item=*ids.iter().find(|n|**n/100_000==300).unwrap_or(&ids[0]);
-        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":item,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}});
-        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":2,"itemId":item.to_string(),"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}]});
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":item,"X":2,"Y":2,"Orientation":"GridOrientation_UpRight"}}}}}}});
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":2,"itemId":item.to_string(),"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_UpRight"}]});
         let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
         assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
         assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
