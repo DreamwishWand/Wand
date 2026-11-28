@@ -585,10 +585,15 @@ test('typed historic source joins distinguish proven DLC association from indire
   assert(has(seed,'seed_dlc_crop',30200232));
   assert(has(critter,'critter_source_area',48));
   assert(has(well,'building_scene',1540000209));
-  for(const row of [diary,meal,fish,seed,critter,well]){
+  for(const row of [diary,critter,well]){
     assert.deepEqual(row.values[fields[2]],['dlc.the-keepsake-sea']);
     assert.equal(row.values[fields[0]],null);
   }
+  for(const row of [meal,fish,seed]){
+    assert.deepEqual(row.values[fields[2]],['dlc.the-keepsake-sea']);
+    assert.equal(row.values[fields[0]],'dlc.the-keepsake-sea');
+  }
+  for(const row of [meal,seed])assert.equal(row.values[fields[1]],'verified_expansion_tag_and_gameplay_relation');
 });
 
 test('typed content origins distinguish observed versions, verified release, and unresolved candidate',async()=>{
