@@ -155,6 +155,12 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
             (evidence.priceSource==='explicit_override'&&evidence.priceProviderRecordIndex===null||
              (evidence.priceSource==='static'||evidence.priceSource==='dynamic_cache')&&typeof evidence.priceProviderRecordIndex==='number'&&
               Number.isSafeInteger(evidence.priceProviderRecordIndex)&&evidence.priceProviderRecordIndex>=0)&&
+            ((evidence.priceBandKind===undefined||evidence.priceBandKind==='configured_thresholds'&&evidence.catalogueEnumerationVerified===true)&&
+              typeof evidence.tableIndex==='number'&&Number.isSafeInteger(evidence.tableIndex)&&evidence.tableIndex>=0&&
+              typeof evidence.bandIndex==='number'&&Number.isSafeInteger(evidence.bandIndex)&&evidence.bandIndex>=0||
+             evidence.priceBandKind==='native_unbounded_positive'&&evidence.catalogueEnumerationVerified===false&&
+              typeof evidence.sourceItemId==='number'&&[2140000002,2140000003,2140000006,2140000015,2140000016].includes(evidence.sourceItemId)&&
+              evidence.tableIndex===null&&evidence.bandIndex===null&&evidence.minimum===1&&evidence.maximum===2147483647)&&
             id(evidence.minimum)&&id(evidence.maximum)&&evidence.configuredPurchaseAmount>=evidence.minimum&&
             evidence.configuredPurchaseAmount<=evidence.maximum&&
             (evidence.setItemId===null||id(evidence.setItemId))&&evidence.itemCatalogGateEmpty===true&&

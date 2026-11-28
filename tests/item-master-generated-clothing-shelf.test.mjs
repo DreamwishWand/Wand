@@ -36,22 +36,31 @@ test('original furniture and clothing shelf routes preserve native price interva
       evolved.get(id)===true||!effectivePrices.has(id))continue;
    if(links.some(l=>(l.sourceItemFileSha256===db.release.sourceFilesSha256.Clothing&&!l.gridReviewRequired&&!l.directTagReviewRequired||
        l.sourceItemFileSha256===db.release.sourceFilesSha256.Furniture&&l.gridReviewRequired&&l.nativeGrid?.status==='passed'&&l.nativeGrid.directTagPredicateVerified===true)&&
-     Array.isArray(l.priceTables)&&l.priceTables.some(t=>Array.isArray(t.Thresholds)&&t.Thresholds.length)))expected.add(id);
+     ([2140000003,2140000006,2140000016].includes(l.displayItemId)&&(l.priceTables===null||Array.isArray(l.priceTables)&&l.priceTables.length===0)||
+       Array.isArray(l.priceTables)&&l.priceTables.some(t=>Array.isArray(t.Thresholds)&&t.Thresholds.length))))expected.add(id);
  }
  assert.deepEqual([...actual.keys()].sort((a,b)=>a-b),[...expected].sort((a,b)=>a-b));
  for(const [id,links] of actual){
    assert(category.get(id).includes('ordinary_gameplay'));
    for(const l of links){
      const match=candidates.get(id).find(c=>c.displayItemId===l.sourceItemId&&c.buildingSourcePath===l.sourcePath&&c.shelfSlotIndex===l.shelfSlotIndex);
-     assert(match);const ts=match.priceTables[l.tableIndex].Thresholds;
+     assert(match);
      assert.equal(l.sourceDirectTagPredicateVerified,true);
      assert.deepEqual(l.nativeGrid,match.nativeGrid);
      if(l.itemNativeCategory==='Furniture')assert.equal(l.nativeGrid.status,'passed');
      const price=effectivePrices.get(id),cost=price.amount;
      assert.equal(l.configuredPurchaseAmount,cost);
      assert.equal(l.priceSource,price.source);assert.equal(l.priceProviderRecordIndex,price.record);
-     assert.equal(l.minimum,l.bandIndex===0?1:ts[l.bandIndex-1]);
-     assert.equal(l.maximum,l.bandIndex===ts.length?2147483647:ts[l.bandIndex]-1);
+     if([2140000003,2140000006,2140000016].includes(l.sourceItemId)){
+       assert(match.priceTables===null||Array.isArray(match.priceTables)&&match.priceTables.length===0);
+       assert.equal(l.priceBandKind,'native_unbounded_positive');assert.equal(l.catalogueEnumerationVerified,false);
+       assert.equal(l.tableIndex,null);assert.equal(l.bandIndex,null);assert.equal(l.minimum,1);assert.equal(l.maximum,2147483647);
+     }else{
+       const ts=match.priceTables[l.tableIndex].Thresholds;
+       assert.equal(l.priceBandKind,'configured_thresholds');assert.equal(l.catalogueEnumerationVerified,true);
+       assert.equal(l.minimum,l.bandIndex===0?1:ts[l.bandIndex-1]);
+       assert.equal(l.maximum,l.bandIndex===ts.length?2147483647:ts[l.bandIndex]-1);
+     }
      assert(cost>=l.minimum&&cost<=l.maximum);
      assert.equal(l.setItemId,gates.get(id)||null);
      assert.equal(l.inheritedSetGateEmpty,true);

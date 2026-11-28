@@ -6,6 +6,28 @@
  */
 import {stageAreaSlots} from './store-native-stage-layout.mjs';
 const id=n=>Number.isSafeInteger(n)&&n>0;
+// Five exact original Display records have no field 10 (PricesTables).
+// StoreInfo refresh bypasses missing table setters, clamps min to 1 in
+// UpdateSlot; PriceMatches treats MaxAmount <= 0 as unbounded.
+// Diagnostic StoreUtil enumeration skips these, unlike actual generation.
+const NO_PRICE_TABLE=new Set([2140000002,2140000003,2140000006,2140000015,2140000016]);
+function priceBands(link,amount){
+  const tables=link.priceTables;
+  if(NO_PRICE_TABLE.has(link.displayItemId)&&(tables===null||Array.isArray(tables)&&tables.length===0))
+    return [{tableIndex:null,bandIndex:null,minimum:1,maximum:2147483647,priceBandKind:'native_unbounded_positive',catalogueEnumerationVerified:false}];
+  if(!Array.isArray(tables))return [];
+  const bands=[];
+  for(const [tableIndex,table] of tables.entries()){
+    const ts=table?.Thresholds;
+    if(!Array.isArray(ts)||!ts.length||Object.keys(table).length!==1||
+      !ts.every((n,i)=>id(n)&&n<2147483647&&(i===0||n>ts[i-1])))continue;
+    let bandIndex=ts.findIndex(n=>amount<n);
+    if(bandIndex===-1)bandIndex=ts.length;
+    const minimum=bandIndex===0?1:ts[bandIndex-1],maximum=bandIndex===ts.length?2147483647:ts[bandIndex]-1;
+    if(amount>=minimum&&amount<=maximum)bands.push({tableIndex,bandIndex,minimum,maximum,priceBandKind:'configured_thresholds',catalogueEnumerationVerified:true});
+  }
+  return bands;
+}
 const props=r=>({...r?.nativeProperties,...r?.sourceAttributes});
 export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices){
   const out=new Map(),ordinary=new Map(),sha=source.sourceFilesSha256;
@@ -132,16 +154,7 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
       }else if(filter.grid||filter.allTags||filter.anyTags||filter.typeCodes?.length!==1||
         filter.typeCodes[0]!==5||filter.subtypes?.length!==1||filter.subtypes[0][0]!==6||
         !filter.subtypes[0][1].includes(row.itemType.subtypeCode))continue;
-      if(!Array.isArray(l.priceTables))continue;
-      for(const [tableIndex,table] of l.priceTables.entries()){
-        const ts=table?.Thresholds;
-        if(!Array.isArray(ts)||!ts.length||Object.keys(table).length!==1||
-          !ts.every((n,i)=>id(n)&&n<2147483647&&(i===0||n>ts[i-1])))continue;
-        // Native thresholds delimit [1,t0-1], [t0,t1-1], ..., [tn,INT_MAX].
-        let bandIndex=ts.findIndex(n=>price.amount<n);
-        if(bandIndex===-1)bandIndex=ts.length;
-        const minimum=bandIndex===0?1:ts[bandIndex-1],maximum=bandIndex===ts.length?2147483647:ts[bandIndex]-1;
-        if(price.amount<minimum||price.amount>maximum)continue;
+      for(const band of priceBands(l,price.amount)){
         const stage=l.stageLayoutType!==undefined;
         qualifying.push({kind:stage?'ordinary_generated_store_stage':'ordinary_generated_store_shelf',itemNativeCategory:row.nativeCategory,sourceDirectTagPredicateVerified:true,nativeGrid,sourceItemId:l.displayItemId,targetItemId:itemId,
           buildingItemId:building.itemId,upgradeLevel:l.upgradeLevel,configuredDisplayQuantity:l.configuredDisplayQuantity,
@@ -153,7 +166,7 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
           sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,sourceItemFileSha256:sha[row.nativeCategory],sourceSetSha256:sha.Set,
           nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
           purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource,
-          priceProviderRecordIndex,tableIndex,bandIndex,minimum,maximum,
+          priceProviderRecordIndex,...band,
           setItemId:setId||null,itemCatalogGateEmpty:true,inheritedSetGateEmpty:true,
           itemTypeCode:row.itemType.code,itemSubtypeCode:row.itemType.subtypeCode,
           configuredPoolRouteVerified:true,runtimeStockVerified:false,storeMembershipVerified:false,
@@ -170,5 +183,7 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
   }
   console.log('DB01_INSTALLED_SHELF '+JSON.stringify({counts,items:out.size,occurrences:[...out.values()].flat().length,areas:[...slots.keys()],classificationCounts,classifiedItems:ordinary.size,classifiedOccurrences:[...ordinary.values()].flat().length,rejected}));
   console.log('DB01_INSTALLED_STAGE '+JSON.stringify({areas:[...stageSlots.keys()],items:stageCandidates.size,occurrences:[...stageCandidates.values()].flat().length,classifiedItems:stageOrdinary.size,classifiedOccurrences:[...stageOrdinary.values()].flat().length}));
+  const unbounded=[...ordinary,...stageOrdinary].flatMap(([itemId,ls])=>ls.filter(l=>l.priceBandKind==='native_unbounded_positive').map(l=>({itemId,displayItemId:l.sourceItemId})));
+  console.log('DB01_NATIVE_UNBOUNDED_STORE_PRICE '+JSON.stringify({items:new Set(unbounded.map(l=>l.itemId)).size,occurrences:unbounded.length,byDisplay:Object.fromEntries([...new Set(unbounded.map(l=>l.displayItemId))].map(d=>[d,new Set(unbounded.filter(l=>l.displayItemId===d).map(l=>l.itemId)).size]))}));
   return result;
 }

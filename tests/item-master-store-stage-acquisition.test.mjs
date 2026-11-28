@@ -62,7 +62,8 @@ test('native stage layouts resolve exact original area keys with duplicate sizes
    if(Object.keys(o).length===0&&p?.buy.length===1&&p.buy[0][0]===80000000)amount=p.buy[0][1];
    else if(Object.keys(o).length===1&&o.Price&&Object.keys(o.Price).length===2&&o.Price.Id===80000000&&cls.get(id)==='FurnitureItemData')amount=o.Price.Amount;
    if(!Number.isSafeInteger(amount)||amount<=0||amount>2147483647)continue;
-   if(ls.some(l=>l.nativeGrid?.status==='passed'&&l.nativeGrid.directTagPredicateVerified===true&&Array.isArray(l.priceTables)&&l.priceTables.some(t=>Array.isArray(t.Thresholds)&&t.Thresholds.length)))wantClassified.add(id);
+   if(ls.some(l=>l.nativeGrid?.status==='passed'&&l.nativeGrid.directTagPredicateVerified===true&&([2140000002,2140000015].includes(l.displayItemId)&&(l.priceTables===null||Array.isArray(l.priceTables)&&l.priceTables.length===0)||
+     Array.isArray(l.priceTables)&&l.priceTables.some(t=>Array.isArray(t.Thresholds)&&t.Thresholds.length))))wantClassified.add(id);
  }
  assert(wantClassified.size>0);assert.deepEqual([...classified.keys()].sort((a,b)=>a-b),[...wantClassified].sort((a,b)=>a-b));
  for(const [id,ls] of classified){
@@ -72,7 +73,15 @@ test('native stage layouts resolve exact original area keys with duplicate sizes
      assert(c);assert.deepEqual(l.stageSlotIndices,c.stageSlotIndices);
      assert.equal(l.nativeGrid.status,'passed');assert.equal(l.storeMembershipVerified,false);
      assert.equal(l.runtimeStockVerified,false);assert.equal(l.currentAvailabilityVerified,false);
-     const ts=c.priceTables[l.tableIndex].Thresholds;assert.equal(l.minimum,l.bandIndex===0?1:ts[l.bandIndex-1]);assert.equal(l.maximum,l.bandIndex===ts.length?2147483647:ts[l.bandIndex]-1);
+     if([2140000002,2140000015].includes(l.sourceItemId)){
+       assert(c.priceTables===null||Array.isArray(c.priceTables)&&c.priceTables.length===0);
+       assert.equal(l.priceBandKind,'native_unbounded_positive');assert.equal(l.catalogueEnumerationVerified,false);
+       assert.equal(l.tableIndex,null);assert.equal(l.bandIndex,null);assert.equal(l.minimum,1);assert.equal(l.maximum,2147483647);
+     }else{
+       const ts=c.priceTables[l.tableIndex].Thresholds;
+       assert.equal(l.priceBandKind,'configured_thresholds');assert.equal(l.catalogueEnumerationVerified,true);
+       assert.equal(l.minimum,l.bandIndex===0?1:ts[l.bandIndex-1]);assert.equal(l.maximum,l.bandIndex===ts.length?2147483647:ts[l.bandIndex]-1);
+     }
    }
  }
  const ids=[...classified.keys()].slice(0,30);
