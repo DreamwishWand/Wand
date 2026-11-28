@@ -7,8 +7,8 @@
   let options=$state<{id:BodyType;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>}[]>([]);
   let status=$state<'idle'|'loading'|'ready'|'missing'|'error'>('idle');
   let generation=0,urls:string[]=[];
-  const ja={title:'ローカル動作プレビュー（開発用）',note:'非公開の診断用素材を選択。ゲーム内姿勢との一致は未検証です。小道具は含まれません。',select:'診断用フォルダ',missing:'このアイテムのシーンは含まれていません',error:'診断用ファイルを読み込めません',play:'再生',pause:'一時停止',restart:'最初から再生',loop:'ループ',speed:'速度',time:'再生位置',zoom:'拡大縮小',resetView:'視点を戻す',orbit:'ドラッグで回転',loading:'読み込み中',unavailable:'3D表示を利用できません',bodyType:'体型',companion:'コンパニオン'};
-  const en={title:'Local pose preview (development)',note:'Select private diagnostic assets. Game-pose parity is unverified. Props are not included.',select:'Diagnostic folder',missing:'No scene for this item',error:'Cannot read diagnostic assets',play:'Play',pause:'Pause',restart:'Restart',loop:'Loop',speed:'Speed',time:'Time',zoom:'Zoom',resetView:'Reset view',orbit:'Drag to orbit',loading:'Loading',unavailable:'3D rendering unavailable',bodyType:'Body type',companion:'Companion'};
+  const ja={title:'ローカル動作プレビュー（開発用）',note:'非公開の診断用素材を選択。ゲーム内姿勢との一致は未検証です。小道具は含まれません。',select:'診断用フォルダ',missing:'このアイテムのシーンは含まれていません',error:'診断用ファイルを読み込めません',play:'再生',pause:'一時停止',restart:'最初から再生',loop:'ループ',speed:'速度',time:'再生位置',zoom:'拡大縮小',resetView:'視点を戻す',orbit:'ドラッグで回転',pan:'ドラッグで移動',loading:'読み込み中',unavailable:'3D表示を利用できません',bodyType:'体型',companion:'コンパニオン'};
+  const en={title:'Local pose preview (development)',note:'Select private diagnostic assets. Game-pose parity is unverified. Props are not included.',select:'Diagnostic folder',missing:'No scene for this item',error:'Cannot read diagnostic assets',play:'Play',pause:'Pause',restart:'Restart',loop:'Loop',speed:'Speed',time:'Time',zoom:'Zoom',resetView:'Reset view',orbit:'Drag to orbit',pan:'Drag to pan',loading:'Loading',unavailable:'3D rendering unavailable',bodyType:'Body type',companion:'Companion'};
   let copy=$derived(locale==='ja'?ja:en);
   function clear(){options=[];for(const url of urls)URL.revokeObjectURL(url);urls=[]}
   async function load(e:Event){
