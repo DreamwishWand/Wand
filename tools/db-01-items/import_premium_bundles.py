@@ -180,11 +180,11 @@ def steam_source(source_bytes, report_bytes):
             'capturedUnixSeconds': max(c['capturedUnixSeconds'] for c in captures),
             'queriedTargetItemCount': source['source']['candidateSources']['counts']['premiumSync'],
             'globalCompletenessVerified': False}
-    return meta, selected, revisions, captures
+    return meta, selected, revisions, source['observations']
 
 
 def merge(source_bytes, report_bytes, legacy_bytes, previous=None):
-    meta, observations, revisions, captures = steam_source(source_bytes, report_bytes)
+    meta, observations, revisions, source_observations = steam_source(source_bytes, report_bytes)
     legacy = legacy_source(legacy_bytes)
     legacy_meta = {'platform': 'Switch', 'gameVersion': '1.24.1', 'sourceSha256': sha(legacy_bytes),
                    'schemaFullyVerified': False,
@@ -205,10 +205,23 @@ def merge(source_bytes, report_bytes, legacy_bytes, previous=None):
         # A partial later observation does not erase prior positive evidence.
         observations = {**prior, **observations}
         source_history = previous['steamSources']
+        observation_history = dict(previous.get('steamObservationsBySource', {}))
     else:
         source_history = []
+        observation_history = {}
+    # All validated observations are retained privately, including negative/partial
+    # probes. Never infer removal from a later capture that omitted an ID.
+    source_hash = meta['sourceSha256']
+    check(source_hash not in observation_history or
+          observation_history[source_hash] == source_observations, 'OBSERVATION_COLLISION')
+    observation_history[source_hash] = source_observations
     if not any(x['sourceSha256'] == meta['sourceSha256'] for x in source_history):
         source_history = [*source_history, meta]
+    source_hashes = {x['sourceSha256'] for x in source_history}
+    check(set(observation_history) <= source_hashes, 'OBSERVATION_SOURCE_UNKNOWN')
+    # Old private ledgers may predate this field. Explicitly expose the gap;
+    # rebuild from the pinned original captures rather than fabricate observations.
+    missing_observation_sources = sorted(source_hashes - set(observation_history))
     ids = sorted(set(observations) | set(legacy))
     by_item = {}
     by_bundle = {}
@@ -238,7 +251,9 @@ def merge(source_bytes, report_bytes, legacy_bytes, previous=None):
             'latestSteamSource': meta, 'steamSources': source_history, 'legacySource': legacy_meta,
             'counts': counts, 'bundles': by_bundle, 'items': by_item,
             'serverDefinitions': observations, 'steamRevisions': revisions, 'legacyDefinitions': legacy,
-            'historicalSteamItems': historical_items}
+            'historicalSteamItems': historical_items,
+            'steamObservationsBySource': observation_history,
+            'missingSteamObservationSourceSha256s': missing_observation_sources}
 
 
 def opt(obj, keys):
