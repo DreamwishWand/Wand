@@ -2,7 +2,9 @@
 import io,json,math,urllib.request,zipfile
 from prepare_release_preview import entry,digest,require,valid_hash
 from prepare_expression_weights import verify_curve,PARAMS
-from export_photo_expressions import PINS,NAMES
+# Keep release verification independent from offline NumPy/Unity bundle tooling.
+PINS={"visual":"db3faaaa68cddd76d4e5ebfc83eb484a49faf34fc972c23886393397299745ec","male":"d22c155c50d516cff8abe6879c310351063b06dd571c42c5d15b89d9f36cbe99","female":"08f717620f43a0c99753b0ebab30981659e1e9c1f273cd09f6133fc1c5893ac1","maleRig":"7712b04502a06254e04e5b0fe25aba2b9b9d56dc15a2fcfdc26b6f1b5e327960","femaleRig":"38f2069245537e4b0849bd78f550d05c5b0d5d868469b1e8b2bcea38a69a55f8"}
+NAMES=("face_center_bashful_smile_01","face_center_cocky_look_01","face_center_cocky_smile_01","face_center_happy_grin_01","face_center_happy_grin_02","face_center_happy_wink_01","face_center_scary_01")
 NAME="Dreamwish-Wand-avatar-face-layers-20261128.zip"
 URL="https://github.com/DreamwishWand/Wand/releases/download/photo-mode-assets-20261127/"+NAME
 SIZE=1346219
