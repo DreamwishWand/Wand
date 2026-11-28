@@ -223,7 +223,6 @@ export interface MainlandTransferPlan{
 export function exteriorWorldKey(g:MainlandGrid):string{return sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);}
 export function crossWorldBuildingCandidate(p:MainlandSavedObject|null,from:MainlandGrid|undefined,g:MainlandGrid|undefined,timeline:WorldEditTimeline,x:number,y:number,mode:'move'|'duplicate'):MainlandTransferPlan|null{
  const house=Math.floor(Number(p?.object.itemId)/100000)===205,character=characterHouseExterior(Number(p?.object.itemId));
- if(character&&mode==='move')return null;
  const bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(house||character?bindFloatingIslandGrid(g):null);
  if(!p||!from||!g||p.area!==from.key||!bound(from)||!bound(g)||exteriorWorldKey(from)===exteriorWorldKey(g)||g.factor!==from.factor||g.factor!==p.factor||
   currentWorldEdits(timeline).length||!p.shape||p.shape.cellCount<1||p.shape.cellCount>65536||p.object.nativeType!=='Building'||![200,201,202,203,205].includes(Math.floor(Number(p.object.itemId)/100000))||
@@ -239,7 +238,7 @@ export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly M
  const hit=bypass?mainlandFreeHits(grids,rasters,worldX,worldY):mainlandTerrainHits(grids,rasters,worldX,worldY);
  if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
  const g=hit[0],r=rasters.get(g.key),shape=p.shape;
- if(landscape||building){const from=grids.find(q=>q.key===p.area),house=building&&Math.floor(Number(p.object.itemId)/100000)===205;
+ if(landscape||building){const from=grids.find(q=>q.key===p.area),house=building&&(Math.floor(Number(p.object.itemId)/100000)===205||characterHouseExterior(Number(p.object.itemId)));
   if(!from||exteriorWorldKey(from)!==exteriorWorldKey(g)||!(bindMainlandGrid(g)||house&&bindFloatingIslandGrid(g)))return null;}
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  if(!r||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!bypass&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor)||shape.cellCount>65536)return null;
