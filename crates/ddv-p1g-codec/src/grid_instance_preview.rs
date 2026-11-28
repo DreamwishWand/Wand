@@ -3064,7 +3064,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let o=row.as_object().filter(|o|o.len()==9+usize::from(o.contains_key("supportFactor"))+usize::from(storage)&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"|"supportFactor"|"storage"))).ok_or(bad)?;
         storage_flags.push(storage);
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
-        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
+        let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&(n/100_000==400||free&&matches!(n/100_000,200..=203|205|402)))).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let orientation=|k:&str|o.get(k).and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||free&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).map(str::to_owned).ok_or(bad);
         let factor=match o.get("supportFactor"){None=>None,Some(v)=>Some(v.as_u64().filter(|n|matches!(n,1|2)).ok_or(bad)?)};
@@ -3123,6 +3123,17 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
                diagonal(orientation)&&(storage||to.2!=1||to.0.starts_with("SceneLayouts/FloatingIslands/"))||
                grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
         }
+        let native_class=target.item_id/100_000;
+        let building=matches!(native_class,200..=203|205);
+        let landscape=native_class==402;
+        if building||landscape{
+            if !free||storage||factor.is_some()||selection.4.as_deref()!=Some(orientation.as_str())||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str()){return Err(bad);}
+            let from=house_exterior_identity(&root,&target.grid_id)?;
+            let to=house_exterior_identity(&root,&d.grid_id)?;
+            if from.2!=to.2||landscape&&from.0!=to.0{return Err(bad);}
+            if building{validate_building_transform(profile,target)?;}
+            if building&&from.0!=to.0&&native_class!=205&&!character_house_exterior(target.item_id)&&!cross_world_building_state(target.item_id,old.get("State")){return Err(bad);}
+        }
         let tree=if let Some(factor)=factor{
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str())||selection.4.as_deref().is_none_or(|o|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o))||u64::from(d.tessellation)!=*factor||
                source.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(*factor)||
@@ -3141,7 +3152,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }
             Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
-            if storage{if !ddv_save_patch::storage_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
+            if storage{if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if !building&&old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
             None
         };
         let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
@@ -3187,7 +3198,18 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             let c=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
             if subgrid_tree(c,&d.grid_id,&next)?!=tree{return Err(bad);}
             draft
-        }else if free{ddv_save_patch::preview_free_outdoor_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?}else{preview_plain_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?};
+        }else if matches!(target.item_id/100_000,200..=203|205){
+            let from=house_exterior_identity(&root,&target.grid_id)?;
+            let to=house_exterior_identity(&root,&d.grid_id)?;
+            let world_change=from.0!=to.0;
+            if character_house_exterior(target.item_id){character_house_move_candidate(working.as_bytes(),target,expected,d,xy,orientation,world_change)?}
+            else if target.item_id/100_000==205{
+                (if world_change{ddv_save_patch::preview_player_house_world_change(&working,target,expected,d,xy,orientation,false)}else{ddv_save_patch::preview_player_house_transfer(&working,target,expected,d,xy,orientation)}).map_err(|_|CodecError::Patch)?
+            }else{
+                (if world_change{ddv_save_patch::preview_checked_building_world_change(&working,target,expected,d,xy,orientation,false)}else{ddv_save_patch::preview_checked_building_transfer(&working,target,expected,d,xy,orientation)}).map_err(|_|CodecError::Patch)?
+            }
+        }else if target.item_id/100_000==402{ddv_save_patch::preview_plain_grid_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?}
+        else if free{ddv_save_patch::preview_free_outdoor_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?}else{preview_plain_world_transfer(&working,target,expected,d,xy,orientation).map_err(|_|CodecError::Patch)?};
         update(&mut working,draft)?;
     }
     if !same_trees.is_empty(){
