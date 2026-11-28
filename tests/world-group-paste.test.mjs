@@ -95,8 +95,11 @@ test('support hierarchy cut follows verified outdoor worlds and retains its sour
  assert.equal(cutClipboardMatches(cut,file,'Village04',[p,saved(3,6,-3)]),true);
  assert.equal(cutClipboardMatches(cut,file,'VillageExpansion01',[]),true);
  assert.equal(cutClipboardMatches(cut,file,'FloatingIslands',[]),false);
+ assert.equal(cutClipboardMatches(cut,file,'FloatingIslands',[],true),true);
+ assert.ok(captureCutWitness([p,saved(3,6,-3)],true));
  const candidate=groupPasteCandidate(captureFurnitureGroup([p,saved(3,6,-3)],true),[grid],rasters,defs,new Map([[item,2]]),[],0,8.1,-2.1);
  assert.equal(groupCutPlan(rows,candidate)[0].supportFactor,1);
+ assert.equal(groupCutPlan(rows,candidate,true)[0].supportFactor,1);
  assert.equal(groupCutPlan(rows,{...candidate,rows:[{...candidate.rows[0],destination:{...candidate.rows[0].destination,factor:2}},candidate.rows[1]]}),null);
 });
 
