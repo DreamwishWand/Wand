@@ -79,7 +79,7 @@ test('all classification extensions preserve original evidence and localized sou
   const db=await openCurrentItemDatabase('',fetcher);
   const fields={progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
-    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources'};
+    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
   const expected=new Map(),counts={};
   for(const [family,field] of Object.entries(fields)){
@@ -102,7 +102,7 @@ test('all classification extensions preserve original evidence and localized sou
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
-      if(ext.family==='configuredStore')assert.equal(ext.identity,null);
+      if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const related=ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ext.evidence.questGates.map(g=>g.questId))]:ext.evidence.tableItemId?[ext.evidence.tableItemId]:[];
