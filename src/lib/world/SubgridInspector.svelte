@@ -88,7 +88,7 @@
  $: partners=tree&&selected>=0?tree.objects.map((_,i)=>swapCandidate(tree!,shapes,editable,freeLeafIds,terrain,selected,i,nonstandard)?i:-1).filter(i=>i>=0):[];
  $: mapInteractive=!roomPickupActive&&!!tree&&!loading&&!copy&&!placing&&!ghost&&!edits&&!stockDraft&&!stockOpen&&!transferDraft&&(!transferSource||!!transferTarget);
  $: mapKeyboard=!roomPickupActive&&(mapInteractive||!!tree&&!loading&&!copy&&!placing&&!ghost&&(!!edits||!!stockDraft||!!transferDraft));
- $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,moveAllowed,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts,!!transferSource||!!floorCut,removeAllowed,nonstandard):null;
+ $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,floorCut?freeLeafIds:moveAllowed,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts,!!transferSource||!!floorCut,floorCut?freeLeafIds:removeAllowed,nonstandard):null;
  $: extent=tree&&terrain?{x:-.5,y:-.5,w:terrain.sizeX*tree.factor+1,h:terrain.sizeY*tree.factor+1}:tree?supportExtent(tree,shapes):{x:0,y:0,w:1,h:1};
  $: if(open!==activeOpen||file!==activeFile||(identity?.localOrdinal??0)!==activeOrdinal)refresh(open,file,parent,identity);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
