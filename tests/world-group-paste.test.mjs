@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {localSupportDuplicateSelection,storageGroupSelection,storageGroupPlan,groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {nativeDuplicateSelection,localSupportDuplicateSelection,storageGroupSelection,storageGroupPlan,groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -205,4 +205,19 @@ test('free room cut retains source support factor when destination has a differe
  assert.equal(groupCutPlan(cut,candidate,false),null);
  assert.equal(groupCutPlan(cut,candidate,true)[0].supportFactor,2);
  assert.equal(groupCutPlan(cut,{...candidate,rows:[{...candidate.rows[0],orientation:'GridOrientation_DownLeft'}]},true),null);
+});
+
+test('source-bound copy and cut reuse common placement geometry for buildings and landscape',()=>{
+ const landId=40200001,buildingId=20000001;
+ const land={...saved(2,4,-3),object:{...saved(2,4,-3).object,itemId:String(landId),layer:'landscape',shapeKey:landId+':8'}};
+ const building={...saved(3,6,-3),object:{...saved(3,6,-3).object,itemId:String(buildingId),layer:'other',nativeType:'Building',shapeKey:buildingId+':8'}};
+ const items=[saved(1,2,-3),land,building];
+ assert.equal(captureFurnitureGroup(items,true,true),null);assert.equal(captureCutWitness(items),null);
+ const captured=nativeDuplicateSelection(items,true);assert.ok(captured);assert.ok(cutWitnessMatches(captured.sources,items,true));
+ const geometryFor=(id,layer,nativeType)=>({...geometry,itemId:id,layer,nativeType,shapes:{[id+':8']:shape}});
+ const geo=new Map([...defs,[landId,new Map([[1,geometryFor(landId,'landscape')]])],[buildingId,new Map([[1,geometryFor(buildingId,'other','Building')]])]]);
+ const q=groupPasteCandidate(captured.clip,[grid],rasters,geo,new Map([[item,1],[landId,1],[buildingId,1]]),[],0,8.1,-2.1,true,new Set(),true);
+ assert.ok(q);assert.equal(q.rows.length,3);
+ const plan=groupCutPlan(captured.sources,q,true);assert.deepEqual(plan.map(r=>r.localOrdinal),[1,2,3]);
+ assert.equal(groupCutPlan(captured.sources,{...q,rows:q.rows.map((r,i)=>i===2?{...r,orientation:'GridOrientation_Left'}:r)},true),null);
 });
