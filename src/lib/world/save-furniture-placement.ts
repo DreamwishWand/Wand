@@ -47,13 +47,12 @@ export function playerHouseDuplicate(grids:readonly MainlandGrid[],rasters:Reado
 }
 export function buildingDuplicate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:MainlandSavedObject|null,wx:number,wy:number,orientation?:EightWay,geometry?:ReadonlyMap<number,DesignItemGeometry>):StockCandidate|null{
  if(!buildingSourceEligible(p)||!p.shape||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
- const hits=mainlandFreeHits(grids,rasters,wx,wy);
+ const at=placementAnchor(grids,rasters,wx,wy,true);if(!at)return null;
  const from=grids.find(g=>g.key===p.area);
  const islandEligible=characterHouseExterior(Number(p.object.itemId))||playerHouseSourceEligible(p),bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(islandEligible?bindFloatingIslandGrid(g):null);
  const scope=(g:MainlandGrid)=>sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);
- if(!from||!bound(from)||hits.length!==1||scope(hits[0])!==scope(from)||hits[0].factor!==p.factor||!bound(hits[0]))return null;
- const g=hits[0],x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
- if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
+ if(!from||!bound(from)||scope(at.g)!==scope(from)||at.g.factor!==p.factor||!bound(at.g))return null;
+ const {g,x,y}=at;
  const direction=orientation??p.object.orientation;
  if(!isCardinal(direction))return null;
  const def=geometry?.get(g.factor);
@@ -70,6 +69,13 @@ export function buildingPickup(p:MainlandSavedObject|null,objects:readonly Mainl
  if(Math.floor(Number(p.object.itemId)/100000)===205)return playerHousePickup(p,objects,true);
  return {area:p.area,x:p.x,y:p.y,factor:p.factor,shape:p.shape,destination:null,plan:{action:'remove',localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,x:null,y:null}};
 }
+/** Shared native anchor resolution for new placements and source copies. */
+function placementAnchor(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,wx:number,wy:number,free:boolean){
+ if(!Number.isFinite(wx)||!Number.isFinite(wy))return null;
+ const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
+ const g=hits[0],r=rasters.get(g.key),x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
+ return r&&x>=0&&y>=0&&x<g.sizeX*g.factor&&y<g.sizeY*g.factor?{g,r,x,y}:null;
+}
 function witness(g:MainlandGrid):StockDestination{return {layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY};}
 export function stockPickup(p:MainlandSavedObject|null,free=false):StockCandidate|null{
  if(!p||!p.shape||!stockSourceEligible(p,free)&&!landscapeSourceEligible(p,free))return null;
@@ -83,26 +89,24 @@ export function initialBuildingEligible(id:number,grid:MainlandGrid,detached:Rea
 }
 export function initialBuildingPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,detached:ReadonlySet<number>=new Set()):StockCandidate|null{
  if(!isCardinal(orientation)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
- const hits=mainlandFreeHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
- const g=hits[0],def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
+ const at=placementAnchor(grids,rasters,wx,wy,true);if(!at)return null;
+ const {g,x,y}=at,def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
  if(!initialBuildingEligible(id,g,detached)||def?.nativeType!=='Building'||def.itemId!==id||def.surfaceCapable||def.supportPath||!shape||shape.cellCount<1||shape.cellCount>65536)return null;
- const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
- if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor)return null;
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,destination:witness(g),plan:{action:'place',itemId:String(id),x,y,orientation}};
 }
 export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null=null,free=false,allowDiagonal=false):StockCandidate|null{
  const landscape=landscapeId(id);if(landscape?(!!source&&(!landscapeSourceEligible(source,free)||!free&&source.object.editRestrictions?.move!=='allowedFlag')):!ordinaryFurniture(id))return null;
  if(!isEightWay(orientation)||!isCardinal(orientation)&&(!free&&!allowDiagonal||landscape)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
- const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
- const g=hits[0],r=rasters.get(g.key),def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
+ const at=placementAnchor(grids,rasters,wx,wy,free);if(!at)return null;
+ const {g,r,x,y}=at,def=geometry.get(g.factor),shape=def?.shapes[id+':'+worldOrientationCode(orientation)];
  if(!isCardinal(orientation)&&(g.factor!==1||!bindMainlandGrid(g)||def?.surfaceCapable||def?.supportPath))return null;
  if(!r||!def||def.itemId!==id||def.layer!==(landscape?'landscape':'furniture')||!free&&nativeActionBlocked(def.editRestrictions,'select')||!shape||!shape.cellCount||shape.cellCount>65536)return null;
  if(landscape){if(!landscapePlacementEligible(def,free)||!bindMainlandGrid(g)&&!bindFloatingIslandGrid(g))return null;if(source){const from=grids.find(q=>q.key===source.area);if(!from||g.factor!==from.factor||sourceWorldScope(g)!==sourceWorldScope(from)||!bindMainlandGrid(g)||g.key!==from.key&&!free&&source.object.editRestrictions?.switchGrid!=='allowedFlag')return null;}}
- const x=Math.floor((wx-2*g.origin.position[0])*g.factor),y=Math.floor((-wy-2*g.origin.position[2])*g.factor);
- if(x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!free&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length))return null;
+ if(!free&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[]},shape,x,y).length))return null;
  let count=0;
  for(const run of shape.runs){
   if(![run.x,run.y,run.width].every(Number.isSafeInteger)||run.x<0||run.y<0||run.width<1||run.x+run.width>shape.width||run.y>=shape.height)return null;
+  if(free){count+=run.width;continue;}
   for(let dx=0;dx<run.width;dx++){
    const q=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),owners=mainlandTerrainHits(grids,rasters,q.x,q.y);
    if(!free&&(owners.length!==1||owners[0].key!==g.key))return null;count++;
@@ -111,14 +115,18 @@ export function stockPlacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap
  if(count!==shape.cellCount)return null;
  let plan:StockPlan={action:'place',itemId:String(id),x,y,orientation};
  if(source){
-  if(!(landscape?landscapeSourceEligible(source,free):stockSourceEligible(source,free))||source.object.itemId!==String(id)||source.object.orientation!==orientation||!free&&nativeActionBlocked(source.object.editRestrictions,'move')||(!free&&source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
-  plan={action:'duplicate',localOrdinal:source.object.localOrdinal,itemId:String(id),expectedX:source.object.x,expectedY:source.object.y,x,y};
+  if(!(landscape?landscapeSourceEligible(source,free):stockSourceEligible(source,free))||source.object.itemId!==String(id)||source.object.orientation!==orientation&&(!free||source.object.storageKnown&&!source.object.storage||source.object.storage&&!isCardinal(orientation))||!free&&nativeActionBlocked(source.object.editRestrictions,'move')||(!free&&source.area===g.key&&source.object.x===x&&source.object.y===y))return null;
+  plan={action:'duplicate',localOrdinal:source.object.localOrdinal,itemId:String(id),expectedX:source.object.x,expectedY:source.object.y,x,y,...(source.object.orientation!==orientation?{replacementOrientation:orientation}:{})};
  }
  return {area:g.key,...mainlandMapAnchor(g,x,y),factor:g.factor,shape,plan,destination:witness(g)};
 }
 /** Geometric intersection only, not a game collision or support verdict.
  * Compare exact occupied runs on a shared half-cell lattice, including
  * hidden/locked objects. Roads are context, not furniture blockers. */
+/** A single picker and its ghost use one placement decision. */
+export function nativePlacementCandidate(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,geometry:ReadonlyMap<number,DesignItemGeometry>,id:number,orientation:EightWay,wx:number,wy:number,source:MainlandSavedObject|null,free:boolean,buildingMode:boolean,detached:ReadonlySet<number>):StockCandidate|null{
+ return free&&buildingSourceEligible(source)?buildingDuplicate(grids,rasters,source,wx,wy,orientation,geometry):free&&buildingMode&&!source?initialBuildingPlacement(grids,rasters,geometry,id,orientation,wx,wy,detached):stockPlacement(grids,rasters,geometry,id,orientation,wx,wy,source,free);
+}
 export function stockFootprintFeedback(candidate:StockCandidate,objects:readonly MainlandSavedObject[],omitted=0):{overlaps:number;unknown:boolean}{
  if(candidate.plan.action==='remove')return {overlaps:0,unknown:false};
  const rows=new Map<number,{left:number;right:number}[]>();
