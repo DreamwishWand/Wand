@@ -102,3 +102,14 @@ test('Item Page uses actual canonical recipe, placement, history and entity join
     assert([...reverse.styles,...reverse.gear].includes(child),'reverse Item Page edge must agree with Collection ordering');
   }
 });
+
+import {readItemProductionContext} from '../src/lib/items/item-page-production-context.ts';
+test('production detail connects real carrot and seed in both directions and retains machine limits',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const seed=await readItemProductionContext(db,30400010,'en');
+  const crop=await readItemProductionContext(db,30200000,'en');
+  assert(seed.growing.some(row=>row.counterpartId===30200000&&row.counterpartName&&row.seed.growthPeriod.configuredSeconds===900));
+  assert(crop.growing.some(row=>row.counterpartId===30400010&&row.counterpartName&&row.seed.growthPeriod.configuredSeconds===900));
+  const honey=await readItemProductionContext(db,31100251,'en');
+  assert(honey.machines.some(row=>row.source.machineItemId===40800027&&row.source.maximumProduced===6));
+});

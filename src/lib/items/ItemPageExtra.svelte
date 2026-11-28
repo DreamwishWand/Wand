@@ -8,6 +8,7 @@
   import {formatPublicGuideText} from '$lib/guide/public-guide';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import ItemProductionDetails from './ItemProductionDetails.svelte';
   import {readItemPlacementHint,readItemBundleContext,type ItemPlacementHint,type ItemBundleContext,readItemIntroductionContext,type ItemIntroductionContext} from './item-page-source-context';
   export let record:CompleteItemMasterRecord;
   export let locale:ItemMasterLocale;
@@ -60,6 +61,7 @@
     {/if}
   </section>
 {/if}
+{#if record.nativeCategory==='ActivityItem'}<ItemProductionDetails itemId={record.itemId} {locale}/>{/if}
 {#if bundles}
   <section class="native-item-summary bundle-context">
     <h2>{copy.bundleTitle} <small>{bundles.count}</small></h2>
