@@ -319,6 +319,24 @@ mod tests{
         assert!(result.draft.patched_json.contains("\"Future\" : \"KEEP\""));
     }
     #[test]
+    fn stock_batch_uses_original_route_without_crediting_default_removal(){
+        let mut root:Value=serde_json::from_str(&profile()).unwrap();
+        root["Player"]=json!({"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture",
+          "CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2,"Marker":"Keep"}}}}});
+        let source=root.to_string();
+        let i=identity();
+        let actions=[DiffAction::Remove{id:1,expected:pose(1)},
+          DiffAction::Remove{id:FIRST_ADDED,expected:pose(3)},DiffAction::Add{pose:pose(8)},DiffAction::Add{pose:pose(9)}];
+        let stock=HashMap::from([(40000001,2)]);
+        let draft=preview_diffgrid_stock_batch(&source,&i,&actions,&stock).unwrap();
+        let result:Value=serde_json::from_str(&draft.draft.patched_json).unwrap();
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Marker"],"Keep");
+        assert!(preview_diffgrid_stock_batch(&source,&i,&actions,&HashMap::from([(40000001,1)])).is_err());
+        assert!(preview_diffgrid_stock_batch(&source,&i,&actions,&HashMap::new()).is_err());
+        assert!(!draft.draft.export_authorized);
+    }
+    #[test]
     fn rejects_wrong_hash_unknown_state_and_removed_targets(){
         let s=profile();let mut i=identity();i.grid_hash=9;
         let a=DiffAction::Remove{id:1,expected:pose(1)};
