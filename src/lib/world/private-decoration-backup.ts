@@ -59,3 +59,16 @@ export async function stagePrivateDecoration(file:File,storage:string,scope:stri
   try{worker.postMessage({command:'stage-decoration',file,backup:new File([storage],'private-storage.json',{type:'application/json'}),scope,allowExperimentalCopy:true});}catch{done(null);}
  });
 }
+
+/** Re-resolve native ordinals after a private storage relocation. Geometry is
+ * fetched by the existing map worker; never reuse pre-stage ordinal receipts. */
+export function projectPrivateDecorationTerrain(file:File,grids:readonly {key:string;layoutId:string;gridDataPath:string;gridIdNative:number;sizeX:number;sizeY:number;factor:number}[],valid:()=>boolean):Promise<import('./terrain-binding.ts').TerrainScopeReceipt[]>{
+ return new Promise((resolve,reject)=>{
+  const own=new Worker(new URL('./world-terrain-session.worker.ts',import.meta.url),{type:'module'});
+  let ended=false;
+  const done=(d:any)=>{if(ended)return;ended=true;clearTimeout(timer);own.terminate();if(valid()&&d?.kind==='terrain-session'&&d.requestId===1&&Array.isArray(d.results)&&d.results.length===grids.length)resolve(d.results);else reject(Error('staged terrain'));};
+  const timer=setTimeout(()=>done(null),120000);
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);
+  try{own.postMessage({command:'terrain-session',requestId:1,file,filename:file.name,scopes:grids.map(g=>({viewKey:g.key,nativeGridId:g.gridIdNative,sourceRefs:[{layoutId:g.layoutId,gridDataPath:g.gridDataPath,nativeGridId:g.gridIdNative,nativeSizeX:g.sizeX,nativeSizeY:g.sizeY,tessellationFactor:g.factor}]}))});}catch{done(null);}
+ });
+}
