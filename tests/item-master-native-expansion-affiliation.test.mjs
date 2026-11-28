@@ -35,6 +35,6 @@ test('native expansion tag selectors and actual historic reward links are distin
   const friendIds=rewards.filter(([,e])=>e.some(x=>x.kind==='character_friendship_reward'));
   assert.equal(questIds.length,23);assert.equal(friendIds.length,24);
   assert.equal((await db.findItemIdsByField('history.contentAttributionEvidenceKind',{kind:'equals',value:'verified_expansion_tag_and_reward'})).length,46);
-  assert.equal((await db.findItemIdsByContent({kind:'confirmed_release',releaseId:'dlc.the-keepsake-sea'})).itemIds.length,759);
+  assert.equal((await db.findItemIdsByContent({kind:'confirmed_release',releaseId:'dlc.the-keepsake-sea'})).itemIds.length,800);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')));
 });

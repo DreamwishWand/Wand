@@ -25,7 +25,7 @@ test('historical expansion gameplay corroboration shares canonical fields and ne
   }
   assert.deepEqual(counts,expected);
   const confirmed=await db.findItemIdsByContent({kind:'confirmed_release',releaseId:'dlc.the-keepsake-sea'});
-  assert.equal(confirmed.itemIds.length,759);
+  assert.equal(confirmed.itemIds.length,800);
   assert([...evidence.keys()].every(id=>confirmed.itemIds.includes(id)));
   const newAssignments=await db.findItemIdsByField('history.contentAttributionEvidenceKind',{kind:'equals',value:'verified_expansion_tag_and_gameplay_relation'});
   assert.equal(newAssignments.length,194);

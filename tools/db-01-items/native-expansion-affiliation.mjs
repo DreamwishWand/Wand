@@ -267,11 +267,80 @@ export function loadNativeExpansionAffiliation(project,source,history){
     }
   }
   if(current)check(gameplayAssigned===194,'GAMEPLAY_ASSIGNED_CENSUS');
+  // A catalog-visibility prerequisite is not a grant or store membership.
+  // An exact native expansion tag and positive, typed DLC-specific gate
+  // independently corroborate the historical content assignment.
+  const catalogGatePin='3ecd6032233ac37eda81a572447c2674ff0e41c4d83b1b2c7b81e0d0f106f61f';
+  const [catalogGates]=load(project,'data/ddv/item-master/historical-expansion-catalog-gates-steam-1261.json',catalogGatePin);
+  check(catalogGates.schema==='wand.db01.historical-expansion-catalog-gates@1'&&
+    catalogGates.platform==='Steam'&&catalogGates.sourceGameVersion==='1.26.1'&&
+    catalogGates.compatibleGameVersion==='1.26.2'&&catalogGates.sourceCorpusSha256===AFTER&&
+    catalogGates.sourceIl2cppDumpSha256===DUMP&&catalogGates.nativeExpansionProjectionSha256===PIN&&
+    catalogGates.scopeProjectionSha256===scopeSha&&catalogGates.characterSceneGroupSha256===scenePin&&
+    catalogGates.catalogVisibilityOnly===true&&catalogGates.runtimeAvailabilityVerified===false&&
+    catalogGates.grantVerified===false&&Object.keys(catalogGates.sourceFiles).length===3&&
+    ['Furniture','Clothing','Trimming'].every(k=>catalogGates.sourceFiles[k]===d.sourceFiles[k]),
+    'CATALOG_GATE_SOURCE');
+  const missions=new Set(scopes.scopeRows.filter(r=>r[1]==='Mission').map(r=>r[0]));
+  let catalogGateAssigned=0,lastGateId=0;
+  const gateCounts={},gateCategories={};
+  const gateContract={Furniture:['FurnitureItemData',20],Clothing:['ClothingItemData',22]};
+  for(const [i,cat,n,ordinal,kind,target,level,rootSha] of catalogGates.rows){
+    check(id(i)&&i>lastGateId&&gateContract[cat]?.[1]===n&&Number.isSafeInteger(ordinal)&&ordinal>=0&&
+      /^[a-f0-9]{64}$/.test(rootSha)&&freshTags.get(i)==='Expansion04','CATALOG_GATE_ROW');
+    lastGateId=i;
+    check(kind==='mission_completed'?missions.has(target)&&level===null:
+      kind==='character_unlocked'?sceneIds.includes(target)&&level===null:
+      kind==='character_friendship_at_least'&&sceneIds.includes(target)&&level===10,'CATALOG_GATE_TARGET');
+    inc(gateCounts,kind);inc(gateCategories,cat);
+    if(current){
+      const r=byId.get(i);
+      check(fresh(history.get(i))&&r?.nativeCategory===cat&&r.sourceClass===gateContract[cat][0]&&
+        source.sourceFieldDeclarations[r.sourceClass]?.CatalogVisibilityConditions===n&&
+        r.observedFields.some(x=>x[0]===n&&x[1]===2&&x[2]===1),'CATALOG_GATE_OWNER_'+i);
+      // Validate the existing canonical typed projection when decoding
+      // the identical original source. No duplicate wire interpreter here.
+      const g=r.sourceAttributes?.CatalogVisibilityConditions??r.nativeProperties?.CatalogVisibilityConditions;
+      const tree=g?.Conditions;
+      const leaf=tree?.Conditions?.[ordinal];
+      const predicate=kind==='mission_completed'?leaf?.MissionStatus:
+        kind==='character_unlocked'?leaf?.CharacterUnlocked:leaf?.CharacterFriendship;
+      check(g&&Object.keys(g).length===1&&tree&&(tree.Operator===undefined||tree.Operator===0)&&
+        leaf&&Object.keys(leaf).length===1&&predicate,'CATALOG_GATE_CANONICAL_'+i);
+      check(kind==='mission_completed'?predicate.Mission===target&&predicate.State===8&&(predicate.Operator??0)===0:
+        kind==='character_unlocked'?predicate.Character===target&&(predicate.Inversed??false)===false:
+        predicate.Character===target&&predicate.Operator===5&&predicate.FriendshipLevel===level,
+        'CATALOG_GATE_PREDICATE_'+i);
+    }
+    const h=history.get(i);if(!fresh(h))continue;
+    const evidence={kind,sourceItemId:target,minimumFriendshipLevel:level,sourceClass:gateContract[cat][0],
+      sourceFieldNumber:n,positiveAndLeafOrdinal:ordinal,rootSha256:rootSha,
+      sourceGameVersion:'1.26.1',sourceSha256:catalogGatePin,
+      catalogVisibilityOnly:true,grantVerified:false,runtimeAvailabilityVerified:false};
+    h.corroboratedExpansionCatalogGateEvidence=[evidence];
+    addEvidence(h,'expansion_catalog_'+kind,target);
+    if(h.contentReleaseId!==null&&h.contentReleaseId!==RELEASE||
+      h.contentCandidateReleaseIds.some(x=>x!==RELEASE)){
+      h.contentOriginConflict=true;continue;
+    }
+    if(h.contentReleaseId===null){
+      h.contentReleaseId=RELEASE;h.contentReleaseKind='paid_dlc';h.contentDlcType='expansion';
+      h.contentAttributionEvidenceKind='verified_expansion_tag_and_catalog_gate';
+      h.contentReleaseEvidenceSha256=sha(json([PIN,catalogGatePin,scopeSha,scenePin]));
+      h.contentAssignmentSha256=sha(json([i,RELEASE,AFTER,TAG,evidence]));
+      catalogGateAssigned++;
+    }
+  }
+  check(catalogGates.rows.length===41&&compareCounts(gateCounts,{mission_completed:15,character_unlocked:11,character_friendship_at_least:15})&&
+    compareCounts(gateCategories,{Furniture:19,Clothing:22}),'CATALOG_GATE_CENSUS');
+  if(current)check(catalogGateAssigned===41,'CATALOG_GATE_ASSIGNED_CENSUS');
   const metadata=current?{sourceGameVersion:'1.26.1',compatibleGameVersion:'1.26.2',
     sourceProjectionSha256:PIN,sourceProtoDbSha256:PROTO,sourceRecords:d.sourceRecords,
     expansions:d.expansions,selectors:d.selectors,coverage:d.counts,
     corroboratedHistoricalRewardCount:rewards.size,corroboratedHistoricalGameplayCount:gameplay.size,
-    corroboratedHistoricalGameplayCoverage:gameplayCoverage,newGameplayAssignmentCount:gameplayAssigned,runtimeOwnershipVerified:false,
+    corroboratedHistoricalGameplayCoverage:gameplayCoverage,newGameplayAssignmentCount:gameplayAssigned,
+    corroboratedCatalogGateCount:catalogGates.rows.length,corroboratedCatalogGateCoverage:gateCounts,
+    newCatalogGateAssignmentCount:catalogGateAssigned,runtimeOwnershipVerified:false,
     contentReleaseAttributionVerifiedByTagAlone:false}:null;
   return {byItem,metadata};
 }
