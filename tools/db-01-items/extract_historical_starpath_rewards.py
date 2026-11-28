@@ -44,14 +44,19 @@ def decode_rewards(rows,n,vault=False):
   result.append([item,amount,premium,alternate])
  return result
 def extract(original,dump):
- check(len(original)==2101932 and sha(original)==SOURCE and sha(dump)==DUMP,'SOURCE')
+ source=sha(original);dump_sha=sha(dump)
+ later=source=='6433b7f00b2d746a28b0d57367f2ba0f8274ab94821ec5be5ffeb881fc553ac2'
+ if later:
+  check(len(original)==1140093 and dump_sha=='d3239fbb823427c9f0bb4b77e27f271c154619843561a3a78c4449b6fdd70158','SOURCE')
+ else:
+  check(len(original)==2101932 and source==SOURCE and dump_sha==DUMP,'SOURCE')
  text=dump.decode('utf-8-sig')
  for cls,expected in SCHEMA.items():
   match=re.search(r'^public sealed class '+cls+r'\s*:',text,re.M);check(match,'CLASS_'+cls)
   body=text[match.start():text.index('\n}',match.end())]
   actual={k:int(v) for k,v in re.findall(r'public const int (\w+)FieldNumber = (\d+);',body)}
   check(all(actual.get(k)==v for k,v in expected.items()),'SCHEMA_'+cls)
- entries=fields(original);check(len(entries)==3118,'RECORD_COUNT')
+ entries=fields(original);check(len(entries)==(1861 if later else 3118),'RECORD_COUNT')
  seasons=[];vaults=[]
  for index,(n,w,entry) in enumerate(entries):
   check((n,w)==(1,2),'ENTRY')
@@ -64,9 +69,19 @@ def extract(original,dump):
   b=one(p,22,2);bonus=[decode_rewards(fields(v),10) for v in repeated(fields(b),2,2)] if b is not None else []
   v=one(p,23,2);ref=None
   if v is not None:
-   q=fields(v);r=one(q,1,2);check(one(q,2,2) is None,'INLINE_VAULT_UNREVIEWED')
+   q=fields(v);r=one(q,1,2);check(one(q,2,2) in ((None,b'') if later else (None,)),'INLINE_VAULT_UNREVIEWED')
    ref=r.decode() if r is not None else None
   seasons.append([key,index,sha(body),one(p,1,0),pages,bonus,ref])
+ if later:
+  check(len(seasons)==1 and len(vaults)==0 and seasons[0][0]=='PopCity2026' and seasons[0][-1]=='PopCity2026_VR','POPCITY_SEASON')
+  rewards=[r for page in seasons[0][4]+seasons[0][5] for r in page]
+  check(len(rewards)==40 and len({r[0] for r in rewards})==34,'POPCITY_CENSUS')
+  payload=json.dumps([seasons,vaults],separators=(',',':')).encode()
+  check(len(payload)==999 and sha(payload)=='80385aaf4953cab76eb3bd8eb822727f04e88e3294538777a7c798cc574e0761','POPCITY_PAYLOAD')
+  return {'schema':'wand.db01.historical-starpath-rewards@1',
+   'source':{'platform':'Switch','gameVersion':'1.24.11','protoDbSha256':source,'il2cppDumpSha256':dump_sha,'protoDbRecords':1861},
+   'coverage':{'seasons':1,'vaultDefinitions':0,'linkedVaultDefinitions':0,'unresolvedVaultDefinitionIds':['PopCity2026_VR'],'rewardOccurrences':40,'distinctRewardItemIds':34,'currentAvailabilityVerified':False,'seasonCatalogComplete':False},
+   'payloadSha256':sha(payload),'payloadBytes':len(payload),'payload':[seasons,vaults]}
  check(len(seasons)==23 and len(vaults)==3,'SEASONS')
  by_vault={v[0]:v[3] for v in vaults};linked=set();occ=[]
  for key,index,digest,version,pages,bonus,ref in seasons:
