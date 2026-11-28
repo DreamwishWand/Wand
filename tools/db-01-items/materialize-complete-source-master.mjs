@@ -18,6 +18,7 @@ import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
+import {buildQuestObjectiveGrants} from './quest-objective-grants.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
@@ -1335,6 +1336,7 @@ function memoryAppearanceSources(rows,source){
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
+  const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1626,6 +1628,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(production?.length){
       add('acquisition.ordinaryProductionSources',row.itemId,production);
       categorySet.add('ordinary_gameplay');
+    }
+    const objectiveGrants=questObjectiveGrants.get(row.itemId);
+    if(objectiveGrants?.length){
+      add('acquisition.questObjectiveGrantSources',row.itemId,objectiveGrants);
+      for(const link of objectiveGrants)if(link.category!==null)categorySet.add(link.category);
     }
     const intro=questFlows.ordinaryIntro.get(row.itemId);
     if(intro?.length){

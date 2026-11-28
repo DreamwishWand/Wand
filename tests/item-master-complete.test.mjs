@@ -498,6 +498,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of feeding.keys())expected.add(id);
   const historicStar=new Map(await master.getFieldRows('acquisition.historicalStarpathSources'));
   for(const id of historicStar.keys())expected.add(id);
+  const objectiveGrants=fields.has('acquisition.questObjectiveGrantSources')?new Map(await master.getFieldRows('acquisition.questObjectiveGrantSources')):new Map();
+  for(const [id,links] of objectiveGrants)if(links.some(l=>l.category!==null))expected.add(id);
   const memory=new Map((await master.getFieldRows('acquisition.memoryAppearance')).filter(([,v])=>v.category!==null));
   for(const id of memory.keys())expected.add(id);
   const memorySpawn=fields.has('acquisition.classifiedMemorySpawnSources')?new Map(await master.getFieldRows('acquisition.classifiedMemorySpawnSources')):new Map();
@@ -510,6 +512,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     if(historicStar.has(id)&&!want.includes('star_path'))want.push('star_path');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if((loot.has(id)||feeding.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
+    for(const link of objectiveGrants.get(id)??[])if(link.category!==null&&!want.includes(link.category))want.push(link.category);
     const memoryCategory=memory.get(id)?.category;
     if(memoryCategory&&!want.includes(memoryCategory))want.push(memoryCategory);
     for(const link of memorySpawn.get(id)??[])if(!want.includes(link.category))want.push(link.category);

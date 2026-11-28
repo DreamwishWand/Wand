@@ -40,6 +40,7 @@ export interface OrdinaryProductionEvidence {
   readonly currentAvailabilityVerified:false;
 }
 const extensionFields={
+  questObjective:'acquisition.questObjectiveGrantSources',
   progression:'acquisition.ordinaryProgressionSources',
   critterBefriending:'acquisition.ordinaryCritterSources',
   conditionalQuest:'acquisition.conditionalQuestSources',
@@ -86,6 +87,16 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         continue;
       }
       check(evidence.sourceGameVersion===db.release.target.gameVersion,'EXTENSION_VERSION');
+      if(family==='questObjective'){
+        const category=evidence.category;
+        if(category===null)continue;
+        check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
+          evidence.sourceMissionSha256===sha?.Mission&&id(evidence.sourceItemId)&&id(evidence.targetItemId)&&
+          id(evidence.configuredAmount)&&['TalkToCharacter','Chase'].some(k=>k===evidence.objectiveKind)&&
+          typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.Steps[')&&
+          typeof evidence.cleanupConfigured==='boolean'&&evidence.guaranteedGrantVerified===false,'EXTENSION_QUEST_OBJECTIVE');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
       const category=family==='conditionalQuest'||family==='memorySpawn'?evidence.category:'ordinary_gameplay';
       check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category),'EXTENSION_CATEGORY');
       let sourceId:number|null=null;
@@ -357,7 +368,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
       const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'?['ConditionalEvent']:
-        e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+        e.family==='questObjective'?['Mission']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
       return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});
