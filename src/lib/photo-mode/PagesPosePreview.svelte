@@ -2,6 +2,7 @@
   import {base} from '$app/paths';
   import {onMount} from 'svelte';
   import {localSaveSession} from '$lib/ui/local-save-session';
+  import {savedMakeupSelections,savedMakeupKey} from './makeup-assets.ts';
   import {selectEyeMaterial,eyeMaterialKey} from './eye-palette.ts';
   import {savedBodyType} from './body-morph.ts';
   import {savedHeadIndex} from './head-geometry.ts';
@@ -24,6 +25,7 @@
   let facialAvailable=$derived(!!index?.faceLayers&&bodyTypes.every(b=>row?.[b]&&row[b]?.kind!=='mermaid'));
   let activeFace=$derived(facialAvailable?facialSelection:undefined);
   let appearance=$derived($localSaveSession.avatarAppearance);
+  let makeupKey=$derived(index?.avatarMakeup?bodyTypes.map(b=>savedMakeupKey(appearance,b,row?.[b]?.kind==='mermaid')).join('|'):'-');
   let skinKey=$derived(bodyTypes.map(b=>savedSkinIndex(appearance,b,row?.[b]?.kind==='mermaid')??'-').join(':'));
   let eyeKey=$derived(bodyTypes.map(b=>eyeMaterialKey(selectEyeMaterial(index?.eyePalette,appearance,b,row?.[b]?.kind==='mermaid'))).join('|'));
   let faceKey=$derived(index?.faceMorphs?bodyTypes.map(b=>savedFaceChoices(appearance,b,row?.[b]?.kind==='mermaid').join(':')).join('|'):'-');
@@ -38,7 +40,7 @@
     if(!m||!r)return [];
     return bodyTypes.flatMap((b,i)=>{
       const entry=r[b],skin=savedSkinIndex(appearance,b,entry?.kind==='mermaid');
-      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'),savedHeadIndex(appearance,b,entry.kind==='mermaid'),savedBodyType(appearance,b,entry.kind==='mermaid'),activeFace)}]:[];
+      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'),savedHeadIndex(appearance,b,entry.kind==='mermaid'),savedBodyType(appearance,b,entry.kind==='mermaid'),activeFace,savedMakeupSelections(appearance,b,entry.kind==='mermaid'))}]:[];
     });
   });
   let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&(o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined||o?.kind==='mermaid'&&o.accessoryIncluded!==true)}));
@@ -77,7 +79,7 @@
         </div>
       {/if}
       {#key itemId+':'+poseIndex}
-        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={skinKey+':'+eyeKey+':'+faceKey+':'+headKey+':'+bodyMorphKey+':'+(activeFace??'pose')}/>
+        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={makeupKey+':'+skinKey+':'+eyeKey+':'+faceKey+':'+headKey+':'+bodyMorphKey+':'+(activeFace??'pose')}/>
       {/key}
       {#await names then items}
         {@const found=items.filter(x=>x.name)}
