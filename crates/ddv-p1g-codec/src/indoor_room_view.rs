@@ -504,6 +504,14 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
 }
 
 pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ furniture_candidate_mode(source,plan,false)
+}
+/// Internal only: independent storage poses from a private backup, not a
+/// public interactive group-transform mode.
+pub(super) fn private_storage_pose_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ furniture_candidate_mode(source,plan,true)
+}
+fn furniture_candidate_mode(source:&[u8],plan:&str,private_storage:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit};
  let bad=CodecError::Json;
  if plan.len()>131072{return Err(CodecError::Bounds);}
@@ -540,6 +548,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  let terrain=face.get("terrain");
  let free=p.get("freePlacement").and_then(Value::as_bool)==Some(true);
  if free&&(surface!=1||!p.contains_key("edits")&&!p.contains_key("align")&&!p.contains_key("paired")&&!p.contains_key("pairedRotate")&&!p.contains_key("transfer")&&!p.contains_key("place")&&!p.contains_key("pickup")||terrain.and_then(|v|v.get("sourcePath")).and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Rooms/Room")||grid.get("GridDataPath").and_then(Value::as_str)!=Some(v))){return Err(bad);}
+ if private_storage&&(!free||surface!=1||!p.contains_key("edits")){return Err(bad);}
  let allowed_orientation=|v:&str|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&v)||free&&factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&v);
  let within_room=|(x,y):(i32,i32)|->bool{terrain.is_some_and(|t|t.get("sizeX").and_then(Value::as_u64).zip(t.get("sizeY").and_then(Value::as_u64)).is_some_and(|(sx,sy)|x>=0&&y>=0&&(x as u64)<sx*u64::from(factor)&&(y as u64)<sy*u64::from(factor)))};
  let on_terrain=|(x,y):(i32,i32)|->bool{
@@ -782,6 +791,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  for row in rows{
   if row.as_object().is_none_or(|r|r.len()!=8||r.keys().any(|k|!matches!(k.as_str(),"index"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"))){return Err(bad);}
   let (target,expected,old)=resolve(row)?;
+  if private_storage&&!ddv_save_patch::storage_transform_pose(&root,&objects[&target.object_id]){return Err(bad);}
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if !allowed_orientation(orientation)||(storage_pose(&root,&objects[&target.object_id])||objects[&target.object_id].get("State").and_then(|s|s.get("SubGrid")).is_some())&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
   if mode.is_some()&&(!(if free{within_room(expected)&&within_room(xy)}else{on_terrain(expected)&&on_terrain(xy)})||if paired_rotate{old==orientation}else{old!=orientation||xy==expected}){return Err(bad);}
@@ -797,7 +807,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
  if free&&mode.is_none(){
   if alignment{
    if !edits.iter().all(|e|e.position.is_some_and(|xy|xy.0==e.expected.0))&&!edits.iter().all(|e|e.position.is_some_and(|xy|xy.1==e.expected.1)){return Err(bad);}
-  }else if edits.len()>1{
+  }else if edits.len()>1&&!private_storage{
    let rotation=|e:&GridMixedEdit|->Option<usize>{let (a,b)=e.orientation.as_ref()?;let names=ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS;let before=names.iter().position(|v|*v==a.as_str())?;let after=names.iter().position(|v|*v==b.as_str())?;Some((after+8-before)%8)};
    if let Some(turn)=rotation(&edits[0]){
     if !matches!(turn,2|6)||edits.iter().any(|e|rotation(e)!=Some(turn)||!within_room(e.expected)){return Err(bad);}
