@@ -42,6 +42,8 @@ pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
    }
   }
  }
+ let mut named_container_refs=std::collections::HashMap::new();
+ super::storage_backup::count_refs(root,false,&mut named_container_refs);
  let mut rows=Vec::new();
  for (id,c) in containers{
   let Some(n)=key_id(id)else{continue;};
@@ -55,14 +57,25 @@ pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
   // Existing slots are opaque. Never coerce or overwrite unknown fields.
   let refs=owners.get(&u64::from(n)).map(Vec::as_slice).unwrap_or(&[]);
   let (parent_item,owner)=if n<=1{
-   if !refs.is_empty()||!(c["ParentItemID"].is_null()||c["ParentItemID"].as_u64()==Some(0)){continue;}(None,None)
+   if !refs.is_empty()||named_container_refs.get(&n).copied().unwrap_or(0)!=0||!(c["ParentItemID"].is_null()||c["ParentItemID"].as_u64()==Some(0)){continue;}(None,None)
   }else{
    let Some(item)=c["ParentItemID"].as_u64().filter(|n|*n>0)else{continue;};
-   let [target]=refs else{continue;};
-   if target.kind!=GridObjectKind::Full||target.item_id!=item||key_id(&target.grid_id).is_none()||key_id(&target.object_id).is_none_or(|n|n==0)||diff.is_some_and(|d|d.get(&target.grid_id).is_some()){continue;}
-   let g=&grids[&target.grid_id];let o=&g["Objects"][&target.object_id];
-   if g["ID"].as_u64()!=key_id(&target.grid_id).map(u64::from)||o["ID"].as_u64()!=key_id(&target.object_id).map(u64::from)||!storage_transform_pose(root,o){continue;}
-   (Some(item),Some(target.clone()))
+   match refs{
+    []=>{
+     // A persistent, occupied player-owned storage record may survive
+     // furniture pickup. Do not allocate a new record or claim its location.
+     // Empty unlinked records and unresolved explicit references remain hidden.
+     if inv.iter().all(empty_slot)||named_container_refs.get(&n).copied().unwrap_or(0)!=0{continue;}
+     (Some(item),None)
+    },
+    [target]=>{
+     if target.kind!=GridObjectKind::Full||target.item_id!=item||key_id(&target.grid_id).is_none()||key_id(&target.object_id).is_none_or(|n|n==0)||diff.is_some_and(|d|d.get(&target.grid_id).is_some()){continue;}
+     let g=&grids[&target.grid_id];let o=&g["Objects"][&target.object_id];
+     if g["ID"].as_u64()!=key_id(&target.grid_id).map(u64::from)||o["ID"].as_u64()!=key_id(&target.object_id).map(u64::from)||!storage_transform_pose(root,o)||named_container_refs.get(&n).copied()!=Some(1){continue;}
+     (Some(item),Some(target.clone()))
+    },
+    _=>continue
+   }
   };
   rows.push(RecoveryDestination{container_id:id.clone(),parent_item,owner,capacity,used:inv.iter().filter(|row|!empty_slot(row)).count() as u32});
  }
@@ -130,6 +143,19 @@ mod tests{
  #[test]fn recover_to_inventory_or_chest_preserves_unrelated_bytes(){
   let root:Value=serde_json::from_str(SOURCE).unwrap();assert_eq!(destinations(&root).unwrap().len(),2);
   for id in ["0","9"]{let result=recover(SOURCE,&target(),(1,2),"GridOrientation_Down",id).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);assert_eq!(v["Player"]["ContainerInventories"][id]["Inventory"][0]["Amount"],if id=="0"{1}else{6});assert!(result.contains("1e2"));}
+ }
+ #[test]fn occupied_unlinked_storage_is_reused_without_allocating_or_changing_links(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object_mut().unwrap().remove("2");
+  let rows=destinations(&root).unwrap();assert_eq!(rows.len(),2);assert_eq!(rows[1].parent_item,Some(40001680));assert!(rows[1].owner.is_none());
+  let out:Value=serde_json::from_str(&recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","9").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["9"]["Inventory"][0]["Amount"],6);
+  assert_eq!(out["Player"]["ContainerInventories"].as_object().unwrap().len(),2);
+  root["World"]["Unknown"] = json!({"ContainerInventoryID":9});
+  assert_eq!(destinations(&root).unwrap().len(),1);
+  root["World"].as_object_mut().unwrap().remove("Unknown");
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=json!([]);
+  assert_eq!(destinations(&root).unwrap().len(),1);
  }
  #[test]fn semantic_inventory_roles_and_capacity_are_not_inferred(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
