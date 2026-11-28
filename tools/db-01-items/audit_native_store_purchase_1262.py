@@ -24,6 +24,8 @@ PINS={
  'Furniture.json':'cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196',
  'Clothing.json':'a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946',
  'Display.json':'6ba1986365d04a1b1db665a48f3289eee18ee166fcbb864c470093c20d2ea452',
+ 'Tag.json':'bc537ad3278483cb6b64a344fa70f73dca7e66ff146b1e0d032e2f209ba813a4',
+ 'Set.json':'3682f4888244a9a460d08300a00cc873307c9ad3553fb929aaca135efb38708f',
 }
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
@@ -79,6 +81,13 @@ WINDOWS=(
  (0x3873d20,188,'1af50f162157de8adb78385e3c0bfaab1cded88c816cf3c9f87eac97a25a791e'),
  (0x4d21ee9,40,'43a1e6469f74ad720f022f697b1fa7f2401797a07e71d240bc382853121b81ce'),
  (0x4037e9c,76,'8ce0f5767ca8fb380a7c5cb6b13daa61484d80365351eadb407c8811e05bef20'),
+ # CatalogVisibilityConditions.get_IsDefined, constructor, Item.Invalid and
+ # CanBuyState undefined -> inherited set. MinFriendship by itself is ignored.
+ (0x3b67b3b,245,'83305bbee932ea9b9ba3b4d013c8e9740842198a1ddc445f4f153c878ce42fb3'),
+ (0x3b66770,144,'053254e5f49b42815b22b14e66dce3d3edc58fa1dc4b233ffd4a3eaaebff5945'),
+ (0x3b67cf0,16,'2cc191a54cefce90192e71cb0d067385624667a9dfa86726ea807f3248461b7e'),
+ (0x3b67e29,196,'b622ada7c1c7b28d95ee3dcbec58b28439d6bbba3c0aa1f0a0ee53eac2a21e06'),
+ (0x410b0cb,194,'ba473a9eac56765e87204a854d4a4ee30c9f9c7bcfa7958148b2ef9f4b6299ca'),
  # Native catalogue enumeration: positive inclusive price ranges and set fallback.
  (0x4d21fa0,100,'52b3f0891fbdf23ed92e628d95366e43a5afd25ebf7feba62b9e0b2aa6ccc628'),
  (0x4d22002,8,'81094a4f1f1b8e7f3f05ef60109e0319f385f043e1949de9e6ba18b3947dd4a3'),
@@ -188,6 +197,21 @@ def audit(assembly,dump,proto,itemlist):
    r=fields(row);i=one(r,1);require(i not in providers,'DUP_PROVIDER')
    providers[i]=[(one(fields(v),1),one(fields(v),2)) for n,w,v in r if n==2 and w==2]
  require(len(providers)==9537,'PROVIDER_CENSUS')
+ tags={i:single(f,2,2,True).decode() for i,f in frames(authenticated(itemlist/'Tag.json','Tag.json'),2000000000)}
+ realms={2000500005:'Frozen',2000500006:'ToyStory',2000500010:'LionKing',2000500013:'WallE'}
+ require(all(tags.get(i)==name for i,name in realms.items()),'REALM_TAG_IDENTITIES')
+ sets=list(frames(authenticated(itemlist/'Set.json','Set.json'),2040000000))
+ require(len(sets)==727 and all(not wire(single(f,7,2) or b'') for i,f in sets),'SET_GATE_CENSUS')
+ empty_gates=Counter()
+ for family,base,gf,flags in [('Furniture',40000000,20,[24,50,51,52]),('Clothing',50000000,22,[29,33,34,35])]:
+  for i,f in frames(authenticated(itemlist/(family+'.json'),family+'.json'),base):
+   if family=='Furniture' and i//100000 not in (400,403):continue
+   if any(single(f,n,0) for n in flags):continue
+   g=wire(single(f,gf,2) or b'')
+   if g==[(4,2,b'')]:empty_gates[family+'_explicit_empty_conditions']+=1
+   if g==[(3,0,1)]:empty_gates[family+'_friendship_without_character']+=1
+ require(empty_gates=={'Furniture_explicit_empty_conditions':22,'Clothing_explicit_empty_conditions':1,
+  'Furniture_friendship_without_character':1},'NATIVE_UNDEFINED_GATE_CENSUS')
  counts=Counter();gate=Counter();screen=Counter()
  for family,base in [('Furniture',40000000),('Clothing',50000000)]:
   for i,f in frames(authenticated(itemlist/(family+'.json'),family+'.json'),base):
@@ -224,6 +248,8 @@ def audit(assembly,dump,proto,itemlist):
   'nativeRefreshMissingPriceTablePositiveUnboundedVerified':True,'displayIdsWithoutPriceTable':sorted(no_price_table),
   'nativeGridQualifierRanges':ranges,'nativeGridBoundsAndLayerBranchesVerified':True,
   'nativeDirectTagFiltersVerified':True,
+  'nativeUndefinedCatalogGatesVerified':True,'nativeUndefinedCatalogGateCounts':dict(empty_gates),
+  'emptySetGateCount':len(sets),'realmTagIdentitiesVerified':True,
   'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}
