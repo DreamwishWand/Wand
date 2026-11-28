@@ -486,7 +486,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     new Map(await master.getFieldRows('acquisition.ordinaryProductionSources')):new Map();
   const intro=new Map(await master.getFieldRows('acquisition.ordinaryQuestIntroSources'));
   const progress=new Map(await master.getFieldRows('acquisition.ordinaryProgressionSources'));
-  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys(),...progress.keys()]);
+  const loot=fields.has('acquisition.ordinaryLootPresentSources')?new Map(await master.getFieldRows('acquisition.ordinaryLootPresentSources')):new Map();
+  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys(),...progress.keys(),...loot.keys()]);
   const critter=new Map(await master.getFieldRows('acquisition.ordinaryCritterSources'));
   for(const id of critter.keys())expected.add(id);
   const conditional=fields.has('acquisition.conditionalQuestSources')?new Map(await master.getFieldRows('acquisition.conditionalQuestSources')):new Map();
@@ -499,6 +500,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id)||critter.has(id)||stores.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
+    if(loot.has(id)&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }
   const newlyClassified=[...rewardIds].filter(id=>!previous.get(id)?.length);
