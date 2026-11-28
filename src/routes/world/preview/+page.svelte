@@ -11,6 +11,8 @@
   import {emptyWorldTimeline} from '$lib/world/saved-map-batch.ts';
   import type {SavedShapeMap} from '$lib/world/saved-shape-map.ts';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
+  import EffectiveDiffGridPreview from '$lib/world/EffectiveDiffGridPreview.svelte';
+  import type {EffectiveDiffGridPreview as DiffResult} from '$lib/world/diffgrid-effective-preview.ts';
   import type {
     SourceGridQuery,SavedGridSourceCandidates as SaveCandidateResult
   } from '$lib/world/saved-grid-source-candidates.ts';
@@ -149,6 +151,9 @@
   let floorLayerInspecting=false;
   let floorLayerInspectionError='';
   let savedSourceCandidates:SaveCandidateResult|null=null;
+  let effectiveDiff:DiffResult|null=null;
+  let diffRequest=-1,diffWorking=false,diffFailed=false;
+  let diffViewKey='',diffGridId=-1;
   let savedShapeMap:SavedShapeMap|null=null;
   let worldTimeline=emptyWorldTimeline();
   let savedShapeRequest=-1;
@@ -404,6 +409,7 @@
     saveComparisonWorker?.terminate();
     saveComparisonWorker=null;
     savedSourceCandidates=null;
+    effectiveDiff=null;diffRequest=-1;diffWorking=false;diffFailed=false;diffViewKey='';diffGridId=-1;
     savedShapeMap=null;savedShapeRequest=-1;
     saveComparisonLoading=false;
     saveComparisonError='';
@@ -427,6 +433,10 @@
        file.size>32*1024*1024){
       saveComparisonError='この原本Gridまたはセーブは照合できません。';
       return;
+    }
+    if(worker){
+      diffRequest=++requestId;diffWorking=true;diffViewKey=selectedViewKey;diffGridId=grid.gridIdNative;
+      worker.postMessage({command:'compare-diff',requestId:diffRequest,file,viewKey:diffViewKey,gridIdNative:diffGridId});
     }
     const refs=new Map<number,SourceGridQuery['sourceRefs'][number]>();
     for(const view of layouts){
@@ -899,6 +909,14 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='effective-diff'||(result?.kind==='error'&&result.requestId===diffRequest)){
+        if(result.requestId!==diffRequest||diffViewKey!==selectedViewKey||diffGridId!==Number(selectedGridId))return;
+        diffWorking=false;
+        if(result.kind==='effective-diff'&&result.viewKey===diffViewKey&&result.gridIdNative===diffGridId){
+          effectiveDiff=result.result as DiffResult|null;
+        }else{diffFailed=true;effectiveDiff=null;}
+        return;
+      }
       if(result?.kind==='saved-shapes'||(result?.kind==='error'&&result.requestId===savedShapeRequest)){
         if(result.requestId!==savedShapeRequest||!savedSourceCandidates||
           saveComparisonRevision!==$localSaveSession.revision)return;
@@ -1487,6 +1505,9 @@
           working={saveComparisonLoading}
           errorMessage={saveComparisonError}
           onCompare={compareSelectedSaveToGrid}/>
+        {#if diffViewKey===selectedViewKey&&diffGridId===Number(selectedGridId)}
+          <EffectiveDiffGridPreview result={effectiveDiff} working={diffWorking} failed={diffFailed}/>
+        {/if}
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
           result={floorMatchResult} windowResult={floorWindowResult} externalMap={mediaTerrainMapActive}
