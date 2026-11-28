@@ -1483,6 +1483,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryProgressionSources',row.itemId,progress);
       categorySet.add('ordinary_gameplay');
     }
+    const conditionalQuest=questFlows.conditionalQuest.get(row.itemId);
+    if(conditionalQuest?.length){
+      add('acquisition.conditionalQuestSources',row.itemId,conditionalQuest);
+      for(const evidence of conditionalQuest)categorySet.add(evidence.category);
+    }
     if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
     const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
     if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
