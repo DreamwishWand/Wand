@@ -3,20 +3,23 @@
 use crate::CodecError;
 use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit,MAX_GRID_MIXED_EDITS};
 use serde_json::Value;
-use std::collections::{HashMap,HashSet};
-use zeroize::Zeroizing;
+use std::collections::{BTreeMap,HashMap,HashSet};
+use zeroize::{Zeroize,Zeroizing};
 
 pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<String,CodecError>{
  let bad=CodecError::Json;
- // The existing scope resolver has authenticated every outdoor grid. Reject
+ // The existing scope resolver has authenticated every outdoor grid or room floor. Reject
  // object-scoped regions, which could move a root across a selected boundary.
  if scope.is_empty()||scope.iter().any(|s|s.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=*s)){return Err(bad);}
  let doc:Value=serde_json::from_str(backup).map_err(|_|bad)?;
  if doc["schema"]!="wand.private.storage-contents@2"||doc["skipped"].as_u64()!=Some(0){return Err(bad);}
  let rows=doc["rows"].as_array().filter(|a|!a.is_empty()).ok_or(bad)?;
- // Validate complete identity, alias topology, metadata and contents first.
- // Neither this draft nor the subsequent pose draft is published separately.
- let contents=Zeroizing::new(ddv_save_patch::storage_backup::restore_scoped_mode(source,backup,Some(scope),true,false).map_err(|_|bad)?);
+ // Validate complete identity, alias topology, metadata and contents before
+ // any pose edit. Discard this preflight: a newly recreated empty storage
+ // must still be empty when the final strict restore rebinds its identity.
+ {
+  let _preflight=Zeroizing::new(ddv_save_patch::storage_backup::restore_scoped_mode(source,backup,Some(scope),true,false).map_err(|_|bad)?);
+ }
  let current=Zeroizing::new(ddv_save_patch::storage_backup::export_scoped(source,Some(scope)).map_err(|_|bad)?);
  let current:Value=serde_json::from_str(&current).map_err(|_|bad)?;
  let by_id:HashMap<_,_>=current["rows"].as_array().ok_or(bad)?.iter().filter_map(|r|Some((r["id"].as_u64()?,r))).collect();
@@ -24,7 +27,7 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
  for row in rows{
   let id=row["id"].as_u64().ok_or(bad)?;
   // A newly recreated empty container has already been verified by the
-  // shared restore contract, including its exact original pose.
+  // shared preflight, including its exact original pose.
   let Some(old)=by_id.get(&id)else{continue;};
   for wanted in row["roots"].as_array().ok_or(bad)?{
    let grid=wanted["grid"].as_str().filter(|s|scope.contains(*s)).ok_or(bad)?;
@@ -41,11 +44,44 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
    edits.push(GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:grid.to_owned(),object_id:object.to_owned(),item_id:item},expected,position:(expected!=desired).then_some(desired),orientation:(from!=to).then_some((from,to))});
   }
  }
- let draft=Zeroizing::new(if edits.is_empty(){contents.to_string()}else{
-  crate::grid_instance_preview::validate_oblique_grid_edits(source.as_bytes(),&edits)?;
-  crate::grid_instance_preview::validate_oblique_grid_edits(contents.as_bytes(),&edits)?;
-  ddv_save_patch::preview_existing_grid_mixed_batch(&contents,&edits).map_err(|_|bad)?.patched_json
- });
+ let root:Value=serde_json::from_str(source).map_err(|_|bad)?;
+ let mut room_ordinals=HashMap::new();let mut ordinal=0usize;
+ if let Some(houses)=root["World"]["PlayerHouses"].as_array(){
+  for house in houses{
+   if let Some(floors)=house["Floors"].as_array(){for floor in floors{
+    if let Some(rooms)=floor["Rooms"].as_object(){for room in rooms.values(){
+     ordinal+=1;
+     if let Some(gid)=room["FloorGridID"].as_u64(){room_ordinals.insert(gid.to_string(),ordinal);}
+    }}
+   }}
+  }
+ }
+ let grids=&root["World"]["GridCollection"]["Grids"];
+ let mut outdoor=Vec::new();let mut indoor=BTreeMap::<usize,Vec<Value>>::new();
+ for e in edits{
+  if grids[&e.target.grid_id]["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room")){
+   let room=*room_ordinals.get(&e.target.grid_id).ok_or(bad)?;
+   let objects=grids[&e.target.grid_id]["Objects"].as_object().ok_or(bad)?;
+   let index=objects.keys().position(|k|*k==e.target.object_id).ok_or(bad)?;
+   let old=objects[&e.target.object_id]["Orientation"].as_str().ok_or(bad)?;
+   let (x,y)=e.position.unwrap_or(e.expected);
+   let to=e.orientation.as_ref().map_or(old,|(_,s)|s.as_str());
+   indoor.entry(room).or_default().push(serde_json::json!({"index":index,"itemId":e.target.item_id,"expectedX":e.expected.0,"expectedY":e.expected.1,"expectedOrientation":old,"x":x,"y":y,"orientation":to}));
+  }else{outdoor.push(e);}
+ }
+ let mut draft=Zeroizing::new(source.to_owned());
+ if !outdoor.is_empty(){
+  crate::grid_instance_preview::validate_oblique_grid_edits(source.as_bytes(),&outdoor)?;
+  *draft=ddv_save_patch::preview_existing_grid_mixed_batch(source,&outdoor).map_err(|_|bad)?.patched_json;
+ }
+ for (room,rows) in indoor{
+  for batch in rows.chunks(32){
+   let plan=serde_json::json!({"roomOrdinal":room,"surfaceOrdinal":1,"freePlacement":true,"edits":batch});
+   let mut d=crate::indoor_room_view::private_storage_pose_candidate(draft.as_bytes(),&plan.to_string())?;
+   if !d.changed||!d.untouched_bytes_preserved||d.writer_authorized||d.export_authorized{d.patched_json.zeroize();return Err(bad);}
+   draft.zeroize();*draft=std::mem::take(&mut d.patched_json);
+  }
+ }
  // Re-use strict pose matching on the final state, including recreated
  // container aliases. No change is not a successful new edit.
  let final_text=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,Some(scope),true,true).map_err(|_|bad)?;
