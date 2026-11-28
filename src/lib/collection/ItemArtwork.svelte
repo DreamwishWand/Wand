@@ -49,8 +49,8 @@
   {/if}
 </span>
 <style>
-  .artwork { display:grid; place-items:center; width:100%; height:100%; min-width:0; min-height:0; }
-  img { width:100%; height:100%; object-fit:contain; }
+  .artwork { position:relative; display:grid; grid-template: minmax(0,1fr) / minmax(0,1fr); place-items:center; width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; }
+  img { position:absolute; inset:0; display:block; width:100%; height:100%; min-width:0; min-height:0; object-fit:contain; object-position:center; }
   .fallback { color:#aa90c1; font-size:18px; }
   .artwork.large .fallback { font-size:68px; }
 </style>

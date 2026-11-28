@@ -40,6 +40,7 @@ export interface OrdinaryProductionEvidence {
   readonly currentAvailabilityVerified:false;
 }
 const extensionFields={
+  initialInventory:'acquisition.ordinaryInitialInventorySources',
   storyUnlock:'acquisition.storyUnlockSources',
   characterUnlock:'acquisition.characterUnlockSources',
   questObjective:'acquisition.questObjectiveGrantSources',
@@ -83,6 +84,24 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     check(Array.isArray(list),'EXTENSION_LIST');
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      if(family==='initialInventory'){
+        const groups=['Backpack','HomeStorage','Catalog','Wardrobe','Pantry','Makeup','Trimming','Buildings','Decals','Skins','AvatarFeatures','Figurines','PhotoMode','MountGear','EnvironmentalFX'];
+        check((evidence.kind==='ordinary_initial_list_inventory'||evidence.kind==='ordinary_initial_container_inventory')&&evidence.category==='ordinary_gameplay'&&categories.includes('ordinary_gameplay')&&
+          id(evidence.targetItemId)&&id(evidence.configuredAmount)&&typeof evidence.sourcePosition==='number'&&Number.isSafeInteger(evidence.sourcePosition)&&evidence.sourcePosition>=0&&
+          typeof evidence.sourceFieldNumber==='number'&&Number.isSafeInteger(evidence.sourceFieldNumber)&&
+          (evidence.kind==='ordinary_initial_list_inventory'&&evidence.sourceInventoryType==='list'&&evidence.sourceFieldNumber>=3&&evidence.sourceFieldNumber<=15||
+           evidence.kind==='ordinary_initial_container_inventory'&&evidence.sourceInventoryType==='container'&&evidence.sourceFieldNumber>=1&&evidence.sourceFieldNumber<=2)&&
+          evidence.sourceId===groups[evidence.sourceFieldNumber-1]&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.sourceRecordIndex===97&&
+          evidence.sourceRecordSha256==='9ef61e35f310002608496d9748673eaa48051444f3083752cbe3c111f039940c'&&
+          evidence.sourcePayloadSha256==='d4fc13504131da7f0cb47f5b41e612e73b19936b6e4d3b858e7178c1b614a7b7'&&
+          evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+          evidence.sourceProjectionSha256==='35f22a0dd42826921ce462c93b7a21910b2ff7c653a9b93a127a12bbeaab5813'&&
+          evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.nativeInitializationVerified===true&&evidence.guaranteedGrantVerified===false&&
+          evidence.grantVerified===false&&evidence.playerOwnershipVerified===false,'EXTENSION_INITIAL_INVENTORY');
+        output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
+      }
       if(family==='eventRecurringLoot'){
         const bounded=evidence.boundedLocalDateGate,blocker=evidence.kind==='event_recurring_blocker_loot';
         const spawned=blocker?evidence.blockerItemId:evidence.ephemeralItemId;

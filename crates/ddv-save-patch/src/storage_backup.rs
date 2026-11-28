@@ -14,7 +14,7 @@ fn bounded_inventory(v:&Value)->bool{
 // ConsummableData stack on consumables. Numeric item IDs refer to the game
 // catalog, not allocated Save records. Unknown fields and variants remain
 // opaque until their dependencies are established.
-fn independent_item_state(row:&Value)->bool{
+pub(super) fn independent_item_state(row:&Value)->bool{
  let Some(state)=row.get("State").filter(|s|!s.is_null())else{return true;};
  let Some(m)=state.as_object().filter(|m|m.len()==1)else{return false;};
  let Some(item)=id(&row["ItemID"])else{return false;};

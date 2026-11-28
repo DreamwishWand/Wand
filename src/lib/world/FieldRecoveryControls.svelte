@@ -39,23 +39,23 @@
  }
  $: if(open)loadArtwork(rows);
  const allowed=browser&&testSaveExportEnabled(window.location);
- let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,expected='',open=false,error=false;
+ let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,quantity=0,expected='',open=false,error=false;
  $: w=words[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: outdoorPlan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
  $: plan=selection===null?outdoorPlan:selection.length>0&&selection.length<=MAX_GRID_MIXED_EDITS&&new Set(selection.map(p=>p.localOrdinal)).size===selection.length&&selection.every(p=>isEightWay(p.expectedOrientation))?selection:null;
  $: key=JSON.stringify(plan);
  $: if(source&&(source!==file||expected!==key||blocked))cancel();
- function cancel(){worker?.terminate();worker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;expected='';rows=[];destination=0;open=false;error=false;}
+ function cancel(){worker?.terminate();worker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;expected='';rows=[];destination=0;quantity=0;open=false;error=false;}
  function request(list:boolean){
   if(!allowed||blocked||!file||!plan||worker||copy||!list&&!rows.some(r=>r.ordinal===destination&&r.afterUsed!==null))return;
   if(list){cancel();open=true;source=file;expected=key;}
   const f=file,k=key,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});worker=own;error=false;
   const done=(d:any)=>{own.terminate();if(worker!==own||source!==f||file!==f||expected!==k||key!==k||blocked){d?.bytes?.fill(0);return;}worker=null;
    try{if(list){
-    if(d?.kind!=='activity-recovery-destinations'||d.result?.contract!=='wand.db05.field-recovery-destinations@2'||!Array.isArray(d.result.rows)||d.result.rows.length>8192)throw Error('destinations');
+    if(d?.kind!=='activity-recovery-destinations'||d.result?.contract!=='wand.db05.field-recovery-destinations@3'||!Number.isSafeInteger(d.result.quantity)||d.result.quantity<1||d.result.quantity>MAX_GRID_MIXED_EDITS*2147483647||!Array.isArray(d.result.rows)||d.result.rows.length>8192)throw Error('destinations');
     const result=d.result.rows as Destination[];
     if(result.some((r,i)=>r.ordinal!==i+1||!['inventory','home-storage','chest','unlinked-chest'].includes(r.kind)||!Number.isSafeInteger(r.capacity)||r.capacity<1||r.capacity>8192||!Number.isSafeInteger(r.used)||r.used<0||r.used>8192||r.used>r.capacity||r.afterUsed!==null&&(!Number.isSafeInteger(r.afterUsed)||r.afterUsed<r.used||r.afterUsed>r.capacity)||(['chest','unlinked-chest'].includes(r.kind)?!Number.isSafeInteger(r.parentItemId)||Number(r.parentItemId)<1:r.parentItemId!==null)||r.kind==='unlinked-chest'&&r.owner!==null||r.kind==='chest'&&(!r.owner||r.owner.itemId!==r.parentItemId||typeof r.owner.gridDataPath!=='string'||!Number.isSafeInteger(r.owner.x)||!Number.isSafeInteger(r.owner.y))))throw Error('destination');
-    rows=result;destination=rows.find(r=>r.afterUsed!==null)?.ordinal??0;if(!destination)error=true;
+    rows=result;quantity=d.result.quantity;destination=rows.find(r=>r.afterUsed!==null)?.ordinal??0;if(!destination)error=true;
    }else{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}
    }catch{d?.bytes?.fill(0);error=true;}
   };
@@ -82,7 +82,7 @@
  <div class="field-recovery">
   {#if !open}<button type="button" disabled={blocked} on:click={()=>request(true)}>{w[0]}</button>
   {:else}
-   {#if worker}<small role="status">{w[5]}</small>{:else if rows.length&&!copy}<div class="destination-list" role="group" aria-label={w[1]}>{#each rows as r (r.ordinal)}<button type="button" class="destination-row" aria-pressed={destination===r.ordinal} disabled={r.afterUsed===null} on:click={()=>destination=r.ordinal}>
+   {#if worker}<small role="status">{w[5]}</small>{:else if rows.length&&!copy}<strong>{w[0]} × {quantity.toLocaleString(locale)}</strong><div class="destination-list" role="group" aria-label={w[1]}>{#each rows as r (r.ordinal)}<button type="button" class="destination-row" aria-pressed={destination===r.ordinal} disabled={r.afterUsed===null} on:click={()=>destination=r.ordinal}>
     {#if r.parentItemId!==null&&artwork.get(r.parentItemId)}<img src={artwork.get(r.parentItemId)} alt="" loading="lazy"/>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V4h8v2M3 12h18M10 11v3h4v-3"/></svg>{/if}
     <span><strong>{destinationLabel(r,names,locale,rows)}</strong>{#if r.parentItemId!==null}<small>{locationLabel(r,locale,grids,label)}</small>{/if}</span><span class="capacity">{r.used}{#if r.afterUsed!==null&&r.afterUsed!==r.used} → {r.afterUsed}{/if}/{r.capacity}</span>
    </button>{/each}</div><button type="button" disabled={blocked||!destination} on:click={()=>request(false)}>{w[4]}</button>{/if}

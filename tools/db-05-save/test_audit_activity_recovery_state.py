@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from audit_activity_recovery_state import (
-    candidate_methods, observed_profiles, source_fields, state_shape,
+    amount_wrapper, candidate_methods, observed_profiles, source_fields, state_shape,
 )
 
 
@@ -30,6 +30,22 @@ class ActivityRecoveryStateAuditTest(unittest.TestCase):
         n["GridObject"] = [("State", 6, "Wrong")]
         with self.assertRaises(ValueError):
             source_fields(n)
+
+    def test_amount_wrapper_exact_native_tags_and_types(self):
+        native = self.native()
+        native["GridState"] = [("ItemAmountState", 2, "AmountWithState")]
+        native["AmountWithState"] = [
+            ("Amount", 1, "Nullable<int>"),
+            ("State", 2, "ItemState"),
+            ("AssignedPlayer", 3, "Nullable<int>"),
+        ]
+        report = amount_wrapper(native)
+        self.assertEqual(report["gridField"]["tag"], 2)
+        self.assertEqual(report["fields"][1], {"name": "State", "tag": 2, "type": "ItemState"})
+        self.assertFalse(report["nativeCallFlowVerified"])
+        native["AmountWithState"][2] = ("AssignedPlayer", 3, "int")
+        with self.assertRaises(ValueError):
+            amount_wrapper(native)
 
     def test_census_uses_membership_and_hides_all_private_keys_and_values(self):
         fields = source_fields(self.native())

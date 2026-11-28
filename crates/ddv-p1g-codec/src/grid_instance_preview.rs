@@ -3574,7 +3574,7 @@ pub(super) fn activity_item_id(item:u64)->bool{
  static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
 }
-/// Return only transient ordinals for stateless Activity Items; room UI
+/// Return only transient ordinals for structurally recoverable Activity Items; room UI
 /// never receives native Grid IDs or object IDs.
 pub(super) fn field_recovery_ordinals(source:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
@@ -3586,7 +3586,7 @@ fn field_recovery_ordinals_from_scan(root:&Value,scan:&Scan)->HashMap<(String,St
  scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
   let xy=(*xy)?;
   let ori=scan.rows.get(i)?.get("orientation")?.as_str()?;
-  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::stateless_field_object(root,t,xy,ori)).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
+  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::field_recovery_item(root,t,xy,ori).is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
  }).collect()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
@@ -3598,16 +3598,17 @@ pub(super) fn field_recovery_destinations_json(source:&[u8],plan:&str)->Result<S
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(CodecError::Json);}
  let request:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
  let batch=activity_recovery_selection(source,&root,&request)?;
- let items=batch.iter().map(|(t,_,_)|t.item_id).collect::<Vec<_>>();
+ let items=batch.iter().map(|(t,xy,ori)|ddv_save_patch::field_recovery::field_recovery_item(&root,t,*xy,ori).ok_or(CodecError::Json)).collect::<Result<Vec<_>,_>>()?;
+ let quantity=items.iter().map(|i|i.amount).sum::<u64>();
  let rows=activity_recovery_destinations(&root)?;
  let out=rows.iter().enumerate().map(|(i,r)|{
   let owner=r.owner.as_ref().map(|t|{
    let g=&root["World"]["GridCollection"]["Grids"][&t.grid_id];let o=&g["Objects"][&t.object_id];
    serde_json::json!({"itemId":t.item_id,"gridDataPath":g["GridDataPath"],"x":o["X"],"y":o["Y"]})
   });
-  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"afterUsed":ddv_save_patch::field_recovery::projected_used(&root,r,&items),"parentItemId":r.parent_item,"owner":owner})
+  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"afterUsed":ddv_save_patch::field_recovery::projected_recovery_used(&root,r,&items),"parentItemId":r.parent_item,"owner":owner})
  }).collect::<Vec<_>>();
- Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@2","rows":out}).to_string())
+ Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@3","quantity":quantity,"rows":out}).to_string())
 }
 /// Conservatively protect direct item references in the saved mission
 /// structures. Never infer completion from a MissionId or source category.
@@ -3736,7 +3737,7 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
    bounds.insert(t.grid_id.clone(),b);b
   };
   let (x,y)=s.2;
-  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||!ddv_save_patch::field_recovery::stateless_field_object(root,t,s.2,s.4.as_deref().ok_or(bad)?){return Err(bad);}
+  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||ddv_save_patch::field_recovery::field_recovery_item(root,t,s.2,s.4.as_deref().ok_or(bad)?).is_none(){return Err(bad);}
   groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
  }
  for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
@@ -3848,6 +3849,13 @@ mod tests{
         let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
         assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
         assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
+        assert_eq!(list["quantity"],2);
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"ItemAmountState":{"Amount":17,"State":null,"AssignedPlayer":null}});
+        let list:Value=serde_json::from_str(&field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).unwrap()).unwrap();
+        assert_eq!(list["quantity"],18);
+        assert_eq!(list["rows"][0]["afterUsed"],1);
+        let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],18);
         root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionId":80000001,"MissionSteps":[{"RequiredItemID":item}]}]}});
         assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
         assert!(field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).is_err());
