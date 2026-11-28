@@ -33,3 +33,13 @@ test('explicit non-notable Pet skips the friendship reward; missing or true is u
  assert.equal(buildShopRuntimePrefix(v,[first,row(2,'PetItemData',{'source.IsNotable':false}),last],true).complete,true);
  for(const val of [true,null,undefined])assert.equal(buildShopRuntimePrefix(v,[first,row(2,'PetItemData',val===undefined?{}:{'source.IsNotable':val}),last],true).blockedBy,'companion_reward');
 });
+
+test('notable companion uses exact owner level 5 Tier1 reward before next content',()=>{
+ const reward={kind:'pet_friendship_reward',sourceId:2,level:5,rewardStage:'Tier1Reward',amount:1,itemId:40004121,sourceRecord:'PetFriendship',sourceRecordIndex:400,sourceProtoDbSha256:'dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'};
+ const build=rewards=>buildShopRuntimePrefix(v,[row(1,'FurnitureItemData'),row(2,'PetItemData',{'source.IsNotable':true,'acquisition.individualFriendshipRewards':rewards}),row(1,'FurnitureItemData')],true);
+ const result=build([{...reward,level:2,itemId:31400131},reward]);
+ assert.equal(result.complete,true);
+ assert.deepEqual(result.items.map(x=>[x.itemId,x.quantity,x.address]),[[1,3,'guid:a'],[2,1,'guid:b'],[40004121,1,null],[1,2,null]]);
+ assert.equal(result.items[2].companionReward,true);
+ for(const bad of [[],[{...reward,sourceId:99}],[{...reward,amount:null}],[{...reward,rewardStage:'LevelReward'}],[{...reward,sourceRecord:'Friendship'}],[reward,reward]])assert.equal(build(bad).blockedBy,'companion_reward');
+});

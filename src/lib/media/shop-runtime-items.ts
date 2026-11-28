@@ -15,7 +15,7 @@ const ordinary=new Set([
  'HouseSkinItemData','DecalItemData','UpgradeToolItemData','BuildingOtherSkinItemData','StallSkinItemData',
  'SceneAssetsSkinItemData','MountSkinItemData','BoatSkinItemData'
 ]);
-export type ShopRuntimeItem={readonly itemId:number;readonly quantity:number;readonly address:string|null;readonly field:string;readonly contentIndex:number;readonly evolutionStep?:number};
+export type ShopRuntimeItem={readonly itemId:number;readonly quantity:number;readonly address:string|null;readonly field:string;readonly contentIndex:number;readonly evolutionStep?:number;readonly companionReward?:true};
 export type ShopRuntimePrefix={readonly revisionSha256:string;readonly items:readonly ShopRuntimeItem[];readonly complete:boolean;
  readonly blockedBy:'version'|'unknown_item'|'evolution'|'evolution_index'|'quest'|'companion_reward'|null};
 export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:readonly (ItemFieldProjection|null)[],evolutionIndexed:boolean,evolutionTargets:ReadonlyMap<number,ItemFieldProjection>=new Map()):ShopRuntimePrefix{
@@ -45,6 +45,13 @@ export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:reado
    // a PetItemData with IsNotable=false returns null before reading friendship.
    // Do not treat missing or unindexed source fields as a proven false.
    if(cls==='PetItemData'&&row.values['source.IsNotable']===false)continue;
+   if(cls==='PetItemData'&&row.values['source.IsNotable']===true){
+     const reward=readNotableCompanionReward(row);
+     if(!reward)return finish('companion_reward');
+     items.push({itemId:reward.itemId,quantity:reward.quantity,address:null,
+       field:'Contents.'+i+'.NotableCompanionReward.Icon',contentIndex:i,companionReward:true});
+     continue;
+   }
    if(cls==='PetItemData'||cls==='CritterItemData')return finish('companion_reward');
    if(typeof cls!=='string'||!ordinary.has(cls))return finish('unknown_item');
  }
@@ -69,11 +76,31 @@ function readEvolutionSteps(row:ItemFieldProjection,targets:ReadonlyMap<number,I
  }
  return ids;
 }
+/** PetFriendship.GetFriendshipLevels (0x3A551F0) merges per-pet levels
+ * into default levels by Level (predicate 0x38D07E0), replacing reward lists.
+ * Original protoDb record 400: default positions 0..5 map to levels 0..5;
+ * ALL 241 per-pet definitions have levels 2 and 5 and exactly one Tier1Reward
+ * at level 5, quantity 1. Create reads index 5, then first Tier1Reward
+ * (0x6F5C809..0x6F5C89E). Do not infer a reward from default or missing data.
+ * DB-01's byOwner projection already validates every referenced ItemID.
+ */
+function readNotableCompanionReward(row:ItemFieldProjection):{itemId:number;quantity:number}|null{
+ const values=row.values['acquisition.individualFriendshipRewards'];
+ if(!Array.isArray(values))return null;
+ const level5=values.filter(v=>record(v)&&v.level===5);
+ if(level5.length!==1)return null;
+ const reward=level5[0];
+ if(!record(reward)||reward.kind!=='pet_friendship_reward'||reward.sourceId!==row.itemId||
+    reward.sourceRecord!=='PetFriendship'||reward.sourceRecordIndex!==400||
+    reward.sourceProtoDbSha256!=='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'||
+    reward.rewardStage!=='Tier1Reward'||!itemId(reward.itemId)||!itemId(reward.amount))return null;
+ return {itemId:reward.itemId,quantity:reward.amount};
+}
 export async function readShopRuntimePrefix(revision:PremiumBundleRevision,db:Pick<PublicCompleteItemMaster,'release'|'getFieldCatalog'|'getItemFields'>){
  if(revision.gameVersion!=='1.26.2'||db.release.target.gameVersion!==revision.gameVersion)return buildShopRuntimePrefix({...revision,gameVersion:'unsupported'},[],false);
  const fields=new Set((await db.getFieldCatalog()).map(f=>f.field));
  const has=fields.has('acquisition.evolutionChain');
- const rows=fields.has('sourceClass')?await db.getItemFields(revision.components.map(c=>c.itemId),['sourceClass','acquisition.evolutionChain','source.IsNotable'].filter(f=>fields.has(f))):[];
+ const rows=fields.has('sourceClass')?await db.getItemFields(revision.components.map(c=>c.itemId),['sourceClass','acquisition.evolutionChain','source.IsNotable','acquisition.individualFriendshipRewards'].filter(f=>fields.has(f))):[];
  const targetIds=new Set<number>();
  if(has&&fields.has('acquisition.evolutionSource'))for(const row of rows){
    const chain=row?.values['acquisition.evolutionChain'];
