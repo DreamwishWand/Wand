@@ -5478,6 +5478,16 @@ mod biome_decoration_tests{
   let copied:Value=serde_json::from_str(&landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).unwrap()).unwrap();
   assert_eq!(copied["Player"],raw["Player"]);assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["ItemID"],40200001);
   assert_eq!(copied["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],6);
+  dup["replacementOrientation"]="GridOrientation_Left".into();
+  let turned:Value=serde_json::from_str(&landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).unwrap()).unwrap();
+  assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["5"]["Orientation"],"GridOrientation_Left");
+  assert_eq!(turned["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],raw["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+  assert_eq!(turned["Player"],raw["Player"]);
+  let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":5}]);
+  assert!(landscape_candidate(blocked.to_string().as_bytes(),&dup.to_string(),&dest.to_string()).is_err());
+  dup["replacementOrientation"]="GridOrientation_DownLeft".into();
+  assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
+  dup.as_object_mut().unwrap().remove("replacementOrientation");
   dup["x"]=196.into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
   dup["x"]=1.into();dup["freePlacement"]="true".into();assert!(landscape_candidate(&bytes,&dup.to_string(),&dest.to_string()).is_err());
  }
