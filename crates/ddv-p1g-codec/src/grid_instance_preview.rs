@@ -927,9 +927,63 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let source=std::str::from_utf8(profile).map_err(|_|bad)?;
   return (if free{ddv_save_patch::preview_free_support_grid_transfer(source,&target,expected,&d,(x,y),orientation)}else{ddv_save_patch::preview_support_grid_transfer(source,&target,expected,&d,(x,y),orientation)}).map_err(|_|CodecError::Patch);
  }
- let floor_transfer=o.get("floorTransfer").is_some();
- if let Some(stock)=o.get("stock").or_else(||o.get("floorTransfer")){
-  if floor_transfer&&(stock.is_array()||!free){return Err(bad);}
+ if let Some(value)=o.get("floorTransfer"){
+  use zeroize::{Zeroize,Zeroizing};
+  let rows=if let Some(a)=value.as_array(){a.as_slice()}else{std::slice::from_ref(value)};
+  if !free||rows.is_empty()||rows.len()>32||objects.len()+rows.len()>512{return Err(bad);}
+  let path=o.get("terrainPath").and_then(Value::as_str).ok_or(bad)?;
+  let g=grids.get(&gid).ok_or(bad)?;
+  if g.get("GridDataPath").and_then(Value::as_str)!=Some(path){return Err(bad);}
+  let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)? as u32;
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+  let entry=catalog.get("grids").and_then(Value::as_array).and_then(|a|a.iter().find(|v|v.get(0).and_then(Value::as_str)==Some(path))).ok_or(bad)?;
+  let sx=entry[1].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  let sy=entry[2].as_u64().filter(|n|*n>0&&*n<=256).ok_or(bad)? as u32;
+  if entry[4].as_array().is_none_or(|a|a.len()!=(sx*sy) as usize){return Err(bad);}
+  let resolve=|value:&Value|->Result<(GridCoordinateTarget,(i32,i32)),CodecError>{
+   let row=value.as_object().ok_or(bad)?;
+   let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
+
+   if row.len()!=8+usize::from(row.contains_key("supportSource"))||row.contains_key("roomSource")==row.contains_key("localOrdinal")||row.contains_key("roomSource")&&row.contains_key("supportSource")||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
+   let expected=(int(value,"expectedX")?,int(value,"expectedY")?);
+   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
+   // The support writer remains cardinal-only, including its source witness.
+   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
+   let t=if let Some(w)=row.get("roomSource"){crate::indoor_room_view::resolve_room_cut_source(profile,&root,w,id,expected,old,None,true,false)?}else{
+    let ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+    if let Some(w)=row.get("supportSource"){resolve_support_leaf_cut(profile,ordinal,w,id,expected,old)?}else{
+     let t=resolve_grid_orientation_target(profile,ordinal,id,expected,"full",old)?;
+     let (_,_,f,sx,sy)=house_exterior_identity(&root,&t.grid_id)?;
+     if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}
+     let refs=grid_identity_dependencies(profile,&t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+     t
+    }
+   };
+   Ok((t,expected))
+
+  };
+  let mut seen=HashSet::new();let mut moves=Vec::new();
+  for row in rows{
+   let (t,expected)=resolve(row)?;
+   if t.grid_id==gid||!seen.insert((t.grid_id.clone(),t.object_id.clone())){return Err(bad);}
+   let xy=(int(row,"x")?,int(row,"y")?);
+   if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor{return Err(bad);}
+   let orientation=row.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+   moves.push((t,expected,xy,orientation));
+  }
+  let next=u64::from(ddv_save_patch::support_grid_next_object_id(g).map_err(|_|bad)?);
+  let ids=(0..rows.len() as u64).map(|n|next.checked_add(n).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
+  let refs=grid_identity_dependencies_for_ids(profile,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
+  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());let mut last=None;
+  for (target,expected,xy,orientation) in moves{
+   let mut draft=ddv_save_patch::preview_free_support_grid_transfer(&working,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+   if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+   working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
+  }
+  let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
+ }
+ if let Some(stock)=o.get("stock"){
   // A support template is restored onto an existing, empty, exact native
   // surface. Do not allocate a new Grid or copy source identities/state.
   if let Some(rows)=stock.as_array(){
@@ -994,9 +1048,9 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
   }
   let row=stock.as_object().ok_or(bad)?;
-  let action=if floor_transfer{"place"}else{row.get("action").and_then(Value::as_str).ok_or(bad)?};
+  let action=row.get("action").and_then(Value::as_str).ok_or(bad)?;
   let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
-  let amount=if floor_transfer{0}else{row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?};
+  let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let source=std::str::from_utf8(profile).map_err(|_|bad)?;
   if action=="pickup"{
    if free||row.len()!=7||o.contains_key("terrainPath")||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"index"|"expectedX"|"expectedY"|"expectedOrientation")){return Err(bad);}
@@ -1008,27 +1062,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    if grid_identity_dependencies_for_ids(profile,&gid,&[key.clone()])?.blocking()>0{return Err(bad);}
    return ddv_save_patch::preview_furniture_stock_transaction(source,amount,ddv_save_patch::FurnitureStockAction::Pickup{target:&target,expected}).map_err(|_|CodecError::Patch);
   }
-  let floor_source=if floor_transfer{
-   if row.len()!=8+usize::from(row.contains_key("supportSource"))||row.contains_key("roomSource")==row.contains_key("localOrdinal")||row.contains_key("roomSource")&&row.contains_key("supportSource")||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
-   let expected=(int(stock,"expectedX")?,int(stock,"expectedY")?);
-   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-   // The support writer remains cardinal-only, including its source witness.
-   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
-   let t=if let Some(w)=row.get("roomSource"){crate::indoor_room_view::resolve_room_cut_source(profile,&root,w,id,expected,old,None,true,false)?}else{
-    let ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
-    if let Some(w)=row.get("supportSource"){resolve_support_leaf_cut(profile,ordinal,w,id,expected,old)?}else{
-     let t=resolve_grid_orientation_target(profile,ordinal,id,expected,"full",old)?;
-     let (_,_,f,sx,sy)=house_exterior_identity(&root,&t.grid_id)?;
-     if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}
-     let refs=grid_identity_dependencies(profile,&t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
-     t
-    }
-   };
-   Some((t,expected))
-  }else{
-   if action!="place"||row.len()!=6||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))||amount==0{return Err(bad);}
-   None
-  };
+  if action!="place"||row.len()!=6||row.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"expectedStock"|"x"|"y"|"orientation"))||amount==0{return Err(bad);}
   let path=o.get("terrainPath").and_then(Value::as_str).ok_or(bad)?;
   let g=grids.get(&gid).ok_or(bad)?;
   if g.get("GridDataPath").and_then(Value::as_str)!=Some(path)||objects.len()>=512{return Err(bad);}
@@ -1045,9 +1079,6 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let refs=grid_identity_dependencies_for_ids(profile,&gid,&[next.to_string()])?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid,layout_path:String::new(),data_path:path.to_owned(),tessellation:factor,size:(sx,sy)};
-  if let Some((t,expected))=floor_source{
-   return ddv_save_patch::preview_free_support_grid_transfer(source,&t,expected,&d,(x,y),orientation).map_err(|_|CodecError::Patch);
-  }
   return (if free{ddv_save_patch::preview_free_support_grid_stock_place(source,&d,id,(x,y),orientation,amount)}else{ddv_save_patch::preview_support_grid_stock_place(source,&d,id,(x,y),orientation,amount)}).map_err(|_|CodecError::Patch);
  }
  let group=o.get("groupEdit").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
@@ -2853,8 +2884,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
     let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
     if rows.iter().any(|r|r.get("supportSource").is_some()){
-        if !free||rows.len()!=1{return Err(bad);}
-        let row=&rows[0];let o=row.as_object().filter(|o|o.len()==10&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
+        if !free||rows.len()>32{return Err(bad);}
+        let mut moves=Vec::new();let mut seen=HashSet::new();let mut allocations=HashMap::<String,u64>::new();
+        for row in rows{
+        let o=row.as_object().filter(|o|o.len()==10&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"destination"|"x"|"y"|"orientation"))).ok_or(bad)?;
         let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
         let item=o.get("itemId").and_then(Value::as_str).and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&n/100_000==400)).ok_or(bad)?;
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
@@ -2868,11 +2901,20 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
           !(ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||factor==1&&!scope.starts_with("SceneLayouts/FloatingIslands/")&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(bad);}
         let grid=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
         let next=grid.get("NextGridObjectID").and_then(Value::as_u64).filter(|n|*n>0&&*n<u32::MAX as u64).ok_or(bad)?;
-        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[next.to_string()])?;
+        if !seen.insert((target.grid_id.clone(),target.object_id.clone())){return Err(bad);}
+        let offset=allocations.entry(d.grid_id.clone()).or_default();
+        let fresh=next.checked_add(*offset).filter(|n|*n<u32::MAX as u64).ok_or(bad)?;*offset+=1;
+        let refs=grid_identity_dependencies_for_ids(profile,&d.grid_id,&[fresh.to_string()])?;
         if refs.blocking()>0||refs.historical>0{return Err(bad);}
-        let draft=ddv_save_patch::preview_free_indoor_to_outdoor_transfer(std::str::from_utf8(profile).map_err(|_|bad)?,&target,expected,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
-        if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{return Err(bad);}
-        return Ok(draft.patched_json);
+        moves.push((target,expected,d,xy,orientation.to_owned()));
+        }
+        let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
+        for (target,expected,d,xy,orientation) in moves{
+            let mut draft=ddv_save_patch::preview_free_indoor_to_outdoor_transfer(&working,&target,expected,&d,xy,&orientation).map_err(|_|CodecError::Patch)?;
+            if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(bad);}
+            working.zeroize();*working=std::mem::take(&mut draft.patched_json);
+        }
+        return Ok(std::mem::take(&mut *working));
     }
     if rows.iter().any(|r|r.get("roomSource").is_some()){
         if rows.len()>32{return Err(bad);}
@@ -4616,6 +4658,35 @@ mod terrain_session_tests{
         let d=support_child_candidate(&raw,&paste).unwrap();let moved:Value=serde_json::from_str(&d.patched_json).unwrap();
         assert_eq!(moved["Player"],save["Player"]);
         assert!(moved["World"]["GridCollection"]["Grids"]["10"]["Objects"].get("3").is_none());
+        // Both witnesses refer to the original support, not to the shifted
+        // index after the first removal. IDs, stock and parent state survive.
+        let mut grouped=save.clone();
+        grouped["World"]["GridCollection"]["Grids"]["11"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40005162,"X":2,"Y":0,"Orientation":"GridOrientation_Down"});
+        grouped["World"]["GridCollection"]["Grids"]["11"]["NextGridObjectID"]=3.into();
+        let raw_group=serde_json::to_vec(&grouped).unwrap();
+        let mut outdoor=plan.clone();
+        let mut second=outdoor["rows"][0].clone();
+        second["supportSource"]["index"]=1.into();second["expectedX"]=2.into();second["x"]=5.into();
+        outdoor["rows"].as_array_mut().unwrap().push(second);
+        let result=group_cut_candidate(&raw_group,&outdoor.to_string()).unwrap();
+        let after:Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(after["Player"],grouped["Player"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["11"]["Objects"],serde_json::json!({}));
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["5"]["X"],5);
+        let mut support=serde_json::json!({"localOrdinal":to,"itemId":40005160,"expectedX":8,"expectedY":5,"path":[],"freePlacement":true,"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","floorTransfer":[{"localOrdinal":from,"supportSource":witness,"itemId":40005162,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":0,"y":0,"orientation":"GridOrientation_Left"}]});
+        let mut second=support["floorTransfer"][0].clone();second["supportSource"]["index"]=1.into();second["expectedX"]=2.into();second["x"]=2.into();
+        support["floorTransfer"].as_array_mut().unwrap().push(second);
+        let d=support_child_candidate(&raw_group,&support).unwrap();
+        let after:Value=serde_json::from_str(&d.patched_json).unwrap();
+        assert_eq!(after["Player"],grouped["Player"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"],grouped["World"]["GridCollection"]["Grids"]["10"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["11"]["Objects"],serde_json::json!({}));
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["12"]["Objects"]["2"]["X"],2);
+        let mut duplicate=support.clone();duplicate["floorTransfer"][1]=duplicate["floorTransfer"][0].clone();
+        assert!(support_child_candidate(&raw_group,&duplicate).is_err());
+        grouped["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":11,"GridObjectID":2}]);
+        assert!(support_child_candidate(&serde_json::to_vec(&grouped).unwrap(),&support).is_err());
+        assert!(group_cut_candidate(&serde_json::to_vec(&grouped).unwrap(),&outdoor.to_string()).is_err());
         save["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":11,"GridObjectID":1}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&save).unwrap(),&plan.to_string()).is_err());
     }
