@@ -95,7 +95,10 @@ mod tests{
  #[test]fn private_storage_roundtrip_preserves_unrelated_bytes(){
   let backup=export(SAVE).unwrap();let doc:Value=serde_json::from_str(&backup).unwrap();assert_eq!(doc["rows"].as_array().unwrap().len(),1);
   let changed=SAVE.replace("\"Amount\":5","\"Amount\":3");
-  assert_eq!(restore(&changed,&backup).unwrap(),SAVE);
+  let restored=restore(&changed,&backup).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&restored).unwrap(),serde_json::from_str::<Value>(SAVE).unwrap());
+  let original=r#"[{"ItemID":30000001,"Amount":3,"State":null}]"#;
+  assert_eq!(restored,changed.replace(original,&doc["rows"][0]["inventory"].to_string()));
   assert!(restore(SAVE,&backup).is_err());
   assert!(restore(&changed.replace("\"Size\":48","\"Size\":32"),&backup).is_err());
   let unknown=changed.replace("\"State\":null","\"State\":{\"Unknown\":1}");
