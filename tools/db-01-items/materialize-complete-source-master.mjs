@@ -1245,7 +1245,51 @@ function ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLa
   }
   return result;
 }
+// RewardAppearanceCondition enum and MemoryShardItemData field declarations
+// checked against exact Steam 1.26.2 IL2CPP dump. Custom/Mission are not
+// ordinary routes by themselves; no live drop chance or guaranteed grant.
+const memoryAppearanceNames=['Anywhere','Gardening','Fishing','Cooking','RemovingWeeds','WateringFlowers',
+  'FeedingCritters','Exploring','Mining','Custom','Digging','RemovingBlockers','Mission','CatchingSnippets'];
+function memoryAppearanceSources(rows,source){
+  const result=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceItemsSha256!=='de579d94fa10258249c9c477075110d0bcf001a0d865a15ded039efb3616c8f0'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08')return result;
+  const decl=source.sourceFieldDeclarations.MemoryShardItemData;
+  check(decl.AppearanceCondition===14&&decl.Conditions===16&&decl.NumberOfShards===13&&
+    decl.ConsummableOverrideItemID===11,'MEMORY_APPEARANCE_SCHEMA');
+  const byId=new Map(rows.map(r=>[r.itemId,r])),counts={},gates={};
+  for(const row of rows){
+    if(row.sourceClass!=='MemoryShardItemData')continue;
+    check(row.nativeCategory==='MemoryShard','MEMORY_APPEARANCE_CLASS');
+    const p={...row.nativeProperties,...row.sourceAttributes},code=p.AppearanceCondition;
+    check(Number.isSafeInteger(code)&&code>=0&&code<memoryAppearanceNames.length&&ID(p.NumberOfShards),'MEMORY_APPEARANCE_VALUE');
+    const gate=p.Conditions;
+    const absent=gate===undefined&&Array.isArray(row.observedFields)&&!row.observedFields.some(([n])=>n===decl.Conditions);
+    const empty=gate!==null&&typeof gate==='object'&&!Array.isArray(gate)&&Object.keys(gate).length===0;
+    const gateStatus=absent?'field_absent':empty?'explicit_empty':gate===undefined?'unresolved':'configured';
+    // A condition-free explicit ordinary action is affirmative original
+    // acquisition evidence. Other gates and Custom remain separately visible.
+    const ordinary=[1,2,3,4,5,6,7,8,10,11,13].includes(code)&&(absent||empty);
+    const override=p.ConsummableOverrideItemID;
+    const evidence={kind:'memory_appearance_condition',appearanceConditionCode:code,
+      appearanceCondition:memoryAppearanceNames[code],sourcePath:'source.AppearanceCondition',
+      conditionsFieldPresent:gate!==undefined,conditions:gate??null,gateStatus,configuredShardCount:p.NumberOfShards,
+      consummableOverrideItemId:ID(override)?override:null,
+      consummableOverrideResolved:ID(override)&&byId.has(override),
+      category:ordinary?'ordinary_gameplay':null,
+      sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256.MemoryShard,
+      sourceIl2cppDumpSha256:source.sourceIl2cppDumpSha256,guaranteedGrantVerified:false,currentAvailabilityVerified:false};
+    result.set(row.itemId,evidence);
+    counts[code]=(counts[code]??0)+1;gates[gateStatus]=(gates[gateStatus]??0)+1;
+  }
+  check(result.size===472&&counts[9]===299,'MEMORY_APPEARANCE_CENSUS');
+  console.log('DB01_MEMORY_APPEARANCE '+JSON.stringify({items:result.size,counts,gates,
+    ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
+  return result;
+}
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters){
+  const memoryAppearance=memoryAppearanceSources(rows,source);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1565,6 +1609,12 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(configuredStore){
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
       categorySet.add('ordinary_gameplay');
+    }
+    const memory=memoryAppearance.get(row.itemId);
+    if(memory){
+      add('acquisition.memoryAppearance',row.itemId,memory);
+      add('acquisition.memoryAppearanceCondition',row.itemId,memory.appearanceCondition);
+      if(memory.category)categorySet.add(memory.category);
     }
     const historicStar=historicalStarpath.byItem.get(row.itemId);
     if(historicStar?.length){
