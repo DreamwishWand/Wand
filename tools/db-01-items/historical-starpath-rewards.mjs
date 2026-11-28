@@ -34,7 +34,8 @@ export function loadHistoricalStarpathRewards(project,source,rows){
     const evidence={seasonId,kind,pageIndex,rewardIndex,configuredAmount:amount,premiumOnly:premium===1,
       premiumFieldPresent:premium!==null,sourcePlatform:'Switch',sourceGameVersion:'1.24.1',sourceProtoDbSha256:SRC,
       sourceSeasonRecordIndex:index,sourceSeasonSha256:digest,
-      sourcePath:kind==='vault'?'VaultRewards.Data.Rewards['+rewardIndex+']':(kind==='bonus'?'BonusRewards.Pages':'RewardsPages')+'['+pageIndex+'].Rewards['+rewardIndex+']',
+      sourcePath:kind==='vault'?'VaultRewards.Id':(kind==='bonus'?'BonusRewards.Pages':'RewardsPages')+'['+pageIndex+'].Rewards['+rewardIndex+']',
+      vaultRewardSourcePath:kind==='vault'?'Rewards['+rewardIndex+']':null,
       vaultDefinitionId:vault?.key??null,vaultDefinitionRecordIndex:vault?.index??null,vaultDefinitionSha256:vault?.digest??null,
       alternateItemId:alternate,guaranteedGrantVerified:false,currentAvailabilityVerified:false};
     if(known.has(itemId)){
