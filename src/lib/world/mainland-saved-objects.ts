@@ -223,7 +223,6 @@ export interface MainlandTransferPlan{
 export function exteriorWorldKey(g:MainlandGrid):string{return sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);}
 export function crossWorldBuildingCandidate(p:MainlandSavedObject|null,from:MainlandGrid|undefined,g:MainlandGrid|undefined,timeline:WorldEditTimeline,x:number,y:number,mode:'move'|'duplicate'):MainlandTransferPlan|null{
  const house=Math.floor(Number(p?.object.itemId)/100000)===205,character=characterHouseExterior(Number(p?.object.itemId));
- if(character&&mode==='move')return null;
  const bound=(g:MainlandGrid)=>bindMainlandGrid(g)??(house||character?bindFloatingIslandGrid(g):null);
  if(!p||!from||!g||p.area!==from.key||!bound(from)||!bound(g)||exteriorWorldKey(from)===exteriorWorldKey(g)||g.factor!==from.factor||g.factor!==p.factor||
   currentWorldEdits(timeline).length||!p.shape||p.shape.cellCount<1||p.shape.cellCount>65536||p.object.nativeType!=='Building'||![200,201,202,203,205].includes(Math.floor(Number(p.object.itemId)/100000))||

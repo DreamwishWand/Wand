@@ -1944,6 +1944,21 @@ fn character_house_remove_candidate(profile:&[u8],root:&Value,target:&GridCoordi
     ddv_save_patch::preview_character_house_exterior_remove(std::str::from_utf8(profile).map_err(|_|bad)?,target,expected,orientation).map_err(|_|CodecError::Patch)
 }
 
+/// Move an exterior only when the existing removal contract still proves
+/// a surviving entrance after the copy. Never relocate CharacterStates,
+/// interior scenes, quests, or navigation pointers to force the move.
+pub(super) fn character_house_move_candidate(profile:&[u8],target:&GridCoordinateTarget,expected:(i32,i32),dest:&ddv_save_patch::PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+    use zeroize::{Zeroize,Zeroizing};
+    let refs=grid_identity_dependencies(profile,target)?;
+    if refs.blocking()>0||refs.historical>0{return Err(CodecError::Patch);}
+    let mut copy=character_house_copy_candidate(profile,target,expected,dest,xy,orientation,orientation,true)?;
+    let candidate=Zeroizing::new(std::mem::take(&mut copy.patched_json));
+    let root:Value=serde_json::from_str(&candidate).map_err(|_|CodecError::Json)?;
+    let result=character_house_remove_candidate(candidate.as_bytes(),&root,target,expected,orientation);
+    copy.patched_json.zeroize();
+    result
+}
+
 fn building_duplicate_candidate(profile:&[u8],plan:&Value,remove:bool)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let o=plan.as_object().filter(|o|if remove{o.len()==5}else{o.len()==8||o.len()==9&&o.contains_key("replacementOrientation")}).ok_or(bad)?;
@@ -4485,8 +4500,24 @@ mod terrain_session_tests{
         assert!(foreign_removed["World"]["GridCollection"]["Grids"]["11"]["Objects"].as_object().unwrap().is_empty());
         assert_eq!(foreign_removed["World"]["Villages"],routed["World"]["Villages"]);
         assert_eq!(foreign_removed["World"]["FloatingIslands"],routed["World"]["FloatingIslands"]);
+        // Move a redundant foreign entrance as a single transaction, without
+        // touching the character presence or original house.
+        let moved_target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"11".into(),object_id:"7".into(),item_id:20000016};
+        let home_witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100});
+        let routed_text=routed.to_string();
+        let home=resolve_plain_grid_destination(routed_text.as_bytes(),&home_witness).unwrap();
+        let moved=character_house_move_candidate(routed_text.as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right").unwrap();
+        let after:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"],routed["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]);
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["State"],state);
+        assert!(after["World"]["GridCollection"]["Grids"]["11"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(after["World"]["Villages"],routed["World"]["Villages"]);
+        assert_eq!(after["World"]["FloatingIslands"],routed["World"]["FloatingIslands"]);
+        assert_eq!(after["Player"],routed["Player"]);
+        assert!(character_house_move_candidate(json.as_bytes(),&t,(1,2),&d,(20,21),"GridOrientation_Down").is_err());
         let mut local=routed.clone();local["World"]["FloatingIslands"]["1"]["CharacterStates"]["10000007"]=serde_json::json!({});
         assert!(group_paste_candidate(local.to_string().as_bytes(),&remove_island.to_string()).is_err());
+        assert!(character_house_move_candidate(local.to_string().as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right").is_err());
         let mut ambiguous=routed.clone();ambiguous["World"]["Villages"][0]["Areas"]["1"]["GridIDs"]=serde_json::json!([10,11]);
         assert!(group_paste_candidate(ambiguous.to_string().as_bytes(),&remove_island.to_string()).is_err());
         let mut unrelated=routed.clone();unrelated["World"]["Villages"][0]["CharacterStates"]=serde_json::json!({"10000001":{}});

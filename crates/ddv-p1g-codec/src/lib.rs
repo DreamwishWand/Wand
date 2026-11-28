@@ -1895,8 +1895,8 @@ mod browser_amount_preview {
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let landscape=item/100_000==402;
             let mut draft=if world_change.is_some()&&grid_instance_preview::character_house_exterior(item){
-                if world_change!=Some("duplicate")||text("expectedOrientation")?!=text("orientation")?{return Err(invalid());}
-                grid_instance_preview::character_house_copy_candidate(original,&target,expected,&dest,(int("x")?,int("y")?),text("expectedOrientation")?,text("orientation")?,true)
+                if text("expectedOrientation")?!=text("orientation")?{return Err(invalid());}
+                if world_change==Some("move"){grid_instance_preview::character_house_move_candidate(original,&target,expected,&dest,(int("x")?,int("y")?),text("orientation")?)}else{grid_instance_preview::character_house_copy_candidate(original,&target,expected,&dest,(int("x")?,int("y")?),text("expectedOrientation")?,text("orientation")?,true)}
                     .map_err(|_|fail("DB05_GRID_TRANSFER_UNSUPPORTED"))?
             }else{if house||building||landscape{
                 let root:serde_json::Value=serde_json::from_slice(original).map_err(|_|invalid())?;
