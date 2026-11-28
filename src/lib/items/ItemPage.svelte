@@ -10,6 +10,7 @@
   import {CollectionRuntime,type CollectionItem,type CollectionEntry} from '$lib/collection/runtime';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import ItemPageExtra from './ItemPageExtra.svelte';
   import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import CurrentItemFacts from '$lib/collection/CurrentItemFacts.svelte';
@@ -150,6 +151,7 @@
       <CurrentItemFacts {itemId} {locale}/>
       <RelatedQuests {itemId} {locale}/>
     </div>
+    <ItemPageExtra {record} {locale}/>
     <ItemMasterDetails {itemId} {locale} {expert}/>
   {/if}
 </article>

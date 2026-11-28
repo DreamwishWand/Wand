@@ -7,6 +7,8 @@
   import {readCollectionItemFacts,type CollectionItemFacts} from './current-item-facts.ts';
   import {collectionDb01AcquisitionLabel} from './db01-browse-labels.ts';
   import ItemArtwork from './ItemArtwork.svelte';
+  import {itemEntityHref} from '$lib/items/entity-item-url';
+  import {isWandLanguage} from '$lib/ui/preferences';
   export let itemId:number;
   export let locale:string;
   export let compact=false;
@@ -30,7 +32,9 @@
     ['キャッシュ値','Cached value','Valeur en cache','Valore in cache','Cachewert','Valor en caché','缓存值','Valor em cache'],
     ['読み込み中','Loading','Chargement','Caricamento','Laden','Cargando','加载中','Carregando'],
     ['再試行','Retry','Réessayer','Riprova','Erneut versuchen','Reintentar','重试','Tentar novamente'],
-    ['関連する原本タグ','Source tags','Tags source','Tag originali','Original-Tags','Etiquetas originales','原始标签','Etiquetas originais']
+    ['関連する原本タグ','Source tags','Tags source','Tag originali','Original-Tags','Etiquetas originales','原始标签','Etiquetas originais'],
+    ['ユニバース','Universe','Univers','Universo','Universum','Universo','世界观','Universo'],
+    ['原本の関連ワールド','Associated world tags','Mondes associés','Mondi associati','Zugehörige Welt-Tags','Mundos asociados','关联世界标签','Mundos associados']
   ];
   function t(n:number,l:string){return labels[n][languages.indexOf(l)]??labels[n][1];}
   function fmt(n:number,l:string){return n.toLocaleString(l);}
@@ -46,6 +50,8 @@
   }
   $: if(open)void load(itemId,locale,compact);
   $: tags=[...new Set(facts?.taxonomy?.tags.flatMap(row=>row.identity?.name&&!/^is[A-Z]|^Is[A-Z]/.test(row.key)?[row.identity.name]:[])??[])];
+  $: universes=[...new Set(facts?.taxonomy?.browseUniverses.flatMap(row=>row?.name?[row.name]:[])??[])];
+  $: worlds=[...new Set(facts?.taxonomy?.worlds.flatMap(row=>row?.name?[row.name]:[])??[])];
   $: sourceNames=[...new Set([
     ...(facts?.sources?.indexed.filter(row=>row.evidence.category!==null).map(row=>row.identity?.name)??[]),
     ...(facts?.sources?.additional.map(row=>row.identity?.name)??[])
@@ -61,6 +67,8 @@
     {:else if error}<p role="alert">{t(6,locale)} <button type="button" on:click={()=>void load(itemId,locale,compact)}>{t(11,locale)}</button></p>
     {:else if facts}
       {#if facts.taxonomy?.sourceSet?.name}<p><strong>{t(5,locale)}:</strong> {facts.taxonomy.sourceSet.name}</p>{/if}
+      {#if universes.length}<p><strong>{t(13,locale)}:</strong> {universes.join(' · ')}</p>{/if}
+      {#if worlds.length}<p><strong>{t(14,locale)}:</strong> {worlds.join(' · ')}</p>{/if}
       {#if tags.length}<div class="fact-tags" aria-label={t(12,locale)}>{#each (compact?tags.slice(0,8):tags) as tag}<span>{tag}</span>{/each}</div>{/if}
       {#if facts.sources?.effectiveCategories.length||sourceNames.length}
         <h4>{t(4,locale)}</h4>
@@ -84,7 +92,7 @@
               <div class="fact-ingredient">
                 {#if part.kind==='item'}
                   <span class="fact-icon"><ItemArtwork itemId={part.itemId}/></span>
-                  <span>{facts.names.get(part.itemId)??t(7,locale)}</span>
+                  {#if facts.names.has(part.itemId)}<a href={itemEntityHref(base,part.itemId,isWandLanguage(locale)?locale:undefined)}>{facts.names.get(part.itemId)}</a>{:else}<span>{t(7,locale)}</span>{/if}
                 {:else if part.kind==='ingredient_type'}
                   <span>{facts.names.get(part.tagId)??t(7,locale)}</span>
                 {:else}
@@ -109,6 +117,7 @@
   .fact-tags span{border:1px solid var(--wand-line);padding:2px 5px;border-radius:4px}
   .fact-price,.fact-ingredient{display:flex;align-items:center;gap:5px;min-height:25px}
   .fact-icon{width:24px;height:24px;flex:none}
+  .fact-ingredient a{color:inherit;text-decoration:underline;text-underline-offset:2px}
   .fact-quantity{margin-left:auto;white-space:nowrap}
   .fact-recipe{border-bottom:1px solid var(--wand-line);padding:4px 0}
   .fact-note{font-size:10px;color:var(--wand-muted);line-height:1.4}
