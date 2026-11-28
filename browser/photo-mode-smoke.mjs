@@ -145,6 +145,31 @@ try{
     }
     console.log('Collection pose scene ready:',id,'both body types; seek, speed, orbit, visibility');
   }
+  // Exercise a native facial layer on both original body rigs with the same pose clock.
+  assert.deepEqual(Object.keys(index.faceLayers).sort(),['female','male']);
+  assert.ok(Object.values(index.faceLayers).every(rows=>rows.length===7));
+  await page.goto(base+'/collection/?item='+expressionId);
+  const expressionDetail=page.locator('details.pose-test');
+  await expressionDetail.locator('summary').waitFor({timeout:60000});
+  await expressionDetail.locator('summary').click();
+  const facial=expressionDetail.locator('.pose-faces select'),faceControls=expressionDetail.locator('.body-options button'),faceTime=expressionDetail.locator('input.seek');
+  await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+  assert.equal(await facial.locator('option').count(),8);
+  const faceReady=()=>page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+  await faceControls.nth(0).click();await faceReady();
+  await faceTime.evaluate(e=>{e.value=String(Number(e.max)*.3);e.dispatchEvent(new Event('input',{bubbles:true}))});
+  const position=await faceTime.inputValue();
+  for(const [b,number] of [['male',5],['female',3]]){
+    if(b==='female'){await faceControls.nth(1).click();await faceReady()}
+    const previous=await faceTime.inputValue(),url=base+'/photo-mode-preview/'+index.faceLayers[b][number].asset.sha256+'.wfl';
+    const received=page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
+    await facial.selectOption(String(number));await received;await faceReady();
+    assert.equal(await faceTime.inputValue(),previous);
+    assert.equal(await faceControls.nth(b==='male'?0:1).getAttribute('aria-pressed'),'true');
+    await facial.selectOption('pose');await faceReady();assert.equal(await faceTime.inputValue(),previous);
+  }
+  assert.ok(Number(position)>0);
+  console.log('Native normal facial layers ready on both body rigs; seek retained');
   const alternate=index.variants[maxDog][0];
   const identity=alternate.male.sourceSha256+'.'+alternate.female.sourceSha256;
   await page.goto(base+'/collection/?item='+maxDog+'&pose='+identity);
