@@ -12,6 +12,14 @@ pub struct RecoveryDestination{
  pub used:u32,
 }
 fn key_id(s:&str)->Option<u32>{s.parse::<u32>().ok().filter(|n|n.to_string()==s)}
+fn empty_slot(row:&Value)->bool{
+ row.as_object().is_some_and(|m|matches!(m.len(),2|3)&&m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
+ row["ItemID"].as_u64()==Some(0)&&row["Amount"].as_u64()==Some(0)&&row.get("State").is_none_or(Value::is_null)
+}
+fn empty_grid_state(value:Option<&Value>)->bool{
+ value.is_none_or(|v|v.is_null()||v.as_object().is_some_and(|m|m.is_empty()))
+}
+
 /// Only player-owned, writable, structurally known inventory arrays.
 /// A parentless container is displayed as Inventory, not assumed to be
 /// a specific backpack slot on every game version.
@@ -53,7 +61,7 @@ pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
    if g["ID"].as_u64()!=key_id(&target.grid_id).map(u64::from)||o["ID"].as_u64()!=key_id(&target.object_id).map(u64::from)||!storage_transform_pose(root,o){continue;}
    (Some(item),Some(target.clone()))
   };
-  rows.push(RecoveryDestination{container_id:id.clone(),parent_item,owner,capacity,used:inv.len() as u32});
+  rows.push(RecoveryDestination{container_id:id.clone(),parent_item,owner,capacity,used:inv.iter().filter(|row|!empty_slot(row)).count() as u32});
  }
  rows.sort_by_key(|r|r.container_id.parse::<u32>().unwrap_or(u32::MAX));Ok(rows)
 }
@@ -65,7 +73,7 @@ pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:
  o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
- super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&o.get("State").is_none_or(Value::is_null)
+ super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
 }
 /// Recover exactly one stateless field record as one item. A known existing
 /// null-State stack is incremented or a fresh row appended. No overwrite of
@@ -88,14 +96,21 @@ pub fn recover(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orien
   preview_existing_quantity(source,QuantityTarget::ChestSlot{container_id:container.into(),slot_index:index,item_id:target.item_id},n,n+1)?.patched_json
  }else{
   if dest.used>=dest.capacity{return Err(BAD);}
-  let entry=json!({"ItemID":target.item_id,"Amount":1,"State":null});expected_inv.push(entry.clone());
-  let path=vec![k("Player"),k("ContainerInventories"),k(container),k("Inventory")];
+  let entry=json!({"ItemID":target.item_id,"Amount":1,"State":null});
+  let empty=rows.iter().take(dest.capacity as usize).position(empty_slot);
+  let mut path=vec![k("Player"),k("ContainerInventories"),k(container),k("Inventory")];
+  if let Some(i)=empty{path.push(Segment::Index(i));expected_inv[i]=entry.clone();}
+  else{if rows.len()>=dest.capacity as usize{return Err(BAD);}expected_inv.push(entry.clone());}
   let mut loc=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
   loc.amount_path=vec![Segment::Index(usize::MAX)];loc.capture.insert(path.clone(),None);loc.walk_complete()?;
   let span=loc.capture.get(&path).and_then(|v|v.clone()).ok_or(BAD)?;
-  let at=span.end.checked_sub(1).ok_or(BAD)?;
-  if source.as_bytes().get(at)!=Some(&b']'){return Err(BAD);}
-  format!("{}{}{}{}",&source[..at],if rows.is_empty(){""}else{","},entry,&source[at..])
+  if empty.is_some(){
+   format!("{}{}{}",&source[..span.start],entry,&source[span.end..])
+  }else{
+   let at=span.end.checked_sub(1).ok_or(BAD)?;
+   if source.as_bytes().get(at)!=Some(&b']'){return Err(BAD);}
+   format!("{}{}{}{}",&source[..at],if rows.is_empty(){""}else{","},entry,&source[at..])
+  }
  };
  let parent=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
  let result=room_lexical_map_edit(&with_item,parent,&target.object_id,None)?;
@@ -112,6 +127,18 @@ mod tests{
  #[test]fn recover_to_inventory_or_chest_preserves_unrelated_bytes(){
   let root:Value=serde_json::from_str(SOURCE).unwrap();assert_eq!(destinations(&root).unwrap().len(),2);
   for id in ["1","9"]{let result=recover(SOURCE,&target(),(1,2),"GridOrientation_Down",id).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);assert_eq!(v["Player"]["ContainerInventories"][id]["Inventory"][0]["Amount"],if id=="1"{1}else{6});assert!(result.contains("1e2"));}
+ }
+ #[test]fn recover_into_existing_empty_slot_preserves_indices_and_opaque_rows(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  root["Player"]["ContainerInventories"]["1"]["Inventory"]=json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":0,"Amount":0}]);
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({});
+  let raw=root.to_string();
+  assert_eq!(destinations(&root).unwrap()[0].used,1);
+  let output:Value=serde_json::from_str(&recover(&raw,&target(),(1,2),"GridOrientation_Down","1").unwrap()).unwrap();
+  assert_eq!(output["Player"]["ContainerInventories"]["1"]["Inventory"],json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":30000001,"Amount":1,"State":null}]));
+  root["Player"]["ContainerInventories"]["1"]["Inventory"][1]["State"]=json!({"Unknown":true});
+  assert_eq!(destinations(&root).unwrap()[0].used,2);
+  assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","1").is_err());
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
