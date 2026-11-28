@@ -20,6 +20,31 @@ export function parseSupportTree(value:unknown):SupportTree{
  }
  return visit(value.tree,0);
 }
+/** Session-only witnesses are separate from portable SupportTree data. */
+export function parseSupportRecoveryOrdinals(value:unknown,tree:SupportTree):ReadonlyMap<string,number>{
+ const out=new Map<string,number>(),seen=new Set<number>();
+ if(!record(value)||value.recoveryOrdinals===undefined)return out;
+ if(!Array.isArray(value.recoveryOrdinals)||value.recoveryOrdinals.length>512)throw Error('support recovery receipt');
+ for(const r of value.recoveryOrdinals){
+  if(!record(r)||Object.keys(r).length!==2||!Array.isArray(r.path)||r.path.length<1||r.path.length>9||!r.path.every(i=>typeof i==='number'&&Number.isSafeInteger(i)&&i>=0&&i<512)||typeof r.ordinal!=='number'||!Number.isSafeInteger(r.ordinal)||r.ordinal<1||r.ordinal>20000||seen.has(r.ordinal))throw Error('support recovery witness');
+  let t:SupportTree|null=tree,o:SupportObject|undefined;
+  for(const i of r.path){o=t?.objects[i];if(!o)throw Error('support recovery path');t=o.child;}
+  const key=r.path.join('.');
+  if(!o||o.child||!isEightWay(o.orientation)||out.has(key))throw Error('support recovery leaf');
+  seen.add(r.ordinal);out.set(key,r.ordinal);
+ }
+ return out;
+}
+export function supportFieldRecoveryRows(tree:SupportTree|null,path:readonly number[],indices:readonly number[],ordinals:ReadonlyMap<string,number>){
+ if(!tree||!indices.length||new Set(indices).size!==indices.length)return null;
+ const rows=[];
+ for(const i of indices){
+  const o=tree.objects[i],ordinal=ordinals.get([...path,i].join('.'));
+  if(!o||o.child||!ordinal||!isEightWay(o.orientation))return null;
+  rows.push({localOrdinal:ordinal,itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
+ }
+ return new Set(rows.map(r=>r.localOrdinal)).size===rows.length?rows:null;
+}
 export function supportShapeKey(o:SupportObject){const code=worldOrientationCode(o.orientation);return code===null?null:o.itemId+':'+code;}
 export function supportOrientationAllowed(factor:1|2,v:unknown,free=false):v is typeof EIGHT_WAY_ORIENTATIONS[number]{return isCardinal(v)||free&&factor===1&&isEightWay(v);}
 export function supportTurnOrientation(factor:1|2,v:unknown,turn:-1|0|1,free=false,group=false){
