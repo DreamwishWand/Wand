@@ -480,6 +480,49 @@ def register(root,ledger,max_objects,max_bytes,r2):
     return summary
 
 
+def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.sleep):
+    """Bound connection lifetime and retry only transient transport failures.
+    A completed SHA is never downloaded again. Integrity/HTTP failures stop.
+    """
+    from urllib.error import URLError
+    if reader_factory is None:
+        from native_cdn_curl import CurlReader
+        reader_factory=CurlReader
+    errors={};count=0;budget=[sum(expected[key(s)] for s in pending)]
+    cursor=0;attempt=0
+    while cursor<len(pending):
+        chunk=pending[cursor:cursor+128]
+        try:
+            with reader_factory(chunk,expected,http1=attempt>0) as reader:
+                for sha in chunk:
+                    k=key(sha)
+                    data=reader(sha,budget)
+                    check(hashlib.sha256(data).hexdigest()==sha and len(data)==expected[k],
+                          "CDN byte identity mismatch")
+                    verified[k]=len(data);cursor+=1;count+=1;attempt=0
+                    save(verified,errors)
+                    if count==1 or count%10==0 or len(verified)==len(expected):
+                        print(f"  CDN readback {len(verified)}/{len(expected)}",flush=True)
+        except Exception as exc:
+            if cursor==len(pending):raise
+            k=key(pending[cursor])
+            # Curl's write-out must indicate no HTTP response; never retry
+            # HTTP errors, invalid headers or bytes, or certificate failures.
+            transient=isinstance(exc,URLError) and bool(re.search(
+                r"HTTP/connection result=000 \d+.*curl: \((?:5|6|7|18|28|35|52|55|56)\)",str(exc)))
+            if transient and attempt<3:
+                attempt+=1
+                delay=(2,5,10)[attempt-1]
+                print(f"  CDN connection interrupted at {len(verified)}/{len(expected)}; "
+                      f"reconnect {attempt}/3 in {delay}s (HTTP/1.1, TLS validation retained)",flush=True)
+                pause(delay)
+                continue
+            errors[k]=type(exc).__name__+": "+str(exc)[:240]
+            print("CDN interrupted: "+errors[k],flush=True)
+            break
+    return verified,errors,count
+
+
 def verify(root,ledger,ledger_path,max_objects,max_bytes,transport='urllib'):
     report,index,cache,objects=prepare(root,ledger)
     raw=(root/"shared-publication-receipt.json").read_bytes();receipt=json.loads(raw)
@@ -506,7 +549,6 @@ def verify(root,ledger,ledger_path,max_objects,max_bytes,transport='urllib'):
         temp.replace(checkpoint)
         return doc
     if transport=="curl":
-        from native_cdn_curl import CurlReader
         pending=[];size=0
         for k,n in sorted(expected.items()):
             if k in prior or len(pending)>=max_objects or size+n>max_bytes:continue
@@ -515,21 +557,7 @@ def verify(root,ledger,ledger_path,max_objects,max_bytes,transport='urllib'):
         save(verified,errors)
         if pending:
             print(f"CDN: {len(prior)}/{len(expected)} verified; {len(pending)} remaining in this batch. Reusing HTTPS connections.",flush=True)
-            with CurlReader(pending,expected) as reader:
-                budget=[size]
-                for sha in pending:
-                    k="images/"+sha+".webp";count+=1
-                    try:
-                        data=reader(sha,budget)
-                        check(hashlib.sha256(data).hexdigest()==sha and len(data)==expected[k],"CDN byte identity mismatch")
-                        verified[k]=len(data)
-                    except Exception as exc:
-                        errors[k]=type(exc).__name__+": "+str(exc)[:240]
-                        print("CDN interrupted: "+errors[k],flush=True)
-                        break
-                    save(verified,errors)
-                    if count==1 or count%10==0 or len(verified)==len(expected):
-                        print(f"  CDN readback {len(verified)}/{len(expected)}",flush=True)
+            verified,errors,count=curl_readback(pending,expected,verified,save)
     else:
         verified,errors,count,size=batch(expected,prior,max_objects,max_bytes)
     doc=save(verified,errors)

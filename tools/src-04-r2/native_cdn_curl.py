@@ -12,7 +12,8 @@ from audit_native_map_cdn import ORIGIN, USER_AGENT, SHA, LIMIT, TOTAL, check
 
 
 class CurlReader:
-    def __init__(self, pending, objects, executable=None):
+    def __init__(self, pending, objects, executable=None, *, http1=False):
+        self.http1=http1
         self.pending=list(pending)
         self.sizes={s:objects['images/'+s+'.webp'] for s in self.pending}
         check(all(SHA.fullmatch(s) and type(n)==int and 20<=n<=LIMIT for s,n in self.sizes.items())
@@ -42,6 +43,7 @@ class CurlReader:
         commands=['fail-early']
         for i,s in enumerate(self.pending):
             if i:commands.append('next')
+            if self.http1:commands.append('http1.1')
             commands += ['silent','show-error','fail','connect-timeout = 15','max-time = 120',
                 'max-redirs = 0','proto = "=https"',
                 f'max-filesize = {self.sizes[s]}',
