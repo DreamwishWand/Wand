@@ -484,7 +484,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     const old=previous.get(id)??[];
     const want=rewardIds.has(id)&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
-    assert.deepEqual(effective.get(id),want);
+    assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }
   const newlyClassified=[...rewardIds].filter(id=>!previous.get(id)?.length);
   assert(newlyClassified.length>0);
