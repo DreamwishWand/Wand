@@ -569,7 +569,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   // ordinary leaf path. Coordinate edits keep the same owned subtree.
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
    if surface==1&&!support_pickup&&(stateful_transform||p.contains_key("pickup")&&row.get("storageEmpty").and_then(Value::as_bool)==Some(true)&&ddv_save_patch::storage_pickup_eligible(&root,obj))&&storage_pose(&root,obj){
-    if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
+    if stateful_transform&&!ddv_save_patch::storage_transform_pose(&root,obj)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
    }else{
     if !(stateful_transform||support_pickup)||!(if free&&!support_pickup{within_room(expected)}else{on_terrain(expected)})||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid"))||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
     let c=collection.as_object().ok_or(bad)?;
