@@ -12,7 +12,12 @@ try{
  browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:1280,height:720}});
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
- let catalogRequests=0;page.on('request',req=>{if(req.url().endsWith('/explore.json'))catalogRequests++;});
+ // Identify the exact current content-addressed decoration projection when present.
+ const manifestResponse=await fetch(new URL('/Wand/ddv/item-master/current/index.json',url));
+ const manifest=manifestResponse.ok?await manifestResponse.json():null;
+ const catalogPin=manifest?.assets?.['explore.json'];
+ const pinnedPath=catalogPin?.sha256?'/ddv/item-master/objects/'+catalogPin.sha256+'.json':null;
+ let catalogRequests=0;page.on('request',req=>{const path=new URL(req.url()).pathname;if(path.endsWith('/explore.json')||(pinnedPath&&path.endsWith(pinnedPath)))catalogRequests++;});
  await page.goto(url);
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  assert.equal(await page.locator('[data-scope="outdoor"]').getAttribute('aria-pressed'),'true');
@@ -84,46 +89,13 @@ try{
  await quick.waitFor();
  const selectedId=await quick.getAttribute('data-item-id');
  const requestsBeforeBack=catalogRequests;
+ assert.ok(requestsBeforeBack>0,'at least one actual catalog request was observed');
  if(hasItemPage){
    const link=quick.locator('[data-item-page-link]');
    assert.equal(await link.count(),1,'shared route built: actual Item Page link must be available');
    const href=await link.getAttribute('href');
-   assert.match(href,new RegExp('/(?:ja|en|fr|it|de|es-ES|zh-CN|pt-BR)/'+selectedId+'/
- await page.waitForURL('**/decorate/explore/');
- await quick.waitFor({timeout:30000});
- assert.equal(await searchBox.inputValue(),query);
- assert.equal(catalogRequests,requestsBeforeBack,'catalog is reused on SPA Back');
- assert.equal(await quick.getAttribute('data-item-id'),selectedId);
- assert.equal(await page.locator('.active-filters').count(),1,'restored universe filter remains active');
- assert.equal(await page.locator('[data-scope="all"]').getAttribute('aria-pressed'),'true');
- assert.equal(await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).getAttribute('aria-expanded'),'true');
- await quick.getByRole('button',{name:/閉じる|Close/,exact:true}).click();
- await page.locator('.boards').getByRole('button',{name:/閉じる|Close/,exact:true}).click();
- await searchBox.fill('');
- // Back restores the universe filter as intended; clear it explicitly before testing ownership.
- await page.getByRole('button',{name:/フィルター|Filters/,exact:true}).click();
- await page.locator('.filter-panel').getByRole('button',{name:/クリア|Clear/,exact:true}).click();
- await page.locator('.filter-panel').getByRole('button',{name:/閉じる|Close/,exact:true}).click();
- await page.locator('[data-scope="indoor"]').click();
- await page.reload();
- await page.locator('.site-header .explore-service-toolbar').waitFor();
- assert.equal(await page.locator('[data-scope="indoor"]').getAttribute('aria-pressed'),'true');
- await page.evaluate(id=>localStorage.setItem('dreamwishwand.collection.local.v1',JSON.stringify({schema:'wand.collection.local@1',active:'local-1',workspaces:[{id:'local-1',name:'Test',entries:{[id]:{status:'owned'},'99999999':{discovered:true}}}]})),ownedId);
- await page.reload();
- await page.locator('.site-header .explore-service-toolbar').waitFor();
- const ownedButton=page.getByRole('button',{name:/所有済みのみ|Owned only/});
- await page.waitForFunction(()=>{const b=document.querySelector('.explore-service-toolbar button[aria-label="所有済みのみ"],.explore-service-toolbar button[aria-label="Owned only"]');return b&&!b.disabled;});
- await page.locator('[data-scope="all"]').click();
- await page.waitForFunction(()=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))>500);
- await ownedButton.click();
- assert.equal(await ownedButton.getAttribute('aria-pressed'),'true');
- await page.waitForFunction(()=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))>0&&Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))<10);
- await cards.first().waitFor();
- assert.ok((await cards.evaluateAll(es=>es.map(e=>Number(e.dataset.itemId)))).every(id=>id===ownedId),'only positive ownership is shown');
- assert.deepEqual(errors,[]);
- console.log('EXPLORE_VIRTUAL '+JSON.stringify({total,initialCards,initialHeight,after,desktopColumns:firstColumns}));
-}finally{await browser?.close();server.kill();}
-));
+   assert.ok(href&&href.endsWith('/'+selectedId+'/'),'canonical Item ID in link');
+   assert.ok(['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'].includes(href.split('/').at(-3)),'explicit locale in link');
    await link.click();
    await page.waitForURL('**/'+selectedId+'/');
    await page.locator('[data-item-page="'+selectedId+'"]').waitFor({timeout:30000});
@@ -134,10 +106,12 @@ try{
    await page.waitForURL('**/decorate/');
    await page.goBack();
  }
+ await page.waitForURL('**/decorate/explore/');
  await quick.waitFor({timeout:30000});
  assert.equal(await searchBox.inputValue(),query);
  assert.equal(catalogRequests,requestsBeforeBack,'catalog is reused on SPA Back');
  assert.equal(await quick.getAttribute('data-item-id'),selectedId);
+ assert.equal(await page.locator('.active-filters').count(),1,'restored universe filter remains active');
  assert.equal(await page.locator('[data-scope="all"]').getAttribute('aria-pressed'),'true');
  assert.equal(await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).getAttribute('aria-expanded'),'true');
  await quick.getByRole('button',{name:/閉じる|Close/,exact:true}).click();
