@@ -131,6 +131,8 @@ def main():
     p.add_argument('--dump',type=Path,required=True)
     p.add_argument('--bundle',type=Path,action='append',default=[])
     p.add_argument('--catalog',type=Path,required=True,help='Directory of original split Addressables catalog')
+    p.add_argument('--male-avatar',type=Path)
+    p.add_argument('--female-avatar',type=Path)
     p.add_argument('--out',type=Path,required=True)
     a = p.parse_args()
     out = a.out.resolve()
@@ -144,9 +146,33 @@ def main():
     for hit in hits:
         candidates = locations[hit['guid']]
         bundle_name = hit['bundle'].removesuffix('.bin')
-        require(any(bundle_name in {d.replace('\\\\','/').rsplit('/',1)[-1] for d in row['dependencies']} for row in candidates), 'Prefab bundle is not an original catalog dependency')
+        require(any(bundle_name in {d.replace(chr(92),'/').rsplit('/',1)[-1] for d in row['dependencies']} for row in candidates), 'Prefab bundle is not an original catalog dependency')
+    require(bool(a.male_avatar)==bool(a.female_avatar), 'provide both avatar bundles or neither')
+    geometry = []
+    if a.male_avatar:
+        from pose_mesh import body_source
+        from pose_outfit import read_objects
+        from pose_skinned_attachment import extract_attachment
+        bodies = {}
+        for sex in ('male','female'):
+            data,_ = read_objects(getattr(a,sex+'_avatar').read_bytes())
+            _,body,_,_ = body_source(data,sex)
+            bodies[sex] = body
+        bundle_paths = {p.name:p for p in a.bundle}
+        require(len(bundle_paths)==len(a.bundle), 'ambiguous input bundle filename')
+        for guid,sex in sorted({(row[sex]['guid'],sex) for row in rows.values() for sex in ('male','female') if row[sex]['guid']}):
+            bundles = {h['bundle'] for h in hits if h['guid']==guid}
+            if not bundles:
+                continue
+            require(len(bundles)==1,'ambiguous prefab bundle')
+            raw = bundle_paths[next(iter(bundles))].read_bytes()
+            try:
+                g = extract_attachment(raw,guid,bodies[sex])
+                geometry.append(dict(guid=guid,body=sex,status='bind_verified',extraBoneCount=g['extraBoneCount'],parts=[dict(rendererPathId=p['rendererPathId'],meshPathId=p['meshPathId'],meshSha256=p['mesh']['sha256'],vertices=len(p['mesh']['attrs'][0]),jointCount=len(p['joints']),sourceBindError=p['sourceBindError'],combinedBindError=p['combinedBindError'],materials=p['materials']) for p in g['parts']]))
+            except (ValueError, KeyError, IndexError, OverflowError) as error:
+                geometry.append(dict(guid=guid,body=sex,status='unresolved',reason=str(error)))
     coverage = dict(itemCount=len(rows),guidCount=len(guids),uniqueCatalogLocations=sum(len(v)==1 for v in locations.values()),missingCatalogLocations=sum(not v for v in locations.values()),ambiguousCatalogLocations=sum(len(v)>1 for v in locations.values()))
-    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits,catalogSha256=catalog_pins,locations=locations,coverage=coverage)
+    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits,catalogSha256=catalog_pins,locations=locations,coverage=coverage,geometry=geometry)
     out.parent.mkdir(parents=True,exist_ok=True)
     with out.open('x',encoding='utf-8') as f:
         json.dump(report,f,allow_nan=False,separators=(',',':'))
