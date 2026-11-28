@@ -121,7 +121,7 @@ export function loadQuestFlowColumns(project,source,rows){
       questKinds.set(questId,'ordinary_gameplay');
   }
   const conditionalQuest=conditionalQuestGrants(rows,source,questKinds);
-  return {byQuest,byItem,ordinaryIntro,conditionalQuest,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
+  return {byQuest,byItem,ordinaryIntro,conditionalQuest,questKinds,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
     sourceGameVersion:source.target.gameVersion,counts,questCount:byQuest.size,itemCount:byItem.size,
     total:1517,guaranteedGrantVerified:false,currentAvailabilityVerified:false}};
 }
