@@ -171,6 +171,5 @@ if __name__=='__main__':
         apply_makeup(a.makeup.read_bytes() if a.makeup else download_makeup(),a.dest)
         from prepare_native_skin_inputs import download_skin_inputs,apply_skin_inputs
         apply_skin_inputs(a.skin_inputs.read_bytes() if a.skin_inputs else download_skin_inputs(),a.dest,palette_source,base_source)
-        if a.eye_mouth:
-            from prepare_eye_mouth_materials import apply_eye_mouth
-            apply_eye_mouth(a.eye_mouth.read_bytes(),a.dest,eye_source)
+        from prepare_eye_mouth_materials import download_eye_mouth,apply_eye_mouth
+        apply_eye_mouth(a.eye_mouth.read_bytes() if a.eye_mouth else download_eye_mouth(),a.dest,eye_source)
