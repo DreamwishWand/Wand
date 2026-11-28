@@ -3,6 +3,8 @@
  import {browser} from '$app/environment';
  import {testSaveExportEnabled} from './test-save-export.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
+ import {commitWorldCheckpoint} from '../ui/local-save-session';
+ import {checkpointWords} from './world-checkpoint-words.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let file:File,locale:WandLanguage='ja',blocked=false,scopeJson='null';
  const words={
@@ -32,6 +34,7 @@
   worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
   worker.postMessage({command:backup?'restore':'backup',file:source,scope:selectedScope,...(backup?{backup,allowExperimentalCopy:true}:{})});
  }
+ function apply(){if(!allowed||blocked||!copy||!commitWorldCheckpoint(file,copy.file)){error=true;return;}clear();}
  function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)run(f);}
  onDestroy(clear);
 </script>
@@ -43,7 +46,7 @@
  {#if own}<small role="status">{w[4]}</small>{/if}
  {#if report}<small role="status">{report}</small>{/if}
  {#if error}<small role="alert">{w[5]}</small>{/if}
- {#if copy&&!blocked}<a href={copy.url} download={copy.name}>{w[3]}</a>{/if}
+ {#if copy&&!blocked}<button type="button" on:click={apply}>{checkpointWords[locale][0]}</button><a href={copy.url} download={copy.name}>{w[3]}</a>{/if}
 </details>
 <style>
  .private-storage{font-size:12px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:5px;padding:5px;max-width:280px}.private-storage summary{cursor:pointer}.private-storage div{display:flex;gap:5px;margin-top:5px}.private-storage small,.private-storage a{display:block;margin-top:4px}.private-storage button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:4px;padding:4px}

@@ -3,7 +3,8 @@ use serde_json::{Value,json};
 use std::collections::{BTreeMap,HashMap,HashSet};
 const BAD:PatchError=PatchError::InvalidTarget;
 const LIMIT:usize=4*1024*1024;
-const SCHEMA:&str="wand.private.storage-contents@1";
+const SCHEMA:&str="wand.private.storage-contents@2";
+const OLD_SCHEMA:&str="wand.private.storage-contents@1";
 fn id(v:&Value)->Option<u32>{v.as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0)}
 fn simple_inventory(v:&Value)->bool{
  v.as_array().is_some_and(|a|a.len()<=8192&&a.iter().all(|s|s.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
@@ -41,7 +42,8 @@ fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError
      st!=&json!({"ContainerInventoryID":n,"DefaultContainerInventoryData":st["DefaultContainerInventoryData"],"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}){
     rejected.insert(n);continue;
    }
-   roots.entry(n).or_default().push(json!({"grid":gid,"object":oid,"path":path.unwrap(),"state":o["State"]}));
+   if o["X"].as_i64().is_none()||o["Y"].as_i64().is_none()||!super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or("")){rejected.insert(n);continue;}
+   roots.entry(n).or_default().push(json!({"grid":gid,"object":oid,"path":path.unwrap(),"state":o["State"],"pose":{"item":item.unwrap(),"x":o["X"],"y":o["Y"],"orientation":o["Orientation"]}}));
   }
  }
  let mut rows=Vec::new();let mut skipped=0usize;
@@ -67,24 +69,55 @@ pub fn export_scoped(source:&str,scope:Option<&HashSet<String>>)->Result<String,
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let raw=snapshot(&root,scope)?.to_string();if raw.len()>LIMIT{return Err(BAD);}Ok(raw)
 }
+fn identity_roots(row:&Value)->Option<Vec<Value>>{
+ let mut out=row["roots"].as_array()?.clone();
+ for w in &mut out{w.as_object_mut()?.remove("pose");}
+ out.sort_by_cached_key(Value::to_string);Some(out)
+}
+fn replacement_key(row:&Value)->Option<String>{
+ let mut metadata=row["metadata"].as_object()?.clone();metadata.remove("ID")?;
+ let roots=row["roots"].as_array().filter(|a|a.len()==1)?;
+ let mut w=roots[0].as_object()?.clone();w.remove("object")?;
+ let pose=w.get("pose")?.as_object()?;
+ if pose.len()!=4||pose["item"].as_u64()!=metadata.get("ParentItemID")?.as_u64()||pose["x"].as_i64().is_none()||pose["y"].as_i64().is_none()||!super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&pose["orientation"].as_str()?){return None;}
+ w.get_mut("state")?.get_mut("Storage")?.as_object_mut()?.remove("ContainerInventoryID")?;
+ Some(json!([metadata,w]).to_string())
+}
 pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{restore_scoped(source,backup,None)}
 pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
  if backup.len()>LIMIT{return Err(BAD);}
  validate_json_without_edit(source)?;validate_json_without_edit(backup)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let b:Value=serde_json::from_str(backup).map_err(|_|BAD)?;
- if b.as_object().is_none_or(|m|m.len()!=4)||b["schema"].as_str()!=Some(SCHEMA)||b["version"].as_u64()!=Some(643)||b["skipped"].as_u64().is_none(){return Err(BAD);}
+ let schema=b["schema"].as_str().filter(|s|matches!(*s,SCHEMA|OLD_SCHEMA)).ok_or(BAD)?;
+ if b.as_object().is_none_or(|m|m.len()!=4)||b["version"].as_u64()!=Some(643)||b["skipped"].as_u64().is_none(){return Err(BAD);}
  let current=snapshot(&root,scope)?;
  let available:HashMap<_,_>=current["rows"].as_array().ok_or(BAD)?.iter().map(|r|(id(&r["id"]).unwrap(),r)).collect();
+ let mut replacements=HashMap::<String,Option<&Value>>::new();
+ for c in available.values(){
+  if let Some(key)=replacement_key(c){replacements.entry(key).and_modify(|v|*v=None).or_insert(Some(*c));}
+ }
  let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
  locator.amount_path=vec![Segment::Index(usize::MAX)];
- let mut changes=Vec::new();let mut seen=HashSet::new();
+ let mut changes=Vec::new();let mut seen=HashSet::new();let mut destination_ids=HashSet::new();
  for r in b["rows"].as_array().filter(|a|!a.is_empty()&&a.len()<=8192).ok_or(BAD)?{
   let n=id(&r["id"]).filter(|n|seen.insert(*n)).ok_or(BAD)?;
-  let c=available.get(&n).ok_or(BAD)?;
-  if r.as_object().is_none_or(|m|m.len()!=4)||r["metadata"]!=c["metadata"]||r["roots"]!=c["roots"]||!simple_inventory(&r["inventory"]){return Err(BAD);}
+  if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!simple_inventory(&r["inventory"]){return Err(BAD);}
+  let c=if let Some(c)=available.get(&n){
+   if r["metadata"]!=c["metadata"]||identity_roots(r).ok_or(BAD)?!=identity_roots(c).ok_or(BAD)?{return Err(BAD);}
+   *c
+  }else{
+   // Rebind only a removed source to one newly allocated empty storage at
+   // the exact original native grid/pose. Never overwrite another chest.
+   if schema!=SCHEMA||root["Player"]["ContainerInventories"].get(n.to_string()).is_some()||super::player_house_create::container_ref(&root,n,false){return Err(BAD);}
+   let key=replacement_key(r).ok_or(BAD)?;
+   let c=replacements.get(&key).copied().flatten().ok_or(BAD)?;
+   if id(&c["id"]).is_none_or(|id|id<=n)||c["inventory"].as_array().is_none_or(|a|!a.is_empty()){return Err(BAD);}
+   c
+  };
+  let dest=id(&c["id"]).filter(|id|destination_ids.insert(*id)).ok_or(BAD)?;
   if r["inventory"]==c["inventory"]{continue;}
-  let p=vec![k("Player"),k("ContainerInventories"),k(&n.to_string()),k("Inventory")];
+  let p=vec![k("Player"),k("ContainerInventories"),k(&dest.to_string()),k("Inventory")];
   locator.capture.insert(p.clone(),None);changes.push((p,r["inventory"].to_string()));
  }
  if changes.is_empty(){return Err(BAD);}
@@ -107,6 +140,19 @@ mod tests{
   let original=r#"[{"ItemID":30000001,"Amount":3,"State":null}]"#;
   assert_eq!(restored,changed.replace(original,&doc["rows"][0]["inventory"].to_string()));
   assert!(restore(SAVE,&backup).is_err());
+  let mut recreated:Value=serde_json::from_str(SAVE).unwrap();
+  let mut new_container=recreated["Player"]["ContainerInventories"].as_object_mut().unwrap().remove("9").unwrap();
+  new_container["ID"]=10.into();new_container["Inventory"]=json!([]);
+  recreated["Player"]["ContainerInventories"]["10"]=new_container;
+  let objects=recreated["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object_mut().unwrap();
+  let mut obj=objects.remove("1").unwrap();obj["ID"]=2.into();obj["State"]["Storage"]["ContainerInventoryID"]=10.into();objects.insert("2".into(),obj);
+  let restored:Value=serde_json::from_str(&restore(&recreated.to_string(),&backup).unwrap()).unwrap();
+  assert_eq!(restored["Player"]["ContainerInventories"]["10"]["Inventory"],doc["rows"][0]["inventory"]);
+  assert!(restored["Player"]["ContainerInventories"].get("9").is_none());
+  let mut occupied=recreated.clone();occupied["Player"]["ContainerInventories"]["10"]["Inventory"]=json!([{"ItemID":30000002,"Amount":1}]);
+  assert!(restore(&occupied.to_string(),&backup).is_err());
+  let mut moved=recreated.clone();moved["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=3.into();
+  assert!(restore(&moved.to_string(),&backup).is_err());
   let scope=HashSet::from(["42".to_owned()]);
   assert_eq!(export_scoped(SAVE,Some(&scope)).unwrap(),backup);
   assert_eq!(export_scoped(SAVE,Some(&HashSet::from(["42:1".to_owned()]))).unwrap(),backup);

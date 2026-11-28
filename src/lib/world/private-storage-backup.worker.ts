@@ -17,7 +17,7 @@ scope.onmessage=async({data})=>{
    scope.postMessage({kind:'restored',...copy},[copy.bytes.buffer]);
   }else{
    const raw=wasm.export_private_storage_contents(typeof data.scope==='string'?data.scope:'null'),doc=JSON.parse(raw);
-   if(doc.schema!=='wand.private.storage-contents@1'||!Array.isArray(doc.rows)||!Number.isSafeInteger(doc.skipped))throw Error('backup');
+   if(doc.schema!=='wand.private.storage-contents@2'||!Array.isArray(doc.rows)||!Number.isSafeInteger(doc.skipped))throw Error('backup');
    scope.postMessage({kind:'backup',raw,count:doc.rows.length,skipped:doc.skipped});
   }
  }catch{scope.postMessage({kind:'error'});}
