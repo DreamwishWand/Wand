@@ -497,12 +497,12 @@ export interface ItemContentQueryResult {
 export const ADDITIONAL_ACQUISITION_SOURCE_KINDS=[
   'character_friendship_reward','pet_friendship_reward','configured_store_display',
   'pre_dlc_store_list_member','design_challenge_catalog_unlock',
-  'configured_container_slot','configured_default_inventory_entry'
+  'configured_container_slot','configured_default_inventory_entry','configured_container_furniture_slot'
 ] as const;
 export type AdditionalAcquisitionSourceKind=typeof ADDITIONAL_ACQUISITION_SOURCE_KINDS[number];
 export type ItemAcquisitionSourceQuery=
   |{readonly family:'indexed';readonly kind:Db01SourceKind;readonly sourceId:string;readonly role?:Db01SourceRole}
-  |{readonly family:'additional';readonly kind:'character_friendship_reward'|'pet_friendship_reward';readonly sourceId:number}
+  |{readonly family:'additional';readonly kind:'character_friendship_reward'|'pet_friendship_reward'|'configured_container_furniture_slot';readonly sourceId:number}
   |{readonly family:'additional';readonly kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock'|'configured_container_slot'|'configured_default_inventory_entry';readonly sourceId:string}
   |{readonly family:'native';readonly sourceItemId:number;readonly role?:NativeAcquisitionRole};
 export interface ItemAcquisitionSourceQueryResult {
@@ -1433,7 +1433,7 @@ export async function openPublicItemMaster(
           role=query.role!==undefined;break;
         case 'additional':
           assert(ADDITIONAL_ACQUISITION_SOURCE_KINDS.includes(query.kind)&&
-            (query.kind==='character_friendship_reward'||query.kind==='pet_friendship_reward'
+            (query.kind==='character_friendship_reward'||query.kind==='pet_friendship_reward'||query.kind==='configured_container_furniture_slot'
               ?ID(query.sourceId):validSourceId(query.sourceId)),'INVALID_ACQUISITION_ADDITIONAL_SOURCE');
           key=[query.kind,query.sourceId];break;
         case 'native':

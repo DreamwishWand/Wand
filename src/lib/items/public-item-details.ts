@@ -113,6 +113,20 @@ export type AdditionalItemSource = Readonly<{
   currentAvailabilityVerified:false;
   grantVerified:false;
   playerOwnershipVerified:false;
+}> | Readonly<{
+  kind:'configured_container_furniture_slot';
+  sourceId:number;
+  templateKey:string;
+  sourcePosition:number;
+  configuredAmount:number;
+  sourceConfiguredSize:number;
+  sourceGameVersion:string;
+  sourceProtoDbSha256:string;
+  sourceProjectionSha256:string;
+  templateProjectionSha256:string;
+  currentAvailabilityVerified:false;
+  grantVerified:false;
+  playerOwnershipVerified:false;
 }>;
 export interface CatalogAcquisitionFacts {
   readonly generatorExcluded:boolean|null;

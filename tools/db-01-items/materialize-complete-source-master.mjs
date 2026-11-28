@@ -1294,6 +1294,14 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(browseUniverses.length)add('browse.universeTagIds',row.itemId,browseUniverses);
     const rewardLinks=protoAcquisition.byItem.get(row.itemId)??[];
     const ownerRewards=protoAcquisition.byOwner.get(row.itemId);
+    const container=protoAcquisition.containerFurniture.get(row.itemId);
+    if(container){
+      add('storage.containerFacts',row.itemId,container);
+      if(container.templateKey!==null)add('storage.containerTemplateKey',row.itemId,container.templateKey);
+      if(container.sourceConfiguredSize!==null)add('storage.configuredSize',row.itemId,container.sourceConfiguredSize);
+      if(container.upgradedFurnitureItemId!==null)add('storage.upgradedFurnitureItemId',row.itemId,container.upgradedFurnitureItemId);
+      if(container.configuredContentItemIds.length)add('storage.configuredContentItemIds',row.itemId,container.configuredContentItemIds);
+    }
     const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[])];
     if(extraSources.length){
       add('acquisition.additionalSources',row.itemId,extraSources);
