@@ -85,6 +85,8 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
   if a["grid"]==z["grid"]&&a["object"]==z["object"]{continue;}
   if transfers.len()>=ddv_save_patch::MAX_GRID_MIXED_EDITS||old["metadata"]!=row["metadata"]||a["state"]!=z["state"]||a["pose"]["item"]!=z["pose"]["item"]||z.as_object().is_none_or(|m|m.len()!=5)||z["pose"].as_object().is_none_or(|m|m.len()!=4){return Err(bad);}
   let from=a["grid"].as_str().ok_or(bad)?;let to=z["grid"].as_str().ok_or(bad)?;
+  let object=z["object"].as_str().ok_or(bad)?;
+  if object.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=object){return Err(bad);}
   let (d,_,_)=scene(source,&root,to)?;
   if z["path"].as_str()!=Some(d.data_path.as_str())||!within(&d,xy(&z["pose"])?){return Err(bad);}
   cardinal(&z["pose"]["orientation"])?;
@@ -135,4 +137,43 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
  };
  if patched==source{return Err(bad);}
  Ok(patched)
+}
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ fn fixture()->Value{
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+  let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+  let mut root=json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42},"1":{"FloorGridID":43}}}]}],"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}},"43":{"ID":43,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}},"44":{"ID":44,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}}}}},"Marker":17});
+  for (i,r) in rows.iter().take(2).enumerate(){
+   let id=45+i;root["World"]["GridCollection"]["Grids"][id.to_string()]=json!({"ID":id,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":3,"Objects":{}});
+  }
+  root
+ }
+ #[test]fn private_storage_moves_between_all_supported_scene_pairs(){
+  for from in 42..=46{for to in 42..=46{
+   if from==to{continue;}
+   let mut original=fixture();let a=from.to_string();let b=to.to_string();
+   let chest=json!({"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
+   original["World"]["GridCollection"]["Grids"][&a]["Objects"]["1"]=chest.clone();
+   let scope=HashSet::from([a.clone()]);
+   let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&scope)).unwrap();
+   let mut moved=original.clone();
+   let grids=&mut moved["World"]["GridCollection"]["Grids"];
+   grids[&a]["Objects"]["1"]=json!({"ID":1,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"});
+   let mut moved_chest=chest.clone();moved_chest["ID"]=2.into();moved_chest["X"]=3.into();moved_chest["Orientation"]="GridOrientation_Left".into();
+   grids[&b]["Objects"]["2"]=moved_chest;
+   moved["Player"]["ContainerInventories"]["9"]["Inventory"]=json!([]);
+   let output=restore(&moved.to_string(),&backup,&scope).unwrap_or_else(|e|panic!("restore {from} from {to}: {e:?}"));
+   let mut expected=moved.clone();let grids=&mut expected["World"]["GridCollection"]["Grids"];
+   grids[&b]["Objects"].as_object_mut().unwrap().remove("2");
+   let mut chest=chest;chest["ID"]=3.into();grids[&a]["Objects"]["3"]=chest;grids[&a]["NextGridObjectID"]=4.into();
+   expected["Player"]=original["Player"].clone();
+   assert_eq!(serde_json::from_str::<Value>(&output).unwrap(),expected);
+   // Never relocate a referenced root or allocate a referenced fresh ID.
+   let mut blocked=moved.clone();blocked["World"]["SpawnedObjects"]=json!([{"GridID":to,"GridObjectID":2}]);assert!(restore(&blocked.to_string(),&backup,&scope).is_err());
+   blocked["World"]["SpawnedObjects"]=json!([{"GridID":from,"GridObjectID":3}]);assert!(restore(&blocked.to_string(),&backup,&scope).is_err());
+  }}
+ }
 }
