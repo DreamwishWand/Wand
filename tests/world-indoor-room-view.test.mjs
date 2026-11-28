@@ -147,6 +147,10 @@ test('portable mixed indoor Scene preserves support closure and charges child st
  assert.equal(indoorMixedPlacement(full,shapes,allowed,new Map([[40000001,1],[40000002,1]]),clip,scene,'corner',1,3),null);
  assert.equal(captureIndoorMixedScene(full,[0,1],shapes,allowed,new Map()),null);
  assert.equal(indoorMixedPlacement(full,shapes,allowed,stock,clip,scene,'corner',1,1),null);
+ const freeFace={...full,sourcePath:'GridData/Rooms/Room8x8-GridData.json'};
+ const free=indoorMixedPlacement(freeFace,shapes,allowed,stock,clip,scene,'corner',1,1,null,null,false,true);
+ assert.ok(free);assert.deepEqual(free.map(p=>[p.x,p.y]),[[1,1],[3,1]]);assert.deepEqual(free[0].scene,support);
+ assert.equal(indoorMixedPlacement(freeFace,shapes,allowed,stock,clip,scene,'corner',7,7,null,null,false,true),null);
 });
 
 test('room cut carries support witness only to matching native factor',()=>{

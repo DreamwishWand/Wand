@@ -466,8 +466,7 @@ pub(super) fn room_project_candidate(source:&[u8],plan:&str)->Result<String,Code
    let mut batches=Vec::<(bool,Vec<Value>)>::new();
    if free{
     if face["kind"]!="floor"{return Err(bad);}
-    batches.push((false,places.iter().filter(|p|p.get("scene").is_some()).cloned().collect()));
-    batches.push((true,places.iter().filter(|p|p.get("scene").is_none()).cloned().collect()));
+    batches.push((true,places.clone()));
    }else{batches.push((false,places.clone()));}
    for (free,batch) in batches{
     if batch.is_empty(){continue;}
@@ -645,7 +644,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let amount=row.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).ok_or(bad)?;
   let xy=(coord(row,"x")?,coord(row,"y")?);let orientation=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
-  if free{if support.is_some()||scene.is_some()||!within_room(xy)||!allowed_orientation(orientation){return Err(bad);}}else if !on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy){return Err(bad);}
+  if free{if !within_room(xy)||!allowed_orientation(orientation)||(support.is_some()||scene.is_some())&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}}else if !on_terrain(xy)||!empty_anchor(xy,None)||!anchors.insert(xy){return Err(bad);}
   let t=terrain.ok_or(bad)?;
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)? as u32;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)? as u32;
   let d=ddv_save_patch::PlainGridDestination{grid_id:gid.clone(),layout_path:String::new(),data_path:grid.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?.to_owned(),tessellation:factor,size:(sx,sy)};
@@ -666,7 +665,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let actual=current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64();
    if actual!=Some(u64::from(amount)){return Err(bad);}
    let fresh=ddv_save_patch::room_grid_next_object_id(&current["World"]["GridCollection"]["Grids"][&gid]).map_err(|_|bad)?.to_string();
-   let draft=ddv_save_patch::support_clone::preview_indoor_support_scene_place(&working,item,&d,xy,orientation,tree).map_err(|_|CodecError::Patch)?;
+   let draft=ddv_save_patch::support_clone::preview_indoor_support_scene_place_mode(&working,item,&d,xy,orientation,tree,free).map_err(|_|CodecError::Patch)?;
    let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
    let c=after["World"]["GridCollection"].as_object().ok_or(bad)?;
    if &crate::grid_instance_preview::subgrid_tree(c,&gid,&fresh)?!=tree{return Err(bad);}
@@ -678,7 +677,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    if !source_ids.insert(key.clone()){return Err(bad);}
    let old=(coord(w,"expectedX")?,coord(w,"expectedY")?);
    let old_orientation=w.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-   if !on_terrain(old)||obj.get("ID").and_then(id).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||
+   if !(if free{within_room(old)}else{on_terrain(old)})||obj.get("ID").and_then(id).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||
     (coord(obj,"X")?,coord(obj,"Y")?)!=old||obj.get("Orientation").and_then(Value::as_str)!=Some(old_orientation)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old_orientation)||
     obj.get("State").and_then(Value::as_object).is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
    let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:item};
@@ -691,7 +690,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
    let actual=current["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"].as_u64();
    if actual!=Some(u64::from(amount)){return Err(bad);}
    let fresh=ddv_save_patch::room_grid_next_object_id(&current["World"]["GridCollection"]["Grids"][&gid]).map_err(|_|bad)?.to_string();
-   let draft=ddv_save_patch::support_clone::preview_indoor_support_tree_duplicate(&working,&target,old,&d,xy,orientation).map_err(|_|CodecError::Patch)?;
+   let draft=ddv_save_patch::support_clone::preview_indoor_support_tree_duplicate_mode(&working,&target,old,&d,xy,orientation,free).map_err(|_|CodecError::Patch)?;
    let after:Value=serde_json::from_str(&draft.patched_json).map_err(|_|bad)?;
    let c=after["World"]["GridCollection"].as_object().ok_or(bad)?;
    if crate::grid_instance_preview::subgrid_tree(c,&gid,key)?!=tree||crate::grid_instance_preview::subgrid_tree(c,&gid,&fresh)?!=tree{return Err(bad);}
@@ -1255,6 +1254,14 @@ mod tests{
   assert_eq!(out["World"]["GridCollection"]["NextGridID"],51);
   assert_eq!(out["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],0);
   assert!(d.patched_json.contains("1e2"));
+  let mut free_plan=plan.clone();free_plan["place"][0]["x"]=4.into();free_plan["place"][0]["y"]=4.into();
+  assert!(furniture_candidate(raw,&free_plan.to_string()).is_err());
+  free_plan["freePlacement"]=true.into();
+  let draft=furniture_candidate(raw,&free_plan.to_string()).unwrap();let placed:Value=serde_json::from_str(&draft.patched_json).unwrap();
+  assert_eq!(placed["World"]["GridCollection"]["Grids"]["50"]["Objects"],g["43"]["Objects"]);
+  assert_eq!(placed["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"],4);
+  free_plan["place"][0]["orientation"]="GridOrientation_DownLeft".into();assert!(furniture_candidate(raw,&free_plan.to_string()).is_err());
+  free_plan["place"][0]["orientation"]="GridOrientation_Down".into();free_plan["place"][0]["x"]=16.into();assert!(furniture_candidate(raw,&free_plan.to_string()).is_err());
   // Mixed clone and pickup use original room indices, consume/return all
   // descendant stock, and preserve the original parent and child grids.
   let mut mixed_source=orig.clone();
