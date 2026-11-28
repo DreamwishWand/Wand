@@ -16,7 +16,7 @@ export async function loadStudioAssets(m:StudioAssetsIndex,fetchAsset:(e:BlobEnt
  for(let i=0;i<reflection.length;i++){const v=view.getUint16(i*2,true);if((v&0x8000)!==0||(v&0x7c00)===0x7c00)throw Error('Invalid HDR half float');reflection[i]=v}
  return {reflection,lut:new Uint8Array(lut)};
 }
-export function uploadStudioReflection(gl:WebGL2RenderingContext,pixels:Uint16Array|undefined):WebGLTexture{
+export function uploadStudioReflection(gl:WebGL2RenderingContext,pixels:Uint16Array<ArrayBuffer>|undefined):WebGLTexture{
  const t=gl.createTexture();if(!t)throw Error('Studio reflection allocation failed');
  const align=gl.getParameter(gl.UNPACK_ALIGNMENT);let complete=false;
  try{gl.bindTexture(gl.TEXTURE_CUBE_MAP,t);gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);

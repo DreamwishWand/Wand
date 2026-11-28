@@ -17,7 +17,7 @@ export class LinearSceneTarget {
  private width=0;private height=0;
  private samples:number;
  private gl:WebGL2RenderingContext;
- constructor(gl:WebGL2RenderingContext,lut?:Uint8Array){
+ constructor(gl:WebGL2RenderingContext,lut?:Uint8Array<ArrayBuffer>){
   this.gl=gl;
   const counts=(format:number)=>Array.from(gl.getInternalformatParameter(gl.RENDERBUFFER,format,gl.SAMPLES) as Int32Array);
   const depth=counts(gl.DEPTH_COMPONENT24);
