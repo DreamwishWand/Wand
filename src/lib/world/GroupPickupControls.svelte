@@ -10,10 +10,11 @@
  import type {WandLanguage} from '../ui/preferences.ts';
  export let items:readonly MainlandSavedObject[]=[],file:File|null=null,locale:WandLanguage='ja',blocked=false,active=false;
  export let onApplied:()=>void=()=>{};
+ export let freePlacement=false;
  export let roomPlan:readonly GroupPickupRow[]|null=null;
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,error=false,source:File|null=null,expected='';
- $: plan=roomPlan??groupPickupPlan(items);
+ $: plan=roomPlan??groupPickupPlan(items,freePlacement);
  $: key=JSON.stringify(plan);
  $: w=groupPickupWords[locale];$: sw=supportPickupWords[locale];$: includesSupport=!!plan?.some(p=>p.includeSupport);
  $: cw=checkpointWords[locale];

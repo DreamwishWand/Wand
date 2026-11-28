@@ -18,17 +18,17 @@ export const ROOM_CUT_LIMIT=32;
 export interface StorageDuplicateSource{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:EightWay}
 export function storageGroupSelection(items:readonly MainlandSavedObject[],free=false,allowSupport=false){
  if(!items.some(p=>p.object.storage)||items.some(p=>p.object.subgrid&&!allowSupport||p.object.storageKnown&&!p.object.storage))return null;
- const clip=captureFurnitureGroup(items,true,items.some(p=>p.object.subgrid)?false:free);
+ const clip=captureFurnitureGroup(items,true,free);
  if(!clip)return null;
  const sources=items.map(p=>p.object.storage?{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay}:null);
  return {clip,sources};
 }
 /** A local duplicate preserves support trees, and uses storage witnesses
  * only if the selection contains storage. No Scene file or clipboard needed. */
-export function localSupportDuplicateSelection(items:readonly MainlandSavedObject[]){
+export function localSupportDuplicateSelection(items:readonly MainlandSavedObject[],free=false){
  if(!items.some(p=>p.object.subgrid)||items.some(p=>p.object.storageKnown&&!p.object.storage||p.object.subgrid&&p.object.subgrid.status!=='resolved_full'))return null;
- if(items.some(p=>p.object.storage))return storageGroupSelection(items,false,true);
- const clip=captureFurnitureGroup(items,true,false);return clip?{clip,sources:null}:null;
+ if(items.some(p=>p.object.storage))return storageGroupSelection(items,free,true);
+ const clip=captureFurnitureGroup(items,true,free);return clip?{clip,sources:null}:null;
 }
 export function storageGroupPlan(sources:readonly (StorageDuplicateSource|null)[],candidate:GroupPasteCandidate,copyContents:boolean,freePlacement:boolean){
  if(!sources.some(Boolean)||sources.length!==candidate.rows.length)return null;
@@ -53,7 +53,7 @@ export function captureCutWitness(items:readonly MainlandSavedObject[],free=fals
  return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{}),...(p.object.storage?{storage:true as const}:{})}));
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[],free=false):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(free&&!r.supportFactor?!!captureFurnitureGroup([p],!!r.storage,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&(free?!!captureFurnitureGroup([p],!!r.supportFactor||!!r.storage,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust

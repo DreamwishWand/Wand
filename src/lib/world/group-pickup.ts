@@ -4,20 +4,20 @@ import {stockSourceEligible} from './save-furniture-placement.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 export interface GroupPickupRow{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;includeSupport?:true;includeStorage?:true}
-export function emptyStoragePickupEligible(p:MainlandSavedObject):boolean{
+export function emptyStoragePickupEligible(p:MainlandSavedObject,free=false):boolean{
  const o=p.object;
- return !!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
+ return !!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.storage===true&&o.storageEmpty===true&&!o.subgrid&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
 }
 /** A selection is either entirely eligible or entirely refused. Do not
  * silently skip a locked/unknown/stateful object or partially return stock. */
-export function groupPickupPlan(items:readonly MainlandSavedObject[]):GroupPickupRow[]|null{
+export function groupPickupPlan(items:readonly MainlandSavedObject[],free=false):GroupPickupRow[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||items.length===1&&!items[0].object.subgrid)return null;
  const seen=new Set<number>(),out:GroupPickupRow[]=[];
  for(const p of items){
   const o=p.object;
-  const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove');
-  const storage=emptyStoragePickupEligible(p);
-  if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!stockSourceEligible(p))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
+  const support=!!p.shape&&o.layer==='furniture'&&Math.floor(Number(o.itemId)/100000)===400&&o.subgrid?.status==='resolved_full'&&o.subgrid.objectCount<32&&isCardinal(o.orientation)&&(free||!nativeActionBlocked(o.editRestrictions,'select')&&!nativeActionBlocked(o.editRestrictions,'remove'));
+  const storage=emptyStoragePickupEligible(p,free);
+  if(((o.storage===true||o.storageKnown===true)&&!storage)||(!support&&!storage&&!(stockSourceEligible(p,free)&&isCardinal(o.orientation)))||!Number.isSafeInteger(o.localOrdinal)||o.localOrdinal<1||seen.has(o.localOrdinal)||!Number.isSafeInteger(o.x)||!Number.isSafeInteger(o.y)||!o.orientation)return null;
   seen.add(o.localOrdinal);
   out.push({localOrdinal:o.localOrdinal,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,...(support?{includeSupport:true as const}:{}),...(storage?{includeStorage:true as const}:{})});
  }

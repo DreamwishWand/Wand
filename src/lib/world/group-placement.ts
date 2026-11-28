@@ -14,7 +14,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
   if(p.object.storageKnown&&!p.object.storage)return null;
-  if(!(p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&cutEligible(p,true):stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  if(!(p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&supportParentEligible(p,true):stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const code=worldOrientationCode(p.object.orientation);
   if(code===null||code%4!==0&&!free)return null;
   const orientation=code/4;
