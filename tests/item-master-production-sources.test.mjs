@@ -104,3 +104,63 @@ test('original blocker default reward and BeeHouse production remain distinct ca
   assert.deepEqual(raw.values['source.BeeHouse'],{EffectZoneSizeX:5,EffectZoneSizeY:5,ProducedItemID:31100251,
     MinProductionDuration:{Seconds:600},MaxProductionDuration:{Seconds:1200},MaxProduced:6});
 });
+
+
+test('ordinary production classification requires an independently ordinary source, explicit productive quantity and no mission seed gate',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const legacy=new Map(await db.getFieldRows('acquisition.categories'));
+  const rewards=new Map(await db.getFieldRows('acquisition.individualFriendshipRewards'));
+  const rewardIds=new Set([...rewards.values()].flatMap(v=>v.filter(r=>r.amount!==null).map(r=>r.itemId)));
+  const ordinary=id=>legacy.get(id)?.includes('ordinary_gameplay')||rewardIds.has(id);
+  const effective=new Map(await db.getFieldRows('acquisition.effectiveCategories'));
+  const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
+  const evidence=catalog.has('acquisition.ordinaryProductionSources')?await db.getFieldRows('acquisition.ordinaryProductionSources'):[];
+  const reader=createProductionSourceReader(db);
+  const seedIds=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'SeedItemData'});
+  const seeds=await reader.getForSeeds(seedIds);
+  const sourceIds=[...new Set(evidence.flatMap(([,links])=>links.map(r=>r.sourceItemId)))];
+  const fields=['source.ProducesItem','source.ProducedAmount','source.ProducedItemID','source.IsMissionItem',
+    'source.MissionSeedBlockHarvest','source.MissionSeedLocationRestriction','source.BeeHouse','sourceClass'];
+  const raw=await db.getItemFields(sourceIds,fields.filter(f=>catalog.has(f)));
+  const byId=new Map(raw.map(r=>[r.itemId,r.values]));
+  for(const [itemId,links] of evidence){
+    assert(effective.get(itemId).includes('ordinary_gameplay'));
+    for(const link of links){
+      assert(ordinary(link.sourceItemId));assert.notEqual(link.sourceItemId,itemId);
+      assert(link.configuredQuantity>0);assert.equal(link.currentAvailabilityVerified,false);
+      assert.equal(link.ordinarySourceIndependentlyClassified,true);
+      const row=byId.get(link.sourceItemId);
+      if(link.kind==='ordinary_seed_production'){
+        assert.equal(row.sourceClass,'SeedItemData');
+        assert.equal(row['source.ProducesItem'],true);
+        assert.equal(row['source.ProducedItemID'],itemId);
+        assert.equal(row['source.ProducedAmount'],link.configuredQuantity);
+        assert.notEqual(row['source.IsMissionItem'],true);
+        assert.notEqual(row['source.MissionSeedBlockHarvest'],true);
+        assert.equal(row['source.MissionSeedLocationRestriction'],undefined);
+        assert.equal(link.quantityKind,'configured_yield');
+      }else{
+        assert.equal(link.kind,'ordinary_bee_house_production');
+        assert.equal(row['source.BeeHouse'].ProducedItemID,itemId);
+        assert.equal(row['source.BeeHouse'].MaxProduced,link.configuredQuantity);
+        assert.equal(link.quantityKind,'maximum_produced');
+      }
+    }
+  }
+  const excluded=seeds.filter(r=>r.definition.missionField===true||r.definition.missionSeedBlockHarvest===true||
+    r.definition.resultItemId===r.itemId||r.definition.producesItemField!==true);
+  for(const seed of excluded)assert(!sourceIds.includes(seed.itemId),'excluded seed '+seed.itemId);
+  // Every fully explicit eligible seed must be represented, even if its
+  // output was already classified by a different original source.
+  const keys=new Set(evidence.flatMap(([id,links])=>links.map(l=>id+':'+l.sourceItemId)));
+  for(const {definition:s} of seeds){
+    if(ordinary(s.seedItemId)&&s.resultItemId!==null&&s.resultItemId!==s.seedItemId&&
+      s.producesItemField===true&&s.configuredYield>0&&s.missionField===false&&
+      s.missionSeedBlockHarvest===false&&s.missionSeedLocationRestriction===null){
+      const target=await db.getItemFields([s.resultItemId],['nativeCategory']);
+      if(target[0]?.values.nativeCategory==='ActivityItem')assert(keys.has(s.resultItemId+':'+s.seedItemId));
+    }
+  }
+  console.log('ordinary production classification census',JSON.stringify({items:evidence.length,
+    newOrdinary:evidence.filter(([id])=>!ordinary(id)).length,previouslyUnclassified:evidence.filter(([id])=>!legacy.has(id)&&!rewardIds.has(id)).length}));
+});
