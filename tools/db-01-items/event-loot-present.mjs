@@ -31,6 +31,11 @@ function activeEvent(tree,known,stack=[]){
     }else if(k==='Date'){
       if(!exact(p,['Date','LocalTime','Operator'])||!exact(p.Date,['Seconds'])||!id(p.Date.Seconds)||
         p.Operator!==5||(p.LocalTime!==undefined&&typeof p.LocalTime!=='boolean'))return null;
+    }else if(k==='MissionStatus'){
+      // The reviewed TrickOrTreat common condition also requires completion
+      // of the tutorial quest. Keep this exact positive prerequisite.
+      if(!exact(p,['Mission','State','Operator'])||known.get(p.Mission)?.nativeCategory!=='Mission'||
+        p.State!==8||(p.Operator!==undefined&&p.Operator!==0))return null;
     }else if(k==='MemoryShard'){
       if(!exact(p,['Operator','Shard'])||p.Operator!==3||known.get(p.Shard)?.nativeCategory!=='MemoryShard')return null;
     }else return null;
