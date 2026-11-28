@@ -2,7 +2,7 @@ import type {GroupPickupRow} from './group-pickup.ts';
 import type {CutClipboard,CutWitness} from './group-paste.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
-import {supportShapeKey,type SupportTree} from './subgrid-local.ts';
+import {supportShapeKey,supportPlacementFits,type SupportTree} from './subgrid-local.ts';
 import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
@@ -33,6 +33,17 @@ export function captureSupportCut(tree:SupportTree,shapes:Readonly<Record<string
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
+}
+export function supportFloorGroup(cut:CutClipboard|null,file:File|null,clip:readonly DesignClipItem[]){
+ if(!file||!cut||cut.file!==file||!cut.rows.length||cut.rows.length>32||cut.rows.length!==clip.length)return null;
+ const rows=cut.rows.map((row,i)=>{const source=supportFloorCut({...cut,rows:[row]},file),p=clip[i];return source&&p.itemId===source.itemId&&[p.dx,p.dy,p.orientation].every(Number.isSafeInteger)&&p.dx>=0&&p.dy>=0&&p.orientation>=0&&p.orientation<4?{source,p}:null;});
+ return rows.every(r=>r!==null)?rows as NonNullable<typeof rows[number]>[]:null;
+}
+export function supportFloorGroupPlan(cut:CutClipboard|null,file:File|null,clip:readonly DesignClipItem[],tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,x:number,y:number){
+ const group=supportFloorGroup(cut,file,clip);
+ if(!group||tree.objects.length+group.length>512)return null;
+ const rows=group.map(({source,p})=>{const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];return eligible.has(source.itemId)&&supportPlacementFits(tree,shapes,raster,source.itemId,px,py,orientation,true)?{...source,x:px,y:py,orientation}:null;});
+ return rows.every(r=>r!==null)?rows as NonNullable<typeof rows[number]>[]:null;
 }
 /** Only one exact ordinary room floor leaf may be pasted into a support.
  * The clipboard is bound to the unchanged local working Save. */
