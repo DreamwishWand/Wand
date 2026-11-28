@@ -16,6 +16,29 @@ export interface AcquisitionSourceIdentity {
   readonly iconGuid:string|null;
   readonly locale:ItemMasterLocale;
 }
+export interface OrdinaryQuestIntroEvidence {
+  readonly questId:number;
+  readonly flowIndex:number;
+  readonly sourcePath:string;
+  readonly configuredAmount:number;
+  readonly nativeQuestGroupId:number;
+  readonly nativeQuestGroup:'Village'|'Story'|'Realm';
+  readonly sourceGameVersion:string;
+  readonly sourceMissionSha256:string;
+  readonly guaranteedGrantVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
+export interface OrdinaryProductionEvidence {
+  readonly sourceItemId:number;
+  readonly kind:'ordinary_seed_production'|'ordinary_bee_house_production';
+  readonly sourcePath:string;
+  readonly configuredQuantity:number;
+  readonly quantityKind:'configured_yield'|'maximum_produced';
+  readonly sourceGameVersion:string;
+  readonly sourceFileSha256:string;
+  readonly ordinarySourceIndependentlyClassified:true;
+  readonly currentAvailabilityVerified:false;
+}
 export interface ItemAcquisitionSourceDetails {
   readonly itemId:number;
   readonly sourceGameVersion:string;
@@ -26,6 +49,11 @@ export interface ItemAcquisitionSourceDetails {
   readonly indexed:readonly Readonly<{evidence:Db01ItemSourceLink;identity:AcquisitionSourceIdentity|null}>[];
   readonly additional:readonly Readonly<{evidence:AdditionalItemSource;identity:AcquisitionSourceIdentity|null}>[];
   readonly native:readonly Readonly<{evidence:NativeAcquisitionCandidate;identity:AcquisitionSourceIdentity|null}>[];
+  /** Explicit classification extensions; not independent extra grants. */
+  readonly ordinaryQuestIntroStatus:'indexed'|'not_indexed';
+  readonly ordinaryProductionStatus:'indexed'|'not_indexed';
+  readonly ordinaryQuestIntro:readonly Readonly<{evidence:OrdinaryQuestIntroEvidence;identity:AcquisitionSourceIdentity|null}>[];
+  readonly ordinaryProduction:readonly Readonly<{evidence:OrdinaryProductionEvidence;identity:AcquisitionSourceIdentity|null}>[];
   readonly coverageComplete:false;
   readonly currentAvailabilityVerified:false;
 }
@@ -44,13 +72,19 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   const indexedStatus=db.release.acquisitionProjection?.sourceGameVersion===db.release.target.gameVersion&&catalog.has(relation)?'current':'pending_update';
   const nativeStatus=catalog.has('acquisition.nativeCandidates')?'indexed':'not_indexed';
   const additionalStatus=catalog.has(additional)?'indexed':'not_indexed';
-  const fields=[...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),...(catalog.has(effective)?[effective]:[])];
+  const introField='acquisition.ordinaryQuestIntroSources',productionField='acquisition.ordinaryProductionSources';
+  const ordinaryQuestIntroStatus=catalog.has(introField)?'indexed':'not_indexed';
+  const ordinaryProductionStatus=catalog.has(productionField)?'indexed':'not_indexed';
+  const fields=[...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
+    ...(catalog.has(effective)?[effective]:[]),...(ordinaryQuestIntroStatus==='indexed'?[introField]:[]),
+    ...(ordinaryProductionStatus==='indexed'?[productionField]:[])];
   const [rows,nativeRows]=await Promise.all([
     db.getItemFields(ids,fields.length?fields:['itemId']),
     nativeStatus==='indexed'?db.getNativeAcquisitionCandidates(ids):null
   ]);
   type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
-    native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[]};
+    native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[];
+    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[]};
   const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
     const record=row.values[relation] as unknown as {itemId:string;links:readonly Db01ItemSourceLink[]}|undefined;
@@ -62,7 +96,22 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     const native=nativeRows?.[i]??[];
     const categories=(row.values[effective]??[]) as unknown as readonly GameNativeItemCategory[];
     check(Array.isArray(categories),'CATEGORIES');
-    return {itemId:row.itemId,indexed,extras,native,categories};
+    const intro=(row.values[introField]??[]) as unknown as readonly OrdinaryQuestIntroEvidence[];
+    const production=(row.values[productionField]??[]) as unknown as readonly OrdinaryProductionEvidence[];
+    check(Array.isArray(intro)&&intro.every(e=>id(e.questId)&&id(e.nativeQuestGroupId)&&id(e.configuredAmount)&&
+      Number.isSafeInteger(e.flowIndex)&&e.flowIndex>=0&&['Village','Story','Realm'].includes(e.nativeQuestGroup)&&
+      /^source\.ItemsToGive\[\d+\]\.ItemToGive\.ItemToGive\.Item\.(?:Item|ItemIngredient)\.Item$/.test(e.sourcePath)&&
+      e.sourceGameVersion===db.release.target.gameVersion&&e.sourceMissionSha256===db.release.sourceFilesSha256?.Mission&&
+      e.guaranteedGrantVerified===false&&e.currentAvailabilityVerified===false),'QUEST_INTRO');
+    check(Array.isArray(production)&&production.every(e=>id(e.sourceItemId)&&id(e.configuredQuantity)&&
+      e.sourceGameVersion===db.release.target.gameVersion&&e.ordinarySourceIndependentlyClassified===true&&
+      e.currentAvailabilityVerified===false&&(
+        e.kind==='ordinary_seed_production'&&e.sourcePath==='source.ProducedItemID'&&e.quantityKind==='configured_yield'&&
+          e.sourceFileSha256===db.release.sourceFilesSha256?.ActivityItem||
+        e.kind==='ordinary_bee_house_production'&&e.sourcePath==='source.BeeHouse.ProducedItemID'&&e.quantityKind==='maximum_produced'&&
+          e.sourceFileSha256===db.release.sourceFilesSha256?.Furniture)),'PRODUCTION');
+    check(!(intro.length||production.length)||categories.includes('ordinary_gameplay'),'CLASSIFICATION_JOIN');
+    return {itemId:row.itemId,indexed,extras,native,categories,intro,production};
   });
   const resolveIds=new Set<number>();
   for(const context of contexts){
@@ -70,6 +119,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     for(const e of context.indexed){const n=categoryForIndexed[e.kind]&&numeric(e.sourceId);if(n)resolveIds.add(n);}
     for(const e of context.extras)if(id(e.sourceId))resolveIds.add(e.sourceId);
     for(const e of context.native)resolveIds.add(e[0]);
+    for(const e of context.intro)resolveIds.add(e.questId);
+    for(const e of context.production)resolveIds.add(e.sourceItemId);
   }
   const resolved=new Map<number,Readonly<AcquisitionSourceIdentity>>();
   const nameField='names.'+locale;
@@ -100,6 +151,10 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
         e.kind==='pet_friendship_reward'&&id(e.sourceId)?identity(e.sourceId,['Companion']):
         e.kind==='configured_container_furniture_slot'&&id(e.sourceId)?identity(e.sourceId,['Furniture']):null}))),
     native:Object.freeze(c.native.map(e=>Object.freeze({evidence:e,identity:identity(e[0])}))),
+    ordinaryQuestIntroStatus,ordinaryProductionStatus,
+    ordinaryQuestIntro:Object.freeze(c.intro.map(e=>Object.freeze({evidence:e,identity:identity(e.questId,['Mission'])}))),
+    ordinaryProduction:Object.freeze(c.production.map(e=>Object.freeze({evidence:e,
+      identity:identity(e.sourceItemId,e.kind==='ordinary_seed_production'?['ActivityItem']:['Furniture'])}))),
     coverageComplete:false as const,currentAvailabilityVerified:false as const
   }):null));
 }
