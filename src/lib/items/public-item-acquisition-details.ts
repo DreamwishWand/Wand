@@ -133,6 +133,24 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
   }
   return output;
 }
+export interface MemoryAppearanceEvidence {
+  readonly kind:'memory_appearance_condition';
+  readonly appearanceConditionCode:number;
+  readonly appearanceCondition:string;
+  readonly sourcePath:'source.AppearanceCondition';
+  readonly conditionsFieldPresent:boolean;
+  readonly conditions:ItemFieldValue;
+  readonly gateStatus:'field_absent'|'explicit_empty'|'unresolved'|'configured';
+  readonly configuredShardCount:number;
+  readonly consummableOverrideItemId:number|null;
+  readonly consummableOverrideResolved:boolean;
+  readonly category:'ordinary_gameplay'|null;
+  readonly sourceGameVersion:string;
+  readonly sourceFileSha256:string;
+  readonly sourceIl2cppDumpSha256:string;
+  readonly guaranteedGrantVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface ItemAcquisitionSourceDetails {
   readonly itemId:number;
   readonly sourceGameVersion:string;
@@ -148,6 +166,8 @@ export interface ItemAcquisitionSourceDetails {
   readonly ordinaryProductionStatus:'indexed'|'not_indexed';
   readonly ordinaryQuestIntro:readonly Readonly<{evidence:OrdinaryQuestIntroEvidence;identity:AcquisitionSourceIdentity|null}>[];
   readonly ordinaryProduction:readonly Readonly<{evidence:OrdinaryProductionEvidence;identity:AcquisitionSourceIdentity|null}>[];
+  readonly memoryAppearanceStatus:'indexed'|'not_indexed';
+  readonly memoryAppearance:Readonly<{evidence:MemoryAppearanceEvidence;consummableOverrideIdentity:AcquisitionSourceIdentity|null}>|null;
   readonly classificationExtensionStatus:Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
   readonly classificationExtensions:readonly Readonly<ClassificationExtensionEvidence>[];
   readonly coverageComplete:false;
@@ -172,7 +192,9 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   const ordinaryQuestIntroStatus=catalog.has(introField)?'indexed':'not_indexed';
   const ordinaryProductionStatus=catalog.has(productionField)?'indexed':'not_indexed';
   const classificationExtensionStatus=Object.freeze(Object.fromEntries(extensionFamilies.map(f=>[f,catalog.has(extensionFields[f])?'indexed':'not_indexed']))) as Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
-  const fields=[...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
+  const memoryField='acquisition.memoryAppearance';
+  const memoryAppearanceStatus=catalog.has(memoryField)?'indexed':'not_indexed';
+  const fields=[...(memoryAppearanceStatus==='indexed'?[memoryField]:[]),...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
     ...(catalog.has(effective)?[effective]:[]),...(ordinaryQuestIntroStatus==='indexed'?[introField]:[]),
     ...(ordinaryProductionStatus==='indexed'?[productionField]:[])];
   const [rows,nativeRows]=await Promise.all([
@@ -181,7 +203,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   ]);
   type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
     native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[];
-    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[]};
+    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[];memory:MemoryAppearanceEvidence|null};
   const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
     const record=row.values[relation] as unknown as {itemId:string;links:readonly Db01ItemSourceLink[]}|undefined;
@@ -208,7 +230,16 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
         e.kind==='ordinary_bee_house_production'&&e.sourcePath==='source.BeeHouse.ProducedItemID'&&e.quantityKind==='maximum_produced'&&
           e.sourceFileSha256===db.release.sourceFilesSha256?.Furniture)),'PRODUCTION');
     check(!(intro.length||production.length)||categories.includes('ordinary_gameplay'),'CLASSIFICATION_JOIN');
-    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories)};
+    const memory=(row.values[memoryField]??null) as unknown as MemoryAppearanceEvidence|null;
+    if(memory)check(memory.kind==='memory_appearance_condition'&&memory.sourcePath==='source.AppearanceCondition'&&
+      Number.isSafeInteger(memory.appearanceConditionCode)&&memory.appearanceConditionCode>=0&&memory.appearanceConditionCode<=13&&
+      typeof memory.appearanceCondition==='string'&&id(memory.configuredShardCount)&&
+      memory.sourceGameVersion===db.release.target.gameVersion&&memory.sourceFileSha256===db.release.sourceFilesSha256?.MemoryShard&&
+      memory.sourceIl2cppDumpSha256===db.release.sourceIl2cppDumpSha256&&
+      memory.guaranteedGrantVerified===false&&memory.currentAvailabilityVerified===false&&
+      (memory.category===null||memory.category==='ordinary_gameplay'&&categories.includes(memory.category))&&
+      (memory.consummableOverrideItemId===null||id(memory.consummableOverrideItemId)),'MEMORY_APPEARANCE');
+    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories),memory};
   });
   const resolveIds=new Set<number>();
   for(const context of contexts){
@@ -218,6 +249,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     for(const e of context.native)resolveIds.add(e[0]);
     for(const e of context.intro)resolveIds.add(e.questId);
     for(const e of context.production)resolveIds.add(e.sourceItemId);
+    if(context.memory?.consummableOverrideResolved&&id(context.memory.consummableOverrideItemId))resolveIds.add(context.memory.consummableOverrideItemId);
     for(const e of context.extensions){if(e.sourceId!==null)resolveIds.add(e.sourceId);for(const n of e.relatedIds)resolveIds.add(n);}
   }
   const resolved=new Map<number,Readonly<AcquisitionSourceIdentity>>();
@@ -253,6 +285,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     ordinaryQuestIntro:Object.freeze(c.intro.map(e=>Object.freeze({evidence:e,identity:identity(e.questId,['Mission'])}))),
     ordinaryProduction:Object.freeze(c.production.map(e=>Object.freeze({evidence:e,
       identity:identity(e.sourceItemId,e.kind==='ordinary_seed_production'?['ActivityItem']:['Furniture'])}))),
+    memoryAppearanceStatus,
+    memoryAppearance:c.memory?Object.freeze({evidence:c.memory,consummableOverrideIdentity:c.memory.consummableOverrideResolved?identity(c.memory.consummableOverrideItemId):null}):null,
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
