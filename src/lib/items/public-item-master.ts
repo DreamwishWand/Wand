@@ -497,13 +497,13 @@ export interface ItemContentQueryResult {
 export const ADDITIONAL_ACQUISITION_SOURCE_KINDS=[
   'character_friendship_reward','pet_friendship_reward','configured_store_display',
   'pre_dlc_store_list_member','design_challenge_catalog_unlock',
-  'configured_container_slot','configured_default_inventory_entry','configured_container_furniture_slot'
+  'configured_container_slot','configured_default_inventory_entry','configured_container_furniture_slot','profile_update_grant'
 ] as const;
 export type AdditionalAcquisitionSourceKind=typeof ADDITIONAL_ACQUISITION_SOURCE_KINDS[number];
 export type ItemAcquisitionSourceQuery=
   |{readonly family:'indexed';readonly kind:Db01SourceKind;readonly sourceId:string;readonly role?:Db01SourceRole}
   |{readonly family:'additional';readonly kind:'character_friendship_reward'|'pet_friendship_reward'|'configured_container_furniture_slot';readonly sourceId:number}
-  |{readonly family:'additional';readonly kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock'|'configured_container_slot'|'configured_default_inventory_entry';readonly sourceId:string}
+  |{readonly family:'additional';readonly kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock'|'configured_container_slot'|'configured_default_inventory_entry'|'profile_update_grant';readonly sourceId:string}
   |{readonly family:'native';readonly sourceItemId:number;readonly role?:NativeAcquisitionRole};
 export interface ItemAcquisitionSourceQueryResult {
   readonly status:'indexed'|'not_indexed';
