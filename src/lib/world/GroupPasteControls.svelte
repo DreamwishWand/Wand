@@ -89,7 +89,7 @@
   if(blocked||captureWorker)return;
   const flat=captureFurnitureGroup(captureItems,false,freePlacement);
   if(flat){try{const half=sceneFromClip(flat,2);downloadScene(convertSceneFactor(half,1)??half);}catch{sceneError=gs[2];}return;}
-  const selected=[...captureItems],areaPoses=captureAreaPoses(selected),poses=areaPoses??captureFurnitureGroup(selected,true),f=file;
+  const selected=[...captureItems],mixedPoses=freePlacement?captureFurnitureGroup(selected,true,true):null,areaPoses=mixedPoses?null:captureAreaPoses(selected),poses=areaPoses??mixedPoses??captureFurnitureGroup(selected,true),f=file;
   if(!f||!poses||!areaPoses&&(poses.length>SCENE_FURNITURE_LIMIT||!selected.some(p=>p.object.subgrid)))return;
   const networks=areaPoses?selected.filter(p=>p.object.layer==='ground'||p.object.layer==='fence').map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y})):[];
   const parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
@@ -159,7 +159,7 @@
   if(duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.subgrid))return beginLocalSupportDuplicate();
   const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
-  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!r.supportFactor)||!!supportDoc||!!areaDoc))return false;
+  if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!areaDoc||data.some((p,i)=>!Number.isInteger(p.orientation)&&(!!cut?.rows[i]?.supportFactor||!!cut?.rows[i]?.storage||!!supportDoc?.items[i]?.support||!!localStorageSources?.[i]))))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];storageSources=localStorageSources??storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}

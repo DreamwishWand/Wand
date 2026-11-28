@@ -151,6 +151,14 @@ test('portable mixed indoor Scene preserves support closure and charges child st
  const free=indoorMixedPlacement(freeFace,shapes,allowed,stock,clip,scene,'corner',1,1,null,null,false,true);
  assert.ok(free);assert.deepEqual(free.map(p=>[p.x,p.y]),[[1,1],[3,1]]);assert.deepEqual(free[0].scene,support);
  assert.equal(indoorMixedPlacement(freeFace,shapes,allowed,stock,clip,scene,'corner',7,7,null,null,false,true),null);
+ const diagonalFace={...freeFace,positions:[freeFace.positions[0],{...freeFace.positions[1],orientationCode:10}]};
+ const diagonalShapes={...shapes,'40000002:10':shape};
+ const diagonal=captureIndoorMixedScene(diagonalFace,[0,1],diagonalShapes,allowed,new Map([[0,support]]),false,true);
+ assert.ok(diagonal);assert.equal(diagonal.items[1].orientation,2.5);
+ const diagonalClip=diagonal.items.map(({support,...pose})=>pose);
+ assert.equal(indoorMixedPlacement(diagonalFace,diagonalShapes,allowed,stock,diagonalClip,diagonal,'corner',1,1,null,null,false,true)[1].orientation,'GridOrientation_DownLeft');
+ assert.equal(indoorMixedPlacement(diagonalFace,diagonalShapes,allowed,stock,diagonalClip,diagonal,'corner',1,1),null);
+ assert.equal(indoorMixedPlacement(diagonalFace,diagonalShapes,allowed,stock,[{...diagonalClip[0],orientation:2.5},diagonalClip[1]],diagonal,'corner',1,1,null,null,false,true),null);
 });
 
 test('room cut carries support witness only to matching native factor',()=>{
