@@ -40,7 +40,7 @@ import {
 import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from './public-item-acquisition-details.ts';
 import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-taxonomy-details.ts';
 import {createProductionSourceReader,type ProductionItemEvidence} from './public-production-sources.ts';
-import {createLootSourceReader,type LootItemEvidence} from './public-loot-sources.ts';
+import {createLootSourceReader,type LootItemEvidence,type LootReferrerEvidence} from './public-loot-sources.ts';
 import {createStallLootReader,type StallItemEvidence,type StallLootEvidence} from './public-stall-loot.ts';
 import {createPreferenceSourceReader,type CharacterPreferenceResult,type PreferenceItemResult} from './public-preference-sources.ts';
 import {createCritterSourceReader,type CritterSourceResult,type CritterFoodResult,type CritterFoodFilterResult,type CritterFoodFilterInverse} from './public-critter-sources.ts';
@@ -168,6 +168,8 @@ export interface PublicItemDetailsClient {
   getItemProductionSources(itemIds:readonly number[]):Promise<readonly (Readonly<ProductionItemEvidence>|null)[]>;
   /** Source-defined explicit loot and stall slots, never live stock or price. */
   getItemLootSources(itemIds:readonly number[],locale?:ItemMasterLocale):Promise<readonly (Readonly<LootItemEvidence>|null)[]>;
+  /** Exact source definition to configured LootTable candidates and conditions. */
+  getLootSourcesForReferrers(sourceIds:readonly number[]):Promise<readonly (Readonly<LootReferrerEvidence>|null)[]>;
   getItemStallSources(itemIds:readonly number[]):Promise<readonly (Readonly<StallItemEvidence>|null)[]>;
   getStallLootDetails(stallIds:readonly number[]):Promise<readonly (Readonly<StallLootEvidence>|null)[]>;
   getCharacterPreferenceSources(characterIds:readonly number[]):Promise<readonly (Readonly<CharacterPreferenceResult>|null)[]>;
@@ -397,6 +399,9 @@ export async function openPublicItemDetails(
     },
     async getItemLootSources(itemIds:readonly number[],locale?:ItemMasterLocale){
       return createLootSourceReader(await complete()).getForItems(itemIds,locale);
+    },
+    async getLootSourcesForReferrers(sourceIds:readonly number[]){
+      return createLootSourceReader(await complete()).getForReferrers(sourceIds);
     },
     async getItemStallSources(itemIds:readonly number[]){
       return createStallLootReader(await complete()).getForItems(itemIds);
