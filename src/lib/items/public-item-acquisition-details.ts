@@ -146,13 +146,27 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           id(evidence.sourceItemId)&&id(evidence.targetItemId)&&evidence.guaranteedGrantVerified===false&&
           (evidence.kind==='character_automatic_unlock'&&evidence.sourceItemId===evidence.targetItemId&&evidence.unlockConditionCode===1&&
             evidence.sourcePath==='source.UnlockCondition'&&category==='ordinary_gameplay'||
+           evidence.kind==='character_secret_condition_unlock'&&evidence.sourceItemId===evidence.targetItemId&&
+            evidence.unlockConditionCode===4&&category==='ordinary_gameplay'&&
+            evidence.sourcePath==='source.SecretCharacterData.CharacterUnlockCondition'&&
+            evidence.sourceMissionSha256===sha?.Mission&&
+            evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+            id(evidence.missionItemId)&&object(evidence.original)&&
+            ['MissionStatus','MissionCompleted','MissionStepCompleted','MissionStepStatus'].some(k=>k===evidence.predicateKind)&&
+            (evidence.missionStepId===null||typeof evidence.missionStepId==='number'&&Number.isSafeInteger(evidence.missionStepId)&&evidence.missionStepId>=0)&&
+            (evidence.preConditions===null||object(evidence.preConditions))||
            evidence.kind==='character_quest_unlock'&&evidence.sourceMissionSha256===sha?.Mission&&
             evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
             [2,4].some(n=>n===evidence.unlockConditionCode)&&evidence.nextStateCode===0&&
             object(evidence.original)&&typeof evidence.sourcePath==='string'&&
             /^source\.Steps\[\d+\]\.SubSteps\[\d+\]\.Objectives\[\d+\]\.UnlockCharacter$/.test(evidence.sourcePath)&&
             (evidence.targetResolution==='explicit_character'||evidence.targetResolution==='mission_owner')),'EXTENSION_CHARACTER_UNLOCK');
-        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+        const relatedIds:number[]=[];
+        if(evidence.kind==='character_secret_condition_unlock'){
+          check(id(evidence.missionItemId),'EXTENSION_SECRET_CHARACTER_MISSION');
+          relatedIds.push(evidence.missionItemId);
+        }
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds});continue;
       }
       if(family==='questLoot'){
         const category=evidence.category;
@@ -535,7 +549,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_automatic_unlock'?['Character']:['Mission']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});

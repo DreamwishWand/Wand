@@ -12,6 +12,7 @@ const names=['Purchase','Automatic','StoryReward','Event','Secret'];
 const id=v=>Number.isSafeInteger(v)&&v>0;
 const props=r=>({...r.nativeProperties,...r.sourceAttributes});
 const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+const keys=(v,allowed)=>obj(v)&&Object.keys(v).every(k=>allowed.includes(k));
 const check=(v,why)=>{if(!v)throw Error('DB01_CHARACTER_UNLOCK_'+why)};
 export function buildCharacterUnlockSources(rows,source,questKinds){
  const modes=new Map(),byItem=new Map();
@@ -19,7 +20,7 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
  if(!questKinds||source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
   source.sourceIl2cppDumpSha256!==DUMP||source.sourceFilesSha256.Character!==CHARACTER||source.sourceFilesSha256.Mission!==MISSION)return result;
  const known=new Map(rows.map(r=>[r.itemId,r]));
- const declarations={UnlockCondition:16,IsDebug:11,IsSidekick:15,IsSyncOnlineItem:81,OnlineCategory:82,IsUnavailableForGenerator:80,House:13,Village:14};
+ const declarations={UnlockCondition:16,SecretCharacterData:17,IsDebug:11,IsSidekick:15,IsSyncOnlineItem:81,OnlineCategory:82,IsUnavailableForGenerator:80,House:13,Village:14};
  for(const [key,n] of Object.entries(declarations))check(source.sourceFieldDeclarations.CharacterItemData[key]===n,'FIELD_'+key);
  const emit=(target,link)=>{const a=byItem.get(target)??[];a.push({...link,targetItemId:target,
   sourceGameVersion:source.target.gameVersion,sourceCharacterSha256:CHARACTER,guaranteedGrantVerified:false,currentAvailabilityVerified:false});byItem.set(target,a);};
@@ -74,6 +75,52 @@ export function buildCharacterUnlockSources(rows,source,questKinds){
    }
  }
  check(steps===61&&ownerFallback===26&&targets.size===61,'MISSION_CENSUS');
- console.log('DB01_CHARACTER_UNLOCK '+JSON.stringify({definitions:modes.size,residentModes:counts,questSteps:steps,ownerFallback,distinctQuestTargets:targets.size,classifiedQuestTargets:classified,automatic:counts.Automatic}));
+ // SecretCharacterRecurringConditionData.OnAnyUnlockConditionChanged
+ // loads CharacterItemData.SecretCharacterData (+0x70), evaluates its
+ // PreConditions (+0x20) then CharacterUnlockCondition (+0x38) and
+ // calls ProfileWorld.UnlockCharacter (RVA 4b3ad00) on success.
+ // Unlike a generic quest objective, this is an actual unlock route.
+ // Keep the entire original precondition tree; it is not a substitute
+ // for the final unlock predicate and is not claimed to be satisfied.
+ let secretConditions=0,newSecretTargets=0;
+ const secretKinds={};
+ for(const [target,mode] of modes){
+  if(!mode.residentRouteEligible||mode.unlockConditionCode!==4)continue;
+  const data=props(known.get(target)).SecretCharacterData,tree=data?.CharacterUnlockCondition;
+  if(tree===undefined||keys(tree,['Operator','Conditions'])&&(!tree.Conditions||!tree.Conditions.length))continue;
+  check(keys(tree,['Operator','Conditions'])&&[undefined,0].includes(tree.Operator)&&
+    Array.isArray(tree.Conditions)&&tree.Conditions.length===1,'SECRET_TREE');
+  const leaf=tree.Conditions[0],kind=Object.keys(leaf)[0],p=leaf[kind];
+  check(Object.keys(leaf).length===1&&obj(p)&&id(p.Mission),'SECRET_LEAF');
+  const mission=known.get(p.Mission);
+  check(mission?.nativeCategory==='Mission','SECRET_MISSION');
+  const category=questKinds.get(p.Mission);
+  check(category==='ordinary_gameplay','SECRET_CATEGORY');
+  let stepId=null;
+  if(kind==='MissionStatus'){
+   check(keys(p,['Mission','Operator','State'])&&[undefined,0].includes(p.Operator)&&p.State===8,'SECRET_MISSION_STATUS');
+  }else if(kind==='MissionCompleted'){
+   check(keys(p,['Mission','Inversed'])&&[undefined,false].includes(p.Inversed),'SECRET_MISSION_COMPLETED');
+  }else if(kind==='MissionStepCompleted'||kind==='MissionStepStatus'){
+   check(kind==='MissionStepCompleted'?keys(p,['Mission','StepID','Inversed'])&&[undefined,false].includes(p.Inversed):
+     keys(p,['Mission','StepID','Status'])&&p.Status===4,'SECRET_STEP_STATUS');
+   stepId=p.StepID??0;
+   check(Number.isSafeInteger(stepId)&&stepId>=0&&
+     props(mission).Steps?.filter(st=>(st.StepID??0)===stepId).length===1,'SECRET_STEP_ID');
+  }else check(false,'SECRET_KIND');
+  emit(target,{kind:'character_secret_condition_unlock',category,sourceItemId:target,
+    sourcePath:'source.SecretCharacterData.CharacterUnlockCondition',original:tree,
+    preConditions:data.PreConditions??null,missionItemId:p.Mission,missionStepId:stepId,
+    predicateKind:kind,unlockConditionCode:4,sourceMissionSha256:MISSION,nativeAssemblySha256:NATIVE});
+  secretConditions++;
+  secretKinds[kind]=(secretKinds[kind]??0)+1;
+  if(!targets.has(target))newSecretTargets++;
+ }
+ check(secretConditions===30&&newSecretTargets===14&&byItem.size===79&&
+   secretKinds.MissionStatus===10&&secretKinds.MissionStepStatus===10&&
+   secretKinds.MissionStepCompleted===8&&secretKinds.MissionCompleted===2,'SECRET_CENSUS');
+ console.log('DB01_CHARACTER_UNLOCK '+JSON.stringify({definitions:modes.size,residentModes:counts,questSteps:steps,ownerFallback,
+   distinctQuestTargets:targets.size,classifiedQuestTargets:classified,automatic:counts.Automatic,
+   secretConditions,secretKinds,newSecretTargets,coveredResidents:byItem.size}));
  return result;
 }

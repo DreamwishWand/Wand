@@ -26,7 +26,27 @@ test('original character modes and native character unlock action cover all dire
    assert.equal(link.currentAvailabilityVerified,false);assert.equal(link.guaranteedGrantVerified,false);
    if(link.category!==null)assert(effective.get(target).includes(link.category));
   }
- assert.equal(direct,35);assert.equal(fallback,26);assert.equal(sources.size,65);
+ assert.equal(direct,35);assert.equal(fallback,26);assert.equal(sources.size,79);
+ const raw=new Map(await db.getFieldRows('source.SecretCharacterData'));
+ const secretLinks=[...sources].flatMap(([,ls])=>ls.filter(l=>l.kind==='character_secret_condition_unlock'));
+ assert.equal(secretLinks.length,30);
+ assert.equal(secretLinks.filter(l=>!sources.get(l.targetItemId).some(r=>r.kind==='character_quest_unlock')).length,14);
+ const newlyCovered=secretLinks.filter(l=>!sources.get(l.targetItemId).some(r=>r.kind==='character_quest_unlock')).map(l=>l.targetItemId);
+ assert.deepEqual(newlyCovered.sort((a,b)=>a-b),[10000027,10000029,10000038,10000043,10000046,10000060,10000061,10000062,10000063,10000070,10000073,10000103,10000114,10000133]);
+ for(const l of secretLinks){
+   const data=raw.get(l.targetItemId);
+   assert.deepEqual(l.original,data.CharacterUnlockCondition);
+   assert.deepEqual(l.preConditions,data.PreConditions??null);
+   const p=l.original.Conditions[0][l.predicateKind];
+   assert.equal(p.Mission,l.missionItemId);
+   if(l.predicateKind.startsWith('MissionStep')){
+     assert.equal(l.missionStepId,p.StepID??0);
+     assert.equal(steps.get(l.missionItemId).filter(st=>(st.StepID??0)===l.missionStepId).length,1);
+   }else assert.equal(l.missionStepId,null);
+   assert.equal(l.category,'ordinary_gameplay');
+   assert(effective.get(l.targetItemId).includes(l.category));
+ }
+ assert(residents.every(([id])=>sources.get(id)?.some(l=>l.category==='ordinary_gameplay')));
  for(const [id,ls] of sources)for(const l of ls)assert.equal(l.targetItemId,id);
  const ids=[...sources].filter(([,ls])=>ls.some(x=>x.category!==null)).map(([id])=>id);
  const details=await readItemAcquisitionSourceDetails(db,ids,'ja');
