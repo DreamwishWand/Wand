@@ -91,6 +91,32 @@ pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
  super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
 }
+/// Only plain, structurally known stacks may receive a recovered plain item.
+fn plain_stack_headroom(row:&Value)->Option<(u64,u64)>{
+ if row.get("State").is_some_and(|s|!s.is_null())||
+  row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State"))){return None;}
+ let item=row["ItemID"].as_u64().filter(|n|*n>0)?;
+ let amount=row["Amount"].as_u64().filter(|n|*n>0&&*n<i32::MAX as u64)?;
+ Some((item,i32::MAX as u64-amount))
+}
+/// Compute final occupied slots using the same stack compatibility contract
+/// as the writer. A full container can still receive matching plain stacks.
+pub fn projected_used(root:&Value,dest:&RecoveryDestination,items:&[u64])->Option<u32>{
+ if items.is_empty()||items.len()>super::MAX_GRID_MIXED_EDITS{return None;}
+ let rows=root["Player"]["ContainerInventories"][&dest.container_id]["Inventory"].as_array()?;
+ let mut headroom=std::collections::HashMap::<u64,u64>::new();
+ for row in rows{
+  if let Some((item,room))=plain_stack_headroom(row){let n=headroom.entry(item).or_default();*n=n.saturating_add(room);}
+ }
+ let mut used=dest.used;
+ for &item in items{
+  if item==0||item>u32::MAX as u64{return None;}
+  let room=headroom.entry(item).or_default();
+  if *room>0{*room-=1;}
+  else{used=used.checked_add(1)?;if used>dest.capacity{return None;}*room=i32::MAX as u64-1;}
+ }
+ Some(used)
+}
 /// Recover a selection in one transaction. All source witnesses and destination
 /// capacity are checked against the original document; only the changed slot
 /// values and removed map members are spliced into its original bytes.
@@ -111,9 +137,7 @@ pub fn recover_batch(source:&str,targets:&[(GridCoordinateTarget,(i32,i32),Strin
  // representable maximum, and never merge a variant with a plain instance.
  for (target,_,_) in targets{
   if let Some((i,n))=rows.iter().enumerate().find_map(|(i,row)|{
-   if row["ItemID"].as_u64()!=Some(target.item_id)||row.get("State").is_some_and(|s|!s.is_null())||
-    row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State"))){return None;}
-   row["Amount"].as_u64().filter(|n|*n>0&&*n<i32::MAX as u64).map(|n|(i,n))
+   plain_stack_headroom(row).filter(|(item,_)|*item==target.item_id).map(|(_,room)|(i,i32::MAX as u64-room))
   }){
    rows[i]["Amount"]=(n+1).into();
   }else{
@@ -251,6 +275,18 @@ mod tests{
   assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000001,"Amount":1,"State":null},{"ItemID":30000002,"Amount":1,"State":null}]));
   root["Player"]["ContainerInventories"]["0"]["Size"]=1.into();
   assert!(recover_batch(&root.to_string(),&targets,"0").is_err());
+ }
+ #[test]fn destination_projection_distinguishes_full_matching_stacks_variants_and_overflow(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000001,"Amount":i32::MAX-1,"State":null},{"ItemID":30000001,"Amount":2,"State":{"Unknown":1}}]);
+  let dest=destinations(&root).unwrap().remove(0);
+  assert_eq!(projected_used(&root,&dest,&[30000001]),Some(2));
+  assert_eq!(projected_used(&root,&dest,&[30000001,30000001]),None);
+  assert_eq!(projected_used(&root,&dest,&[30000002]),None);
+  root["Player"]["ContainerInventories"]["0"]["Inventory"][1]=json!({"ItemID":0,"Amount":0});
+  let dest=destinations(&root).unwrap().remove(0);
+  assert_eq!(projected_used(&root,&dest,&[30000001,30000001]),Some(2));
+  assert_eq!(projected_used(&root,&dest,&[30000001,30000001,30000002]),None);
  }
  #[test]fn recover_to_inventory_or_chest_preserves_unrelated_bytes(){
   let root:Value=serde_json::from_str(SOURCE).unwrap();assert_eq!(destinations(&root).unwrap().len(),2);
