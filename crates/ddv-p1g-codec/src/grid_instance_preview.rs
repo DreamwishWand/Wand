@@ -458,7 +458,7 @@ fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Re
 /// Original schema-643 underwater scene layout catalog. Unlike the village
 /// writer this contract admits only same-Grid coordinate edits. The three
 /// scenes have independent coordinate planes and no proven allocation path.
-fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+pub(super) fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
     let bad=CodecError::Json;
     let c=&root["World"]["GridCollection"];
     let grids=c["Grids"].as_object().ok_or(bad)?;
@@ -481,9 +481,39 @@ fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecEr
     if rows.next().is_some(){return Err(bad);}
     Ok((r["sizeX"].as_u64().filter(|n|(1..=65536).contains(n)).ok_or(bad)?,r["sizeY"].as_u64().filter(|n|(1..=65536).contains(n)).ok_or(bad)?))
 }
-fn is_underwater_grid(grid:&Value)->bool{
+pub(super) fn is_underwater_grid(grid:&Value)->bool{
     grid["GridDefaultLayoutPath"].as_str().is_some_and(|s|s.starts_with("SceneLayouts/VillageExpansion04UnderwaterAreas/"))||
     grid["GridDataPath"].as_str().is_some_and(|s|s.starts_with("GridData/OffGridBuildings/Expansion04/Underwater"))
+}
+/// Exact plain source envelope; don't synthesize native interaction state.
+/// For new underwater placement the opened Save must corroborate a plain
+/// existing instance of the same Item ID. Native storage definitions remain
+/// excluded even if a malformed save contains a state-free chest.
+pub(super) fn underwater_plain_item(root:&Value,item:u64)->bool{
+    if root["GameInfo"]["Version"].as_u64()!=Some(643)||item/100_000!=400||crate::storage_source::is_storage(item){return false;}
+    let c=&root["World"]["GridCollection"];
+    let Some(grids)=c["Grids"].as_object()else{return false;};
+    if grids.len()>100_000||c.get("DiffGrids").is_some_and(|v|!v.is_object()){return false;}
+    let mut scanned=0usize;
+    for (gid,g) in grids{
+        if g["ID"].as_u64()!=key_id(gid)||c["DiffGrids"].get(gid).is_some(){continue;}
+        let Some(objects)=g["Objects"].as_object()else{continue;};
+        scanned=scanned.saturating_add(objects.len());if scanned>200_000{return false;}
+        for (id,o) in objects{
+            if o["ItemID"].as_u64()==Some(item)&&key_id(id).is_some_and(|n|n>0)&&o["ID"].as_u64()==key_id(id)&&
+               o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))&&observed_coordinates(m).is_some())&&
+               o.get("State").is_none_or(Value::is_null)&&o["Orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){return true;}
+        }
+    }
+    false
+}
+pub(super) fn validate_underwater_stock_destination(root:&Value,d:&ddv_save_patch::PlainGridDestination,item:u64,orientation:&str)->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    let (sx,sy)=underwater_transform_identity(root,&d.grid_id)?;
+    let g=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
+    if g["GridDefaultLayoutPath"].as_str()!=Some(d.layout_path.as_str())||g["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
+       d.tessellation!=1||d.size!=(sx as u32,sy as u32)||!underwater_plain_item(root,item)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+    Ok(())
 }
 /// An identity-preserving transform of local interaction data, not a state
 /// mutation or clone. These discriminants and field types are present in
@@ -3517,6 +3547,34 @@ mod tests{
         stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
         plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn underwater_stock_contract_reuses_plain_allocator_and_inventory(){
+        use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        for r in rows{
+            let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":null}}}}}}});
+            let witness=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+            let raw=root.to_string();
+            let d=resolve_plain_grid_destination(raw.as_bytes(),&witness).unwrap();
+            validate_underwater_stock_destination(&root,&d,40000001,"GridOrientation_Left").unwrap();
+            let placed=preview_furniture_stock_transaction(&raw,2,FurnitureStockAction::Place{destination:&d,item_id:40000001,xy:(1,1),orientation:"GridOrientation_Left"}).unwrap();
+            let v:Value=serde_json::from_str(&placed.patched_json).unwrap();
+            assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+            let t=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:"3".into(),item_id:40000001};
+            let removed=preview_furniture_stock_transaction(&placed.patched_json,1,FurnitureStockAction::Pickup{target:&t,expected:(1,1)}).unwrap();
+            let v:Value=serde_json::from_str(&removed.patched_json).unwrap();
+            assert_eq!(v["Player"],root["Player"]);
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]);
+            assert!(validate_underwater_stock_destination(&root,&d,40001680,"GridOrientation_Left").is_err());
+            let mut bad=d.clone();bad.size.0+=1;assert!(validate_underwater_stock_destination(&root,&bad,40000001,"GridOrientation_Left").is_err());
+            root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Toggle":{"Value":true}});
+            assert!(validate_underwater_stock_destination(&root,&d,40000001,"GridOrientation_Left").is_err());
+        }
     }
 
     #[test]
