@@ -10,7 +10,7 @@
   let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500;
   let loading=true,error='';
   const origin='https://media.dreamwishwand.com';
-  const url=(a:BundleArtwork)=>bundleArtworkUrl(origin,a,detail)??undefined;
+  const url=(a:BundleArtwork,original:boolean)=>bundleArtworkUrl(origin,a,original)??undefined;
   $: filtered=definitions.filter(b=>[b.bundleId,b.current?.title,b.legacy?.title].some(v=>v?.toLowerCase().includes(query.trim().toLowerCase())));
   $: definition=definitions.find(b=>b.bundleId===selected);
   $: revision=definition?.[source]??null;
@@ -60,7 +60,7 @@
             <div class="candidate" style:aspect-ratio={t.artworkWidth+' / '+t.artworkHeight}>
               {#each inspection.slots as slot (slot.binding)}
                 <div class="slot" style:left={100*slot.x/t.artworkWidth+'%'} style:width={100*slot.width/t.artworkWidth+'%'}>
-                  {#if slot.image}<img src={url(slot.image)} alt={slot.binding} loading="lazy" decoding="async"/>
+                  {#if slot.image}<img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async"/>
                   {:else}<span>{slot.binding}<br/>未確定</span>{/if}
                 </div>
               {/each}
@@ -76,7 +76,7 @@
                 {#each [{kind:'Sprite',asset:row.sprite},{kind:'Texture2D',asset:row.texture}] as entry (entry.kind)}
                   <div>
                     <span>{entry.kind}</span>
-                    {#if entry.asset}<img src={url(entry.asset)} alt={row.field+' '+entry.kind} loading="lazy" decoding="async"/><small>{entry.asset.original.width} × {entry.asset.original.height}</small>
+                    {#if entry.asset}<img src={url(entry.asset,detail)} alt={row.field+' '+entry.kind} loading="lazy" decoding="async"/><small>{entry.asset.original.width} × {entry.asset.original.height}</small>
                     {:else}<p>未登録 / 対象外</p>{/if}
                   </div>
                 {/each}
