@@ -849,16 +849,31 @@ pub fn preview_support_parent_world_transfer(source:&str,target:&GridCoordinateT
 pub fn preview_plain_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
     preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,true,false)
 }
-/// Relocate an exact plain outdoor leaf without inventory mutation. The
+/// Special scene path guard for the low-level plain relocation adapter.
+/// Exact original catalog identity and dimensions are validated in the codec.
+fn underwater_plain_path(layout:&str,data:&str)->bool{
+    let Some((folder,leaf))=layout.strip_prefix("SceneLayouts/VillageExpansion04UnderwaterAreas/").and_then(|s|s.split_once('/'))else{return false;};
+    let (layout_leaf,data_prefix)=match folder{
+        "UnderwaterCandy"=>("UnderwaterCandy-DefaultLayout-UnderwaterCandyGrids.json","GridData/OffGridBuildings/Expansion04/UnderwaterCandy/UnderwaterCandy_"),
+        "UnderwaterKingdom"=>("UnderwaterKingdom-DefaultLayout-UnderwaterKingdomGrids.json","GridData/OffGridBuildings/Expansion04/UnderwaterKingdom/UnderwaterKingdom_"),
+        "UnderwaterPirate"=>("UnderwaterPirate-DefaultLayout-UnderwaterPiratesGrids.json","GridData/OffGridBuildings/Expansion04/UnderwaterPirate/UndewaterPirate_"),
+        _=>return false
+    };
+    leaf==layout_leaf&&data.strip_prefix(data_prefix).is_some_and(|s|s.strip_suffix("-GridData.json").is_some_and(|n|n.len()==2&&n.bytes().all(|b|b.is_ascii_digit())))
+}
+/// Relocate an exact plain outdoor or calibrated special-scene leaf without inventory mutation. The
 /// codec proves original source/destination catalog identity and references.
 pub fn preview_free_outdoor_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
- if target.grid_id==d.grid_id||house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
+ let underwater=underwater_plain_path(&d.layout_path,&d.data_path);
+ if target.grid_id==d.grid_id||!underwater&&house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}
  validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let from=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
  let layout=from["GridDefaultLayoutPath"].as_str().ok_or(PatchError::InvalidTarget)?;
  let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
- if house_exterior_world(layout,data).is_none()||from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok(){return Err(PatchError::InvalidTarget);}
+ let source_underwater=underwater_plain_path(layout,data);
+ if !source_underwater&&house_exterior_world(layout,data).is_none()||from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok(){return Err(PatchError::InvalidTarget);}
+ if (underwater||source_underwater)&&(!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||target.item_id/100_000!=400||underwater&&d.tessellation!=1||source_underwater&&from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)!=Some(1)){return Err(PatchError::InvalidTarget);}
  relocate_grid_record(source,target,expected,d,xy,orientation,false,false)
 }
 fn outdoor_world_path(scope:&str,path:&str)->bool{
