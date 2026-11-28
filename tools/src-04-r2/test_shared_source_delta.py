@@ -9,7 +9,7 @@ from PIL import Image
 from bundle_thumbnails import POLICY
 from publish_bundle_thumbnails import BUCKET, key
 from source_image_ledger import SCHEMA
-from shared_source_delta import extract,prepare,register,classify,targets,stage_subset,TARGET_SCHEMA,REPORT_SCHEMA
+from shared_source_delta import extract,prepare,register,classify,targets,stage_subset,visible_difference,recover_aliases,TARGET_SCHEMA,REPORT_SCHEMA
 
 class SharedDeltaTests(unittest.TestCase):
     def test_confirmed_guid_reuse_changed_bundle_without_local_images(self):
@@ -97,6 +97,46 @@ class SharedDeltaTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,"Unresolved requested"):
                         stage_subset(source,Path(d)/bad,{**spec,"targets":{bad:"shop-512"}},ledger)
                     self.assertFalse((Path(d)/bad).exists())
+
+    def test_visible_alias_difference_is_strict(self):
+        a=Image.new("RGBA",(2,1));a.putdata([(1,2,3,0),(4,5,6,1)])
+        b=a.copy();b.putpixel((0,0),(100,200,255,0))
+        self.assertEqual(visible_difference(a,a.copy()),"identical")
+        self.assertEqual(visible_difference(a,b),"transparentRgbOnly")
+        b.putpixel((1,0),(4,5,7,1))
+        self.assertEqual(visible_difference(a,b),"visibleRgb")
+        b.putpixel((1,0),(4,5,6,2))
+        self.assertEqual(visible_difference(a,b),"alpha")
+        self.assertEqual(visible_difference(a,Image.new("RGBA",(1,1))),"dimensions")
+
+    def test_recovery_keeps_original_and_checks_only_failed_sprite(self):
+        g,h="1"*32,"2"*32
+        native=Image.new("RGBA",(2,1));native.putdata([(1,2,3,0),(4,5,6,255)])
+        sprite=native.copy();sprite.putpixel((0,0),(0,0,0,0))
+        digest="a"*64;texture_id=f"unity:{digest}:CAB-abc:1:Texture2D";sprite_id=f"unity:{digest}:CAB-abc:2:Sprite"
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/"images").mkdir()
+            p=root/"orig.webp";native.save(p,format="WEBP",lossless=True,quality=100,method=6,exact=True)
+            raw=p.read_bytes();sha=hashlib.sha256(raw).hexdigest()
+            dest=root/"images"/(sha+".webp");p.rename(dest)
+            original={"sha256":sha,"bytes":len(raw),"width":2,"height":1,"sourcePixelSha256":hashlib.sha256(native.tobytes()).hexdigest()}
+            report={"schema":REPORT_SCHEMA,"gameVersion":"1.26.2","sourceFullVersion":"v1.26.2","privateOnly":True,
+                    "publicationAuthorized":False,"catalogSha256":{},"targets":{g:"shop-512",h:"shop-512"},
+                    "assets":{i:{"original":original,"unityAssetId":texture_id} for i in (g,h)},
+                    "errors":{g:["ValueError: Ambiguous exact source pixels"]},"unresolved":[g],"complete":False}
+            path=root/"shared-source-report.json";path.write_text(json.dumps(report))
+            locs={i:[{"class":"Texture2D"},{"class":"Sprite"}] for i in (g,h)}
+            match=(sprite_id,{"Image":N(read=lambda:N(image=sprite))},[("test.bundle",digest,[])])
+            with patch("shared_source_delta.verify_game_version",return_value="v1.26.2"),patch("shared_source_delta.resolve",return_value=(locs,{})),patch("shared_source_delta.exact_objects",return_value=[(g,match,None)]) as reader,patch.object(Image.Image,"save",side_effect=AssertionError("must not re-encode original")):
+                recover_aliases(root/"game",root)
+            reader.assert_called_once_with(root/"game",{g:[{"class":"Sprite"}]})
+            self.assertEqual(dest.read_bytes(),raw)
+            result=json.loads(path.read_bytes())
+            self.assertTrue(result["complete"])
+            self.assertEqual(result["assets"][g]["visuallyEquivalentSourceObjects"],[sprite_id])
+            self.assertEqual(result["aliasRecovery"][g]["difference"],"transparentRgbOnly")
+            self.assertEqual(result["assets"][h],report["assets"][h])
+            self.assertTrue((root/"shared-source-report.before-alias-recovery.json").exists())
 
     def test_reference_delta(self):
         self.assertEqual(classify({"a":1,"b":2,"c":3},{"a":1,"b":4,"d":5}),
