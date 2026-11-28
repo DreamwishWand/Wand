@@ -62,15 +62,24 @@ def extract(spec,aa,root,out,ledger=None,prior_index=None):
             report["errors"].setdefault(guid,[]).append(error);continue
         identity,refs,bundles=match
         try:
+            previous=report["assets"].get(guid)
+            if previous is not None:
+                # The catalog may expose both Sprite and Texture2D for one GUID.
+                # Compare the decoded original, not the object name or class.
+                native=refs["Image"].read().image.convert("RGBA")
+                original=previous["original"]
+                check(native.size==(original["width"],original["height"]) and
+                      hashlib.sha256(native.tobytes()).hexdigest()==original.get("sourcePixelSha256"),
+                      "Ambiguous exact source pixels")
+                if identity!=previous["unityAssetId"] and identity not in previous.get("equivalentSourceObjects",[]):
+                    previous.setdefault("equivalentSourceObjects",[]).append(identity)
+                continue
             ck=(identity,roles[guid])
             if ck not in memo:
                 m=materialize(refs["Image"],bundles,existing,out,True,ledger,
                               "shared-thumbnail-cache.json" if roles[guid]=="shop-512" else None)
                 memo[ck]=local_image(out,m)
-            row={"unityAssetId":identity,"original":memo[ck]}
-            if guid in report["assets"] and report["assets"][guid]!=row:
-                raise ValueError("Ambiguous exact source")
-            report["assets"][guid]=row
+            report["assets"][guid]={"unityAssetId":identity,"original":memo[ck]}
         except Exception as exc:
             report["errors"].setdefault(guid,[]).append(type(exc).__name__+": "+str(exc)[:180])
     missing=set(roles)-set(report["assets"])
