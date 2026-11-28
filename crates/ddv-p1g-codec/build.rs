@@ -33,7 +33,7 @@ fn main(){
  // A new unrecognized Furniture field is conservatively treated as special.
  let fields=source["fields"].as_object().unwrap();
  let mut geometry=std::collections::BTreeSet::<u64>::new();
- let mut special=std::collections::BTreeSet::<u64>::new();
+ let mut special=std::collections::BTreeSet::<u64>::new();let mut support_extra=std::collections::BTreeSet::<u64>::new();
  for (key,entry) in fields{
   if !key.starts_with("Furniture."){continue;}
   assert_eq!(entry["category"],"Furniture");
@@ -46,7 +46,7 @@ fn main(){
   for pair in pairs{
    id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();
    if id/100_000!=400{continue;}
-   if key=="Furniture.GridAreaData"{geometry.insert(id);}else{special.insert(id);}
+   if key=="Furniture.GridAreaData"{geometry.insert(id);}else{special.insert(id);if key!="Furniture.SubGrid"{support_extra.insert(id);}}
   }
  }
  assert!(geometry.len()>1000&&special.len()>100);
@@ -85,4 +85,6 @@ fn main(){
  }
  println!("cargo:warning=Verified support SubGridInteraction rows: {}",owners.len());
  fs::write(out.join("support-source.json"),serde_json::to_vec(&owners).unwrap()).unwrap();
+ let init=owners.keys().filter(|id|!support_extra.contains(id)).copied().collect::<Vec<_>>();
+ fs::write(out.join("support-initial-source.json"),serde_json::to_vec(&init).unwrap()).unwrap();
 }
