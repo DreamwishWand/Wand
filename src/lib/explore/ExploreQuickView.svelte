@@ -8,7 +8,7 @@
   import {acquireCollectionEvidenceClient,type CollectionEvidenceHandle} from '$lib/collection/source-evidence-client';
   import type {CollectionAcquisitionWithDistribution} from '$lib/collection/distribution-evidence';
   import type {WandLanguage} from '$lib/ui/preferences';
-  import {openCurrentItemDatabase,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
+  import {currentItemViewMaster} from '$lib/items/item-view-master';
   import {readItemPriceDetails,type ItemPriceDetails} from '$lib/items/public-item-price-details';
   import {exploreLabel} from './copy';
   import {itemEntityHref} from '$lib/items/entity-item-url';
@@ -26,17 +26,8 @@
   let failed=$state(false);
   let attempt=$state(0);
   let client:CollectionEvidenceHandle|undefined;
-  let master:Promise<PublicCompleteItemMaster>|undefined;
   let price=$state.raw<Readonly<ItemPriceDetails>|null>(null);
   let priceFailed=$state(false),priceLoading=$state(false),priceAttempt=$state(0);
-  function currentMaster():Promise<PublicCompleteItemMaster>{
-    if(!master){
-      const task=openCurrentItemDatabase(base);
-      master=task;
-      void task.catch(()=>{if(master===task)master=undefined;});
-    }
-    return master;
-  }
   const priceSections=$derived([
     {label:label('configuredPurchase'),rows:price?.purchase??[]},
     {label:label('configuredSell'),rows:price?.sell??[]}
@@ -58,7 +49,7 @@
     const id=item.itemId,language=locale;void priceAttempt;
     let live=true;
     price=null;priceFailed=false;priceLoading=true;
-    void currentMaster().then(db=>readItemPriceDetails(db,[id],language)).then(([result])=>{
+    void currentItemViewMaster(base).then(db=>readItemPriceDetails(db,[id],language)).then(([result])=>{
       if(live){price=result??null;priceLoading=false;}
     },()=>{if(live){priceFailed=true;priceLoading=false;}});
     return()=>{live=false;};

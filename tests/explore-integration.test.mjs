@@ -48,7 +48,7 @@ test('Quick View preserves the browse workspace and uses shared media and entity
 
 test('Quick View uses selective configured prices and separates cached and live transaction values',()=>{
   const view=readFileSync(new URL('../src/lib/explore/ExploreQuickView.svelte',import.meta.url),'utf8');
-  assert.match(view,/openCurrentItemDatabase\(base\)/);
+  assert.match(view,/currentItemViewMaster\(base\)/);
   assert.match(view,/readItemPriceDetails\(db,\[id\],language\)/);
   assert.match(view,/row\.amountFieldPresent&&row\.amount!==null&&row\.currency\?\.name/);
   assert.match(view,/row\.source==='dynamic_cache'/);

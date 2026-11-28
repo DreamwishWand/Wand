@@ -125,7 +125,19 @@ try{
  await page.reload();
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  assert.equal(await page.locator('[data-scope="indoor"]').getAttribute('aria-pressed'),'true');
- await page.evaluate(id=>localStorage.setItem('dreamwishwand.collection.local.v1',JSON.stringify({schema:'wand.collection.local@1',active:'local-1',workspaces:[{id:'local-1',name:'Test',entries:{[id]:{status:'owned'},'99999999':{discovered:true}}}]})),ownedId);
+ // Item Page may already have migrated the legacy storage into IndexedDB.
+ // Seed the actual canonical workspace, not an ignored legacy key.
+ await page.evaluate(id=>new Promise((resolve,reject)=>{
+   const request=indexedDB.open('dreamwishwand-collection',1);
+   request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains('state'))request.result.createObjectStore('state');};
+   request.onerror=()=>reject(request.error);
+   request.onsuccess=()=>{
+     const db=request.result,tx=db.transaction('state','readwrite');
+     tx.objectStore('state').put(JSON.stringify({schema:'wand.collection.local@1',active:'local-1',workspaces:[{id:'local-1',name:'Test',entries:{[id]:{status:'owned'},'99999999':{discovered:true}}}]}),'current');
+     tx.oncomplete=()=>{db.close();resolve();};
+     tx.onabort=()=>{db.close();reject(tx.error);};
+   };
+ }),ownedId);
  await page.reload();
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  const ownedButton=page.getByRole('button',{name:/所有済みのみ|Owned only/});
