@@ -27,6 +27,7 @@ import {attachOriginalFurnitureProduction} from './original-furniture-production
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
+import {eventLootPresentLinks} from './event-loot-present.mjs';
 import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -1368,6 +1369,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const priorOrdinary=id=>acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')||
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
+  const eventLoot=eventLootPresentLinks(rows,source,memoryAppearance);
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
   const feedingNew=[...ordinaryFeeding.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay')&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id));
@@ -1616,6 +1618,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    const eventLootSources=eventLoot.get(row.itemId);
+    if(eventLootSources?.length){
+      add('acquisition.eventLootPresentSources',row.itemId,eventLootSources);
+      categorySet.add('in_game_limited_event');
+    }
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
     const critters=ordinaryCritters.get(row.itemId);
     if(critters?.length){

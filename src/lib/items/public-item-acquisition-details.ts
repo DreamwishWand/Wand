@@ -44,6 +44,7 @@ const extensionFields={
   critterBefriending:'acquisition.ordinaryCritterSources',
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
+  eventLootPresent:'acquisition.eventLootPresentSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
@@ -86,7 +87,7 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         continue;
       }
       check(evidence.sourceGameVersion===db.release.target.gameVersion,'EXTENSION_VERSION');
-      const category=family==='conditionalQuest'||family==='memorySpawn'?evidence.category:'ordinary_gameplay';
+      const category=family==='conditionalQuest'||family==='memorySpawn'||family==='eventLootPresent'?evidence.category:'ordinary_gameplay';
       check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category),'EXTENSION_CATEGORY');
       let sourceId:number|null=null;
       const relatedIds:number[]=[];
@@ -108,6 +109,14 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
+        }else if(family==='eventLootPresent'){
+          check(category==='in_game_limited_event'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
+            evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
+            evidence.sourceLootTableSha256===sha?.LootTable&&id(evidence.bagItemId)&&id(evidence.tableItemId)&&
+            ['event_loot_present_spawn','event_loot_present_reward','event_loot_present_memory_payload'].some(k=>k===evidence.kind)&&
+            typeof evidence.eventName==='string'&&evidence.eventName.length>0&&object(evidence.conditions)&&
+            evidence.spawnSourcePath==='source.Spawn.LootPresentItem.Item.Item.Item','EXTENSION_EVENT_LOOT');
+          relatedIds.push(evidence.bagItemId,evidence.tableItemId);
         }else if(family==='memorySpawn'){
           check(evidence.kind==='quest_gated_memory_spawn'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
             evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceMissionSha256===sha?.Mission&&
@@ -356,7 +365,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'?['ConditionalEvent']:
+      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
