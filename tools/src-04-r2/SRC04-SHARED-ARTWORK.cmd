@@ -26,21 +26,37 @@ function Run([string[]]$argv) {
 try {
     $mode=Read-Host 'UI = register prepared original UI images; SHOP = extract current and historical catalog references privately; RECOVER = recover an existing SHOP extraction; STAGE = reuse resolved images for an explicitly selected private target set'
     if ($mode -notin @('UI','SHOP','RECOVER','STAGE')) { throw 'Select UI, SHOP, RECOVER or STAGE.' }
-    $homePath=Join-Path $env:USERPROFILE 'Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2'
+    # Owner workstation uses a separate data drive; never infer Documents from USERPROFILE.
+    $mediaRoot=$env:WAND_MEDIA_ROOT
+    if (-not $mediaRoot) {
+        $mediaRoot=Join-Path ('D:\Users\'+$env:USERNAME+'\Documents') 'DreamwishWand\SRC-04 MEDIA'
+    }
+    if (-not (Test-Path -LiteralPath $mediaRoot -PathType Container)) {
+        $mediaRoot=ReadPath 'Existing SRC-04 MEDIA workspace root (data drive; no automatic C: fallback)'
+    }
+    $mediaRoot=(Resolve-Path -LiteralPath $mediaRoot).Path
+    $homePath=Join-Path $mediaRoot 'Steam-v1.26.2'
+    Write-Host "Workspace: $homePath"
     New-Item -ItemType Directory -Path $homePath -Force | Out-Null
     $ledger=Join-Path $homePath 'source-image-ledger.json'
+    if (-not (Test-Path -LiteralPath $ledger -PathType Leaf)) {
+        Write-Host 'Verified source ledger not found in this workspace. Specify the existing ledger file if it is stored elsewhere.'
+    }
     $alternate=(Read-Host "Existing verified source-image ledger path (Enter uses $ledger)").Trim().Trim('"')
     if ($alternate) {
         if (-not (Test-Path -LiteralPath $alternate -PathType Leaf)) { throw 'Specify an existing source-image-ledger.json FILE, not a directory. Or press Enter.' }
         $ledger=(Resolve-Path -LiteralPath $alternate).Path
     }
-    $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
+    $scratch=Join-Path $homePath '.work'
+    $work=Join-Path $scratch ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
     $base='https://raw.githubusercontent.com/DreamwishWand/Wand/303ac03df6159b3396b526d013a6a3498c58a96b/tools/src-04-r2/'
     foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py','native_cdn_curl.py','audit_native_map_cdn.py')) {
         try { Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60 }
         catch { throw ('Dependency download failed: '+$base+$name+' ; '+$_.Exception.Message) }
     }
+    $env:TEMP=$work
+    $env:TMP=$work
     $delta=Join-Path $work 'shared_source_delta.py'
     if ($mode -eq 'UI') {
         $root=Join-Path $homePath 'shared-ui-272'
