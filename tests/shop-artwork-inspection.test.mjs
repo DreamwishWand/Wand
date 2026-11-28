@@ -34,7 +34,7 @@ test('Steam source default is independent of old Layout; never applied to Switch
  assert.equal(res.slots[0].image.original.sha256,a);
  assert.deepEqual(res.slots[0].adjustment,{fill:'contain',margins:[0,0,70,0]});
  assert.equal(inspectShopArtwork({...v,gameVersion:'1.24.1'},reader,1500).template,null);
- assert.equal(inspectShopArtwork({...v,artwork:{...v.artwork,layout:'Single_Mega_11'}},reader,1500).slots[0].image,null);
+ assert.equal(inspectShopArtwork({...v,artwork:{...v.artwork,layout:'Single_Mega_11'}},reader,1500).slots[0].field,'Contents.0.Image');
  assert.equal(inspectShopArtwork({...v,artwork:{...v.artwork,lightLayout:'unknown'}},reader,1500).template,null);
  assert.equal(inspectShopArtwork({...v,artwork:{...v.artwork,adjustImage:false}},reader,1500).slots[0].adjustment,null);
 });
@@ -67,4 +67,22 @@ test('current Steam catalog uses native default and resolves all explicit typed 
    }
  }
  assert(count>0);assert(defaults>0);
+});
+
+test('native CurrentImage and Mega fallbacks use first runtime item, not later Contents indexes',async()=>{
+ const {nativeShopBindingAddress:resolve}=await import('../src/lib/media/shop-native-artwork.ts');
+ const v={...revision,gameVersion:'1.26.2',artwork:{},components:[{itemId:123,quantity:1,image:address},{itemId:456,quantity:1,image:address}]};
+ assert.deepEqual(resolve(v,'CurrentImage'),{status:'address',address,field:'Contents.0.Image',consumer:'Sprite'});
+ assert.equal(inspectShopArtwork(v,reader,1500).slots[0].image.original.sha256,a);
+ assert.equal(resolve(v,'MegaBundleImage1').field,'Contents.0.Image');
+ assert.equal(resolve(v,'MegaBundleImage2').reason,'runtime_order');
+ assert.equal(resolve(v,'Items[1].Icon').reason,'runtime_order');
+ assert.equal(resolve(v,'Items[0].Icon').consumer,'Icon');
+ assert.equal(resolve({...v,components:[{itemId:123,quantity:1}]},'CurrentImage').reason,'runtime_icon_address');
+ assert.equal(resolve({...v,components:[]},'CurrentImage').reason,'empty_runtime_items');
+ assert.equal(resolve(v,'MegaBundleImage2',[{address,field:'Contents.0.Image'},{address:'guid:evolved',field:'Evolution.0'}]).address,'guid:evolved');
+ const override={...v,artwork:{lightLayout:'Light_Mega_11',megaImages:{OverridedImage2:address}}};
+ assert.equal(resolve(override,'MegaBundleImage2').field,'OverridedImage2');
+ assert.equal(resolve({...v,gameVersion:'1.24.1'},'CurrentImage').reason,'unsupported_revision');
+ assert.equal(inspectShopArtwork({...v,artwork:{lightLayout:'Light_Single_111'}},reader,1500).slots[0].image,null);
 });
