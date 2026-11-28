@@ -17,6 +17,39 @@ fn room_terrain(catalog:&Value,path:&str,kind:&str)->Option<Value>{
 fn terrain_catalog()->Result<Value,CodecError>{
  serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).map_err(|_|CodecError::Json)
 }
+/// Resolve an exact, uniquely owned room surface from the native room
+/// terrain catalogue. No inferred dimensions or external child Grid alias.
+pub(super) fn recovery_surface_bounds(root:&Value,gid:&str)->Result<(u64,u64,u64),CodecError>{
+ let bad=CodecError::Json;
+ let n=gid.parse::<u64>().ok().filter(|n|*n>0&&n.to_string()==gid).ok_or(bad)?;
+ let c=&root["World"]["GridCollection"];let g=&c["Grids"][gid];
+ if root["GameInfo"]["Version"].as_u64()!=Some(643)||g["ID"].as_u64()!=Some(n)||!g["Objects"].is_object()||
+  c.get("DiffGrids").is_some_and(|d|d.as_object().is_none_or(|m|m.contains_key(gid))){return Err(bad);}
+ let mut kind=None;
+ for house in root["World"]["PlayerHouses"].as_array().filter(|a|a.len()<=128).ok_or(bad)?{
+  let Some(floors)=house.get("Floors")else{continue;};
+  for floor in floors.as_array().filter(|a|a.len()<=128).ok_or(bad)?{
+   let Some(rooms)=floor.get("Rooms")else{continue;};
+   for room in rooms.as_object().ok_or(bad)?.values(){
+    if room["FloorGridID"].as_u64()==Some(n){if kind.replace("floor").is_some(){return Err(bad);}}
+    if let Some(walls)=room.get("WallGridIDs"){for wall in walls.as_object().ok_or(bad)?.values(){
+     if wall.as_u64()==Some(n){if kind.replace("wall").is_some(){return Err(bad);}}
+    }}
+   }
+  }
+ }
+ let kind=kind.ok_or(bad)?;
+ for (group,field) in [("Grids","Objects"),("DiffGrids","ModifiedObjects")]{
+  if let Some(grids)=c.get(group){for grid in grids.as_object().ok_or(bad)?.values(){
+   if let Some(objects)=grid.get(field){for obj in objects.as_object().ok_or(bad)?.values(){
+    if obj["State"]["SubGrid"]["GridID"].as_u64()==Some(n){return Err(bad);}
+   }}
+  }}
+ }
+ let factor=g["TessellationFactor"].as_u64().filter(|n|matches!(n,1|2)).ok_or(bad)?;
+ let t=room_terrain(&terrain_catalog()?,g["GridDataPath"].as_str().ok_or(bad)?,kind).ok_or(bad)?;
+ Ok((factor,t["sizeX"].as_u64().ok_or(bad)?,t["sizeY"].as_u64().ok_or(bad)?))
+}
 use ddv_save_patch::storage_pose;
 pub(super) fn project(source:&[u8])->Result<String,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
@@ -50,7 +83,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
   }
  }
  let mut out=Vec::new();let mut total=0usize;let mut terrain_total=0usize;let catalog=terrain_catalog()?;
- let mut support_parents=Vec::new();let mut support_ordinals=None;
+ let mut support_parents=Vec::new();let mut support_ordinals=None;let mut recovery_ordinals=None;
  for(h,f,slot,room,surfaces)in rooms{
   let mut rows=Vec::new();
   for(kind,native_wall,grid,material)in surfaces{
@@ -74,6 +107,10 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
         let item=item.unwrap();*counts.entry(item).or_default()+=1;
         let coord=|k:&str|obj.get(k).and_then(Value::as_i64).filter(|n|(-1_000_000..=1_000_000).contains(n));
         if let (Some(x),Some(y))=(coord("X"),coord("Y")){let orientation=match obj.get("Orientation").and_then(Value::as_str){Some("GridOrientation_Up")=>Some(0),Some("GridOrientation_Right")=>Some(4),Some("GridOrientation_Down")=>Some(8),Some("GridOrientation_Left")=>Some(12),Some("GridOrientation_UpRight") if kind=="floor"&&factor==Some(1)=>Some(2),Some("GridOrientation_DownRight") if kind=="floor"&&factor==Some(1)=>Some(6),Some("GridOrientation_DownLeft") if kind=="floor"&&factor==Some(1)=>Some(10),Some("GridOrientation_UpLeft") if kind=="floor"&&factor==Some(1)=>Some(14),_=>None};let mut pose=json!({"itemId":item,"x":x,"y":y,"orientationCode":orientation});
+         if terrain.is_some()&&orientation.is_some()&&crate::grid_instance_preview::activity_item_id(item){
+          let map=recovery_ordinals.get_or_insert_with(||crate::grid_instance_preview::field_recovery_ordinals(source).unwrap_or_default());
+          if let Some(ordinal)=map.get(&(n.to_string(),key.clone())){pose["recoveryOrdinal"]=json!(ordinal);}
+         }
          let storage_known=crate::storage_source::is_storage(item)||obj.get("State").and_then(|s|s.get("Storage")).is_some();
          if storage_known{pose["storageKnown"]=json!(true);}
          if !storage_known&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
