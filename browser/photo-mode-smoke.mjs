@@ -81,7 +81,7 @@ try{
   browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
-  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));
+  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
     const detail=page.locator('details.pose-test');
@@ -93,6 +93,7 @@ try{
     await body.nth(1).waitFor({state:'visible',timeout:15000});
     assert.equal(await body.count(),2,'two original body type controls');
     for(let b=0;b<2;b++){
+      console.log('Preview scene',id,'body',b);
       await body.nth(b).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
