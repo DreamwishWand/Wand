@@ -117,6 +117,32 @@ export type AdditionalItemSource = Readonly<{
   grantVerified:false;
   playerOwnershipVerified:false;
 }> | Readonly<{
+  kind:'profile_update_grant';
+  sourceId:string;
+  targetItemId:number;
+  configuredAmount:number;
+  sourcePosition:number;
+  sourcePath:string;
+  updateId:string;
+  updateRecordIndex:number;
+  updateRecordSha256:string;
+  updatePayloadSha256:string;
+  updateActionPosition:number;
+  sourceRecordIndex:number;
+  sourceRecordSha256:string;
+  sourcePayloadSha256:string;
+  conditions:Readonly<Record<string,unknown>>;
+  conditionItemIds:readonly number[];
+  sourceGameVersion:string;
+  sourceProtoDbSha256:string;
+  sourceProjectionSha256:string;
+  nativeAssemblySha256:string;
+  nativeGrantActionVerified:true;
+  profileVersionEligibilityVerified:false;
+  standingAcquisitionVerified:false;
+  currentAvailabilityVerified:false;
+  guaranteedGrantVerified:false;
+}> | Readonly<{
   kind:'configured_container_furniture_slot';
   sourceId:number;
   templateKey:string;

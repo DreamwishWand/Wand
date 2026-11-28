@@ -1668,7 +1668,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(container.upgradedFurnitureItemId!==null)add('storage.upgradedFurnitureItemId',row.itemId,container.upgradedFurnitureItemId);
       if(container.configuredContentItemIds.length)add('storage.configuredContentItemIds',row.itemId,container.configuredContentItemIds);
     }
-    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[])];
+    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[]),...(protoAcquisition.profileUpdateGrants.get(row.itemId)??[])];
     if(extraSources.length){
       add('acquisition.additionalSources',row.itemId,extraSources);
       sourceKeys(row.itemId,'additional',extraSources,l=>[l.kind,l.sourceId]);
