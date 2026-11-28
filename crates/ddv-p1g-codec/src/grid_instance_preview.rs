@@ -3435,6 +3435,47 @@ mod tests{
     }
 
     #[test]
+    fn mixed_native_clone_and_cut_share_poses_and_preserve_stock_contract(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let beach="SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json";
+        let beach_data="GridData/Villages/Village04-BeachLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2},"40200001":{"Amount":7}}}}},"World":{"GridCollection":{"Grids":{
+          "42":{"ID":42,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":4,"Objects":{
+            "1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"},
+            "2":{"ID":2,"ItemID":40200001,"X":2,"Y":2,"Orientation":"GridOrientation_Down"},
+            "3":{"ID":3,"ItemID":20000001,"X":3,"Y":3,"Orientation":"GridOrientation_Down","State":null}
+          }},
+          "43":{"ID":43,"GridDefaultLayoutPath":beach,"GridDataPath":beach_data,"TessellationFactor":1,"NextGridObjectID":5,"Objects":{}}
+        }}}});
+        let d=serde_json::json!({"layoutId":beach,"gridDataPath":beach_data,"factor":1,"sizeX":400,"sizeY":350});
+        let rows=serde_json::json!([
+          {"localOrdinal":1,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":d,"x":4,"y":4,"orientation":"GridOrientation_Down"},
+          {"localOrdinal":2,"itemId":"40200001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down","destination":d,"x":5,"y":5,"orientation":"GridOrientation_Down"},
+          {"localOrdinal":3,"itemId":"20000001","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Down","destination":d,"x":6,"y":6,"orientation":"GridOrientation_Down"}
+        ]);
+        let input=raw.to_string();
+        let duplicate=serde_json::json!({"mixedNativeDuplicate":{"rows":rows,"copyContents":false}});
+        let result:Value=serde_json::from_str(&group_paste_candidate(input.as_bytes(),&duplicate.to_string()).unwrap()).unwrap();
+        let g=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(g["42"],raw["World"]["GridCollection"]["Grids"]["42"]);
+        assert_eq!(g["43"]["Objects"].as_object().unwrap().len(),3);
+        assert_eq!(g["43"]["NextGridObjectID"],8);
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40200001"]["Amount"],7);
+        let mut moved=serde_json::json!({"freePlacement":true,"rows":rows});
+        let result:Value=serde_json::from_str(&group_cut_candidate(input.as_bytes(),&moved.to_string()).unwrap()).unwrap();
+        let g=&result["World"]["GridCollection"]["Grids"];
+        assert!(g["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(g["43"]["Objects"].as_object().unwrap().len(),3);
+        assert_eq!(result["Player"],raw["Player"]);
+        moved["rows"][2]["expectedX"]=9.into();
+        assert!(group_cut_candidate(input.as_bytes(),&moved.to_string()).is_err());
+        let mut blocked=raw.clone();blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
+        assert!(group_paste_candidate(blocked.to_string().as_bytes(),&duplicate.to_string()).is_err());
+    }
+
+    #[test]
     fn cross_world_support_cut_keeps_child_identity_and_stock(){
         let layout="SceneLayouts/VillageExpansion01/DefaultExpansion01Layout01-AtlanteanOutpost01Grids.json";
         let data="GridData/Villages/VillageExpansion01/VillageExpansion01-OutpostArea01LevelGrid02-GridData.json";
