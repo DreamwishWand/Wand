@@ -1196,7 +1196,9 @@ mod browser_amount_preview {
             if rows.len()>=20000{return Err(CodecError::Bounds);}
             rows.push(serde_json::json!({"itemId":id,"amount":amount}));
         }
-        serde_json::to_string(&serde_json::json!({"contract":"wand.db05.furniture-catalog-stock@1","rows":rows,"exactStoredCounts":true,"canonicalVariationVerified":false,"writerAuthorized":false})).map_err(|_|CodecError::Json)
+        let plain=grid_instance_preview::underwater_plain_items(&root);
+        let local_plain_ids=rows.iter().filter_map(|r|r["itemId"].as_u64().filter(|id|plain.contains(id))).collect::<Vec<_>>();
+        serde_json::to_string(&serde_json::json!({"contract":"wand.db05.furniture-catalog-stock@1","rows":rows,"localPlainItemIds":local_plain_ids,"exactStoredCounts":true,"canonicalVariationVerified":false,"writerAuthorized":false})).map_err(|_|CodecError::Json)
     }
 
     const MAX_EDITABLE_ROWS:usize=20000;
