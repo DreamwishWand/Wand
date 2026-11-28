@@ -5371,6 +5371,31 @@ mod terrain_session_tests{
             for (old,new) in [("1","4"),("2","5")]{assert_eq!(restored["World"]["GridCollection"]["Grids"]["7"]["Objects"][new]["State"],cross_root["World"]["GridCollection"]["Grids"]["7"]["Objects"][old]["State"]);}
             let mut referenced=cross_root.clone();referenced["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":19,"GridObjectID":10}]);
             assert!(group_cut_candidate(referenced.to_string().as_bytes(),&transfer.to_string()).is_err());
+            let mut stock_root=root.clone();
+            stock_root["Player"]["NextContainerInventoryID"]=10.into();
+            stock_root["Player"]["ListInventories"]=serde_json::json!({"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1},"40001680":{"Amount":1},"40000001":{"Amount":1}}}});
+            let stock_raw=stock_root.to_string();
+            let mut rows=plan["rows"].clone();rows.as_array_mut().unwrap().truncate(2);
+            let duplicate=serde_json::json!({"mixedNativeDuplicate":{"rows":rows,"copyContents":true}});
+            let cloned=group_paste_candidate(stock_raw.as_bytes(),&duplicate.to_string()).unwrap();
+            let v:Value=serde_json::from_str(&cloned).unwrap();
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["20"]["Objects"],stock_root["World"]["GridCollection"]["Grids"]["8"]["Objects"]);
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["7"]["Objects"]["4"]["State"]["SubGrid"]["GridID"],20);
+            assert_eq!(v["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"]["State"]["Storage"]["ContainerInventoryID"],10);
+            assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],stock_root["Player"]["ContainerInventories"]["9"]["Inventory"]);
+            assert_eq!(v["Player"]["ContainerInventories"]["9"],stock_root["Player"]["ContainerInventories"]["9"]);
+            for id in ["40005160","40005161","40001680"]{assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+            let (clone_scan,_)=scan_grid_instances(cloned.as_bytes()).unwrap();
+            let ord2=|id:&str|clone_scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id==id).unwrap()+1;
+            let pickup=serde_json::json!([{"localOrdinal":ord2("4"),"itemId":"40005160","expectedX":2,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeSupport":true},{"localOrdinal":ord2("5"),"itemId":"40001680","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeStorage":true}]);
+            assert!(group_pickup_candidate(cloned.as_bytes(),&pickup.to_string()).is_err());
+            let mut empty=v.clone();empty["Player"]["ContainerInventories"]["10"]["Inventory"]=serde_json::json!([]);
+            let returned:Value=serde_json::from_str(&group_pickup_candidate(empty.to_string().as_bytes(),&pickup.to_string()).unwrap()).unwrap();
+            assert_eq!(returned["World"]["GridCollection"]["Grids"]["7"]["Objects"],stock_root["World"]["GridCollection"]["Grids"]["7"]["Objects"]);
+            assert_eq!(returned["World"]["GridCollection"]["Grids"]["8"],stock_root["World"]["GridCollection"]["Grids"]["8"]);
+            assert!(returned["World"]["GridCollection"]["Grids"].get("20").is_none());
+            assert!(returned["Player"]["ContainerInventories"].get("10").is_none());
+            assert_eq!(returned["Player"]["ListInventories"],stock_root["Player"]["ListInventories"]);
             let mut bad_plan=plan.clone();bad_plan["rows"][1]["storage"]=false.into();assert!(group_cut_candidate(raw.as_bytes(),&bad_plan.to_string()).is_err());
             let mut bad_plan=plan.clone();bad_plan["rows"][0]["x"]=65536.into();assert!(group_cut_candidate(raw.as_bytes(),&bad_plan.to_string()).is_err());
             let mut linked=root.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":1}]);
