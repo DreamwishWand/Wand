@@ -3,7 +3,7 @@
  * independent acquisition routes. Never count repeated evidence as grants.
  */
 import {ITEM_MASTER_LOCALES,type PublicCompleteItemMaster,type ItemMasterLocale,
-  type NativeAcquisitionCandidate} from './public-item-master.ts';
+  type NativeAcquisitionCandidate,type ItemFieldValue} from './public-item-master.ts';
 import type {AdditionalItemSource} from './public-item-details.ts';
 import {DB02_SOURCE_KINDS,DB02_SOURCE_ROLES,type Db01ItemSourceLink} from '../acquisition/db01-item-source-relations.ts';
 import type {GameNativeItemCategory} from '../acquisition/game-native-item-categories.ts';
@@ -39,6 +39,85 @@ export interface OrdinaryProductionEvidence {
   readonly ordinarySourceIndependentlyClassified:true;
   readonly currentAvailabilityVerified:false;
 }
+const extensionFields={
+  progression:'acquisition.ordinaryProgressionSources',
+  critterBefriending:'acquisition.ordinaryCritterSources',
+  conditionalQuest:'acquisition.conditionalQuestSources',
+  configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+  lootPresent:'acquisition.ordinaryLootPresentSources',
+  critterFeeding:'acquisition.ordinaryCritterFeedingSources'
+} as const;
+export type ClassificationExtensionFamily=keyof typeof extensionFields;
+export interface ClassificationExtensionEvidence {
+  readonly family:ClassificationExtensionFamily;
+  readonly category:GameNativeItemCategory;
+  readonly evidence:Readonly<Record<string,ItemFieldValue>>;
+  readonly identity:AcquisitionSourceIdentity|null;
+  /** Additional exact IDs, such as loot tables and quest gates. */
+  readonly relatedIdentities:readonly Readonly<AcquisitionSourceIdentity>[];
+}
+type ExtensionRow={family:ClassificationExtensionFamily;category:GameNativeItemCategory;
+  evidence:Readonly<Record<string,ItemFieldValue>>;sourceId:number|null;relatedIds:readonly number[]};
+const extensionFamilies=Object.keys(extensionFields) as ClassificationExtensionFamily[];
+const object=(v:unknown):v is Readonly<Record<string,ItemFieldValue>>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicCompleteItemMaster,categories:readonly GameNativeItemCategory[]):ExtensionRow[]{
+  const output:ExtensionRow[]=[];
+  const sha=db.release.sourceFilesSha256;
+  for(const family of extensionFamilies){
+    const value=values[extensionFields[family]];
+    if(value===undefined)continue;
+    const list=family==='configuredStore'?[value]:value;
+    check(Array.isArray(list),'EXTENSION_LIST');
+    for(const evidence of list){
+      check(object(evidence)&&evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      const category=family==='conditionalQuest'?evidence.category:'ordinary_gameplay';
+      check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category),'EXTENSION_CATEGORY');
+      let sourceId:number|null=null;
+      const relatedIds:number[]=[];
+      if(family==='configuredStore'){
+        check(evidence.kind==='ordinary_configured_store_display'&&object(evidence.display)&&
+          evidence.display.sourceId==='Store_Default'&&evidence.ordinaryConfiguredRoute===true&&
+          evidence.storeMembershipVerified===false&&evidence.liveTransactionVerified===false&&
+          evidence.purchaseCurrencyItemId===80000000&&id(evidence.configuredPurchaseAmount)&&
+          (evidence.sourceFileSha256===sha?.Furniture||evidence.sourceFileSha256===sha?.Clothing),'EXTENSION_STORE');
+        relatedIds.push(80000000);
+      }else{
+        check(id(evidence.sourceItemId)&&evidence.guaranteedGrantVerified===false,'EXTENSION_ITEM');
+        sourceId=evidence.sourceItemId;
+        if(family==='progression'){
+          const kind=evidence.kind;
+          check(kind==='story_progress_reward'&&evidence.sourceFileSha256===sha?.Story&&evidence.sourcePath==='source.Reward.ItemID'&&id(evidence.configuredAmount)||
+            kind==='achievement_milestone_reward'&&evidence.sourceFileSha256===sha?.DutyAch&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.Milestones[')&&id(evidence.configuredAmount)&&id(evidence.configuredMilestone)||
+            kind==='figurine_additional_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.AdditionalRewardItemIDs[')&&evidence.configuredAmount===null,'EXTENSION_PROGRESS');
+        }else if(family==='critterBefriending'){
+          check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
+            evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
+        }else if(family==='conditionalQuest'){
+          check(evidence.sourceEventSha256===sha?.ConditionalEvent&&evidence.sourceConditionSha256===sha?.Condition&&id(evidence.configuredAmount)&&
+            ['conditional_grant','conditional_mail_attachment','conditional_swap_grant'].some(k=>k===evidence.role)&&
+            Array.isArray(evidence.questGates)&&evidence.questGates.length>0,'EXTENSION_CONDITIONAL');
+          for(const gate of evidence.questGates){
+            check(object(gate)&&id(gate.questId)&&gate.category===category,'EXTENSION_QUEST_GATE');
+            relatedIds.push(gate.questId);
+          }
+        }else{
+          check(id(evidence.tableItemId)&&evidence.sourceLootTableSha256===sha?.LootTable&&
+            typeof evidence.tableSourcePath==='string'&&evidence.tableSourcePath.startsWith('source.Rewards.SubLootTables[')&&
+            id(evidence.maximumRolls)&&typeof evidence.minimumRolls==='number'&&Number.isSafeInteger(evidence.minimumRolls)&&
+            evidence.minimumRolls>=0&&evidence.minimumRolls<=evidence.maximumRolls,'EXTENSION_LOOT');
+          relatedIds.push(evidence.tableItemId);
+          if(family==='lootPresent')check(evidence.kind==='ordinary_loot_present_candidate'&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
+            evidence.ordinarySourceIndependentlyClassified===true&&evidence.sourcePath==='source.LootTableItemID','EXTENSION_PRESENT');
+          else check(evidence.kind==='ordinary_critter_feeding_candidate'&&evidence.sourceCompanionSha256===sha?.Companion&&
+            id(evidence.configuredFeedingCount)&&(evidence.preference==='like'&&evidence.sourcePath==='source.LikeRewardLootTableItemID'||
+            evidence.preference==='favorite'&&evidence.sourcePath==='source.FavoriteRewardLootTableItemID'),'EXTENSION_FEEDING');
+        }
+      }
+      output.push({family,category,evidence,sourceId,relatedIds:[...new Set(relatedIds)]});
+    }
+  }
+  return output;
+}
 export interface ItemAcquisitionSourceDetails {
   readonly itemId:number;
   readonly sourceGameVersion:string;
@@ -54,6 +133,8 @@ export interface ItemAcquisitionSourceDetails {
   readonly ordinaryProductionStatus:'indexed'|'not_indexed';
   readonly ordinaryQuestIntro:readonly Readonly<{evidence:OrdinaryQuestIntroEvidence;identity:AcquisitionSourceIdentity|null}>[];
   readonly ordinaryProduction:readonly Readonly<{evidence:OrdinaryProductionEvidence;identity:AcquisitionSourceIdentity|null}>[];
+  readonly classificationExtensionStatus:Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
+  readonly classificationExtensions:readonly Readonly<ClassificationExtensionEvidence>[];
   readonly coverageComplete:false;
   readonly currentAvailabilityVerified:false;
 }
@@ -75,7 +156,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   const introField='acquisition.ordinaryQuestIntroSources',productionField='acquisition.ordinaryProductionSources';
   const ordinaryQuestIntroStatus=catalog.has(introField)?'indexed':'not_indexed';
   const ordinaryProductionStatus=catalog.has(productionField)?'indexed':'not_indexed';
-  const fields=[...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
+  const classificationExtensionStatus=Object.freeze(Object.fromEntries(extensionFamilies.map(f=>[f,catalog.has(extensionFields[f])?'indexed':'not_indexed']))) as Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
+  const fields=[...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
     ...(catalog.has(effective)?[effective]:[]),...(ordinaryQuestIntroStatus==='indexed'?[introField]:[]),
     ...(ordinaryProductionStatus==='indexed'?[productionField]:[])];
   const [rows,nativeRows]=await Promise.all([
@@ -84,7 +166,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   ]);
   type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
     native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[];
-    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[]};
+    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[]};
   const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
     const record=row.values[relation] as unknown as {itemId:string;links:readonly Db01ItemSourceLink[]}|undefined;
@@ -111,7 +193,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
         e.kind==='ordinary_bee_house_production'&&e.sourcePath==='source.BeeHouse.ProducedItemID'&&e.quantityKind==='maximum_produced'&&
           e.sourceFileSha256===db.release.sourceFilesSha256?.Furniture)),'PRODUCTION');
     check(!(intro.length||production.length)||categories.includes('ordinary_gameplay'),'CLASSIFICATION_JOIN');
-    return {itemId:row.itemId,indexed,extras,native,categories,intro,production};
+    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories)};
   });
   const resolveIds=new Set<number>();
   for(const context of contexts){
@@ -121,6 +203,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     for(const e of context.native)resolveIds.add(e[0]);
     for(const e of context.intro)resolveIds.add(e.questId);
     for(const e of context.production)resolveIds.add(e.sourceItemId);
+    for(const e of context.extensions){if(e.sourceId!==null)resolveIds.add(e.sourceId);for(const n of e.relatedIds)resolveIds.add(n);}
   }
   const resolved=new Map<number,Readonly<AcquisitionSourceIdentity>>();
   const nameField='names.'+locale;
@@ -155,6 +238,15 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     ordinaryQuestIntro:Object.freeze(c.intro.map(e=>Object.freeze({evidence:e,identity:identity(e.questId,['Mission'])}))),
     ordinaryProduction:Object.freeze(c.production.map(e=>Object.freeze({evidence:e,
       identity:identity(e.sourceItemId,e.kind==='ordinary_seed_production'?['ActivityItem']:['Furniture'])}))),
+    classificationExtensionStatus,
+    classificationExtensions:Object.freeze(c.extensions.map(e=>{
+      const source=identity(e.sourceId);
+      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'?['ConditionalEvent']:
+        e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+      check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
+      const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
+      return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});
+    })),
     coverageComplete:false as const,currentAvailabilityVerified:false as const
   }):null));
 }
