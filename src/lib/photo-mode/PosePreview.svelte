@@ -37,7 +37,7 @@
       scene=undefined;renderer=undefined;
       if(comparison)session.restoreComparison(comparison);
       actors=session.scene.actors.filter(a=>a.canHide);status='ready';refresh();
-    }catch{renderer?.dispose();scene?.dispose();if(token===generation){release();status='error'}}
+    }catch(error){renderer?.dispose();scene?.dispose();if(token===generation){release();status='error';console.warn('Pose preview load failed:',error instanceof Error?error.message:'Unknown error')}}
   }
   function tick(now:number){if(session&&status==='ready'&&snapshot.playing){try{if(last!==undefined)session.clock.tick(Math.min(.1,(now-last)/1000));refresh()}catch{release();status='error'}}last=now;frame=requestAnimationFrame(tick)}
   function act(fn:(s:PoseSceneSession)=>void){if(!session)return;try{fn(session);refresh()}catch{release();status='error'}}
