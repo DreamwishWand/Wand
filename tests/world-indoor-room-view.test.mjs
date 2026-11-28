@@ -467,3 +467,14 @@ test('single support duplication uses free room pose without relaxing cardinal o
  assert.equal(indoorSupportDuplicatePlacement(full,shapes,allowed,stock,id,w,8,1,'GridOrientation_Down',true),null);
  assert.equal(indoorSupportDuplicatePlacement({...full,positions:[{...full.positions[0],plain:true}]},shapes,allowed,stock,id,w,1,1,'GridOrientation_Down',true),null);
 });
+
+test('support parents participate in free floor group moves without diagonal parent rotation',async()=>{
+ const {indoorFreeTransform,indoorFreeMoveGroup,indoorFreeRotate,indoorTransformAllowed}=await import('../src/lib/world/indoor-room-view.ts');
+ const a=40005160,b=40005161,shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:''};
+ const face={kind:'floor',ordinal:1,gridStatus:'full',factor:1,sourcePath:'GridData/Rooms/Room8x8-GridData.json',terrain:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64)},missingPositions:0,positions:[{itemId:a,x:1,y:1,orientationCode:8,supportTransform:true},{itemId:b,x:2,y:1,orientationCode:8,plain:true}],items:[{itemId:a,quantity:1},{itemId:b,quantity:1}]};
+ const shapes={[a+':8']:shape,[a+':12']:shape,[a+':10']:shape,[b+':8']:shape},allowed=indoorTransformAllowed(face,new Set([b]));
+ assert.deepEqual(indoorFreeMoveGroup(face,shapes,allowed,[0,1],0,3,3)?.map(p=>[p.x,p.y]),[[3,3],[4,3]]);
+ assert.equal(indoorFreeRotate(face,shapes,allowed,0,1)?.[0].orientation,'GridOrientation_Left');
+ assert.equal(indoorFreeTransform(face,shapes,allowed,0,1,1,'GridOrientation_DownLeft'),null);
+ assert.equal(indoorFreeTransform({...face,positions:[{...face.positions[0],supportTransform:undefined},face.positions[1]]},shapes,allowed,0,3,3),null);
+});
