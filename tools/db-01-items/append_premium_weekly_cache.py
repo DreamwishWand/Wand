@@ -15,7 +15,7 @@ def append_cache(ledger, raw, captured_jst, platform, game_version):
           and ledger.get('publicationAuthorized') is False, 'CACHE_PRIVATE_LEDGER')
     when = datetime.datetime.fromisoformat(captured_jst)
     check(when.utcoffset() == datetime.timedelta(hours=9), 'CACHE_JST')
-    check(platform in ('Steam', 'Switch') and (game_version is None or
+    check(platform in (None, 'Steam', 'Switch') and (game_version is None or
           re.fullmatch(r'\d+\.\d+\.\d+', game_version)), 'CACHE_SOURCE_VERSION')
     meta = {'sourceSha256': sha(raw), 'capturedJst': when.isoformat(),
             'platform': platform, 'gameVersion': game_version}
@@ -63,7 +63,7 @@ def main():
     p.add_argument('--cache', type=Path, required=True)
     p.add_argument('--cache-sha256', required=True)
     p.add_argument('--captured-jst', required=True)
-    p.add_argument('--platform', choices=['Steam','Switch'], required=True)
+    p.add_argument('--platform', choices=['Steam','Switch'])
     p.add_argument('--game-version')
     p.add_argument('--private-out', type=Path, required=True)
     a = p.parse_args()
