@@ -5315,11 +5315,13 @@ mod terrain_session_tests{
     fn underwater_initial_owned_stock_and_empty_storage_area_restore(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
-        let owner=40006574u64;
+        let terrain:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).unwrap();
+        let initial:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/support-initial-source.json"))).unwrap();
+        let owner=initial.into_iter().find(|id|!crate::storage_source::is_storage(*id)&&crate::storage_source::support_source_path(*id).is_some_and(|path|terrain["grids"].as_array().unwrap().iter().any(|row|row[0].as_str()==Some(path)))).expect("source-backed support with terrain");
         let path=crate::storage_source::support_source_path(owner).unwrap();
-        assert_eq!(path,"GridData/Furniture/NonIP_Update25/WitchyTable-GridData.json");
+        let plain=*crate::storage_source::plain_source_items().iter().find(|id|crate::storage_source::is_plain_source_item(**id)).expect("source-backed plain furniture");
         for r in rows{
-            let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ContainerInventories":{},"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40006574":{"Amount":1},"40001680":{"Amount":1},"40000001":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+            let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ContainerInventories":{},"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{(owner.to_string()):{"Amount":1},"40001680":{"Amount":1},(plain.to_string()):{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
               "7":{"ID":7,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":owner,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8,"DesignID":null}}}}},
               "8":{"ID":8,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":1,"Objects":{}}
             }}}});
@@ -5327,8 +5329,11 @@ mod terrain_session_tests{
             let plan=serde_json::json!({"freePlacement":true,"rows":[
               {"itemId":owner.to_string(),"destination":w,"x":2,"y":3,"orientation":"GridOrientation_Left"},
               {"itemId":"40001680","destination":w,"x":3,"y":3,"orientation":"GridOrientation_Left"},
-              {"itemId":"40000001","destination":w,"x":4,"y":3,"orientation":"GridOrientation_Left"}]});
-            let placed=group_paste_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap();
+              {"itemId":plain.to_string(),"destination":w,"x":4,"y":3,"orientation":"GridOrientation_Left"}]});
+            assert!(crate::storage_source::initial_support_trees(&root,[owner].into_iter()).contains_key(&owner),"support initialization witness");
+            assert!(underwater_plain_item(&root,plain),"plain source eligibility");
+            assert!(crate::storage_source::initial_storage_template(40001680).is_some(),"storage initialization witness");
+            let placed=group_paste_candidate(root.to_string().as_bytes(),&plan.to_string()).expect("mixed initial placement");
             let v:Value=serde_json::from_str(&placed).unwrap();
             let g=&v["World"]["GridCollection"]["Grids"];
             assert_eq!(g["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
@@ -5336,7 +5341,7 @@ mod terrain_session_tests{
             assert_eq!(g["8"],root["World"]["GridCollection"]["Grids"]["8"]);
             assert_eq!(g["7"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);
             assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
-            for id in ["40006574","40001680","40000001"]{assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+            for id in [owner.to_string(),"40001680".into(),plain.to_string()]{assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
             let (scan,_)=scan_grid_instances(placed.as_bytes()).unwrap();
             let ord=scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id=="3").unwrap()+1;
             let replacement=serde_json::json!([{"destination":w,"remove":[{"localOrdinal":ord,"itemId":"40001680","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeStorage":true}],"add":[{"itemId":"40001680","destination":w,"x":5,"y":3,"orientation":"GridOrientation_Down","freePlacement":true}]}]);
