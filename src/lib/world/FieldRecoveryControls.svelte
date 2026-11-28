@@ -7,7 +7,8 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {isCardinal} from './saved-map-transform.ts';
+ import {isEightWay} from './saved-map-transform.ts';
+ import {MAX_GRID_MIXED_EDITS} from '../save/grid-edit-limits.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
@@ -39,7 +40,7 @@
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,expected='',open=false,error=false;
  $: w=words[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
- $: plan=items.length>0&&items.length<=32&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isCardinal(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
+ $: plan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
  $: key=JSON.stringify(plan);
  $: if(source&&(source!==file||expected!==key||blocked))cancel();
  function cancel(){worker?.terminate();worker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;expected='';rows=[];destination=0;open=false;error=false;}
