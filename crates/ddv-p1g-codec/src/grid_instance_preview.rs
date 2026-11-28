@@ -504,7 +504,7 @@ pub(super) fn underwater_plain_items(root:&Value)->HashSet<u64>{
         let Some(objects)=g["Objects"].as_object()else{continue;};
         scanned=scanned.saturating_add(objects.len());if scanned>200_000{return HashSet::new();}
         for (id,o) in objects{
-            let Some(item)=o["ItemID"].as_u64().filter(|n|n/100_000==400&&!crate::storage_source::is_storage(*n))else{continue;};
+            let Some(item)=o["ItemID"].as_u64().filter(|n|n/100_000==400&&!crate::storage_source::is_storage(*n)&&crate::storage_source::support_source_path(*n).is_none())else{continue;};
             if key_id(id).is_some_and(|n|n>0)&&o["ID"].as_u64()==key_id(id)&&
                o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))&&observed_coordinates(m).is_some())&&
                o.get("State").is_none_or(Value::is_null)&&o["Orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){plain.insert(item);}
@@ -1869,7 +1869,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
     let local=targets.iter().find(|t|is_underwater_grid(&grids[&t.grid_id])).map(|t|t.grid_id.as_str());
     if let Some(gid)=local{
-        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&(scope!=Some(gid)||support_flags.iter().any(|v|*v)||storage_flags.iter().any(|v|*v))||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
+        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&(scope!=Some(gid)||support_flags.iter().any(|v|*v))||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
         let (sx,sy)=underwater_transform_identity(&root,gid)?;
         let checked=underwater_plain_items(&root);
         for (((target,selection),support),storage) in targets.iter().zip(&selections).zip(&support_flags).zip(&storage_flags){
@@ -2818,7 +2818,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
-    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;
+    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;let mut local_storage=HashMap::new();let mut local_support=None;
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
@@ -2840,8 +2840,13 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
         if underwater{
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
-            let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
-            if !ids.contains(&item){return Err(bad);}
+            if crate::storage_source::is_storage(item){
+                if !local_storage.contains_key(&item){let t=if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{crate::storage_source::initial_storage_template(item)}else{crate::storage_source::placement_storage_template(&root,item)}.ok_or(bad)?;local_storage.insert(item,t);}
+            }else if crate::storage_source::support_source_path(item).is_some(){
+                if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{return Err(bad);}
+                let trees=local_support.get_or_insert_with(||crate::storage_source::initial_support_trees(&root,inventory.keys().filter_map(|k|k.parse::<u64>().ok())));
+                if !trees.contains_key(&item){return Err(bad);}
+            }else{let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));if !ids.contains(&item){return Err(bad);}}
             let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
             if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
         }
@@ -2862,19 +2867,19 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
     }
-    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS||local_support.is_some(){
         use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_furniture,preview_bulk_storage_scene_place};
         let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
         let mut templates=HashMap::new();
         for p in &places{if crate::storage_source::is_storage(p.item_id){
             let (template,capacity)=if let Some(t)=templates.get(&p.item_id){*t}else{crate::storage_source::placement_storage_template(&root,p.item_id).ok_or(bad)?};
-            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&p.destination.grid_id)?;
+            let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&p.destination.grid_id)?;
             if layout!=p.destination.layout_path||factor!=u64::from(p.destination.tessellation)||sx!=u64::from(p.destination.size.0)||sy!=u64::from(p.destination.size.1){return Err(bad);}
             templates.insert(p.item_id,(template,capacity));
         }}
         let json=std::str::from_utf8(profile).map_err(|_|bad)?;
-        let mut draft=if templates.is_empty(){preview_bulk_furniture(json,&[],&places)}else{
-            let rows=places.into_iter().map(|pose|BulkScenePlace{pose,tree:None}).collect::<Vec<_>>();
+        let mut draft=if templates.is_empty()&&local_support.is_none(){preview_bulk_furniture(json,&[],&places)}else{
+            let rows=places.into_iter().map(|pose|{let tree=local_support.as_ref().and_then(|m|m.get(&pose.item_id));BulkScenePlace{pose,tree}}).collect::<Vec<_>>();
             preview_bulk_storage_scene_place(json,&rows,&templates)
         }.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
@@ -2885,9 +2890,9 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let amount=&mut counts.get_mut(&item).ok_or(bad)?.0;
         let dest=destinations.get(&key).ok_or(bad)?;
         let mut draft=if crate::storage_source::is_storage(item){
-            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&dest.grid_id)?;
+            let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&dest.grid_id)?;
             if layout!=dest.layout_path||factor!=u64::from(dest.tessellation)||sx!=u64::from(dest.size.0)||sy!=u64::from(dest.size.1){return Err(bad);}
-            let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?;
+            let (template,capacity)=if let Some(t)=local_storage.get(&item){*t}else{crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?};
             ddv_save_patch::preview_initial_storage(&working,dest,item,xy,&orientation,*amount,template,capacity,false,row_free)
         }else{preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:dest,item_id:item,xy,orientation:&orientation})}.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
@@ -5305,6 +5310,46 @@ mod terrain_session_tests{
         let result=group_paste_candidate(&serde_json::to_vec(&empty).unwrap(),&pickup.to_string()).unwrap();let v:Value=serde_json::from_str(&result).unwrap();
         assert!(v["Player"]["ContainerInventories"].as_object().unwrap().is_empty());assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],3);
 
+    }
+    #[test]
+    fn underwater_initial_owned_stock_and_empty_storage_area_restore(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        let owner=40006574u64;
+        let path=crate::storage_source::support_source_path(owner).unwrap();
+        assert_eq!(path,"GridData/Furniture/NonIP_Update25/WitchyTable-GridData.json");
+        for r in rows{
+            let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ContainerInventories":{},"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40006574":{"Amount":1},"40001680":{"Amount":1},"40000001":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+              "7":{"ID":7,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":owner,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8,"DesignID":null}}}}},
+              "8":{"ID":8,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":1,"Objects":{}}
+            }}}});
+            let w=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+            let plan=serde_json::json!({"freePlacement":true,"rows":[
+              {"itemId":owner.to_string(),"destination":w,"x":2,"y":3,"orientation":"GridOrientation_Left"},
+              {"itemId":"40001680","destination":w,"x":3,"y":3,"orientation":"GridOrientation_Left"},
+              {"itemId":"40000001","destination":w,"x":4,"y":3,"orientation":"GridOrientation_Left"}]});
+            let placed=group_paste_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap();
+            let v:Value=serde_json::from_str(&placed).unwrap();
+            let g=&v["World"]["GridCollection"]["Grids"];
+            assert_eq!(g["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
+            assert_eq!(g["20"]["GridDataPath"],path);assert_eq!(g["20"]["TessellationFactor"],2);assert_eq!(g["20"]["Objects"],serde_json::json!({}));
+            assert_eq!(g["8"],root["World"]["GridCollection"]["Grids"]["8"]);
+            assert_eq!(g["7"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);
+            assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
+            for id in ["40006574","40001680","40000001"]{assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+            let (scan,_)=scan_grid_instances(placed.as_bytes()).unwrap();
+            let ord=scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id=="3").unwrap()+1;
+            let replacement=serde_json::json!([{"destination":w,"remove":[{"localOrdinal":ord,"itemId":"40001680","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeStorage":true}],"add":[{"itemId":"40001680","destination":w,"x":5,"y":3,"orientation":"GridOrientation_Down","freePlacement":true}]}]);
+            let restored:Value=serde_json::from_str(&island_furniture_candidate(placed.as_bytes(),&replacement.to_string()).unwrap()).unwrap();
+            assert!(restored["Player"]["ContainerInventories"].get("10").is_none());
+            assert_eq!(restored["Player"]["ContainerInventories"]["11"]["Inventory"],serde_json::json!([]));
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"]["State"]["Storage"]["ContainerInventoryID"],11);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["20"],g["20"]);
+            let mut full=v.clone();full["Player"]["ContainerInventories"]["10"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
+            assert!(island_furniture_candidate(full.to_string().as_bytes(),&replacement.to_string()).is_err());
+            let mut no_witness=root.clone();no_witness["World"]["GridCollection"]["Grids"]["8"].as_object_mut().unwrap().remove("TessellationFactor");
+            assert!(group_paste_candidate(no_witness.to_string().as_bytes(),&plan.to_string()).is_err());
+        }
     }
     #[test]
     fn underwater_owned_root_pose_batch_preserves_storage_and_support_tree(){
