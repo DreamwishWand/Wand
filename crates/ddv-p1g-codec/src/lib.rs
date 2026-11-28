@@ -2246,6 +2246,7 @@ mod browser_amount_preview {
             let invalid=||fail("DB05_FURNITURE_STOCK_PLAN_INVALID");
             let value:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
             let o=value.as_object().ok_or_else(invalid)?;
+            let free=match o.get("freePlacement"){None=>false,Some(serde_json::Value::Bool(true))=>true,_=>return Err(invalid())};
             let item=o.get("itemId").and_then(|v|v.as_str()).and_then(|v|v.parse::<u64>().ok()).ok_or_else(invalid)?;
             let int=|key:&str|o.get(key).and_then(|v|v.as_i64()).and_then(|v|i32::try_from(v).ok()).ok_or_else(invalid);
             let action=o.get("action").and_then(|v|v.as_str()).ok_or_else(invalid)?;
@@ -2258,6 +2259,14 @@ mod browser_amount_preview {
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let oblique=|s:&str|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s)&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s);
             let check_destination=|d:&ddv_save_patch::PlainGridDestination,orientation:&str|->Result<(),JsValue>{
+                if free{
+                    if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(invalid());}
+                    let (_,layout,factor,sx,sy)=grid_instance_preview::house_exterior_identity(&root,&d.grid_id).map_err(|_|invalid())?;
+                    if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(invalid());}
+                }
+                let next=root["World"]["GridCollection"]["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().filter(|n|*n>0&&*n<u32::MAX as u64).ok_or_else(invalid)?.to_string();
+                let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&d.grid_id,&[next]).map_err(|_|invalid())?;
+                if refs.blocking()>0||refs.historical>0{return Err(invalid());}
                 if oblique(orientation){
                     if root["GameInfo"]["Version"].as_u64()!=Some(643)||item/100_000!=400||d.tessellation!=1{return Err(invalid());}
                     grid_instance_preview::player_house_grid_scope(&root,&d.grid_id).map_err(|_|invalid())?;
@@ -2265,7 +2274,7 @@ mod browser_amount_preview {
                 Ok(())
             };
             let mut draft=if action=="place"{
-                if o.len()!=5||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation")){return Err(invalid());}
+                if o.len()!=5+usize::from(free)||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"x"|"y"|"orientation"|"freePlacement")){return Err(invalid());}
                 let dest:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                 let dest=grid_instance_preview::resolve_plain_grid_destination(original,&dest).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                 let orientation=o.get("orientation").and_then(|v|v.as_str()).ok_or_else(invalid)?;
@@ -2278,12 +2287,12 @@ mod browser_amount_preview {
                     let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&[next]).map_err(|_|invalid())?;
                     if refs.blocking()>0||refs.historical>0{return Err(invalid());}
                     let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or_else(invalid)?;
-                    ddv_save_patch::preview_initial_storage(json,&dest,item,(int("x")?,int("y")?),orientation,stock,template,capacity,false,false)
+                    ddv_save_patch::preview_initial_storage(json,&dest,item,(int("x")?,int("y")?),orientation,stock,template,capacity,false,free)
                 }else{preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})}
             }else{
                 // Reuse the original-source structural rehearsal, including
                 // dependency blocking when the removal guard is available.
-                if o.len()!=7||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y")){return Err(invalid());}
+                if o.len()!=7+usize::from(free)+usize::from(o.contains_key("replacementOrientation"))||o.keys().any(|k|!matches!(k.as_str(),"action"|"itemId"|"localOrdinal"|"expectedX"|"expectedY"|"x"|"y"|"freePlacement"|"replacementOrientation"))||o.contains_key("replacementOrientation")&&(!free||action!="duplicate")||free&&action!="duplicate"{return Err(invalid());}
                 let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
                 let expected=(int("expectedX")?,int("expectedY")?);
                 let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
@@ -2298,13 +2307,18 @@ mod browser_amount_preview {
                     // Verify source record without allocating or publishing a removal.
                     let mut guard=ddv_save_patch::preview_plain_grid_structure(json,&target,expected,ddv_save_patch::PlainGridStructureAction::Remove).map_err(|_|invalid())?;
                     guard.patched_json.zeroize();
-                }else{self.preview_plain_grid_structure(plan)?;}
+                }else{let mut legacy=value.clone();let map=legacy.as_object_mut().ok_or_else(invalid)?;map.remove("freePlacement");map.remove("replacementOrientation");self.preview_plain_grid_structure(&legacy.to_string())?;}
                 match action{
                     "remove"=>preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Pickup{target:&target,expected}),
                     "duplicate"=>{
                         let witness:serde_json::Value=serde_json::from_str(destination).map_err(|_|invalid())?;
                         let dest=grid_instance_preview::resolve_plain_grid_destination(original,&witness).map_err(|_|fail("DB05_FURNITURE_STOCK_DESTINATION"))?;
                         // Copy creates a new ordinary object at the independently resolved destination. The source identity remains unchanged.
+                        if free{
+                            let (_,_,factor,sx,sy)=grid_instance_preview::house_exterior_identity(&root,&target.grid_id).map_err(|_|invalid())?;
+                            if expected.0<0||expected.1<0||expected.0 as u64>=sx*factor||expected.1 as u64>=sy*factor||grid_instance_preview::grid_identity_dependencies(original,&target).map_err(|_|invalid())?.blocking()>0{return Err(invalid());}
+                        }
+                        let orientation=match o.get("replacementOrientation"){None=>orientation,Some(v)=>v.as_str().filter(|s|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or_else(invalid)?};
                         check_destination(&dest,orientation)?;
                         preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})
                     },
