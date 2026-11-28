@@ -449,7 +449,7 @@ fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Re
         subgrid_tree(collection,&target.grid_id,&target.object_id)?;
         support_pickup_references(profile,grids,&target.grid_id,&target.object_id,&mut HashSet::new(),&mut 0,0,512)?;
     }else if state.contains_key("Storage"){
-        if !ddv_save_patch::storage_pose(&root,&Value::Object(obj.clone())){return Err(bad);}
+        if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(obj.clone())){return Err(bad);}
     }else{return Err(bad);}
     if grid_identity_dependencies(profile,target)?.blocking()>0{return Err(bad);}
     Ok(())
