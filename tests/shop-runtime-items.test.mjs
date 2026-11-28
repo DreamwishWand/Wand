@@ -43,3 +43,10 @@ test('notable companion uses exact owner level 5 Tier1 reward before next conten
  assert.equal(result.items[2].companionReward,true);
  for(const bad of [[],[{...reward,sourceId:99}],[{...reward,amount:null}],[{...reward,rewardStage:'LevelReward'}],[{...reward,sourceRecord:'Friendship'}],[reward,reward]])assert.equal(build(bad).blockedBy,'companion_reward');
 });
+
+test('only complete verified seed census can bypass the character skin quest branch',()=>{
+ const rows=[row(1,'FurnitureItemData'),row(2,'CharacterSkinItemData'),row(1,'FurnitureItemData')];
+ assert.equal(buildShopRuntimePrefix(v,rows,true,new Map(),new Set([170000014,170000021,170000081])).complete,true);
+ assert.equal(buildShopRuntimePrefix(v,rows,true,new Map(),new Set([2])).blockedBy,'quest');
+ assert.equal(buildShopRuntimePrefix(v,rows,true).blockedBy,'quest');
+});

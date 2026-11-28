@@ -9,6 +9,7 @@
  */
 import type {PublicCompleteItemMaster,PremiumBundleRevision} from '../items/public-item-master.ts';
 import type {ItemFieldProjection} from '../items/item-field-reader.ts';
+import {readShopQuestSeeds} from './shop-quest-seeds.ts';
 const ordinary=new Set([
  'FurnitureItemData','FurnitureRequestItemData','FurnitureBlockerItemData','FurnitureAncientMachineItemData',
  'FurnitureSnippetTrapItemData','LandscapingItemData','BuildingItemData','StallBuildingItemData','OffGridBuildingItemData',
@@ -18,7 +19,7 @@ const ordinary=new Set([
 export type ShopRuntimeItem={readonly itemId:number;readonly quantity:number;readonly address:string|null;readonly field:string;readonly contentIndex:number;readonly evolutionStep?:number;readonly companionReward?:true};
 export type ShopRuntimePrefix={readonly revisionSha256:string;readonly items:readonly ShopRuntimeItem[];readonly complete:boolean;
  readonly blockedBy:'version'|'unknown_item'|'evolution'|'evolution_index'|'quest'|'companion_reward'|null};
-export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:readonly (ItemFieldProjection|null)[],evolutionIndexed:boolean,evolutionTargets:ReadonlyMap<number,ItemFieldProjection>=new Map()):ShopRuntimePrefix{
+export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:readonly (ItemFieldProjection|null)[],evolutionIndexed:boolean,evolutionTargets:ReadonlyMap<number,ItemFieldProjection>=new Map(),questSeeds:ReadonlySet<number>|null=null):ShopRuntimePrefix{
  const items:ShopRuntimeItem[]=[];
  const finish=(blockedBy:ShopRuntimePrefix['blockedBy']):ShopRuntimePrefix=>({revisionSha256:revision.revisionSha256,items,complete:blockedBy===null,blockedBy});
  if(revision.gameVersion!=='1.26.2')return finish('version');
@@ -40,7 +41,10 @@ export function buildShopRuntimePrefix(revision:PremiumBundleRevision,rows:reado
       }
       continue;
    }
-   if(cls==='CharacterSkinItemData')return finish('quest');
+   if(cls==='CharacterSkinItemData'){
+     if(questSeeds&&!questSeeds.has(c.itemId))continue;
+     return finish('quest');
+   }
    // NotableCompanionRewardItemViewModel.Create 0x6F5C7D6..0x6F5C7E3:
    // a PetItemData with IsNotable=false returns null before reading friendship.
    // Do not treat missing or unindexed source fields as a proven false.
@@ -96,7 +100,7 @@ function readNotableCompanionReward(row:ItemFieldProjection):{itemId:number;quan
     reward.rewardStage!=='Tier1Reward'||!itemId(reward.itemId)||!itemId(reward.amount))return null;
  return {itemId:reward.itemId,quantity:reward.amount};
 }
-export async function readShopRuntimePrefix(revision:PremiumBundleRevision,db:Pick<PublicCompleteItemMaster,'release'|'getFieldCatalog'|'getItemFields'>){
+export async function readShopRuntimePrefix(revision:PremiumBundleRevision,db:Pick<PublicCompleteItemMaster,'release'|'getFieldCatalog'|'getItemFields'|'getFieldRows'|'findItemIdsByField'>){
  if(revision.gameVersion!=='1.26.2'||db.release.target.gameVersion!==revision.gameVersion)return buildShopRuntimePrefix({...revision,gameVersion:'unsupported'},[],false);
  const fields=new Set((await db.getFieldCatalog()).map(f=>f.field));
  const has=fields.has('acquisition.evolutionChain');
@@ -108,5 +112,6 @@ export async function readShopRuntimePrefix(revision:PremiumBundleRevision,db:Pi
  }
  const targets=new Map<number,ItemFieldProjection>();
  if(targetIds.size)for(const row of await db.getItemFields([...targetIds],['sourceClass','acquisition.evolutionSource']))if(row)targets.set(row.itemId,row);
- return buildShopRuntimePrefix(revision,rows,has,targets);
+ const questSeeds=rows.some(row=>row?.values.sourceClass==='CharacterSkinItemData')?await readShopQuestSeeds(db).catch(()=>null):null;
+ return buildShopRuntimePrefix(revision,rows,has,targets,questSeeds);
 }
