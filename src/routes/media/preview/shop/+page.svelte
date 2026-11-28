@@ -126,12 +126,23 @@
                     <div class="image-frame" style:inset={slot.adjustment?slot.adjustment.margins.map(n=>100*n/t.artworkWidth+'cqw').join(' '):undefined}>
                       <img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async" style:object-fit={slot.adjustment?.fill??'contain'}/>
                     </div>
-                  {:else if slot.nativeAddress?.status==='unresolved'&&slot.nativeAddress.reason==='runtime_icon_address'&&revision.components[0]&&(slot.binding==='CurrentImage'||slot.binding==='MegaBundleImage1'||slot.binding==='Items[0].Icon')}
-                    <ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
+                  {:else if slot.nativeAddress?.status==='unresolved'&&slot.nativeAddress.reason==='runtime_icon_address'&&slot.itemId!==null}
+                    <ShopPrimaryIconCandidate itemId={slot.itemId} {detail}/>
                   {:else}<span>{slot.binding}<br/>未確定</span>{/if}
                 </div>
               {/each}
-              {#if t.scroll}<div class="slot" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'}>Scroll / Icon 未確定</div>{/if}
+              {#if t.scroll}
+                <div class="slot one-line-scroll" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'}>
+                  {#each inspection.scrollItems as item,j (j)}
+                    <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
+                      {#if item.image}<div class="image-frame" style:inset-inline={100*t.scroll.imageInset/2/t.artworkWidth+'cqw'}><img src={url(item.image,detail)} alt={'Items['+j+'].Icon'} loading="lazy" decoding="async"/></div>
+                      {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail}/>
+                      {:else}<span>Icon型 / 画像未確定</span>{/if}
+                    </div>
+                  {/each}
+                  {#if !inspection.runtimeOrderVerified}<div class="one-line-item unresolved">後続Itemsの展開未確定</div>{/if}
+                </div>
+              {/if}
             </div>
           {/if}
           {#if runtime?.revisionSha256===revision.revisionSha256}

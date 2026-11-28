@@ -20,6 +20,7 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
   const native=steamShopArtworkRules(revision);
   const template=shopArtworkTemplate(native?.layout??art.lightLayout,groupWidth);
   // Explicit candidate bindings only; an absent override or ambiguous Icon is not a resolved native image.
+  const prefix=runtime?.revisionSha256===revision.revisionSha256?runtime:null;
   const slots=template?.slots.map(s=>{
     const nativeAddress=native?nativeShopBindingAddress(revision,s.binding,runtime?.revisionSha256===revision.revisionSha256?runtime.items:undefined):null;
     const field=nativeAddress?.status==='address'?nativeAddress.field:
@@ -39,9 +40,16 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
         :null
       :s.binding.startsWith('Items[')?null:row?.sprite??null;
     const adjustment=main&&image?native?.adjustment??null:null;
-    return {...s,field,image,adjustment,nativeAddress};
+    const index=s.binding==='CurrentImage'?0:s.binding.startsWith('MegaBundleImage')?Number(s.binding.slice('MegaBundleImage'.length))-1:Number(s.binding.match(/\d+/)?.[0]);
+    const runtimeItem=prefix?.items[index]??(index===0?revision.components[0]:null);
+    return {...s,field,image,adjustment,nativeAddress,itemId:runtimeItem?.itemId??null};
   })??[];
-  return {rows,template,slots,native,renderingVerified:false as const};
+  const scrollItems=template?.scroll?(prefix?.items??[]).map(item=>{
+    const sprite=item.address?reader.get(item.address,'Sprite'):null,texture=item.address?reader.get(item.address,'Texture2D'):null;
+    const image=sprite&&texture&&sprite.original.sha256===texture.original.sha256&&sprite.thumbnail.sha256===texture.thumbnail.sha256?sprite:null;
+    return {...item,image};
+  }):[];
+  return {rows,template,slots,native,scrollItems,runtimeOrderVerified:prefix?.complete??false,renderingVerified:false as const};
 }
 
 /** Category must be established by the caller from a pinned appearance.
