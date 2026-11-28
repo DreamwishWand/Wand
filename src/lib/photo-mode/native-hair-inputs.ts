@@ -30,13 +30,14 @@ export type NativeHairMap=LoadedSkinMap&{readonly colorSpace:0|1};
 /** Opaque PBR/PBR Hair only. The caller must supply source-verified sampling
  * metadata and already converted linear shader uniforms. No legacy materials,
  * special effects or unverified palette color conversion are accepted here. */
-export interface NativeHairInputs {
- readonly shader:'PBR/PBR Hair';readonly dst:0;
+interface NativeAttachmentBasis {
+ readonly dst:0;
  readonly tangent:Float32Array;readonly uv:Float32Array;
  readonly mask:NativeHairMap;readonly maps:NativeHairMap;readonly normal:NativeHairMap;
- readonly colors:NativeHairColors;
 }
+export type NativeHairInputs=NativeAttachmentBasis&({readonly shader:'PBR/PBR Hair';readonly colors:NativeHairColors}|{readonly shader:'PBR/PBR'|'PBR/PBR Clothing';readonly tint:RGBA;readonly metallicScale:number;readonly glossScale:number});
+export type NativeAttachmentMaterial=Omit<NativeAttachmentBasis,'tangent'|'uv'>&({readonly shader:'PBR/PBR Hair';readonly colors:NativeHairColors}|{readonly shader:'PBR/PBR'|'PBR/PBR Clothing';readonly tint:RGBA;readonly metallicScale:number;readonly glossScale:number});
 export function validNativeHairInputs(h:NativeHairInputs,n:number):boolean{
  const map=(m:NativeHairMap)=>!!m&&Number.isSafeInteger(m.width)&&Number.isSafeInteger(m.height)&&m.width>0&&m.height>0&&m.width<=4096&&m.height<=4096&&(m.colorSpace===0||m.colorSpace===1)&&m.mipByteLengths.length>0&&m.mipByteLengths.length<=1+Math.floor(Math.log2(Math.max(m.width,m.height)))&&m.mipByteLengths.every((b,i)=>b===4*Math.max(1,m.width>>i)*Math.max(1,m.height>>i))&&m.pixels.byteLength===m.mipByteLengths.reduce((s,b)=>s+b,0);
- return h.shader==='PBR/PBR Hair'&&h.dst===0&&h.tangent.length===n*4&&h.uv.length===n*2&&h.tangent.every(Number.isFinite)&&h.uv.every(Number.isFinite)&&h.tangent.every((x,i)=>i%4!==3||x===1||x===-1)&&[h.mask,h.maps,h.normal].every(map)&&h.normal.colorSpace===0&&[h.colors.base,h.colors.one,h.colors.two,h.colors.three].every(rgba);
+ return h.dst===0&&h.tangent.length===n*4&&h.uv.length===n*2&&h.tangent.every(Number.isFinite)&&h.uv.every(Number.isFinite)&&h.tangent.every((x,i)=>i%4!==3||x===1||x===-1)&&[h.mask,h.maps,h.normal].every(map)&&h.normal.colorSpace===0&&(h.shader==='PBR/PBR Hair'?[h.colors.base,h.colors.one,h.colors.two,h.colors.three].every(rgba):(h.shader==='PBR/PBR'||h.shader==='PBR/PBR Clothing')&&rgba(h.tint)&&Number.isFinite(h.metallicScale)&&h.metallicScale>=0&&h.metallicScale<=4&&Number.isFinite(h.glossScale)&&h.glossScale>=0&&h.glossScale<=4&&(h.shader!=='PBR/PBR Clothing'||h.metallicScale===1&&h.glossScale===1));
 }

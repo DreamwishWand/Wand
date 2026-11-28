@@ -1,11 +1,11 @@
 import type {BlobEntry} from '../../../tools/photo-mode/split-loader.ts';
 import type {RigNode,RigSkin} from './rig-sampler.ts';
-import type {NativeHairInputs} from './native-hair-inputs.ts';
+import type {NativeAttachmentMaterial} from './native-hair-inputs.ts';
 import type {PosePrimitive} from './scene-session.ts';
 export type AttachmentNode=Omit<RigNode,'parent'>&{path:string;parentPath:string};
 export type AttachmentPartEntry={asset:BlobEntry;vertices:number;indices:number;jointPaths:string[]};
 export type AttachmentGeometry=Pick<PosePrimitive,'positions'|'normals'|'uv'|'joints'|'weights'|'indices'>&{tangent:Float32Array;inverseBind:Float32Array;jointPaths:readonly string[]};
-export type LoadedAttachment={extraNodes:readonly AttachmentNode[];parts:readonly {geometry:AttachmentGeometry;hair:Omit<NativeHairInputs,'tangent'|'uv'>}[]};
+export type LoadedAttachment={extraNodes:readonly AttachmentNode[];parts:readonly {geometry:AttachmentGeometry;hair:NativeAttachmentMaterial}[]};
 const int=(v:number,min:number,max:number)=>Number.isSafeInteger(v)&&v>=min&&v<=max;
 const pathValid=(s:unknown):s is string=>typeof s==='string'&&s.length<=512&&(s==='body'||s==='root'||s.startsWith('root/'));
 /** Source mesh data in existing reflected-X avatar coordinates, little-endian.
