@@ -455,6 +455,64 @@ fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Re
     Ok(())
 }
 
+/// Original schema-643 underwater scene layout catalog. Unlike the village
+/// writer this contract admits only same-Grid coordinate edits. The three
+/// scenes have independent coordinate planes and no proven allocation path.
+fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
+    let bad=CodecError::Json;
+    let c=&root["World"]["GridCollection"];
+    let grids=c["Grids"].as_object().ok_or(bad)?;
+    let g=grids.get(gid).ok_or(bad)?;
+    let data=g["GridDataPath"].as_str().ok_or(bad)?;
+    let layout=g["GridDefaultLayoutPath"].as_str().ok_or(bad)?;
+    if root["GameInfo"]["Version"].as_u64()!=Some(643)||g["ID"].as_u64()!=key_id(gid)||
+       !layout.starts_with("SceneLayouts/VillageExpansion04UnderwaterAreas/")||
+       !data.starts_with("GridData/OffGridBuildings/Expansion04/Underwater")||
+       g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(1)||
+       grids.values().filter(|v|v["GridDataPath"].as_str()==Some(data)).count()!=1||
+       c.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(gid))){return Err(bad);}
+    static CATALOG:std::sync::OnceLock<Value>=std::sync::OnceLock::new();
+    let catalog=CATALOG.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap_or(Value::Null));
+    let mut rows=catalog["entries"].as_array().ok_or(bad)?.iter()
+       .filter(|e|e["scope"]=="VillageExpansion04UnderwaterAreas")
+       .flat_map(|e|e["grids"].as_array().into_iter().flatten())
+       .filter(|r|r["layoutId"].as_str()==Some(layout)&&r["gridDataPath"].as_str()==Some(data)&&r["factor"].as_u64()==Some(1));
+    let r=rows.next().ok_or(bad)?;
+    if rows.next().is_some(){return Err(bad);}
+    Ok((r["sizeX"].as_u64().filter(|n|(1..=65536).contains(n)).ok_or(bad)?,r["sizeY"].as_u64().filter(|n|(1..=65536).contains(n)).ok_or(bad)?))
+}
+fn is_underwater_grid(grid:&Value)->bool{
+    grid["GridDefaultLayoutPath"].as_str().is_some_and(|s|s.starts_with("SceneLayouts/VillageExpansion04UnderwaterAreas/"))||
+    grid["GridDataPath"].as_str().is_some_and(|s|s.starts_with("GridData/OffGridBuildings/Expansion04/Underwater"))
+}
+/// An identity-preserving transform of local interaction data, not a state
+/// mutation or clone. These discriminants and field types are present in
+/// native1262-domain-fields.v1.json. Keyhole and unknown links remain protected.
+fn local_interaction_transform_state(state:&Value)->bool{
+    let Some(m)=state.as_object().filter(|m|m.len()==1)else{return false;};
+    if let Some(v)=m.get("Toggle").and_then(Value::as_object){
+        return v.get("Value").is_some_and(|v|v.is_null()||v.is_boolean())&&v.keys().all(|k|matches!(k.as_str(),"Value"|"DesignID"))&&
+           v.get("DesignID").is_none_or(|v|v.is_null()||v.as_i64().is_some());
+    }
+    m.get("ItemList").and_then(Value::as_object).is_some_and(|v|v.len()==1&&v.get("Items").and_then(Value::as_array).is_some_and(|a|a.iter().all(|i|i.as_i64().is_some_and(|n|i32::try_from(n).is_ok()))))
+}
+fn validate_underwater_transform(root:&Value,e:&ddv_save_patch::GridMixedEdit)->Result<(),CodecError>{
+    let bad=CodecError::Json;
+    if e.target.kind!=GridObjectKind::Full||!matches!(e.target.item_id/100_000,400|402){return Err(bad);}
+    let (sx,sy)=underwater_transform_identity(root,&e.target.grid_id)?;
+    let obj=&root["World"]["GridCollection"]["Grids"][&e.target.grid_id]["Objects"][&e.target.object_id];
+    if obj["ID"].as_u64()!=key_id(&e.target.object_id)||obj["ItemID"].as_u64()!=Some(e.target.item_id)||
+       obj.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+       observed_coordinates(obj.as_object().ok_or(bad)?)!=Some(e.expected){return Err(bad);}
+    let plain=obj.get("State").is_none_or(|v|v.is_null()||v.as_object().is_some_and(|m|m.is_empty()));
+    if !plain&&!obj.get("State").is_some_and(local_interaction_transform_state){return Err(bad);}
+    let orientation=|s:&str|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)||plain&&e.target.item_id/100_000==400&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&s);
+    if !obj["Orientation"].as_str().is_some_and(orientation)||e.orientation.as_ref().is_some_and(|(a,b)|!orientation(a)||!orientation(b)){return Err(bad);}
+    let within=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as u64)<sx&&(y as u64)<sy;
+    if !within(e.expected)||e.position.is_some_and(|p|!within(p)){return Err(bad);}
+    Ok(())
+}
+
 /// Common native transform preflight: dependencies and stateful root
 /// bounds are checked independently of the visual item category. Diagonal
 /// orientation still requires the separately verified factor-one leaf contract.
@@ -470,6 +528,8 @@ pub(super) fn validate_oblique_grid_edits(profile:&[u8],edits:&[ddv_save_patch::
     for e in edits{
         let grid=&root["World"]["GridCollection"]["Grids"][&e.target.grid_id];
         let obj=&grid["Objects"][&e.target.object_id];
+        let diff=&root["World"]["GridCollection"]["DiffGrids"][&e.target.grid_id];
+        if is_underwater_grid(grid)||is_underwater_grid(diff){validate_underwater_transform(&root,e)?;continue;}
         if e.target.kind==GridObjectKind::Full&&(obj.get("State").and_then(|s|s.get("SubGrid")).is_some()||obj.get("State").and_then(|s|s.get("Storage")).is_some()||crate::storage_source::is_storage(e.target.item_id)){
             validate_owned_transform_root(profile,&e.target)?;
             let (_,_,factor,sx,sy)=house_exterior_identity(&root,&e.target.grid_id)?;
@@ -3457,6 +3517,31 @@ mod tests{
         stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
         plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn underwater_transform_uses_exact_catalog_preserves_local_state_and_rejects_refs(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        assert_eq!(rows.len(),12);
+        for r in rows{
+            for state in [Value::Null,serde_json::json!({"Toggle":{"Value":true,"DesignID":null}}),serde_json::json!({"ItemList":{"Items":[40000001]}})]{
+                let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":17},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":state}}}}}}});
+                let e=ddv_save_patch::GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:"1".into(),item_id:40000001},expected:(1,1),position:Some((2,2)),orientation:Some(("GridOrientation_Down".into(),"GridOrientation_Left".into()))};
+                let raw=root.to_string();
+                validate_oblique_grid_edits(raw.as_bytes(),std::slice::from_ref(&e)).unwrap();
+                let draft=ddv_save_patch::preview_existing_grid_mixed_batch(&raw,std::slice::from_ref(&e)).unwrap();
+                let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+                assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"],state);
+                assert_eq!(result["Player"],root["Player"]);
+                let mut invalid=e.clone();invalid.position=Some((65536,2));assert!(validate_oblique_grid_edits(raw.as_bytes(),&[invalid]).is_err());
+                root["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+                assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+                root["World"].as_object_mut().unwrap().remove("SpawnedObjects");
+                root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Keyhole":{"KeyholeConfigDataGUID":"protected"}});
+                assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+            }
+        }
     }
 
     #[test]
