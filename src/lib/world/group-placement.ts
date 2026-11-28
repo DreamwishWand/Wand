@@ -1,20 +1,21 @@
 import type {SymmetryMode} from './design-symmetry.ts';
-import {stockSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
+import {stockSourceEligible,landscapeSourceEligible,buildingSourceEligible,stockPlacement,stockFootprintFeedback,type StockCandidate,type StockDestination} from './save-furniture-placement.ts';
 import {EIGHT_WAY_ORIENTATIONS,worldOrientationCode,isCardinal,type EightWay} from './saved-map-transform.ts';
 import {WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
 import {rotateDesignClipboard,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
-import {mainlandTerrainHits,mainlandFreeHits,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandTerrainHits,mainlandFreeHits,mainlandMapAnchor,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {supportParentEligible} from './subgrid-local.ts';
 
 export function cutEligible(p:MainlandSavedObject,allowSupport:boolean):boolean{if(p.object.storageKnown&&!p.object.storage)return false;if(p.object.storage)return allowSupport&&stockSourceEligible(p)&&isCardinal(p.object.orientation);const ordinary:boolean=stockSourceEligible(p);const support:boolean=supportParentEligible(p);return ordinary||allowSupport&&support&&!nativeActionBlocked(p.object.editRestrictions,'switchGrid')&&!nativeActionBlocked(p.object.editRestrictions,'rotate');}
-export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false,free=false):DesignClipItem[]|null{
+export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allowSupport=false,free=false,nativeSources=false):DesignClipItem[]|null{
  if(!items.length||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return null;
  const rows=items.map(p=>{
   if(p.object.storageKnown&&!p.object.storage)return null;
-  if(!(p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&supportParentEligible(p,true):stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  const native=free&&nativeSources&&(landscapeSourceEligible(p,true)||buildingSourceEligible(p));
+  if(!(native|| (p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&supportParentEligible(p,true):stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport)))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const code=worldOrientationCode(p.object.orientation);
   if(code===null||code%4!==0&&!free)return null;
   const orientation=code/4;
@@ -66,19 +67,19 @@ export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeomet
  const y=-2*g.origin.position[2]-Math.floor((-p.y-2*g.origin.position[2])*g.factor)/g.factor;
  return {x:x-Math.floor((width*g.factor-1)/2)/g.factor+.001,y:y+Math.floor((height*g.factor-1)/2)/g.factor-.001};
 }
-export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,free=false,verifiedSupport:ReadonlySet<number>=new Set()):GroupPasteCandidate|null{
+export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number,free=false,verifiedSupport:ReadonlySet<number>=new Set(),nativeSources=false):GroupPasteCandidate|null{
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
  const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
  if(clip.some(p=>![p.dx,p.dy,p.orientation*2].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>=4||!free&&!Number.isInteger(p.orientation)))return null;
- return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free,false,verifiedSupport);
+ return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted,WORLD_BATCH_LIMIT,free,false,verifiedSupport,nativeSources);
 }
 export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
 export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
 /** All poses share map coordinates; each independently resolves its exact
  * source Grid. The bounding rectangle's empty corner need not be on land. */
-export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false,allowDiagonal=false,verifiedSupport:ReadonlySet<number>=new Set()):GroupPasteCandidate|null{
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,limit=WORLD_BATCH_LIMIT,free=false,allowDiagonal=false,verifiedSupport:ReadonlySet<number>=new Set(),nativeSources=false):GroupPasteCandidate|null{
  if(!poses.length||poses.length>limit||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
  for(const p of poses){
@@ -86,8 +87,10 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
   const target=(free?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
-  if(free&&(Math.floor(p.itemId/100000)!==400||((geo.get(t.factor)?.surfaceCapable||geo.get(t.factor)?.supportPath)&&(!verifiedSupport.has(p.itemId)||!Number.isInteger(p.orientation)))))return null;
-  const q=stockPlacement(grids,rasters,geo,p.itemId,EIGHT_WAY_ORIENTATIONS[p.orientation*2],x+.001,y-.001,null,free,allowDiagonal);
+  const cls=Math.floor(p.itemId/100000),def=geo.get(t.factor),native=free&&nativeSources&&(cls===402||[200,201,202,203,205].includes(cls));
+  if(free&&(!native&&cls!==400||((def?.surfaceCapable||def?.supportPath)&&(!verifiedSupport.has(p.itemId)||!Number.isInteger(p.orientation)))))return null;
+  const orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2],shape=def?.shapes[p.itemId+':'+p.orientation*4];
+  const q:StockCandidate|null=native&&cls!==402?(def?.nativeType==='Building'&&isCardinal(orientation)&&shape&&shape.cellCount>0&&shape.cellCount<=65536&&lx>=0&&ly>=0&&lx<t.sizeX*t.factor&&ly<t.sizeY*t.factor?{area:t.key,...mainlandMapAnchor(t,lx,ly),factor:t.factor,shape,plan:{action:'place',itemId:String(p.itemId),x:lx,y:ly,orientation},destination:{layoutId:t.layoutId,gridDataPath:t.gridDataPath,factor:t.factor,sizeX:t.sizeX,sizeY:t.sizeY}}:null):stockPlacement(grids,rasters,geo,p.itemId,orientation,x+.001,y-.001,null,free,allowDiagonal);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
   const key=q.area+':'+lx+':'+ly;if(!free&&(anchors.has(key)||objects.some(o=>o.area===q.area&&o.object.layer!=='ground'&&o.object.x===lx&&o.object.y===ly)))return null;
   anchors.add(key);

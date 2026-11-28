@@ -50,11 +50,11 @@ export type CutWitness=CutPose&({localOrdinal:number;roomSource?:never}|{roomSou
 export interface CutClipboard{file:File;scope:string;rows:CutWitness[]}
 export const worldFurnitureCut=writable<CutClipboard|null>(null);
 export function captureCutWitness(items:readonly MainlandSavedObject[],free=false):CutWitness[]|null{
- if(!captureFurnitureGroup(items,true,free)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
+ if(!captureFurnitureGroup(items,true,free,true)||items.some(p=>p.object.subgrid)&&items.length>ROOM_CUT_LIMIT)return null;
  return items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay,area:p.area,...(p.object.subgrid?{supportFactor:p.factor}:{}),...(p.object.storage?{storage:true as const}:{})}));
 }
 export function cutWitnessMatches(rows:readonly CutWitness[],objects:readonly MainlandSavedObject[],free=false):boolean{
- return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&(free?!!captureFurnitureGroup([p],!!r.supportFactor||!!r.storage,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
+ return !!rows.length&&rows.every(r=>objects.some(p=>p.area===r.area&&p.object.localOrdinal===r.localOrdinal&&p.object.itemId===r.itemId&&p.object.x===r.expectedX&&p.object.y===r.expectedY&&p.object.orientation===r.expectedOrientation&&!!p.object.storage===!!r.storage&&(!r.supportFactor||p.factor===r.supportFactor&&!!p.object.subgrid)&&(free?!!captureFurnitureGroup([p],!!r.supportFactor||!!r.storage,true,true):cutEligible(p,!!r.supportFactor||!!r.storage)&&!nativeActionBlocked(p.object.editRestrictions,'move'))));
 }
 /** Ordinals are global to the exact opened File. Other world views cannot
  * inspect the source objects; any visible ordinal must still match. Rust
@@ -110,6 +110,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
  if(cut.some(r=>r.supportSource)&&(!free||cut.length>ROOM_CUT_LIMIT||cut.some(r=>!r.supportSource))||cut.length!==candidate.rows.length||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
+ if(rows.some(r=>Math.floor(Number(r.itemId)/100000)!==400&&r.orientation!==r.expectedOrientation))return null;
  return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||(free&&!!r.roomSource||r.destination.factor===r.supportFactor)&&CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))&&(!r.storage||CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))?rows:null;
 }
 export const groupCutWords={
@@ -145,3 +146,10 @@ export const groupPasteWords={
  'zh-CN':['复制家具','粘贴','创建副本','已复制','选择目标位置','库存或目标位置不可用。','验证形状和库存…','确认放置','取消','向左旋转','向右旋转'],
  'pt-BR':['Copiar móveis','Colar','Duplicar','Copiado','Escolher destino','Estoque ou destino indisponível.','Verificando…','Revisar posição','Cancelar','Girar esquerda','Girar direita']
 } as const;
+
+/** Native source witnesses remain local to this exact opened Save. */
+export function nativeDuplicateSelection(items:readonly MainlandSavedObject[],free=false){
+ if(!free||!items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400)||items.some(p=>!isCardinal(p.object.orientation)))return null;
+ const clip=captureFurnitureGroup(items,true,true,true),sources=captureCutWitness(items,true);
+ return clip&&sources?{clip,sources}:null;
+}
