@@ -131,6 +131,8 @@ def main():
     p.add_argument('--dump',type=Path,required=True)
     p.add_argument('--bundle',type=Path,action='append',default=[])
     p.add_argument('--catalog',type=Path,required=True,help='Directory of original split Addressables catalog')
+    p.add_argument('--dependency',type=Path,action='append',default=[],help='Original shared material, texture or shader bundle')
+    p.add_argument('--material-assets',type=Path,help='Private directory for exact referenced native texture mip chains')
     p.add_argument('--male-avatar',type=Path)
     p.add_argument('--female-avatar',type=Path)
     p.add_argument('--out',type=Path,required=True)
@@ -171,8 +173,15 @@ def main():
                 geometry.append(dict(guid=guid,body=sex,status='bind_verified',extraBoneCount=g['extraBoneCount'],parts=[dict(rendererPathId=p['rendererPathId'],meshPathId=p['meshPathId'],meshSha256=p['mesh']['sha256'],vertices=len(p['mesh']['attrs'][0]),jointCount=len(p['joints']),sourceBindError=p['sourceBindError'],combinedBindError=p['combinedBindError'],materials=p['materials']) for p in g['parts']]))
             except (ValueError, KeyError, IndexError, OverflowError) as error:
                 geometry.append(dict(guid=guid,body=sex,status='unresolved',reason=str(error)))
+    material_graph = None
+    if a.material_assets:
+        from pose_attachment_materials import export_graph
+        require(a.male_avatar is not None, 'avatar geometry required for exact material selection')
+        require(any(g['status']=='bind_verified' for g in geometry), 'no resolved attachment geometry')
+        refs = {(m['assetFile'],m['pathId']) for g in geometry if g['status']=='bind_verified' for p in g['parts'] for m in p['materials']}
+        material_graph = export_graph([*a.bundle,*a.dependency], refs, a.material_assets)
     coverage = dict(itemCount=len(rows),guidCount=len(guids),uniqueCatalogLocations=sum(len(v)==1 for v in locations.values()),missingCatalogLocations=sum(not v for v in locations.values()),ambiguousCatalogLocations=sum(len(v)>1 for v in locations.values()))
-    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits,catalogSha256=catalog_pins,locations=locations,coverage=coverage,geometry=geometry)
+    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits,catalogSha256=catalog_pins,locations=locations,coverage=coverage,geometry=geometry,materialGraph=material_graph)
     out.parent.mkdir(parents=True,exist_ok=True)
     with out.open('x',encoding='utf-8') as f:
         json.dump(report,f,allow_nan=False,separators=(',',':'))
