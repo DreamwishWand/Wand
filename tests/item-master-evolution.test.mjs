@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
+import {readItemAcquisitionSourceDetails} from '../src/lib/items/public-item-acquisition-details.ts';
 test('original evolution chains are searchable in both directions without inferring direct acquisition',async()=>{
  const db=await openCurrentItemDatabase('',async u=>new Response(await readFile('static'+u),{status:200}));
  const source=JSON.parse(await readFile('data/ddv/item-master/evolution-sources-steam-1.26.2.json','utf8'));
@@ -22,6 +23,19 @@ test('original evolution chains are searchable in both directions without inferr
      assert.equal(l.requiresBaseItem,true);assert.equal(l.progressCounterSemanticsVerified,false);
      assert.equal(l.currentAvailabilityVerified,false);assert.equal(l.guaranteedGrantVerified,false);
    }
+ }
+ const baseIds=[...chains.keys()],targetIds=[...targets.keys()];
+ const details=await readItemAcquisitionSourceDetails(db,[...baseIds,...targetIds],'ja');
+ for(const [i,base] of baseIds.entries()){
+   const d=details[i];assert.equal(d.evolutionStatus,'indexed');assert.equal(d.evolutionSource,null);
+   assert.deepEqual(d.evolutionChain.map(l=>l.evidence),chains.get(base));
+   assert.deepEqual(d.evolutionChain.map(l=>l.targetIdentity.itemId),chains.get(base).map(l=>l.targetItemId));
+   assert(d.evolutionChain.every(l=>l.targetIdentity.locale==='ja'));
+ }
+ for(const [i,target] of targetIds.entries()){
+   const d=details[baseIds.length+i];assert.equal(d.evolutionStatus,'indexed');assert.deepEqual(d.evolutionChain,[]);
+   assert.deepEqual(d.evolutionSource.evidence,targets.get(target));assert.equal(d.evolutionSource.baseIdentity.itemId,targets.get(target).baseItemId);
+   assert.equal(d.evolutionSource.baseIdentity.locale,'ja');
  }
  console.log('DB01_EVOLUTION_VERIFIED '+JSON.stringify({chains:chains.size,targets:targets.size}));
 });
