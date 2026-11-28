@@ -481,7 +481,7 @@ def register(root,ledger,max_objects,max_bytes,r2):
 
 
 def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.sleep):
-    """Bound connection lifetime and retry only transient transport failures.
+    """Reuse a healthy connection for the entire bounded batch.
     A completed SHA is never downloaded again. Integrity/HTTP failures stop.
     """
     from urllib.error import URLError
@@ -492,7 +492,10 @@ def curl_readback(pending,expected,verified,save,reader_factory=None,pause=time.
     cursor=0;attempt=0
     reconnect_delays=(2,5,10,30,60)
     while cursor<len(pending):
-        chunk=pending[cursor:cursor+128]
+        # The caller already bounds the batch to 2000 objects / 500 MB.
+        # Do not force a new TLS handshake every 128 objects: the Owner's
+        # Windows log showed resets at three consecutive session boundaries.
+        chunk=pending[cursor:]
         try:
             with reader_factory(chunk,expected,http1=attempt>0) as reader:
                 for sha in chunk:
