@@ -485,11 +485,12 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   const production=fields.has('acquisition.ordinaryProductionSources')?
     new Map(await master.getFieldRows('acquisition.ordinaryProductionSources')):new Map();
   const intro=new Map(await master.getFieldRows('acquisition.ordinaryQuestIntroSources'));
-  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys()]);
+  const progress=new Map(await master.getFieldRows('acquisition.ordinaryProgressionSources'));
+  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys(),...progress.keys()]);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){
     const old=previous.get(id)??[];
-    const want=(rewardIds.has(id)||production.has(id)||intro.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
+    const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }
