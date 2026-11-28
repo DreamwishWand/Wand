@@ -75,7 +75,7 @@
  $: mixedSurface=roomSupports.length>0;
  function captureRoomMixed(indices:readonly number[],duplicate=false,pointSymmetry=false,copyContents=false){
   if(!file||!face||!terrainWorker||sceneCaptureWorker||!indices.length||indices.length>ROOM_CUT_LIMIT)return;
-  const source=file,target=face,selection=[...indices],sh=shapes,free=duplicate&&!pointSymmetry&&freeEdit,allowed=free?new Set([...removable,...freeEligible]):removable;
+  const source=file,target=face,selection=[...indices],sh=shapes,free=!pointSymmetry&&freeEdit,allowed=free?new Set([...removable,...freeEligible]):removable;
   const parents=roomSupports.filter(p=>selection.includes(p.index));if(!parents.length)return;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});sceneCaptureWorker=session;sceneError=false;
   const done=(d:any)=>{session.terminate();if(sceneCaptureWorker!==session)return;sceneCaptureWorker=null;if(file!==source||face!==target||duplicate&&(!editAllowed||moving||placing||editDraft||pickupDraft||placeDraft||transferDraft))return;

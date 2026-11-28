@@ -611,6 +611,14 @@ test('point-symmetric mixed Scene duplicates each support tree and checks both h
  const blocked=mainlandMapAnchor(g,15,13);assert.ok(mainlandTerrainHits([g],rasters,blocked.x+.001,blocked.y-.001).length);
  raster.nativeFloorValues[13*g.sizeX+15]=0;
  assert.equal(mixedScenePlacement(clip,doc,point,axis,[g],rasters,defs,[],0),null);
+ const diagonal=clip.map((p,i)=>i===1?{...p,orientation:2.5}:p);
+ const mixed=mixedSceneFromClip(diagonal,[support,null]);assert.deepEqual(parseMixedScene(JSON.stringify(mixed)),mixed);
+ defs.get(other).get(1).shapes[other+':10']=shape;
+ const free=mixedScenePlacement(diagonal,mixed,point,null,[g],rasters,defs,[],0,true);
+ assert.ok(free);assert.deepEqual(free.supportRows.map(r=>r.orientation),['GridOrientation_Down','GridOrientation_DownLeft']);
+ assert.equal(mixedScenePlacement(diagonal,mixed,point,null,[g],rasters,defs,[],0),null);
+ assert.throws(()=>mixedSceneFromClip([{...clip[0],orientation:2.5},clip[1]],[support,null]));
+ assert.equal(mixedScenePlacement([{...clip[0],orientation:2.5},clip[1]],doc,point,null,[g],rasters,defs,[],0,true),null);
  const empty=captureSupportScene(owner,{...tree,objects:[]});
  const root={itemId:owner,x:4,y:-6,orientation:2};
  assert.deepEqual(reflectedMixedRoot(root,empty,geo(owner),1,{mode:'vertical',x:10,y:0}),{itemId:owner,x:15,y:-6,orientation:2});

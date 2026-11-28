@@ -122,7 +122,7 @@ export function parseMixedScene(raw:string):MixedScenePreset{
   if(support&&support.ownerItemId!==p.itemId)throw Error('SCENE_OWNER');
   return {...p,support};
  });
- if(items.some(p=>!Number.isInteger(p.orientation))||!items.some(p=>p.support)||!mixedSceneSizeValid(items))throw Error('SCENE_LIMIT');
+ if(items.some(p=>p.support&&!Number.isInteger(p.orientation))||!items.some(p=>p.support)||!mixedSceneSizeValid(items))throw Error('SCENE_LIMIT');
  return {schema:'wand.preset.mixed-scene@1',gameVersion:'1.26.2',factor:2,anchor:v.anchor,items};
 }
 export function mixedSceneFromClip(clip:readonly DesignClipItem[],supports:readonly (SupportScene|null)[],anchor:'corner'|'center'='center'):MixedScenePreset{
@@ -146,7 +146,7 @@ export function mixedPlacementCounts(q:MixedScenePlacement){
  * Existing objects are never assumed to contain matching descendants. */
 export function mixedScenePlacement(clip:readonly DesignClipItem[],doc:MixedScenePreset,point:{x:number;y:number},axis:WorldSymmetryAxis|null,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,objects:readonly MainlandSavedObject[],omitted:number,free=false):MixedScenePlacement|null{
  if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId))return null;
- if(free&&(axis||clip.some(p=>!Number.isInteger(p.orientation))))return null;
+ if(free&&axis||clip.some((p,i)=>!Number.isInteger(p.orientation)&&(!free||!!doc.items[i].support)))return null;
  const verifiedSupport=new Set(doc.items.filter(p=>p.support&&doc.items.every(q=>q.itemId!==p.itemId||!!q.support)).map(p=>p.itemId));
  const base=groupPasteCandidate(clip,grids,rasters,defs,mixedSceneCounts(doc.items),objects,omitted,point.x,point.y,free,verifiedSupport);
  if(!base)return null;

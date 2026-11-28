@@ -439,7 +439,7 @@ export function indoorMixedScene(text:string):MixedScenePreset|null{
  try{return parseMixedScene(text);}catch{try{const scene=parseSupportScene(text);return mixedSceneFromClip([{itemId:scene.ownerItemId,dx:0,dy:0,orientation:2}],[scene],'corner');}catch{return null;}}
 }
 export function indoorMixedPlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,clip:readonly DesignClipItem[],doc:MixedScenePreset,anchor:ScenePreset['anchor'],x:number,y:number,sources:readonly (NonNullable<IndoorPlace['supportSource']>|null)[]|null=null,storageSources:readonly (IndoorStorageCloneSource|null)[]|null=null,copyContents=false,free=false):IndoorPlace[]|null{
- if(free&&clip.some(p=>!Number.isInteger(p.orientation)))return null;
+ if(clip.some((p,i)=>!Number.isInteger(p.orientation)&&(!free||face?.factor!==1||!!doc.items[i]?.support||!!storageSources?.[i])))return null;
  if(clip.length!==doc.items.length||clip.some((p,i)=>p.itemId!==doc.items[i].itemId)||sources&&(sources.length!==clip.length||sources.some((s,i)=>!!s!==!!doc.items[i].support))||[...mixedSceneCounts(doc.items)].some(([id,n])=>(stock.get(id)??0)<n))return null;
  if(storageSources){
   const tree=indoorEditableTree(face);
@@ -457,8 +457,8 @@ export function indoorMixedPlacement(face:IndoorSurface|null,shapes:Readonly<Rec
 export function captureIndoorMixedScene(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,supports:ReadonlyMap<number,SupportScene>,localStorageDuplicate=false,free=false):MixedScenePreset|null{
  const tree=indoorEditableTree(face);if(!tree||!face?.terrain||!face.factor||!indices.length||indices.length>ROOM_CUT_LIMIT||new Set(indices).size!==indices.length)return null;
  const clip:DesignClipItem[]=[],scenes:(SupportScene|null)[]=[];
- for(const i of indices){const o=tree.objects[i],s=supports.get(i)??null;if(!o||!isCardinal(o.orientation)||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i))||(!s&&!(face.positions[i]?.plain===true&&!face.positions[i]?.storageKnown||localStorageDuplicate&&face.positions[i]?.storage===true&&!face.positions[i]?.protected))||s&&s.ownerItemId!==o.itemId)return null;
-  clip.push({itemId:o.itemId,dx:o.x*2/face.factor,dy:o.y*2/face.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});scenes.push(s);
+ for(const i of indices){const o=tree.objects[i],s=supports.get(i)??null;if(!o||!(isCardinal(o.orientation)||free&&!s&&face.positions[i]?.plain===true&&!face.positions[i]?.storageKnown&&isEightWay(o.orientation))||Math.floor(o.itemId/100000)!==400||!allowed.has(o.itemId)||!(free?freeRoomPose(face,shapes,o.itemId,o.x,o.y,o.orientation):indoorClear(tree,shapes,i))||(!s&&!(face.positions[i]?.plain===true&&!face.positions[i]?.storageKnown||localStorageDuplicate&&face.positions[i]?.storage===true&&!face.positions[i]?.protected))||s&&s.ownerItemId!==o.itemId)return null;
+  clip.push({itemId:o.itemId,dx:o.x*2/face.factor,dy:o.y*2/face.factor,orientation:worldOrientationCode(o.orientation)!/4});scenes.push(s);
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  try{return mixedSceneFromClip(clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y})),scenes,'corner');}catch{return null;}
