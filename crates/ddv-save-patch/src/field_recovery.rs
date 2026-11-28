@@ -21,8 +21,9 @@ fn empty_grid_state(value:Option<&Value>)->bool{
 }
 
 /// Only player-owned, writable, structurally known inventory arrays.
-/// A parentless container is displayed as Inventory, not assumed to be
-/// a specific backpack slot on every game version.
+/// Native ProfilePlayer semantic roles (Switch/Steam v1.24.13):
+/// ID 0 Backpack, ID 1 HomeStorage. Recheck the persisted v643 shape.
+/// Other parentless records are not inferred to be ordinary inventory.
 pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
  let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<=8192).ok_or(BAD)?;
  let collection=&root["World"]["GridCollection"];
@@ -48,11 +49,13 @@ pub fn destinations(root:&Value)->Result<Vec<RecoveryDestination>,PatchError>{
    c.as_object().is_none_or(|m|m.len()!=7||m.keys().any(|k|!matches!(k.as_str(),"ID"|"ParentItemID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ExtraSize")))||
    c["ExtraSize"].as_u64().is_none(){continue;}
   let Some(capacity)=c["Size"].as_u64().and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0&&*n<=8192)else{continue;};
-  let Some(inv)=c["Inventory"].as_array().filter(|a|a.len()<=8192)else{continue;};
+  let Some(inv)=c["Inventory"].as_array().filter(|a|a.len()<=capacity as usize)else{continue;};
+  if c["ExtraSize"].as_u64().is_none_or(|n|n>u64::from(capacity)){continue;}
+  if inv.iter().any(|row|row["ItemID"].as_u64().is_none_or(|n|n>u32::MAX as u64)||row["Amount"].as_u64().is_none_or(|n|n>i32::MAX as u64)||!empty_slot(row)&&(row["ItemID"]==0||row["Amount"]==0)){continue;}
   // Existing slots are opaque. Never coerce or overwrite unknown fields.
   let refs=owners.get(&u64::from(n)).map(Vec::as_slice).unwrap_or(&[]);
-  let (parent_item,owner)=if c["ParentItemID"].is_null()||c["ParentItemID"].as_u64()==Some(0){
-   if !refs.is_empty(){continue;}(None,None)
+  let (parent_item,owner)=if n<=1{
+   if !refs.is_empty()||!(c["ParentItemID"].is_null()||c["ParentItemID"].as_u64()==Some(0)){continue;}(None,None)
   }else{
    let Some(item)=c["ParentItemID"].as_u64().filter(|n|*n>0)else{continue;};
    let [target]=refs else{continue;};
@@ -122,29 +125,45 @@ pub fn recover(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),orien
 #[cfg(test)]
 mod tests{
  use super::*;
- const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"1":{"ID":1,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0},"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":30000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40001680,"X":3,"Y":4,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
+ const SOURCE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0},"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":30000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":40001680,"X":3,"Y":4,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
  fn target()->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:"1".into(),item_id:30000001}}
  #[test]fn recover_to_inventory_or_chest_preserves_unrelated_bytes(){
   let root:Value=serde_json::from_str(SOURCE).unwrap();assert_eq!(destinations(&root).unwrap().len(),2);
-  for id in ["1","9"]{let result=recover(SOURCE,&target(),(1,2),"GridOrientation_Down",id).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);assert_eq!(v["Player"]["ContainerInventories"][id]["Inventory"][0]["Amount"],if id=="1"{1}else{6});assert!(result.contains("1e2"));}
+  for id in ["0","9"]{let result=recover(SOURCE,&target(),(1,2),"GridOrientation_Down",id).unwrap();let v:Value=serde_json::from_str(&result).unwrap();assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);assert_eq!(v["Player"]["ContainerInventories"][id]["Inventory"][0]["Amount"],if id=="0"{1}else{6});assert!(result.contains("1e2"));}
+ }
+ #[test]fn semantic_inventory_roles_and_capacity_are_not_inferred(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let mut home=root["Player"]["ContainerInventories"]["0"].clone();home["ID"]=1.into();home["Size"]=48.into();home["ExtraSize"]=6.into();
+  root["Player"]["ContainerInventories"]["1"]=home.clone();
+  home["ID"]=4.into();root["Player"]["ContainerInventories"]["4"]=home;
+  let rows=destinations(&root).unwrap();
+  assert_eq!(rows.iter().map(|r|r.container_id.as_str()).collect::<Vec<_>>(),vec!["0","1","9"]);
+  assert_eq!(rows[1].capacity,48);
+  let result=recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","1").unwrap();
+  let v:Value=serde_json::from_str(&result).unwrap();assert_eq!(v["Player"]["ContainerInventories"]["1"]["Inventory"][0]["ItemID"],30000001);
+  assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","4").is_err());
+  // Backpack ID zero can both allocate and increment.
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000001,"Amount":7,"State":null}]);
+  let result:Value=serde_json::from_str(&recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],8);
  }
  #[test]fn recover_into_existing_empty_slot_preserves_indices_and_opaque_rows(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
-  root["Player"]["ContainerInventories"]["1"]["Inventory"]=json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":0,"Amount":0}]);
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":0,"Amount":0}]);
   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({});
   let raw=root.to_string();
   assert_eq!(destinations(&root).unwrap()[0].used,1);
-  let output:Value=serde_json::from_str(&recover(&raw,&target(),(1,2),"GridOrientation_Down","1").unwrap()).unwrap();
-  assert_eq!(output["Player"]["ContainerInventories"]["1"]["Inventory"],json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":30000001,"Amount":1,"State":null}]));
-  root["Player"]["ContainerInventories"]["1"]["Inventory"][1]["State"]=json!({"Unknown":true});
+  let output:Value=serde_json::from_str(&recover(&raw,&target(),(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(output["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":30000001,"Amount":1,"State":null}]));
+  root["Player"]["ContainerInventories"]["0"]["Inventory"][1]["State"]=json!({"Unknown":true});
   assert_eq!(destinations(&root).unwrap()[0].used,2);
-  assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","1").is_err());
+  assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").is_err());
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
-  assert!(recover(SOURCE,&target(),(2,2),"GridOrientation_Down","1").is_err());
-  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"Unknown":1});assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","1").is_err());
+  assert!(recover(SOURCE,&target(),(2,2),"GridOrientation_Down","0").is_err());
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"Unknown":1});assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").is_err());
   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=Value::Null;
-  root["Player"]["ContainerInventories"]["1"]["Inventory"]=json!([{"ItemID":30000002,"Amount":1,"State":null},{"ItemID":30000003,"Amount":1,"State":null}]);assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","1").is_err());
+  root["Player"]["ContainerInventories"]["0"]["Inventory"]=json!([{"ItemID":30000002,"Amount":1,"State":null},{"ItemID":30000003,"Amount":1,"State":null}]);assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").is_err());
  }
 }
