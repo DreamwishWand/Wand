@@ -123,6 +123,15 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  }
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
+/** Exchange two existing ordinary leaves in one transaction. In free mode
+ * their footprints may differ and occupied anchors may overlap other leaves. */
+export function supportFreeSwap(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,first:number,second:number):SupportChildEdit[]|null{
+ const a=tree.objects[first],b=tree.objects[second];
+ if(!a||!b||first===second)return null;
+ const left=supportFreeEdit(tree,shapes,eligible,raster,first,b.x,b.y,a.orientation,true);
+ const right=supportFreeEdit(tree,shapes,eligible,raster,second,a.x,a.y,b.orientation,true);
+ return left&&right?[...left,...right]:null;
+}
 export type SupportStockPlan={action:'place';itemId:number;expectedStock:number;x:number;y:number;orientation:string}|{action:'pickup';itemId:number;expectedStock:number;index:number;expectedX:number;expectedY:number;expectedOrientation:string};
 export function supportPlacementFits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,raster:TerrainRaster,itemId:number,x:number,y:number,orientation:string,nonstandard=false):boolean{
  if(!Number.isSafeInteger(itemId)||Math.floor(itemId/100000)!==400||!isCardinal(orientation)||!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||tree.objects.length>=512)return false;
