@@ -504,7 +504,7 @@ pub(super) fn underwater_plain_items(root:&Value)->HashSet<u64>{
         let Some(objects)=g["Objects"].as_object()else{continue;};
         scanned=scanned.saturating_add(objects.len());if scanned>200_000{return HashSet::new();}
         for (id,o) in objects{
-            let Some(item)=o["ItemID"].as_u64().filter(|n|n/100_000==400&&!crate::storage_source::is_storage(*n))else{continue;};
+            let Some(item)=o["ItemID"].as_u64().filter(|n|n/100_000==400&&!crate::storage_source::is_storage(*n)&&crate::storage_source::support_source_path(*n).is_none())else{continue;};
             if key_id(id).is_some_and(|n|n>0)&&o["ID"].as_u64()==key_id(id)&&
                o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))&&observed_coordinates(m).is_some())&&
                o.get("State").is_none_or(Value::is_null)&&o["Orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){plain.insert(item);}
@@ -2818,7 +2818,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
-    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;let mut local_storage=HashMap::new();
+    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;let mut local_storage=HashMap::new();let mut local_support=None;
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
@@ -2842,6 +2842,10 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
             if crate::storage_source::is_storage(item){
                 if !local_storage.contains_key(&item){let t=if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{crate::storage_source::initial_storage_template(item)}else{crate::storage_source::placement_storage_template(&root,item)}.ok_or(bad)?;local_storage.insert(item,t);}
+            }else if crate::storage_source::support_source_path(item).is_some(){
+                if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{return Err(bad);}
+                let trees=local_support.get_or_insert_with(||crate::storage_source::initial_support_trees(&root,inventory.keys().filter_map(|k|k.parse::<u64>().ok())));
+                if !trees.contains_key(&item){return Err(bad);}
             }else{let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));if !ids.contains(&item){return Err(bad);}}
             let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
             if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
@@ -2863,7 +2867,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let ids=(0..count).map(|offset|next.checked_add(offset).filter(|n|*n<u32::MAX as u64).map(|n|n.to_string()).ok_or(bad)).collect::<Result<Vec<_>,_>>()?;
         for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
     }
-    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{
+    if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS||local_support.is_some(){
         use ddv_save_patch::bulk_furniture::{BulkPlace,BulkScenePlace,preview_bulk_furniture,preview_bulk_storage_scene_place};
         let places=poses.iter().map(|(key,item,xy,orientation,row_free)|Ok(BulkPlace{destination:destinations.get(key).ok_or(bad)?,item_id:*item,xy:*xy,orientation,free_placement:*row_free})).collect::<Result<Vec<_>,CodecError>>()?;
         let mut templates=HashMap::new();
@@ -2874,8 +2878,8 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
             templates.insert(p.item_id,(template,capacity));
         }}
         let json=std::str::from_utf8(profile).map_err(|_|bad)?;
-        let mut draft=if templates.is_empty(){preview_bulk_furniture(json,&[],&places)}else{
-            let rows=places.into_iter().map(|pose|BulkScenePlace{pose,tree:None}).collect::<Vec<_>>();
+        let mut draft=if templates.is_empty()&&local_support.is_none(){preview_bulk_furniture(json,&[],&places)}else{
+            let rows=places.into_iter().map(|pose|{let tree=local_support.as_ref().and_then(|m|m.get(&pose.item_id));BulkScenePlace{pose,tree}}).collect::<Vec<_>>();
             preview_bulk_storage_scene_place(json,&rows,&templates)
         }.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
