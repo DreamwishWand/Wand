@@ -890,6 +890,30 @@ function nativeAcquisitionRole(category,path,sourceClass,attributes){
 // itemlists (39/39 each), plus the independently verified 1.26.2 source
 // equality evidence and directly decoded changed Condition.json.
 // Hashes below identify complete sorted file-SHA ledgers, NOT SRC-00 scans.
+function earlySourceCensus(project,at1253,added,hot){
+  const bytes=readFileSync(join(project,'data/ddv/item-master/historical-early-source-census-steam-12413-1253.json'));
+  check(hash(bytes)==='942ae38186d3d094f1f74ec46cbd0564419ba79b318cd04d7fe3a7812f468e52','EARLY_CENSUS_SHA');
+  const doc=JSON.parse(bytes);
+  const digest=x=>hash(Buffer.from(JSON.stringify(x)));
+  check(doc.schema==='wand.db01.historical-early-source-census@1'&&doc.platform==='Steam'&&doc.sourceCensus===39&&doc.sourcePresenceOnly===true&&doc.snapshots.length===3,'EARLY_CENSUS_SCHEMA');
+  const expected=['1.24.13','1.25.0','1.25.3'];
+  const sets=doc.snapshots.map((s,i)=>{
+    check(s.version===expected[i]&&Object.keys(s.sourceFiles).length===39&&digest(Object.fromEntries(Object.entries(s.sourceFiles).sort(([a],[b])=>a<b?-1:a>b?1:0)))===s.sourceCorpusSha256,'EARLY_CORPUS');
+    const runs=JSON.parse(inflateSync(Buffer.from(s.idRuns,'base64'),{maxOutputLength:400000}));
+    check(Array.isArray(runs)&&runs.length%2===0&&runs.length<=80000,'EARLY_RUNS');
+    const ids=[];let last=0;
+    for(let j=0;j<runs.length;j+=2){
+      const [gap,n]=[runs[j],runs[j+1]];
+      check(ID(gap)&&ID(n)&&ids.length+n<=s.definitionCount&&Number.isSafeInteger(last+gap+n-1),'EARLY_RUN');
+      const start=last+gap;for(let k=0;k<n;k++)ids.push(start+k);last=start+n-1;
+    }
+    check(ids.length===s.definitionCount&&digest(ids)===s.itemIdsSha256,'EARLY_IDS');
+    return new Set(ids);
+  });
+  check(sets[2].size===at1253.length&&at1253.every(i=>sets[2].has(i))&&
+    [...sets[0],...sets[1]].every(i=>!added.has(i)&&!hot.has(i)),'EARLY_BOUNDARY');
+  return {snapshots:doc.snapshots,sets};
+}
 function historicalSourceDelta(project,source,rows){
   const h=JSON.parse(readFileSync(join(project,'data/ddv/item-master','historical-source-delta-steam-1253-1262.json'),'utf8'));
   const digestJson=value=>hash(Buffer.from(JSON.stringify(value)));
@@ -936,14 +960,18 @@ function historicalSourceDelta(project,source,rows){
   check(offers.source.snapshotKey===shop.snapshotKey&&observed.length===13&&
     JSON.stringify(observed)===JSON.stringify(shop.newItemIds),'HISTORICAL_SHOP_CENSUS');
   const shopIds=new Set(observed);
+  const early=earlySourceCensus(project,at1253,added,hot);
   return new Map(rows.map(row=>{
-    const id=row.itemId,isHot=hot.has(id),isNew=added.has(id),isAdded=isNew||isHot;
-    const first=isHot?hotfix.version:isNew?expansion.version:before.version;
+    const id=row.itemId,isHot=hot.has(id),isNew=added.has(id);
+    const earlyIndex=early.sets.findIndex(s=>s.has(id));
+    const first=isHot?hotfix.version:isNew?expansion.version:early.snapshots[earlyIndex].version;
+    const target=isHot?hotfix:isNew?expansion:earlyIndex>0?early.snapshots[earlyIndex]:null;
+    const previous=isHot?expansion:isNew?before:earlyIndex>0?early.snapshots[earlyIndex-1]:null;
     return [id,{
-      firstObservedVersion:first,introducedVersion:isAdded?first:null,
-      introducedAfterVersion:isHot?expansion.version:isNew?before.version:null,
-      introducedAfterSourceCorpusSha256:isHot?expansion.sourceCorpusSha256:isNew?before.sourceCorpusSha256:null,
-      introducedSourceCorpusSha256:isHot?hotfix.sourceCorpusSha256:isNew?expansion.sourceCorpusSha256:null,
+      firstObservedVersion:first,introducedVersion:target?first:null,
+      introducedAfterVersion:previous?.version??null,
+      introducedAfterSourceCorpusSha256:previous?.sourceCorpusSha256??null,
+      introducedSourceCorpusSha256:target?.sourceCorpusSha256??null,
       sourceReleaseId:isHot?'hotfix.1.26.2':isNew?'dlc.the-keepsake-sea':null,
       sourceReleaseKind:isHot?'hotfix':isNew?'paid_dlc':null,
       observationEvidence:'verified_original_source_comparison',

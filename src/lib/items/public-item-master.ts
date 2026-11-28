@@ -566,6 +566,8 @@ export interface PremiumBundleCatalog {
   readonly source:Readonly<Record<string,unknown>>;
   readonly counts:Readonly<Record<string,number>>;
   readonly definitions:readonly PremiumBundleDefinition[];
+  /** Shared native text dictionary; candidate localization keys are source evidence. */
+  readonly componentDescriptionTexts?:readonly (readonly [english:string,keys:readonly (readonly [member:string,key:string])[],translations:Readonly<Partial<Record<ItemMasterLocale,string>>>])[];
 }
 
 /** Only confirmed Item content attribution selects a bundle. Each revision is matched independently. */
@@ -1431,7 +1433,8 @@ export async function openPublicItemMaster(
     async getPremiumBundleLocalizedText(ids:readonly string[],locale:ItemMasterLocale){
       assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
-      if(ids.length)await premiumCatalog();
+      const catalog=ids.length?await premiumCatalog():null;
+      const componentTexts=new Map<string,Readonly<Partial<Record<ItemMasterLocale,string>>>>(catalog?.componentDescriptionTexts?.map(([english,,texts])=>[english,texts] as const)??[]);
       const definitions=ids.map(id=>premiumIndex?.get(id));
       const itemIds=[...new Set(definitions.flatMap(b=>b?[singleComponentNameId(b.current),singleComponentNameId(b.legacy)].filter(ID):[]))];
       const names=new Map<number,string>(),field='names.'+locale;
@@ -1441,7 +1444,7 @@ export async function openPublicItemMaster(
           if(row&&typeof name==='string'&&name.trim())names.set(row.itemId,name);
         }
       }
-      return Object.freeze(definitions.map(b=>b?resolvePremiumBundleText(b,locale,names):null));
+      return Object.freeze(definitions.map(b=>b?resolvePremiumBundleText(b,locale,names,componentTexts):null));
     },
     async getPremiumBundleMembership(ids:readonly number[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(ID),'INVALID_ITEM_BATCH');
