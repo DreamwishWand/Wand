@@ -9,7 +9,7 @@ import type {BlobEntry} from '../../../tools/photo-mode/split-loader.ts';
 type Body='male'|'female';
 type HairSelection={itemId:number;hairIndex:number;highlightIndex:number};
 type MapEntry=NativeSkinMap&{colorSpace:0|1;sampler:readonly [1,1,0,0,0,0]};
-type HairMaterial={dst:0;mask:string;maps:string;normal:string}&({shader:'PBR/PBR Hair'}|{shader:'PBR/PBR'|'PBR/PBR Clothing';tint:RGBA;metallicScale:number;glossScale:number;decalDefaultBlack?:true});
+type HairMaterial={dst:0;mask:string;maps:string;normal:string}&({shader:'PBR/PBR Hair'}|{shader:'PBR/PBR'|'PBR/PBR Clothing';tint:RGBA;metallicScale:number;glossScale:number;decalDefaultBlack?:true;cull?:0|2;alphaCutout?:boolean});
 type HairPart=AttachmentPartEntry&{material:string};
 type HairVariant={extraNodes:readonly AttachmentNode[];parts:readonly HairPart[]};
 export type HairAssetIndex={schema:'wand.photo-mode.hair-assets@1';gameVersion:'1.26.2';testOnly:true;colorEncoding:'srgb-setcolor-input';previewColorConversion:'unity-linear';gpuColorConversionVerified:false;shaderParityVerified:false;secondaryMotionVerified:false;palette:NativeHairPalette;standard:Record<Body,HairSelection>;items:Record<string,Partial<Record<Body,HairVariant>>>;textures:Record<string,MapEntry>;materials:Record<string,HairMaterial>};
@@ -26,7 +26,7 @@ export function validHairAssetIndex(x:unknown):x is HairAssetIndex{
   if(m.schema!=='wand.photo-mode.hair-assets@1'||m.gameVersion!=='1.26.2'||m.testOnly!==true||m.colorEncoding!=='srgb-setcolor-input'||m.previewColorConversion!=='unity-linear'||m.gpuColorConversionVerified!==false||m.shaderParityVerified!==false||m.secondaryMotionVerified!==false||!validNativeHairPalette(m.palette))return false;
   if(!m.items||!m.materials||!m.textures||!m.standard||Object.keys(m.items).length===0||Object.keys(m.items).length>4096||Object.keys(m.materials).length>8192||Object.keys(m.textures).length>24576)return false;
   if(!Object.values(m.textures).every(validMap))return false;
-  for(const v of Object.values(m.materials))if(!v||!['PBR/PBR Hair','PBR/PBR','PBR/PBR Clothing'].includes(v.shader)||v.dst!==0||![v.mask,v.maps,v.normal].every(k=>typeof k==='string'&&Object.hasOwn(m.textures,k))||m.textures[v.normal].colorSpace!==0||v.shader!=='PBR/PBR Hair'&&(!Array.isArray(v.tint)||v.tint.length!==4||!v.tint.every(c=>Number.isFinite(c)&&c>=0&&c<=1)||!Number.isFinite(v.metallicScale)||v.metallicScale<0||v.metallicScale>4||!Number.isFinite(v.glossScale)||v.glossScale<0||v.glossScale>4||v.shader==='PBR/PBR Clothing'&&(v.decalDefaultBlack!==true||v.metallicScale!==1||v.glossScale!==1)))return false;
+  for(const v of Object.values(m.materials))if(!v||!['PBR/PBR Hair','PBR/PBR','PBR/PBR Clothing'].includes(v.shader)||v.dst!==0||![v.mask,v.maps,v.normal].every(k=>typeof k==='string'&&Object.hasOwn(m.textures,k))||m.textures[v.normal].colorSpace!==0||v.shader!=='PBR/PBR Hair'&&(!Array.isArray(v.tint)||v.tint.length!==4||!v.tint.every(c=>Number.isFinite(c)&&c>=0&&c<=1)||(v.cull!==undefined&&v.cull!==0&&v.cull!==2)||(v.alphaCutout!==undefined&&typeof v.alphaCutout!=='boolean')||(v.shader!=='PBR/PBR'&&(v.cull===0||v.alphaCutout===true))||!Number.isFinite(v.metallicScale)||v.metallicScale<0||v.metallicScale>4||!Number.isFinite(v.glossScale)||v.glossScale<0||v.glossScale>4||v.shader==='PBR/PBR Clothing'&&(v.decalDefaultBlack!==true||v.metallicScale!==1||v.glossScale!==1)))return false;
   for(const [id,variants] of Object.entries(m.items)){
    if(!validSlot(Number(id))||String(Number(id))!==id||!variants||Object.keys(variants).length===0||Object.keys(variants).some(k=>k!=='male'&&k!=='female'))return false;
    for(const row of Object.values(variants))if(!row||!Array.isArray(row.extraNodes)||row.extraNodes.length>256||!Array.isArray(row.parts)||!int(row.parts.length,1,64)||!row.parts.every(p=>validPart(p,m)))return false;
@@ -58,7 +58,7 @@ export async function loadHairAttachments(m:HairAssetIndex|undefined,a:SavedAvat
    const material=m.materials[p.material];
    const [raw,mask,maps,normal]=await Promise.all([fetchAsset(p.asset,'.wha'),getMap(material.mask),getMap(material.maps),getMap(material.normal)]);signal.throwIfAborted();
    const geometry=decodeAttachmentPart(raw,p);
-   const hair:NativeAttachmentMaterial=material.shader==='PBR/PBR Hair'?{shader:material.shader,dst:0,colors,mask,maps,normal}:{shader:material.shader,dst:0,tint:previewHairLinear(material.tint),metallicScale:material.metallicScale,glossScale:material.glossScale,mask,maps,normal};
+   const hair:NativeAttachmentMaterial=material.shader==='PBR/PBR Hair'?{shader:material.shader,dst:0,colors,mask,maps,normal}:{shader:material.shader,dst:0,tint:previewHairLinear(material.tint),metallicScale:material.metallicScale,glossScale:material.glossScale,cull:material.cull,alphaCutout:material.alphaCutout,mask,maps,normal};
    return {geometry,hair};
   }));
   return {extraNodes:row.extraNodes,parts};

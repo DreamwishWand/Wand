@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {nativeAccessorySurface,nativeClothingSurface} from '../src/lib/photo-mode/native-accessory-surface.ts';
+import {nativeAccessorySurface,nativeClothingSurface,nativeAccessoryVisible,nativeAccessoryBackfaceNormal} from '../src/lib/photo-mode/native-accessory-surface.ts';
 const near=(a,b)=>{assert.equal(a.length,b.length);for(let i=0;i<a.length;i++)assert.ok(Math.abs(a[i]-b[i])<1e-12,[a,b])};
 const main=[.2,.4,.8,.1],tint=[.5,.75,.25,0],decal=[.1,.2,.3,.9];
 test('generic source mask controls tint and metal, with independent gloss',()=>{
@@ -21,3 +21,6 @@ test('metal and gloss saturate, albedo stays HDR-capable',()=>{
  const s=nativeClothingSurface([1,1,1,1],[2,0,1,0],[1,1,1,1],[1,1,1,1],[0,0,0,0],2,1);
  near(s.albedo,[2,2,2]);near(s.diffuse,[0,0,0]);near(s.specular,[2,2,2]);near([s.metallic,s.gloss],[1,1]);
 });
+
+test('native cutout threshold is maps green 0.5, independent of all other channels',()=>{for(const a of [0,1]){assert.equal(nativeAccessoryVisible([1,.4999,1,a],true),false);assert.equal(nativeAccessoryVisible([0,.5,0,a],true),true);assert.equal(nativeAccessoryVisible([0,0,0,a],false),true)}});
+test('backface changes only geometric Z contribution of the mapped normal',()=>{const packed=[.75,.625,0,1],n=[0,0,1],t=[1,0,0,1],front=nativeAccessoryBackfaceNormal(n,t,packed,true),back=nativeAccessoryBackfaceNormal(n,t,packed,false);near(front,[.5,.25,Math.sqrt(.6875)]);near(back,[.5,.25,-Math.sqrt(.6875)]);near(nativeAccessoryBackfaceNormal(n,[1,0,0,-1],packed,false),[.5,-.25,-Math.sqrt(.6875)])});

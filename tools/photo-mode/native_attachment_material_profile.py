@@ -16,11 +16,12 @@ def profile(m,shader,shader_bytes,digest):
         require(f.get('_dst')==0 and f.get('_src')==1,'unsupported hair blend')
         return dict(shader='PBR/PBR Hair',dst=0,rawMaterialColors={k:c[k] for k in ('_BaseColor','_ColorOne','_ColorTwo','_ColorThree')}),'_MaskMap'
     tint=c['_Tint'];require(len(tint)==4 and all(0<=v<=1 for v in tint),'unsupported tint range')
-    require(f.get('_AlphaClip')==0 and f.get('_Cull')==2,'unsupported alpha/cull state')
     if pid=='-8600332103802174571':
-        require(kw==['_NORMALMAP'] and f.get('_EmissiveIntensity')==0 and f.get('_DstBlend')==0 and f.get('_SrcBlend')==1 and f.get('_ZWrite')==1,'unsupported generic state')
+        cutout='_ALPHATEST_ON' in kw
+        require(kw in (['_NORMALMAP'],['_ALPHATEST_ON','_NORMALMAP']) and f.get('_AlphaClip')==int(cutout) and f.get('_Cull') in (0,2) and f.get('_EmissiveIntensity')==0 and f.get('_DstBlend')==0 and f.get('_SrcBlend')==1 and f.get('_ZWrite')==1,'unsupported generic state')
         metal,gloss=f['_Metallic'],f['_GlossMultiplier'];require(0<=metal<=4 and 0<=gloss<=4,'material scales')
-        return dict(shader='PBR/PBR',dst=0,tint=tint,metallicScale=metal,glossScale=gloss),'_MainTex'
+        return dict(shader='PBR/PBR',dst=0,tint=tint,metallicScale=metal,glossScale=gloss,cull=int(f['_Cull']),alphaCutout=cutout),'_MainTex'
+    require(f.get('_AlphaClip')==0 and f.get('_Cull')==2,'unsupported clothing alpha/cull state')
     require(not kw and all(t[k]['fileId']==0 and t[k]['pathId']=='0' for k in ('_DecalTex','_DecalMaps')),'unsupported clothing decal state')
     # The pinned serialized property table explicitly declares both defaults black.
     require(shader_bytes[536:545]==b'_DecalTex' and shader_bytes[596:601]==b'black' and shader_bytes[612:622]==b'_DecalMaps' and shader_bytes[672:677]==b'black','clothing default textures')

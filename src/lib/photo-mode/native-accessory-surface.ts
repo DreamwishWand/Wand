@@ -26,7 +26,24 @@ export function nativeClothingSurface(main:RGBA,maps:RGBA,tint:RGBA,decal:RGBA,d
  const channel=(i:0|1|2)=>main[i]*tint[i]*(1-decalMaps[1])+decal[i];
  return brdf([channel(0),channel(1),channel(2)],maps[0],maps[2]*globalGlossScale+globalGlossBias);
 }
+/** The alpha-test variant uses maps.g, not diffuse alpha or the serialized
+ * _Cutoff property. DXBC 266ae555...2974e instructions 28–30.
+ * The same instructions occur in the no-normal variant fb503e89...68dc. */
+export function nativeAccessoryVisible(maps:RGBA,alphaCutout:boolean):boolean{return !alphaCutout||maps[1]>=.5}
+/** The generic normal-mapped forward variant reverses only the geometric
+ * normal on back faces, keeping tangent and precomputed bitangent. */
+export function nativeAccessoryBackfaceNormal(normal:RGB,tangent:RGBA,packed:RGBA,front:boolean):RGB{
+ const x=2*packed[0]*packed[3]-1,y=2*packed[1]-1,z=Math.max(1e-16,Math.sqrt(1-Math.min(1,x*x+y*y)));
+ const [nx,ny,nz]=normal,[tx,ty,tz,w]=tangent,sign=w>0?1:-1,f=front?1:-1;
+ const a=tx*x+(ny*tz-nz*ty)*sign*y+nx*z*f,b=ty*x+(nz*tx-nx*tz)*sign*y+ny*z*f,c=tz*x+(nx*ty-ny*tx)*sign*y+nz*z*f;
+ const l=Math.hypot(a,b,c);if(!(l>0)||!Number.isFinite(l))throw Error('Invalid accessory normal');return [a/l,b/l,c/l];
+}
 export const nativeAccessorySurfaceGLSL=`
+bool wandAccessoryVisible(vec4 maps,bool cutout){return !cutout||maps.g>=.5;}
+vec3 wandAccessoryNormal(vec4 packedNormal,vec3 n,vec4 t,bool front){
+ vec3 p=wandUnpackSkinNormal(packedNormal);float signT=t.w>0.?1.:-1.;
+ return normalize(t.xyz*p.x+cross(n,t.xyz)*(signT*p.y)+n*p.z*(front?1.:-1.));
+}
 struct WandAccessorySurface {vec3 albedo;vec3 diffuse;vec3 specular;float metallic;float gloss;};
 WandAccessorySurface wandAccessoryBRDF(vec3 albedo,float metallic,float gloss){
  float m=clamp(metallic,0.,1.);
