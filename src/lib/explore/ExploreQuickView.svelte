@@ -11,7 +11,8 @@
   import {currentItemViewMaster} from '$lib/items/item-view-master';
   import {readItemPriceDetails,type ItemPriceDetails} from '$lib/items/public-item-price-details';
   import {exploreLabel} from './copy';
-  import {itemEntityHref} from '$lib/items/entity-item-url';
+  import {itemEntityHref,itemPageCopy} from '$lib/items/entity-item-url';
+  import {itemPageNativeFacts} from '$lib/items/item-page-details';
   import {ITEM_ENTITY_PAGE_AVAILABLE} from './item-page-availability';
   import type {ExploreItem} from './model';
   let {item,name,locale,sourcePath,attributes,owned,actions,variants,close,relatedWorks}:{
@@ -26,6 +27,10 @@
   let failed=$state(false);
   let attempt=$state(0);
   let client:CollectionEvidenceHandle|undefined;
+  let footprint=$state.raw<ReturnType<typeof itemPageNativeFacts>['footprint']>(null);
+  let geometryFailed=$state(false),geometryAttempt=$state(0);
+  const detailCopy=$derived(itemPageCopy(locale));
+  const dimensionScale=$derived(footprint?104/Math.max(footprint.x,footprint.y):0);
   let price=$state.raw<Readonly<ItemPriceDetails>|null>(null);
   let priceFailed=$state(false),priceLoading=$state(false),priceAttempt=$state(0);
   const priceSections=$derived([
@@ -43,6 +48,18 @@
     void client.loadAcquisition(id,base).then(result=>{
       if(live){acquisition=result;loading=false;}
     },()=>{if(live){loading=false;failed=true;}});
+    return()=>{live=false;};
+  });
+  $effect(()=>{
+    const id=item.itemId,category=item.nativeCategory;void geometryAttempt;
+    let live=true;
+    footprint=null;geometryFailed=false;
+    if(category==='Furniture'||category==='Building'){
+      void currentItemViewMaster(base).then(db=>db.getItem(id)).then(record=>{
+        if(live&&record?.itemId===id&&record.nativeCategory===category)
+          footprint=itemPageNativeFacts(record).footprint;
+      },()=>{if(live)geometryFailed=true;});
+    }
     return()=>{live=false;};
   });
   $effect(()=>{
@@ -74,6 +91,16 @@
         {#if row.values.length}<div><dt>{row.label}</dt><dd>{row.values.join(' · ')}</dd></div>{/if}
       {/each}
     </dl>
+  {/if}
+  {#if footprint}
+    <section class="native-dimensions" data-native-dimensions aria-label={detailCopy.dimensions}>
+      <div class="dimension-grid" role="img" aria-label={detailCopy.dimensions+' '+footprint.x+' × '+footprint.y}
+        style:width={footprint.x*dimensionScale+'px'} style:height={footprint.y*dimensionScale+'px'}
+        style:background-size={dimensionScale+'px '+dimensionScale+'px'}></div>
+      <div><strong>{footprint.x} × {footprint.y}</strong><span>{detailCopy.dimensions}</span><small>{detailCopy.boundsOnly}</small></div>
+    </section>
+  {:else if geometryFailed}
+    <p class="minor">{detailCopy.incomplete} <button onclick={()=>geometryAttempt++}>{copy.retry}</button></p>
   {/if}
   {#if relatedWorks}{@render relatedWorks(item.itemId)}{/if}
   {#if owned}<p class="owned"><WandIcon name="owned" size={16}/>{label('ownedConfirmed')}</p>{/if}
@@ -113,6 +140,11 @@
   .color-list{display:flex;flex-wrap:wrap;gap:5px 8px}
   .color-tag{display:inline-flex;align-items:center;gap:4px}
   .color-swatch{display:inline-block;width:13px;height:13px;flex:none;border-radius:50%;border:1px solid var(--wand-line)}
+  .native-dimensions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;padding:8px 0;border-block:1px solid var(--wand-line)}
+  .native-dimensions>div:last-child{flex:1;min-width:96px;display:grid;gap:3px;font-size:.8rem}
+  .native-dimensions strong{font-size:1rem;font-variant-numeric:tabular-nums}
+  .native-dimensions small{opacity:.72;line-height:1.35}
+  .dimension-grid{flex:none;box-sizing:content-box;max-width:100%;border:1px solid var(--wand-muted);background-color:var(--wand-surface-raised);background-image:linear-gradient(to right,var(--wand-line) 1px,transparent 1px),linear-gradient(to bottom,var(--wand-line) 1px,transparent 1px)}
   .owned{display:flex;align-items:center;gap:5px;font-size:.82rem}
   .minor{font-size:.78rem;line-height:1.4;margin:8px 0}
   .configured-prices{display:grid;gap:4px}
