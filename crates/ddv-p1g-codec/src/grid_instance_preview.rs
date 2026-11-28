@@ -3553,9 +3553,21 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
 }
 
 /// Exact category membership, built from the shared DB01 source (not ID ranges).
-fn activity_item_id(item:u64)->bool{
+pub(super) fn activity_item_id(item:u64)->bool{
  static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
+}
+/// Return only transient ordinals for stateless Activity Items; room UI
+/// never receives native Grid IDs or object IDs.
+pub(super) fn field_recovery_ordinals(source:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
+ let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+ let (scan,_)=scan_grid_instances(source)?;
+ if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+ Ok(scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
+  let xy=(*xy)?;
+  let ori=scan.rows.get(i)?.get("orientation")?.as_str()?;
+  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::stateless_field_object(&root,t,xy,ori)).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
+ }).collect())
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
  Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(|item|crate::storage_source::is_storage(item)&&(r.owner.is_some()||crate::storage_source::placement_storage_template(root,item).is_some_and(|(_,size)|size==r.capacity)))).collect())
@@ -3626,8 +3638,15 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
  if mission_items_referenced(root,&checked)?{return Err(bad);}
  let targets=resolve_grid_mixed_targets(source,&selections)?;
  let mut groups=HashMap::<String,Vec<String>>::new();
+ let mut bounds=HashMap::<String,(u64,u64,u64)>::new();
  for (t,s) in targets.iter().zip(&selections){
-  let (_,_,factor,sx,sy)=plain_scene_identity(root,&t.grid_id)?;
+  let (factor,sx,sy)=if let Some(b)=bounds.get(&t.grid_id){*b}else{
+   let grid=&root["World"]["GridCollection"]["Grids"][&t.grid_id];
+   let b=if grid["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/")){
+    crate::indoor_room_view::recovery_surface_bounds(root,&t.grid_id)?
+   }else{let (_,_,f,x,y)=plain_scene_identity(root,&t.grid_id)?;(f,x,y)};
+   bounds.insert(t.grid_id.clone(),b);b
+  };
   let (x,y)=s.2;
   if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||!ddv_save_patch::field_recovery::stateless_field_object(root,t,s.2,s.4.as_deref().ok_or(bad)?){return Err(bad);}
   groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
@@ -3658,6 +3677,29 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn activity_recovery_on_owned_room_surfaces_reuses_shared_writer(){
+        let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
+        let item=ids[0];
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).unwrap();
+        let rows=catalog["grids"].as_array().unwrap();
+        let floor=rows.iter().find(|r|r[0].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room"))).unwrap();
+        let wall=rows.iter().find(|r|r[0].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Wall"))).unwrap();
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42,"WallGridIDs":{"0":43}}}}]}],"GridCollection":{"Grids":{}}}});
+        for (gid,path) in [(42,&floor[0]),(43,&wall[0])]{
+            root["World"]["GridCollection"]["Grids"][gid.to_string()]=serde_json::json!({"ID":gid,"GridDataPath":path,"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":item,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}});
+        }
+        let raw=root.to_string();
+        let ordinals=field_recovery_ordinals(raw.as_bytes()).unwrap();
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":ordinals[&("42".into(),"1".into())],"itemId":item.to_string(),"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":ordinals[&("43".into(),"1".into())],"itemId":item.to_string(),"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down"}]});
+        let out:Value=serde_json::from_str(&activity_recovery_candidate(raw.as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],2);
+        assert_eq!(out["World"]["PlayerHouses"],root["World"]["PlayerHouses"]);
+        for gid in ["42","43"]{assert!(out["World"]["GridCollection"]["Grids"][gid]["Objects"].as_object().unwrap().is_empty());}
+        root["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]["1"]=serde_json::json!({"FloorGridID":42});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+    }
 
     #[test]
     fn source_mission_targets_follow_current_slots_not_completion_history(){
