@@ -128,4 +128,52 @@ pub(super) fn plain_source_items()->&'static Vec<u64>{
  static ITEMS:OnceLock<Vec<u64>>=OnceLock::new();
  ITEMS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/plain-furniture-source.json"))).expect("compiled plain furniture source"))
 }
-pub(super) fn is_plain_source_item(id:u64)->bool{!is_storage(id)&&plain_source_items().binary_search(&id).is_ok()}
+pub(super) fn support_source_path(id:u64)->Option<&'static str>{
+ static SUPPORT:OnceLock<Value>=OnceLock::new();
+ SUPPORT.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/support-source.json"))).expect("compiled support source")).get(id.to_string())?.as_str()
+}
+/// Establish the child factor from a matching, exclusively owned native
+/// Grid. The original source proves the owner/path, not the saved factor.
+pub(super) fn initial_support_trees(root:&Value,ids:impl Iterator<Item=u64>)->std::collections::HashMap<u64,Value>{
+ use std::collections::{HashMap,HashSet};
+ let mut out=HashMap::new();
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return out;}
+ let collection=&root["World"]["GridCollection"];
+ let Some(grids)=collection["Grids"].as_object()else{return out;};
+ let diff=collection.get("DiffGrids");
+ if grids.len()>100_000||diff.is_some_and(|d|!d.is_object()){return out;}
+ static TERRAIN:OnceLock<Value>=OnceLock::new();
+ let terrain=TERRAIN.get_or_init(||serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).expect("support terrain"));
+ let paths:HashSet<&str>=terrain["grids"].as_array().into_iter().flatten().filter_map(|row|row[0].as_str()).collect();
+ let mut refs=HashMap::<u64,usize>::new();let mut witnesses=Vec::new();let mut count=0usize;
+ for (scope,field) in [(Some(grids),"Objects"),(diff.and_then(Value::as_object),"ModifiedObjects")]{
+  for (gid,g) in scope.into_iter().flatten(){
+   let Some(objects)=g[field].as_object()else{continue;};
+   count=count.saturating_add(objects.len());if count>200_000{return out;}
+   for (oid,obj) in objects{
+    let Some(child)=obj["State"]["SubGrid"]["GridID"].as_u64().filter(|n|*n>0)else{continue;};
+    *refs.entry(child).or_default()+=1;
+    if field!="Objects"||g["ID"].as_u64().is_none_or(|n|n.to_string()!=*gid)||diff.is_some_and(|d|d.get(gid).is_some())||
+      obj["ID"].as_u64().is_none_or(|n|n==0||n.to_string()!=*oid)||
+      obj["State"].as_object().is_none_or(|m|m.len()!=1)||obj["State"]["SubGrid"].as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"GridID"|"DesignID"))||m.get("DesignID").is_some_and(|v|!v.is_null())){continue;}
+    let Some(path)=obj["ItemID"].as_u64().and_then(support_source_path)else{continue;};
+    if !paths.contains(path){continue;}
+    let key=child.to_string();let Some(grid)=grids.get(&key)else{continue;};
+    if diff.is_some_and(|d|d.get(&key).is_some())||grid["ID"].as_u64()!=Some(child)||grid["GridDataPath"].as_str()!=Some(path)||
+       grid.get("GridDefaultLayoutPath").is_some_and(|v|!v.is_null()&&v.as_str()!=Some(""))||
+       grid.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"Objects"|"GridDataPath"|"TessellationFactor"|"NextGridObjectID"|"GridDefaultLayoutPath"))){continue;}
+    if let Some(factor)=grid["TessellationFactor"].as_u64().filter(|n|matches!(n,1|2)){witnesses.push((child,path,factor));}
+   }
+  }
+ }
+ let mut factors=HashMap::new();let mut conflicts=HashSet::new();
+ for (child,path,factor) in witnesses{if refs.get(&child)!=Some(&1){continue;}if factors.insert(path,factor).is_some_and(|old|old!=factor){conflicts.insert(path);}}
+ for id in ids{
+  if is_storage(id){continue;}
+  let Some(path)=support_source_path(id)else{continue;};
+  if conflicts.contains(path){continue;}
+  if let Some(factor)=factors.get(path){out.insert(id,serde_json::json!({"factor":factor,"sourcePath":path,"objects":[]}));}
+ }
+ out
+}
+pub(super) fn is_plain_source_item(id:u64)->bool{!is_storage(id)&&support_source_path(id).is_none()&&plain_source_items().binary_search(&id).is_ok()}
