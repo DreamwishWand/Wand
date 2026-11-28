@@ -182,9 +182,10 @@ def exact_objects(aa, locations):
                                   if (p := dependency_path(aa,dep)) is not None}))
             if paths:
                 work[paths].append((guid,loc))
-    for paths, group in work.items():
-        print("Inspecting:", ", ".join(p.name for p in paths), "references:",len(group),flush=True)
+    for group_no,(paths, group) in enumerate(work.items(),1):
+        print(f"Loading asset bundle group {group_no}/{len(work)}:", ", ".join(p.name for p in paths), "references:",len(group),flush=True)
         env = UnityPy.load(*(str(p) for p in paths))
+        print(f"  Bundle group {group_no}/{len(work)} loaded; checking source identities...",flush=True)
         files = list(env.assets)
         # Each SerializedFile is owned by a loaded BundleFile; do not infer
         # ownership from the asset display name or another catalog entry.
@@ -196,6 +197,7 @@ def exact_objects(aa, locations):
                 raise ValueError("Cannot establish loaded bundle identity: "+p.name)
             owned=owned_serialized_files(root[0],files)
             bundles.append((p.relative_to(aa).as_posix(),file_sha(p),owned))
+        print(f"  Source identities ready; decoding {len(group)} references...",flush=True)
         for guid,loc in group:
             cls=loc["class"]
             wanted="MonoBehaviour" if cls=="MemoryShardMaskData" else cls
