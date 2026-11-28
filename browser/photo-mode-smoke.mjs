@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
 import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.mjs';
 
 const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
@@ -81,6 +82,7 @@ try{
   browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
+  await checkNativeMakeupBake(page);
   const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
