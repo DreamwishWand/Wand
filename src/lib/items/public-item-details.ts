@@ -19,6 +19,7 @@ import {
   type ItemFieldProjection,
 } from './public-item-master.ts';
 import {readItemPriceDetails,type ItemPriceDetails} from './public-item-price-details.ts';
+import {readStoreItemSourceEvidence,type StoreItemSourceEvidence} from './public-store-source-evidence.ts';
 import {createCanonicalRecipeReader,type CanonicalRecipe} from '../acquisition/canonical-recipes.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -194,6 +195,7 @@ export interface PublicItemDetailsClient {
   /** Canonical source tags, series, worlds and browse universe with one locale. */
   getItemTaxonomyDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemTaxonomyDetails>|null)[]>;
   getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
+  getStoreItemSourceEvidence(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<StoreItemSourceEvidence>|null)[]>;
   /** Original mining, timebending and seed production routes, not live availability. */
   getItemProductionSources(itemIds:readonly number[]):Promise<readonly (Readonly<ProductionItemEvidence>|null)[]>;
   /** Source-defined explicit loot and stall slots, never live stock or price. */
@@ -465,6 +467,9 @@ export async function openPublicItemDetails(
     },
     async getItemProductionSources(itemIds:readonly number[]){
       return createProductionSourceReader(await complete()).getForItems(itemIds);
+    },
+    async getStoreItemSourceEvidence(itemIds:readonly number[],locale:ItemMasterLocale){
+      return readStoreItemSourceEvidence(await complete(),itemIds,locale);
     },
     async getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
       return readItemPriceDetails(await complete(),itemIds,locale);
