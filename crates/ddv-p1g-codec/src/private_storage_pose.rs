@@ -1,0 +1,78 @@
+//! Restore private storage contents and original poses as a single draft.
+//! Existing storage identities are preserved; no new placement or stock use.
+use crate::CodecError;
+use ddv_save_patch::{GridCoordinateTarget,GridObjectKind,GridMixedEdit,MAX_GRID_MIXED_EDITS};
+use serde_json::Value;
+use std::collections::{HashMap,HashSet};
+use zeroize::Zeroizing;
+
+pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<String,CodecError>{
+ let bad=CodecError::Json;
+ // The existing scope resolver has authenticated every outdoor grid. Reject
+ // object-scoped regions, which could move a root across a selected boundary.
+ if scope.is_empty()||scope.iter().any(|s|s.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=*s)){return Err(bad);}
+ let doc:Value=serde_json::from_str(backup).map_err(|_|bad)?;
+ if doc["schema"]!="wand.private.storage-contents@2"||doc["skipped"].as_u64()!=Some(0){return Err(bad);}
+ let rows=doc["rows"].as_array().filter(|a|!a.is_empty()).ok_or(bad)?;
+ // Validate complete identity, alias topology, metadata and contents first.
+ // Neither this draft nor the subsequent pose draft is published separately.
+ let contents=Zeroizing::new(ddv_save_patch::storage_backup::restore_scoped_mode(source,backup,Some(scope),true,false).map_err(|_|bad)?);
+ let current=Zeroizing::new(ddv_save_patch::storage_backup::export_scoped(source,Some(scope)).map_err(|_|bad)?);
+ let current:Value=serde_json::from_str(&current).map_err(|_|bad)?;
+ let by_id:HashMap<_,_>=current["rows"].as_array().ok_or(bad)?.iter().filter_map(|r|Some((r["id"].as_u64()?,r))).collect();
+ let mut edits=Vec::new();
+ for row in rows{
+  let id=row["id"].as_u64().ok_or(bad)?;
+  // A newly recreated empty container has already been verified by the
+  // shared restore contract, including its exact original pose.
+  let Some(old)=by_id.get(&id)else{continue;};
+  for wanted in row["roots"].as_array().ok_or(bad)?{
+   let grid=wanted["grid"].as_str().filter(|s|scope.contains(*s)).ok_or(bad)?;
+   let object=wanted["object"].as_str().ok_or(bad)?;
+   let before=old["roots"].as_array().ok_or(bad)?.iter().find(|w|w["grid"]==grid&&w["object"]==object).ok_or(bad)?;
+   let a=&before["pose"];let z=&wanted["pose"];
+   if a==z{continue;}
+   let item=z["item"].as_u64().filter(|n|a["item"].as_u64()==Some(*n)&&*n/100_000==400).ok_or(bad)?;
+   let xy=|v:&Value|->Result<(i32,i32),CodecError>{Ok((v["x"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?,v["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?))};
+   let expected=xy(a)?;let desired=xy(z)?;
+   let orientation=|v:&Value|->Result<String,CodecError>{v["orientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).map(str::to_owned).ok_or(bad)};
+   let from=orientation(a)?;let to=orientation(z)?;
+   if edits.len()>=MAX_GRID_MIXED_EDITS{return Err(bad);}
+   edits.push(GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:grid.to_owned(),object_id:object.to_owned(),item_id:item},expected,position:(expected!=desired).then_some(desired),orientation:(from!=to).then_some((from,to))});
+  }
+ }
+ let draft=Zeroizing::new(if edits.is_empty(){contents.to_string()}else{
+  crate::grid_instance_preview::validate_oblique_grid_edits(source.as_bytes(),&edits)?;
+  crate::grid_instance_preview::validate_oblique_grid_edits(contents.as_bytes(),&edits)?;
+  ddv_save_patch::preview_existing_grid_mixed_batch(&contents,&edits).map_err(|_|bad)?.patched_json
+ });
+ // Re-use strict pose matching on the final state, including recreated
+ // container aliases. No change is not a successful new edit.
+ let final_text=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,Some(scope),true,true).map_err(|_|bad)?;
+ if final_text==source{return Err(bad);}
+ Ok(final_text)
+}
+
+#[cfg(test)]
+mod tests{
+ use super::*;
+ #[test]fn restore_existing_storage_pose_and_contents_in_all_calibrated_scenes(){
+  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+  let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+  assert_eq!(rows.len(),12);
+  let scope=HashSet::from(["42".to_owned()]);
+  for r in rows{
+   let original=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":17});
+   let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&scope)).unwrap();
+   let mut moved=original.clone();let chest=&mut moved["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"];chest["X"]=3.into();chest["Orientation"]="GridOrientation_Left".into();
+   moved["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([]);
+   let output=restore(&moved.to_string(),&backup,&scope).unwrap();
+   assert_eq!(serde_json::from_str::<Value>(&output).unwrap(),original);
+   assert!(restore(&original.to_string(),&backup,&scope).is_err());
+   let mut bad:Value=serde_json::from_str(&backup).unwrap();bad["rows"][0]["roots"][0]["pose"]["x"]=65536.into();
+   assert!(restore(&moved.to_string(),&bad.to_string(),&scope).is_err());
+   moved["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+   assert!(restore(&moved.to_string(),&backup,&scope).is_err());
+  }
+ }
+}
