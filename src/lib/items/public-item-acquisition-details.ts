@@ -49,6 +49,7 @@ const extensionFields={
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   storeSequence:'acquisition.ordinaryStoreSequenceSources',
   storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',
+  storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   questLoot:'acquisition.questAdditionalLootSources',
@@ -136,8 +137,16 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
-        }else if(family==='storeGeneratedShelf'){
-          check(evidence.kind==='ordinary_generated_store_shelf'&&evidence.sourceDisplaySha256===sha?.Display&&
+        }else if(family==='storeGeneratedShelf'||family==='storeGeneratedStage'){
+          const stage=family==='storeGeneratedStage';
+          check(evidence.kind===(stage?'ordinary_generated_store_stage':'ordinary_generated_store_shelf')&&
+            (!stage||evidence.itemNativeCategory==='Furniture'&&typeof evidence.stageLayoutType==='number'&&
+              [0,1,2,3,5,6].includes(evidence.stageLayoutType)&&id(evidence.stageLayoutWeight)&&
+              Array.isArray(evidence.stageSourceSize)&&evidence.stageSourceSize.length===2&&evidence.stageSourceSize.every(id)&&
+              Array.isArray(evidence.stageAreaSize)&&evidence.stageAreaSize.length===2&&evidence.stageAreaSize.every(id)&&
+              Array.isArray(evidence.stageSlotIndices)&&evidence.stageSlotIndices.length>0&&
+              evidence.stageSlotIndices.every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0))&&
+            evidence.sourceDisplaySha256===sha?.Display&&
             evidence.sourceBuildingSha256===sha?.Building&&evidence.sourceDirectTagPredicateVerified===true&&
             (evidence.itemNativeCategory==='Clothing'&&evidence.sourceItemFileSha256===sha?.Clothing&&evidence.nativeGrid===null||
              evidence.itemNativeCategory==='Furniture'&&evidence.sourceItemFileSha256===sha?.Furniture&&object(evidence.nativeGrid)&&evidence.nativeGrid.status==='passed'&&evidence.nativeGrid.directTagPredicateVerified===true)&&
@@ -424,7 +433,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
       const expected=e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
-        e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+        e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
       return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});

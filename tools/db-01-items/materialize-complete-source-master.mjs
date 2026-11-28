@@ -1689,6 +1689,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryGeneratedStoreShelfSources',row.itemId,ordinaryShelves);
       categorySet.add('ordinary_gameplay');
     }
+    const stageCandidates=installedShelves.stageCandidates.get(row.itemId);
+    if(stageCandidates?.length)add('acquisition.storeInstalledStageCandidates',row.itemId,stageCandidates);
+    const ordinaryStages=installedShelves.stageOrdinary.get(row.itemId);
+    if(ordinaryStages?.length){
+      add('acquisition.ordinaryGeneratedStoreStageSources',row.itemId,ordinaryStages);
+      categorySet.add('ordinary_gameplay');
+    }
     const configuredStore=ordinaryStore.get(row.itemId);
     if(configuredStore){
       add('acquisition.ordinaryConfiguredStoreSource',row.itemId,configuredStore);
