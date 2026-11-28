@@ -3764,6 +3764,40 @@ mod tests{
     use super::*;
 
     #[test]
+    fn activity_recovery_in_nested_support_keeps_all_owners_and_rejects_aliases(){
+        let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
+        let item=ids[0];
+        let rooms:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/room-terrain.json")).unwrap();
+        let supports:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).unwrap();
+        let floor=&rooms["grids"].as_array().unwrap().iter().find(|r|r[0].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room"))).unwrap()[0];
+        let surface=&supports["grids"].as_array().unwrap().iter().find(|r|r[0].as_str().is_some_and(|p|p.starts_with("GridData/Furniture/"))).unwrap()[0];
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42}}}]}],"GridCollection":{"Grids":{}}}});
+        for (gid,p,next) in [(42,floor,Some(43)),(43,surface,Some(44)),(44,surface,None)]{
+            let row=if let Some(next)=next{
+                serde_json::json!({"ID":1,"ItemID":40001680,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":next,"DesignID":null}}})
+            }else{serde_json::json!({"ID":1,"ItemID":item,"X":0,"Y":0,"Orientation":"GridOrientation_Down"})};
+            root["World"]["GridCollection"]["Grids"][gid.to_string()]=serde_json::json!({"ID":gid,"GridDataPath":p,"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":row}});
+        }
+        let raw=root.to_string();
+        let all=room_pickup_ordinals(raw.as_bytes()).unwrap();
+        let parent=all[&("42".into(),"1".into())];
+        let receipt:Value=serde_json::from_str(&inspect_subgrid_json(raw.as_bytes(),parent,40001680,(0,0)).unwrap()).unwrap();
+        let ord=all[&("44".into(),"1".into())];
+        assert_eq!(receipt["recoveryOrdinals"],serde_json::json!([{"path":[0,0],"ordinal":ord}]));
+        assert!(receipt["tree"]["objects"][0]["child"]["objects"][0].get("recoveryOrdinal").is_none());
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":ord,"itemId":item.to_string(),"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down"}]});
+        let out:Value=serde_json::from_str(&activity_recovery_candidate(raw.as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],1);
+        for g in ["42","43"]{assert_eq!(out["World"]["GridCollection"]["Grids"][g],root["World"]["GridCollection"]["Grids"][g]);}
+        assert!(out["World"]["GridCollection"]["Grids"]["44"]["Objects"].as_object().unwrap().is_empty());
+        root["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"]["1"]=serde_json::json!({"FloorGridID":44});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+        root["World"]["PlayerHouses"][0]["Floors"][0]["Rooms"].as_object_mut().unwrap().remove("1");
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]=serde_json::json!({"ID":2,"ItemID":40001680,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":44}}});
+        assert!(support_recovery_bounds(&root,"44").is_err());
+    }
+
+    #[test]
     fn activity_recovery_on_owned_room_surfaces_reuses_shared_writer(){
         let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
         let item=ids[0];
