@@ -15,7 +15,7 @@ export function captureFurnitureGroup(items:readonly MainlandSavedObject[],allow
  const rows=items.map(p=>{
   if(p.object.storageKnown&&!p.object.storage)return null;
   const native=free&&nativeSources&&(landscapeSourceEligible(p,true)||buildingSourceEligible(p));
-  if(!(native|| (p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&supportParentEligible(p,true):stockSourceEligible(p,true)&&!p.object.surfaceCapable:cutEligible(p,allowSupport)))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
+  if(!(native|| (p.object.storage?allowSupport&&stockSourceEligible(p,free)&&isCardinal(p.object.orientation):free?p.object.subgrid?allowSupport&&supportParentEligible(p,true):stockSourceEligible(p,true)&&(!p.object.surfaceCapable||p.object.layer==='surface'):cutEligible(p,allowSupport)))||!free&&nativeActionBlocked(p.object.editRestrictions,'move')||!Number.isSafeInteger(p.x*2)||!Number.isSafeInteger(-p.y*2))return null;
   const code=worldOrientationCode(p.object.orientation);
   if(code===null||code%4!==0&&!free)return null;
   const orientation=code/4;
@@ -89,7 +89,7 @@ export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:rea
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
   const cls=Math.floor(p.itemId/100000),def=geo.get(t.factor),native=free&&nativeSources&&(cls===402||[200,201,202,203,205].includes(cls));
-  if(free&&(!native&&cls!==400||((def?.surfaceCapable||def?.supportPath)&&(!verifiedSupport.has(p.itemId)||!Number.isInteger(p.orientation)))))return null;
+  if(free&&(!native&&cls!==400||((def?.supportPath||def?.surfaceCapable&&def.layer!=='surface')&&(!verifiedSupport.has(p.itemId)||!Number.isInteger(p.orientation)))))return null;
   const orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2],shape=def?.shapes[p.itemId+':'+p.orientation*4];
   const q:StockCandidate|null=native&&cls!==402?(def?.nativeType==='Building'&&isCardinal(orientation)&&shape&&shape.cellCount>0&&shape.cellCount<=65536&&lx>=0&&ly>=0&&lx<t.sizeX*t.factor&&ly<t.sizeY*t.factor?{area:t.key,...mainlandMapAnchor(t,lx,ly),factor:t.factor,shape,plan:{action:'place',itemId:String(p.itemId),x:lx,y:ly,orientation},destination:{layoutId:t.layoutId,gridDataPath:t.gridDataPath,factor:t.factor,sizeX:t.sizeX,sizeY:t.sizeY}}:null):stockPlacement(grids,rasters,geo,p.itemId,orientation,x+.001,y-.001,null,free,allowDiagonal);
   if(!q||q.plan.action!=='place'||!q.destination||q.plan.x!==lx||q.plan.y!==ly)return null;
