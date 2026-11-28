@@ -24,6 +24,7 @@ import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './histori
 import {loadEvolutionSources} from './evolution-sources.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
 import {buildMemoryLootSources} from './memory-loot-sources.mjs';
+import {buildMemoryDefaultContent} from './memory-default-content.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
@@ -1343,6 +1344,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const memoryAppearance=memoryAppearanceSources(rows,source);
   const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
   const questObjectiveGrants=buildQuestObjectiveGrants(rows,source,questFlows.questKinds);
+  const memoryDefaults=buildMemoryDefaultContent(rows,source,memoryAppearance,questFlows,questObjectiveGrants);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1721,6 +1723,13 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const tagId=({...row.nativeProperties,...row.sourceAttributes}).MemoryShardTagItemID;
       if(ID(tagId))add('acquisition.memoryShardTagItemId',row.itemId,tagId);
       if(memory.category)categorySet.add(memory.category);
+      const defaultContent=memoryDefaults.candidates.get(row.itemId);
+      if(defaultContent?.length)add('acquisition.memoryDefaultContentCandidates',row.itemId,defaultContent);
+      const defaultRoutes=memoryDefaults.classified.get(row.itemId);
+      if(defaultRoutes?.length){
+        add('acquisition.memoryDefaultContentSources',row.itemId,defaultRoutes);
+        for(const l of defaultRoutes)categorySet.add(l.category);
+      }
       const loot=memoryLoot.get(row.itemId);
       if(loot?.length)add('acquisition.memoryLootSources',row.itemId,loot);
       const spawns=memorySpawn.get(row.itemId);

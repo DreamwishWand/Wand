@@ -46,6 +46,7 @@ const extensionFields={
   critterBefriending:'acquisition.ordinaryCritterSources',
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
+  memoryDefaultContent:'acquisition.memoryDefaultContentSources',
   eventLootPresent:'acquisition.eventLootPresentSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   storeSequence:'acquisition.ordinaryStoreSequenceSources',
@@ -79,6 +80,28 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     check(Array.isArray(list),'EXTENSION_LIST');
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      if(family==='memoryDefaultContent'){
+        const category=evidence.category;
+        const payload=evidence.defaultContent;
+        check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
+          evidence.kind==='memory_default_consumable_grant'&&evidence.sourceGameVersion===db.release.target.gameVersion&&
+          evidence.sourceActivityItemSha256===sha?.ActivityItem&&evidence.sourceMemorySha256===sha?.MemoryShard&&
+          evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          id(evidence.sourceItemId)&&id(evidence.targetItemId)&&id(evidence.orbItemId)&&
+          id(evidence.configuredGrantAmount)&&id(evidence.configuredConsumableAmount)&&id(evidence.configuredShardCount)&&
+          typeof evidence.shardIndex==='number'&&Number.isSafeInteger(evidence.shardIndex)&&
+          evidence.shardIndex>=0&&evidence.shardIndex<evidence.configuredShardCount&&
+          evidence.defaultSourcePath==='source.DefaultItem.ItemID'&&evidence.explicitGrantStateAbsent===true&&
+          object(payload)&&payload.ItemID===evidence.targetItemId&&payload.Amount===evidence.configuredConsumableAmount&&
+          object(payload.State)&&payload.State.MemoryShardIndex===evidence.shardIndex&&
+          typeof evidence.sourcePath==='string'&&
+          (evidence.routeKind==='quest_intro'&&evidence.sourceMissionSha256===sha?.Mission&&evidence.sourcePath.startsWith('source.ItemsToGive[')||
+           evidence.routeKind==='quest_objective'&&evidence.sourceMissionSha256===sha?.Mission&&evidence.sourcePath.startsWith('source.Steps[')||
+           evidence.routeKind==='conditional_grant'&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
+             evidence.sourceConditionSha256===sha?.Condition&&evidence.sourcePath.startsWith('source.GiveItem.Items['))&&
+          evidence.guaranteedGrantVerified===false,'EXTENSION_MEMORY_DEFAULT_CONTENT');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[evidence.orbItemId]});continue;
+      }
       if(family==='characterUnlock'){
         const category=evidence.category;
         if(category===null)continue;
@@ -460,7 +483,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='characterUnlock'?(e.evidence.kind==='character_automatic_unlock'?['Character']:['Mission']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_automatic_unlock'?['Character']:['Mission']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
