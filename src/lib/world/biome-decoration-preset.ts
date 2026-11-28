@@ -13,8 +13,8 @@ import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
 export const BIOME_DECORATION_FILE_LIMIT=1_500_000;
-export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false,supports?:SupportAreaTrees,world=false,landscape?:readonly LandscapePose[],includeBuildings=false){
- const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island,supports,world);if(!furniture)return null;
+export function captureBiomeDecoration(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,networks:readonly NetworkPose[],island=false,supports?:SupportAreaTrees,world=false,landscape?:readonly LandscapePose[],includeBuildings=false,privateContents=false){
+ const furniture=biomeFurnitureSnapshot(grid,objects,omitted,island,supports,world,privateContents);if(!furniture)return null;
  const existing=objects.filter(p=>p.area===grid.key&&['ground','fence'].includes(p.object.layer));
  if(existing.length!==networks.length||networks.some(p=>existing.filter(o=>Number(o.object.itemId)===p.itemId&&o.object.x===p.x&&o.object.y===p.y&&o.object.orientation===CARDINAL_ORIENTATIONS[p.orientation]).length!==1))return null;
  const buildings=includeBuildings&&!island&&!world?captureBuildingPoses(grid,objects):undefined;if(buildings===null)return null;

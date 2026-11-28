@@ -28,8 +28,10 @@ fn unlocked_source_template(id:u64)->Option<&'static str>{
  m.get("DefaultContainerInventoryData")?.as_str()
 }
 /// An additional native template may be used only when a complete, unlocked,
-/// empty player-owned instance in the opened save corroborates the pinned
-/// ContainerInteraction attribute. No size is inferred from the template name.
+/// player-owned instance in the opened save corroborates the pinned
+/// ContainerInteraction attribute and exact container metadata. Inventory
+/// contents are not copied: occupied and empty instances provide the same
+/// initialization witness. No size is inferred from the template name.
 pub(super) fn placement_storage_template(root:&Value,item:u64)->Option<(&'static str,u32)>{
  if let Some(t)=initial_storage_template(item){return Some(t);}
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return None;}
@@ -50,7 +52,8 @@ pub(super) fn placement_storage_template(root:&Value,item:u64)->Option<(&'static
    let c=&root["Player"]["ContainerInventories"][id.to_string()];
    let Some(size)=c["Size"].as_u64().and_then(|n|u32::try_from(n).ok())else{continue;};
    if obj["State"]!=serde_json::json!({"Storage":{"ContainerInventoryID":id,"DefaultContainerInventoryData":template,"UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}})||
-      *c!=serde_json::json!({"ID":id,"ParentItemID":source_item,"Size":size,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}){continue;}
+      c["Inventory"].as_array().is_none_or(|a|a.len()>8192)||
+      *c!=serde_json::json!({"ID":id,"ParentItemID":source_item,"Size":size,"Inventory":c["Inventory"],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}){continue;}
    if !ddv_save_patch::standard_storage_capacity(template,size)||observed.is_some_and(|n|n!=size){return None;}
    observed=Some(size);
   }
@@ -79,11 +82,19 @@ mod tests{
   root["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1}]);
   assert!(!restorable_empty_storage(&root,&obj,40001680));
  }
- #[test]fn additional_template_requires_source_and_exact_owned_empty_witness(){
+ #[test]fn additional_template_requires_source_and_exact_owned_metadata_witness(){
   let id=40000047;
   let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":id,"Size":16,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"Objects":{"1":{"ID":1,"ItemID":id,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Furniture_16Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}}});
   assert_eq!(placement_storage_template(&root,id),Some(("Furniture_16Slot",16)));
   assert_eq!(initial_storage_template(id),None);
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":12,"State":null}]);
+  assert_eq!(placement_storage_template(&root,id),Some(("Furniture_16Slot",16)));
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":{"Unknown":{"Value":7}}}]);
+  assert_eq!(placement_storage_template(&root,id),Some(("Furniture_16Slot",16)));
+  assert!(!restorable_empty_storage(&root,&root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],id));
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!({"unexpected":true});
+  assert_eq!(placement_storage_template(&root,id),None);
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([]);
   root["Player"]["ContainerInventories"]["9"]["Size"]=48.into();
   assert_eq!(placement_storage_template(&root,id),None);
   root["Player"]["ContainerInventories"]["9"]["Size"]=16.into();

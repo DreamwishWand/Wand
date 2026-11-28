@@ -18,14 +18,14 @@ type Incoming=ReturnType<typeof parseBiomeDecoration>;
 type Review=NonNullable<ReturnType<typeof reviewBiomeDecoration>>;
 export const ISLAND_DECORATION_FILE_LIMIT=3_000_000;
 export const WORLD_DECORATION_FILE_LIMIT=12_000_000;
-export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,includeHouses=false){
+export function captureIslandDecoration(grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports?:SupportAreaTrees,world=false,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,includeHouses=false,privateContents=false){
  const scope=world?worldDecorationScope(grids):grids[0]?.layoutId;
  if(!grids.length||!scope||!world&&grids.some(g=>g.layoutId!==scope)||networks.size!==grids.length||snapshot.objects.size!==grids.length)return null;
  const areas:unknown[]=[],summaries:{key:string;furnitureCount:number;networkCount:number;landscapeCount:number;protectedCount:number;houseCount:number;buildingCount:number}[]=[];
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),rows=networks.get(g.key);
   if(!objects||!rows)return null;
-  const capture=captureBiomeDecoration(g,objects,0,rows,!world,supports,world,landscapes?.get(g.key));if(!capture)return null;
+  const capture=captureBiomeDecoration(g,objects,0,rows,!world,supports,world,landscapes?.get(g.key),false,privateContents);if(!capture)return null;
   const houses=world&&includeHouses?captureHousePoses(g,objects):undefined;if(houses===null)return null;
   const buildings=world&&includeHouses?captureBuildingPoses(g,objects):undefined;if(buildings===null)return null;
   areas.push({...JSON.parse(capture.text),...(houses!==undefined?{houses}:{}),...(buildings!==undefined?{buildings}:{})});summaries.push({buildingCount:buildings?.length??0,houseCount:houses?.length??0,key:g.key,furnitureCount:capture.furnitureCount,networkCount:capture.networkCount,landscapeCount:capture.landscapeCount,protectedCount:capture.protectedCount-(houses?.length??0)-(buildings?.length??0)});

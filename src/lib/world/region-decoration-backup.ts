@@ -6,7 +6,7 @@ import type {islandSaveSnapshot} from './island-save-preset.ts';
 import {networkKey,type NetworkPose} from './biome-network-preset.ts';
 import {networkSceneShape} from './area-scene.ts';
 import {landscapePoseKey,landscapeObjectPose,type LandscapePose} from './landscape-decoration-preset.ts';
-import {areaFurnitureEligible,supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
+import {areaFurnitureEligible,privateStoragePoseEligible,supportAreaEligible,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
 import {captureBuildingPoses,type BuildingPose} from './building-pose-backup.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
@@ -15,6 +15,46 @@ type Snapshot=NonNullable<ReturnType<typeof islandSaveSnapshot>>;
 type Incoming=ReturnType<typeof parseIslandDecoration>;
 const isNetwork=(p:MainlandSavedObject)=>p.object.layer==='ground'||p.object.layer==='fence';
 const inside=(r:CaptureRegion,p:{x:number;y:number;factor:number;shape:SourceObjectShape|null})=>!!p.shape&&p.shape.runs.every(q=>p.x+q.x/p.factor>=r.x&&p.x+(q.x+q.width)/p.factor<=r.x+r.w&&p.y-(q.y+1)/p.factor>=r.y&&p.y-q.y/p.factor<=r.y+r.h);
+export function regionStorageWitnesses(region:CaptureRegion,grids:readonly MainlandGrid[],objects:ReadonlyMap<string,readonly MainlandSavedObject[]>){
+ if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
+ const all=grids.flatMap(g=>[...(objects.get(g.key)??[])]);
+ if(grids.some(g=>!objects.has(g.key)))return null;
+ const storage=all.filter(p=>p.object.storage===true||p.object.storageKnown===true);
+ if(storage.some(p=>!p.shape))return null;
+ const hit=mainlandSavedInRect(storage,region,{x:region.x+region.w,y:region.y+region.h});
+ if(hit.some(p=>!inside(region,p)||!p.object.storage))return null;
+ return hit.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,x:p.object.x,y:p.object.y,orientation:p.object.orientation}));
+}
+export function privateRegionPoses(raw:string,region:CaptureRegion,grids:readonly MainlandGrid[]){
+ if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
+ const doc=JSON.parse(raw);
+ if(doc?.schema!=='wand.private.storage-contents@2'||doc.skipped!==0||!Array.isArray(doc.rows)||doc.rows.length>8192)return null;
+ const areas=grids.map(g=>({grid:g,poses:[] as {item:number;x:number;y:number;orientation:string}[]}));
+ let count=0;const seen=new Set<string>();
+ for(const row of doc.rows){
+  if(!Array.isArray(row.roots)||!row.roots.length)return null;
+  for(const root of row.roots){
+   if(++count>8192)return null;
+   const matches=areas.filter(a=>a.grid.gridDataPath===root.path),p=root.pose;
+   if(matches.length!==1||!p||!Number.isSafeInteger(p.item)||!Number.isSafeInteger(p.x)||!Number.isSafeInteger(p.y)||!CARDINAL_ORIENTATIONS.some(o=>o===p.orientation))return null;
+   const a=matches[0],k=[a.grid.key,p.item,p.x,p.y,p.orientation].join(':');if(seen.has(k))return null;seen.add(k);
+   a.poses.push({item:p.item,x:p.x,y:p.y,orientation:p.orientation});
+  }
+ }
+ return areas;
+}
+export function privateRegionRestoreScope(region:CaptureRegion,areas:NonNullable<ReturnType<typeof privateRegionPoses>>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>){
+ const rows=[];
+ for(const {grid:g,poses} of areas){
+  const geometry=defs.get(g.key);if(!geometry)return null;
+  for(const p of poses){
+   const direction=CARDINAL_ORIENTATIONS.findIndex(o=>o===p.orientation),shape=geometry.get(p.item)?.shapes[p.item+':'+direction*4];
+   if(direction<0||!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;
+  }
+  rows.push({destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},poses});
+ }
+ return JSON.stringify({kind:'region-poses',areas:rows});
+}
 const buildingKey=(p:BuildingPose)=>[p.itemId,p.x,p.y,p.orientation].join(':');
 /** Count pose multiplicities, not merely Item IDs or occupied anchors. */
 export function regionBuildingPoses(region:CaptureRegion,g:MainlandGrid,objects:readonly MainlandSavedObject[],free=false):BuildingPose[]|null{
@@ -75,13 +115,13 @@ export function regionNetworkContactIndex(outside:readonly BoundaryPose[]){
   return false;
  };
 }
-function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>){
+function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,privateContents=false){
  if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
  const landscape=new Map<string,LandscapePose[]>(),objects=new Map<string,readonly MainlandSavedObject[]>(),rows=new Map<string,NetworkPose[]>(),insideNet:BoundaryPose[]=[],outsideNet:BoundaryPose[]=[];
  for(const g of grids){
   const all=snapshot.objects.get(g.key),net=networks.get(g.key);if(!all||!net)return null;
   const known=new Set((landscapes?.get(g.key)??[]).map(landscapePoseKey));
-  const relevant=all.filter(p=>areaFurnitureEligible(p,!!bindMainlandGrid(g)&&p.factor===1)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p))));
+  const relevant=all.filter(p=>areaFurnitureEligible(p,!!bindMainlandGrid(g)&&p.factor===1)||privateContents&&privateStoragePoseEligible(p)||supportAreaEligible(p)||isNetwork(p)||known.has(landscapePoseKey(landscapeObjectPose(p))));
   if(relevant.some(p=>!p.shape))return null;
   const hit=mainlandSavedInRect(relevant,region,{x:region.x+region.w,y:region.y+region.h});
   if(hit.some(p=>!inside(region,p)))return null;
@@ -105,10 +145,10 @@ function split(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snaps
 // Independent island surfaces have separate local coordinate bases.
  // Never interpret coincident coordinates on two surfaces as the same area.
  const validRegionScope=(grids:readonly MainlandGrid[],world:boolean)=>world?grids.length>0:grids.length===1&&!!bindFloatingIslandGrid(grids[0]);
-export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false){
+export function reviewRegionCapture(region:CaptureRegion,grids:readonly MainlandGrid[],snapshot:Snapshot,networks:ReadonlyMap<string,readonly NetworkPose[]>,supports:SupportAreaTrees,world=true,landscapes?:ReadonlyMap<string,readonly LandscapePose[]>,free=false,privateContents=false){
  if(!validRegionScope(grids,world))return null;
- const part=split(region,grids,snapshot,networks,landscapes);if(!part)return null;
- const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes);if(!doc)return null;
+ const part=split(region,grids,snapshot,networks,landscapes,privateContents);if(!part)return null;
+ const doc=captureIslandDecoration(grids,part.snapshot,part.networks,supports,world,part.landscapes,false,privateContents);if(!doc)return null;
  const inner=JSON.parse(doc.text);
  if(world){
   for(const area of inner.areas){

@@ -33,6 +33,15 @@ export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readon
   return {text,objects,summaries};
  }catch{return null;}
 }
+export function privateIslandFurnitureText(grids:readonly MainlandGrid[],snapshot:NonNullable<ReturnType<typeof islandSaveSnapshot>>):string|null{
+ const layouts:Record<string,DesignTimeline>={};
+ for(const g of grids){
+  const objects=snapshot.objects.get(g.key);if(!objects)return null;
+  const s=biomeFurnitureSnapshot(g,objects,0,true,undefined,false,true);if(!s)return null;
+  layouts[g.key]={snapshots:[s.placements],cursor:0,nextId:s.placements.length+1};
+ }
+ try{return grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],'floating-island'):serializeIslandDesign(grids,layouts);}catch{return null;}
+}
 export function parseIslandSavePreset(text:string,grids:readonly MainlandGrid[]):Map<string,DesignPlacement[]>{
  if(grids.length===1&&JSON.parse(text)?.schema==='wand.preset.whole-area-design@1')return new Map([[grids[0].key,parseWholeArea(text,grids[0],'floating-island')]]);
  return parseIslandDesign(text,grids);
