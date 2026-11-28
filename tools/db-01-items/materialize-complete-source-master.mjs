@@ -1636,6 +1636,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.ordinaryProductionSources',row.itemId,production);
       categorySet.add('ordinary_gameplay');
     }
+    const questLoot=questFlows.additionalLoot.get(row.itemId);
+    if(questLoot?.length){
+      add('acquisition.questAdditionalLootSources',row.itemId,questLoot);
+      for(const link of questLoot)categorySet.add(link.category);
+    }
     const intro=questFlows.ordinaryIntro.get(row.itemId);
     if(intro?.length){
       add('acquisition.ordinaryQuestIntroSources',row.itemId,intro);

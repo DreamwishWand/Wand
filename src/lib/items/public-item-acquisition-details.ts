@@ -48,6 +48,7 @@ const extensionFields={
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
+  questLoot:'acquisition.questAdditionalLootSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
 } as const;
 export type ClassificationExtensionFamily=keyof typeof extensionFields;
@@ -73,6 +74,19 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     check(Array.isArray(list),'EXTENSION_LIST');
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      if(family==='questLoot'){
+        const category=evidence.category;
+        check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
+          evidence.kind==='quest_additional_loot_candidate'&&evidence.sourceGameVersion===db.release.target.gameVersion&&
+          evidence.sourceMissionSha256===sha?.Mission&&id(evidence.sourceItemId)&&id(evidence.targetItemId)&&
+          id(evidence.maximumRolls)&&typeof evidence.minimumRolls==='number'&&Number.isSafeInteger(evidence.minimumRolls)&&
+          evidence.minimumRolls>=0&&evidence.minimumRolls<=evidence.maximumRolls&&
+          (evidence.configuredWeight===null||id(evidence.configuredWeight))&&
+          object(evidence.originalEntry)&&evidence.originalEntry.ItemID===evidence.targetItemId&&
+          typeof evidence.sourcePath==='string'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(evidence.sourcePath)&&
+          evidence.guaranteedGrantVerified===false,'EXTENSION_QUEST_ADDITIONAL_LOOT');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
       if(family==='historicalStarpath'){
         check(evidence.sourcePlatform==='Switch'&&(
           evidence.sourceGameVersion==='1.24.1'&&evidence.sourceProtoDbSha256==='36c2f64d849a5c7e2350b874e9e9443795c0675381a185d801649b587b093b60'||
@@ -369,7 +383,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});

@@ -7,13 +7,14 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {conditionalQuestGrants} from './conditional-quest-acquisition.mjs';
+import {buildQuestAdditionalLoot} from './quest-additional-loot.mjs';
 const MISSION='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const INTRO='1378add47506b64f701a5b0507ffba89d02e4681c168c47951cda4974f0de016';
 const check=(ok,why)=>{if(!ok)throw Error('DB01_QUEST_FLOW_'+why)};
 const id=v=>Number.isSafeInteger(v)&&v>0;
 export function loadQuestFlowColumns(project,source,rows){
   const byQuest=new Map(),byItem=new Map();
-  if(source.target.platform!=='Steam'||source.sourceFilesSha256?.Mission!==MISSION)return {byQuest,byItem,ordinaryIntro:new Map(),conditionalQuest:new Map(),metadata:null};
+  if(source.target.platform!=='Steam'||source.sourceFilesSha256?.Mission!==MISSION)return {byQuest,byItem,ordinaryIntro:new Map(),conditionalQuest:new Map(),additionalLoot:new Map(),metadata:null};
   const known=new Map(rows.map(r=>[r.itemId,r]));
   const raw=readFileSync(join(project,'data/ddv/item-master/original-quest-intro-grants-steam-1.26.2.json'));
   check(raw.length===2153&&createHash('sha256').update(raw).digest('hex')===INTRO,'INTRO_SHA');
@@ -121,7 +122,8 @@ export function loadQuestFlowColumns(project,source,rows){
       questKinds.set(questId,'ordinary_gameplay');
   }
   const conditionalQuest=conditionalQuestGrants(rows,source,questKinds);
-  return {byQuest,byItem,ordinaryIntro,conditionalQuest,questKinds,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
+  const additionalLoot=buildQuestAdditionalLoot(rows,source,questKinds);
+  return {byQuest,byItem,ordinaryIntro,conditionalQuest,additionalLoot,questKinds,metadata:{originalMissionSha256:MISSION,introProjectionSha256:INTRO,
     sourceGameVersion:source.target.gameVersion,counts,questCount:byQuest.size,itemCount:byItem.size,
     total:1517,guaranteedGrantVerified:false,currentAvailabilityVerified:false}};
 }

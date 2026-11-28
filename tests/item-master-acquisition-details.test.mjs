@@ -80,7 +80,7 @@ test('all classification extensions preserve original evidence and localized sou
   const fields={progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',
     eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
-    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',historicalStarpath:'acquisition.historicalStarpathSources'};
+    lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',questLoot:'acquisition.questAdditionalLootSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
   const expected=new Map(),counts={};
   for(const [family,field] of Object.entries(fields)){
