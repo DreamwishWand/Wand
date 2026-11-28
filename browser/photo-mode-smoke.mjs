@@ -81,7 +81,7 @@ try{
   browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
-  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));
+  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
     const detail=page.locator('details.pose-test');
@@ -93,6 +93,7 @@ try{
     await body.nth(1).waitFor({state:'visible',timeout:15000});
     assert.equal(await body.count(),2,'two original body type controls');
     for(let b=0;b<2;b++){
+      console.log('Preview scene',id,'body',b);
       await body.nth(b).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
@@ -109,6 +110,11 @@ try{
         const model=option.kind==='pair'?option.asset:index.models.female;const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads.female[target.index];const prefix=base+'/photo-mode-preview/';
         assert.ok(eyeRequests.has(prefix+index.expressionWeights.clips[option.sourceSha256].sha256+'.wec'),'native curve asset requested');
         for(const role of ['skull','eyelash','teeth_lower','teeth_upper']){const m=index.expressionWeights.meshes[head.parts[role].asset.sha256];assert.ok(m&&eyeRequests.has(prefix+m.asset.sha256+'.wem'),'native head expression part '+role)}
+      }
+      if(option.kind!=='mermaid'){
+        const sex=b===0?'male':'female',model=option.kind==='pair'?option.asset:index.models[sex],target=index.headGeometry.targets[model.sha256],head=index.headGeometry.heads[sex][target.index],norm=index.nativeFaceNormals,prefix=base+'/photo-mode-preview/';
+        for(const row of [norm.bodies[sex][target.index],norm.bodies[sex][0],norm.mask])assert.ok(eyeRequests.has(prefix+row.asset.sha256+'.wnt'),'source face normal requested');
+        assert.ok(eyeRequests.has(prefix+norm.geometry[head.parts.skull.asset.sha256].asset.sha256+'.wsg'),'source face tangent requested');
       }
       const hasActor=option.kind==='pair'||option.companionIncluded===true||option.accessoryIncluded===true;
       assert.equal(await toggle.count(),hasActor?1:0);
@@ -194,6 +200,7 @@ try{
   const faceSeek=linked.locator('input.seek');
   async function expectAppearance(body,skin,eye){
     const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
+    const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
     for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
     await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
     assert.equal(await controls.nth(body==='male'?0:1).getAttribute('aria-pressed'),'true');
