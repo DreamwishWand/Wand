@@ -27,7 +27,7 @@ def source_color_space(raw):
     return color
 
 def decode_mip(payload,width,height,fmt):
-    fourcc={10:b'DXT1',25:b'DX10',26:b'DX10'}[fmt]
+    fourcc={10:b'DXT1',12:b'DXT5',25:b'DX10',26:b'DX10'}[fmt]
     header=struct.pack('<7I11I',124,0x81007,height,width,len(payload),0,1,*([0]*11))
     header+=struct.pack('<II4s5I',32,4,fourcc,0,0,0,0,0)+struct.pack('<5I',0x1000,0,0,0,0)
     if fmt in (25,26):header+=struct.pack('<5I',98 if fmt==25 else 80,3,0,1,0)
