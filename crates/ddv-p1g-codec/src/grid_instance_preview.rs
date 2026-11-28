@@ -587,12 +587,17 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
                     let k=normal(key);
                     if k=="saplinggridobjectid"&&value.as_u64().is_some_and(|id|objects.contains(&id))&&owning.is_none_or(|g|g==grid){out.related+=1;}
                     else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64().is_some_and(|id|objects.contains(&id)){out.unknown+=1;}
-                    // Numeric identity lists with no exact GridID cannot prove
-                    // which native instance is referenced. Limit this extra
-                    // conservative protection to observed MissionSlots context.
-                    if flags.4&&k=="gridobjectidscollected"&&!objective_history.contains(&(value as *const Value))&&value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
+                    // Mission identity arrays may use unclassified field names.
+                    // Only the exact archived objective history list, without
+                    // an explicit GridID or active-reference context, is exempt.
+                    // Never infer completion or an instance address from a local ID.
+                    if flags.4&&k.contains("gridobjectid")&&k!="nextgridobjectid"&&
+                        value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
                         (grid_values.is_empty()||grid_values.iter().any(|v|v.is_none()||*v==Some(grid))){
-                        out.unknown+=1;
+                        let historical=objective_history.contains(&(value as *const Value))&&grid_values.is_empty()&&!flags.0&&!flags.3;
+                        if !historical{
+                            if flags.0||flags.3||k.contains("spawned"){out.active+=1;}else{out.unknown+=1;}
+                        }
                     }
                     let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"),flags.4||mission_slots.is_some_and(|slot|std::ptr::eq(slot,value)));
                     // Owning Grid context is recognized only for exact
@@ -3687,6 +3692,27 @@ mod terrain_session_tests{
         assert_eq!(scan(&save).blocking(),0);
         save["World"]["MissionSlots"]["owner"]["Slots"][0]["MissionSteps"][0]["SubSteps"][0]["Objectives"][0]["GridObjectIdsCollected"]=serde_json::json!([2,{"GridID":10,"GridObjectID":2}]);
         assert!(scan(&save).blocking()>0);
+    }
+    #[test]
+    fn mission_identity_arrays_protect_unknown_and_addressed_objective_dependencies(){
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40005160};
+        let scan=|slot:Value|grid_identity_dependencies(&serde_json::to_vec(&serde_json::json!({
+            "World":{"MissionSlots":{"owner":{"Slots":[slot]}}}
+        })).unwrap(),&target).unwrap();
+        assert_eq!(scan(serde_json::json!({"SpawnedGridObjectIds":[2,9]})).active,1);
+        assert_eq!(scan(serde_json::json!({"Required_Grid_Object_IDs":[2]})).unknown,1);
+        assert_eq!(scan(serde_json::json!({"GridID":20,"RequiredGridObjectIds":[2]})).blocking(),0);
+        assert_eq!(scan(serde_json::json!({"GridID":null,"RequiredGridObjectIds":[2]})).unknown,1);
+        assert_eq!(scan(serde_json::json!({"GridID":10,"RequiredGridObjectIds":[9]})).blocking(),0);
+        let objective=|obj:Value|serde_json::json!({"MissionId":2070000001,
+            "MissionSteps":[{"SubSteps":[{"Objectives":[obj]}]}]});
+        assert_eq!(scan(objective(serde_json::json!({"GridObjectIdsCollected":[2]}))).blocking(),0);
+        assert_eq!(scan(objective(serde_json::json!({"GridID":10,"GridObjectIdsCollected":[2]}))).unknown,1);
+        assert_eq!(scan(objective(serde_json::json!({"GridID":20,"GridObjectIdsCollected":[2]}))).blocking(),0);
+        assert_eq!(scan(objective(serde_json::json!({"GridID":"10","GridObjectIdsCollected":[2]}))).unknown,1);
+        // Ordinary history outside MissionSlots remains unchanged.
+        let profile=br#"{"Player":{"Achievements":{"RequiredGridObjectIds":[2]}}}"#;
+        assert_eq!(grid_identity_dependencies(profile,&target).unwrap().blocking(),0);
     }
     #[test]
     fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
