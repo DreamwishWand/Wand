@@ -2,6 +2,37 @@ use crate::CodecError;
 use serde_json::Value;
 use std::collections::{HashMap,HashSet};
 
+/// A region's desired poses need not exist yet. Authenticate their native
+/// Grid destinations and require exact equality with the private backup
+/// before staging; the final writer still resolves individual root poses.
+pub(super) fn resolve_region_stage(source:&[u8],scope:&Value,backup:&str)->Result<HashSet<String>,CodecError>{
+ let bad=CodecError::Json;
+ if scope.as_object().is_none_or(|m|m.len()!=2)||scope["kind"]!="region-poses"{return Err(bad);}
+ let areas=scope["areas"].as_array().filter(|a|!a.is_empty()&&a.len()<=64).ok_or(bad)?;
+ let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+ let doc:Value=serde_json::from_str(backup).map_err(|_|bad)?;
+ let mut grids=HashSet::new();let mut expected=HashSet::new();
+ for area in areas{
+  if area.as_object().is_none_or(|m|m.len()!=2){return Err(bad);}
+  let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,&area["destination"])?;
+  let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+  if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1)||!grids.insert(d.grid_id.clone()){return Err(bad);}
+  for p in area["poses"].as_array().ok_or(bad)?{
+   if expected.len()>=8192||p.as_object().is_none_or(|m|m.len()!=4)||p["item"].as_u64().is_none_or(|n|n/100_000!=400)||p["x"].as_u64().is_none_or(|n|n>=sx*factor)||p["y"].as_u64().is_none_or(|n|n>=sy*factor)||!p["orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s))||!expected.insert((d.grid_id.clone(),d.data_path.clone(),p.to_string())){return Err(bad);}
+  }
+ }
+ let mut actual=HashSet::new();
+ for row in doc["rows"].as_array().filter(|a|a.len()<=8192).ok_or(bad)?{
+  for w in row["roots"].as_array().filter(|a|!a.is_empty()).ok_or(bad)?{
+   let gid=w["grid"].as_str().ok_or(bad)?;
+   let path=w["path"].as_str().ok_or(bad)?;
+   if actual.len()>=8192||!grids.contains(gid)||!actual.insert((gid.to_owned(),path.to_owned(),w["pose"].to_string())){return Err(bad);}
+  }
+ }
+ if expected!=actual{return Err(bad);}
+ Ok(grids)
+}
+
 pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,CodecError>{
  let bad=CodecError::Json;
  if scope.len()>2*1024*1024{return Err(bad);}
