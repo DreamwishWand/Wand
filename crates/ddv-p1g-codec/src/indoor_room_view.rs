@@ -552,19 +552,19 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
+  let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if obj.get("ID").and_then(id).filter(|n|*n>0).is_none_or(|n|n.to_string()!=*key)||obj.get("ItemID").and_then(id)!=Some(item)||
      (coord(obj,"X")?,coord(obj,"Y")?)!=expected||obj.get("Orientation").and_then(Value::as_str)!=Some(old)||
-     !allowed_orientation(old)||
+     !allowed_orientation(old)||support_pickup&&!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||
      obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
-     !free&&objects.values().filter(|o|coord(o,"X").ok()==Some(expected.0)&&coord(o,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
+     (!free||support_pickup)&&objects.values().filter(|o|coord(o,"X").ok()==Some(expected.0)&&coord(o,"Y").ok()==Some(expected.1)).count()!=1{return Err(bad);}
   // An explicit support pickup must use the whole-tree writer, never the
   // ordinary leaf path. Coordinate edits keep the same owned subtree.
-  let support_pickup=p.contains_key("pickup")&&row.get("includeSupport").and_then(Value::as_bool)==Some(true);
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
    if surface==1&&!support_pickup&&(p.contains_key("edits")||p.contains_key("align")||p.contains_key("pickup")&&row.get("storageEmpty").and_then(Value::as_bool)==Some(true)&&ddv_save_patch::storage_pickup_eligible(&root,obj))&&storage_pose(&root,obj){
     if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
    }else{
-    if free||!(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
+    if free&&!support_pickup||!(p.contains_key("edits")||p.contains_key("align")||support_pickup)||!on_terrain(expected)||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid")){return Err(bad);}
     let c=collection.as_object().ok_or(bad)?;
     crate::grid_instance_preview::subgrid_tree(c,&gid,key)?;
    }
@@ -724,13 +724,26 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   }
   if free||storage_flags.iter().any(|f|*f){
    use zeroize::{Zeroize,Zeroizing};
-   if flags.iter().any(|f|*f){return Err(bad);}
    let mut working=Zeroizing::new(json.to_owned());let mut last=None;let mut counts=std::collections::HashMap::<u64,u32>::new();
-   for (((target,expected,_),row),&storage) in targets.iter().zip(rows).zip(&storage_flags){
+   // Validate all witnesses against the original before staging leaves.
+   // Support trees are resolved by stable identity again after leaf removal.
+   for ((((target,expected,_),row),&storage),&support) in targets.iter().zip(rows).zip(&storage_flags).zip(&flags){
+    if support{continue;}
     let initial=row["expectedStock"].as_u64().ok_or(bad)? as u32;let amount=counts.entry(target.item_id).or_insert(initial);
     let mut draft=(if storage{ddv_save_patch::preview_empty_storage_pickup(&working,target,*expected,*amount)}else{ddv_save_patch::preview_furniture_stock_transaction(&working,*amount,ddv_save_patch::FurnitureStockAction::Pickup{target,expected:*expected})}).map_err(|_|CodecError::Patch)?;
     *amount=amount.checked_add(1).ok_or(bad)?;
     working.zeroize();*working=std::mem::take(&mut draft.patched_json);last=Some(draft);
+   }
+   if flags.iter().any(|f|*f){
+    let ordinals=crate::grid_instance_preview::room_pickup_ordinals(working.as_bytes())?;
+    let mut plan=Vec::new();
+    for ((target,expected,orientation),support) in targets.iter().zip(&flags){
+     if !support{continue;}
+     let ordinal=ordinals.get(&(target.grid_id.clone(),target.object_id.clone())).ok_or(bad)?;
+     plan.push(serde_json::json!({"localOrdinal":ordinal,"itemId":target.item_id.to_string(),"expectedX":expected.0,"expectedY":expected.1,"expectedOrientation":orientation,"includeSupport":true}));
+    }
+    let patched_json=crate::grid_instance_preview::group_pickup_candidate(working.as_bytes(),&serde_json::to_string(&plan).map_err(|_|bad)?)?;
+    return Ok(ddv_save_patch::GridCoordinateDraft{patched_json,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false});
    }
    let mut draft=last.ok_or(bad)?;draft.patched_json=std::mem::take(&mut *working);return Ok(draft);
   }
@@ -1255,6 +1268,28 @@ mod tests{
   assert!(returned["World"]["GridCollection"]["Grids"].get("43").is_none());
   assert_eq!(returned["Player"]["ListInventories"]["0"]["Inventory"]["40005160"]["Amount"],2);
   assert_eq!(returned["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],6);
+  // A mixed storage, support-tree and plain selection uses one private
+  // staging transaction, regardless of whether free placement is selected.
+  let mut with_storage=mixed_source.clone();
+  with_storage["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]=json!({"ID":3,"ItemID":40001680,"X":8,"Y":4,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
+  with_storage["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=4.into();
+  with_storage["Player"]["ContainerInventories"]=json!({"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}});
+  with_storage["Player"]["NextContainerInventoryID"]=10.into();
+  with_storage["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]=json!({"Amount":2});
+  let mut mixed_pickup=pickup.clone();
+  mixed_pickup["pickup"].as_array_mut().unwrap().push(json!({"index":2,"itemId":40001680,"expectedX":8,"expectedY":4,"expectedOrientation":"GridOrientation_Down","expectedStock":2,"storageEmpty":true}));
+  for free in [false,true]{
+   if free{mixed_pickup["freePlacement"]=true.into();}
+   let result=furniture_candidate(&serde_json::to_vec(&with_storage).unwrap(),&mixed_pickup.to_string()).unwrap();
+   let v:Value=serde_json::from_str(&result.patched_json).unwrap();
+   assert!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+   assert!(v["World"]["GridCollection"]["Grids"].get("43").is_none());
+   assert!(v["Player"]["ContainerInventories"].as_object().unwrap().is_empty());
+   assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40005162"]["Amount"],6);
+   assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],3);
+  }
+  with_storage["Player"]["ContainerInventories"]["9"]["Inventory"]=json!([{"ItemID":30000001,"Amount":1}]);
+  assert!(furniture_candidate(&serde_json::to_vec(&with_storage).unwrap(),&mixed_pickup.to_string()).is_err());
   pickup["pickup"][0].as_object_mut().unwrap().remove("includeSupport");
   assert!(furniture_candidate(&raw_mixed,&pickup.to_string()).is_err());
   // A portable scene restores into a room with no native support template.
