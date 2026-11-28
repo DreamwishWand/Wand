@@ -1,1 +1,63 @@
-{"schema":"wand.item-master.versions@1","current":"1.26.2","releases":[{"gameVersion":"1.26.2","release":"steam-1.26.2-item-id-master-v1","count":13202,"archiveSha256":"3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6","expanded":{"release":"steam-1.26.2-item-id-master-v2","count":14753,"extensionSha256":"e7895b73c32097717699fc933ff3cf0f2e6ceca115f0c39be89f994101eb8685"},"complete":{"release":"steam-1.26.2-item-id-master-v3","count":39067,"parts":9,"archiveSha256":"b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d","attributesSha256":"f6902e9bc4430039a9b8da53978e64a427ed064ab17a74de3780b9dc02b4dead","localization":{"parts":4,"sha256":"c49266b885546c901bc4d60cc5a038b653c5a37639df1c266112fb4627e06c24"},"nativeSupplementSha256":"5fe8c2c26461f31bd7ca81a56197ff27ba793912a940e79721ad39d4c4598aac","referenceAttributesSha256":"262636fa041090c238ca8873cba4436e613bbef73cec1994164cf5d91104da80","reviewedRootArraysSha256":"d3255ab3b8a3d371bf4daff05253f015b333f0d6f467d6dc74e32edfaaaee2cf","reviewedMessagesSha256":"98cc327112d18c548b8f14f94c716dd6c36d43ecb8b1c1e60ff2381004a8ba61","reviewedMessageGroupsSha256":"3e44e17960ffa4a9060b90d397d8b78977f785902eea638edca36ad174e2a838","reviewedStructure":{"reviewed-structure":"199c88041773f244f673f0e863501dacde3d92ead3b0a862318272cf822913c8","reviewed-quest-steps":"d891b7276abbe85b9b22ef07b66eab6d3cb26635139bc3b8e07968f93d9f1455"},"reviewedRootScalars":["20357ee5094e15c2c23fa06b4b6b57d46d6cd599c1a449f81ec05d2cef7d05c1","35eab570146433395722bb82a41023ca23547d28e7c60274076276a3bc3d4120","714b14257e54c8509f12da9f7c840d745b37075a2bd89336abde0553524e7ec2","4ec303166203a0d7ad5636582b0e1891547a448ec24a866dbf2521ee69b0f85c","40d8bce5b55f95a5cba57d5f5bfcc233cf021f0691424df396a6558f2db57258","701f4f72485511644e51d18159e432bd2a8a7b30e380579f03b520e9e1ddb9b9","d0fe825f00efa9ff27244a35276d640a24ddbce3ccc84be4c92111c7a8065085","cabff13669d1896caf63a360d6682b5ffa35fd974f519d8d882fe3be401cf818","b1d764ed103bde1eac04cc7c5d5874539ca82fca014609e877d35a5914db429a"],"linkedLocalizations":{"en":"34483dbaac6ca670fae10eb76da738ca20150c3c6cdb6b07396efbe126a9fc95","fr":"7c54b5449bd01ae71053ff7890e4eab66c87e76c08190123f627474ff7ecc535","it":"3caaad087b2c4a9c1f343ea37925b782b563cbaa8394e61af8adeedecaf37b1d","de":"373b197d57138dd8fd08c10c080d5a49706ce0b0cbc0855696e68958039b1f22","es-ES":"0f80d53415fd76c220aa7e1f3ce80db562670181da962347cde7e78601535ab1","ja":"331530d21c8fa727fed704667456827408afeb274f9c427ef27e3cae939c6da4","zh-CN":"73db4538808157b2e30d50b521904b967ef662debf2d294dd6ce909c9ddb1902","pt-BR":"8b1d7f08d4feaf39f3639e78b1830fbe6401592c2512070cfb28e630ff5eb74e"},"acquisitionProjection":{"summarySha256":"a599c8b2a01fe63b76d1f225c3c311d70de532fc834a325a897d98d5df3e3dd1","relationsSha256":"caff044f71b1cf7f55ccfe4fba3da4bcf58229397e8350fb67b52cc5438bf1d7"}}}]}
+{
+  "schema": "wand.item-master.versions@1",
+  "current": "1.26.2",
+  "releases": [
+    {
+      "gameVersion": "1.26.2",
+      "release": "steam-1.26.2-item-id-master-v1",
+      "count": 13202,
+      "archiveSha256": "3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6",
+      "expanded": {
+        "release": "steam-1.26.2-item-id-master-v2",
+        "count": 14753,
+        "extensionSha256": "e7895b73c32097717699fc933ff3cf0f2e6ceca115f0c39be89f994101eb8685"
+      },
+      "complete": {
+        "release": "steam-1.26.2-item-id-master-v3",
+        "count": 39067,
+        "parts": 9,
+        "archiveSha256": "b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d",
+        "attributesSha256": "f6902e9bc4430039a9b8da53978e64a427ed064ab17a74de3780b9dc02b4dead",
+        "localization": {
+          "parts": 4,
+          "sha256": "c49266b885546c901bc4d60cc5a038b653c5a37639df1c266112fb4627e06c24"
+        },
+        "nativeSupplementSha256": "5fe8c2c26461f31bd7ca81a56197ff27ba793912a940e79721ad39d4c4598aac",
+        "referenceAttributesSha256": "262636fa041090c238ca8873cba4436e613bbef73cec1994164cf5d91104da80",
+        "reviewedRootArraysSha256": "d3255ab3b8a3d371bf4daff05253f015b333f0d6f467d6dc74e32edfaaaee2cf",
+        "reviewedMessagesSha256": "98cc327112d18c548b8f14f94c716dd6c36d43ecb8b1c1e60ff2381004a8ba61",
+        "reviewedMessageGroupsSha256": "3e44e17960ffa4a9060b90d397d8b78977f785902eea638edca36ad174e2a838",
+        "reviewedStructure": {
+          "reviewed-structure": "199c88041773f244f673f0e863501dacde3d92ead3b0a862318272cf822913c8",
+          "reviewed-quest-steps": "d891b7276abbe85b9b22ef07b66eab6d3cb26635139bc3b8e07968f93d9f1455"
+        },
+        "reviewedRootScalars": [
+          "20357ee5094e15c2c23fa06b4b6b57d46d6cd599c1a449f81ec05d2cef7d05c1",
+          "35eab570146433395722bb82a41023ca23547d28e7c60274076276a3bc3d4120",
+          "714b14257e54c8509f12da9f7c840d745b37075a2bd89336abde0553524e7ec2",
+          "4ec303166203a0d7ad5636582b0e1891547a448ec24a866dbf2521ee69b0f85c",
+          "40d8bce5b55f95a5cba57d5f5bfcc233cf021f0691424df396a6558f2db57258",
+          "701f4f72485511644e51d18159e432bd2a8a7b30e380579f03b520e9e1ddb9b9",
+          "d0fe825f00efa9ff27244a35276d640a24ddbce3ccc84be4c92111c7a8065085",
+          "cabff13669d1896caf63a360d6682b5ffa35fd974f519d8d882fe3be401cf818",
+          "b1d764ed103bde1eac04cc7c5d5874539ca82fca014609e877d35a5914db429a"
+        ],
+        "linkedLocalizations": {
+          "en": "34483dbaac6ca670fae10eb76da738ca20150c3c6cdb6b07396efbe126a9fc95",
+          "fr": "7c54b5449bd01ae71053ff7890e4eab66c87e76c08190123f627474ff7ecc535",
+          "it": "3caaad087b2c4a9c1f343ea37925b782b563cbaa8394e61af8adeedecaf37b1d",
+          "de": "373b197d57138dd8fd08c10c080d5a49706ce0b0cbc0855696e68958039b1f22",
+          "es-ES": "0f80d53415fd76c220aa7e1f3ce80db562670181da962347cde7e78601535ab1",
+          "ja": "331530d21c8fa727fed704667456827408afeb274f9c427ef27e3cae939c6da4",
+          "zh-CN": "73db4538808157b2e30d50b521904b967ef662debf2d294dd6ce909c9ddb1902",
+          "pt-BR": "8b1d7f08d4feaf39f3639e78b1830fbe6401592c2512070cfb28e630ff5eb74e"
+        },
+        "acquisitionProjection": {
+          "summarySha256": "a599c8b2a01fe63b76d1f225c3c311d70de532fc834a325a897d98d5df3e3dd1",
+          "relationsSha256": "caff044f71b1cf7f55ccfe4fba3da4bcf58229397e8350fb67b52cc5438bf1d7"
+        },
+        "premiumBundleProjectionSha256": "765cea5074b93b14515150369e1e7c6410ab914c1f5d97d6838f3869a7199e73"
+      }
+    }
+  ]
+}

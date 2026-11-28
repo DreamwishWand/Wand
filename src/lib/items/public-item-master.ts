@@ -46,6 +46,7 @@ export interface ItemMasterAcquisitionProjection extends ItemMasterAcquisitionPi
   readonly coverageComplete:false;
 }
 export interface ItemMasterCompleteRelease {
+  readonly premiumBundleProjectionSha256?:string;
   readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionPins>;
   readonly release: string;
   readonly count: number;
@@ -328,6 +329,8 @@ export interface QuestFlowProjection {
   readonly currentAvailabilityVerified:false;
 }
 export interface ItemMasterRelease {
+  readonly premiumBundleProjectionSha256?:string;
+  readonly premiumBundleCoverage?:Readonly<Record<string,number|false>>;
   readonly questFlowProjection?:Readonly<QuestFlowProjection>;
   readonly originalPriceProjection?:Readonly<OriginalPriceProjection>;
   readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionProjection>;
@@ -518,7 +521,54 @@ export interface OriginalItemSaleFlags {
   readonly unsellableFieldPresent:boolean|null;
   readonly runtimeSaleEligibilityVerified:false;
 }
+export interface PremiumBundleComponent {
+  readonly itemId:number;
+  readonly quantity:number;
+  readonly image?:string|null;
+  readonly description?:string|null;
+  readonly imageAdjustment?:Readonly<Record<string,number|string>>;
+}
+export interface PremiumBundleRevision {
+  readonly revisionSha256:string;
+  readonly components:readonly PremiumBundleComponent[];
+  readonly onlineId?:string;
+  readonly title?:string|null;
+  readonly description?:string|null;
+  readonly language?:string|null;
+  readonly titleKey?:string|null;
+  readonly descriptionKey?:string|null;
+  readonly gameVersion?:string;
+  readonly capturedUnixSeconds?:number;
+  readonly detailCaptureSha256?:string;
+  readonly minGameVersion?:string|null;
+  readonly artwork?:Readonly<Record<string,unknown>>;
+}
+export interface PremiumBundleDefinition {
+  readonly bundleId:string;
+  readonly current:PremiumBundleRevision|null;
+  readonly legacy:PremiumBundleRevision|null;
+  readonly saleHistoryVerified:false;
+  readonly currentAvailabilityVerified:false;
+  readonly listingEligibility:'unverified';
+}
+export interface PremiumBundleMembership {
+  readonly bundleIds:readonly string[];
+  readonly currentBundleIds:readonly string[];
+  readonly legacyBundleIds:readonly string[];
+  readonly occurrences:readonly (readonly [bundleId:string,source:'current'|'legacy',position:number,quantity:number])[];
+}
+export interface PremiumBundleCatalog {
+  readonly schema:'wand.item-master.premium-bundle-source@1';
+  readonly release:string;
+  readonly source:Readonly<Record<string,unknown>>;
+  readonly counts:Readonly<Record<string,number>>;
+  readonly definitions:readonly PremiumBundleDefinition[];
+}
+
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
+  getPremiumBundleCatalog():Promise<Readonly<PremiumBundleCatalog>|null>;
+  getPremiumBundleDefinitions(bundleIds:readonly string[]):Promise<readonly (Readonly<PremiumBundleDefinition>|null)[]>;
+  getPremiumBundleMembership(itemIds:readonly number[]):Promise<readonly (Readonly<PremiumBundleMembership>|null)[]>;
   getOriginalItemPrices(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemPriceFacts>|null)[]>;
   getOriginalItemSaleFlags(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemSaleFlags>|null)[]>;
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
@@ -732,6 +782,7 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.premiumBundleProjectionSha256===undefined||typeof c.premiumBundleProjectionSha256==='string'&&SHA.test(c.premiumBundleProjectionSha256),'INVALID_PREMIUM_BUNDLE_PIN');
         assert(c.acquisitionProjection===undefined||isObject(c.acquisitionProjection)&&
           Object.keys(c.acquisitionProjection).length===2&&
           typeof c.acquisitionProjection.summarySha256==='string'&&SHA.test(c.acquisitionProjection.summarySha256)&&
@@ -815,6 +866,8 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    assert((!selected||release.premiumBundleProjectionSha256===selected.complete?.premiumBundleProjectionSha256)&&
+      (release.premiumBundleProjectionSha256===undefined||typeof release.premiumBundleProjectionSha256==='string'&&SHA.test(release.premiumBundleProjectionSha256)&&isObject(release.premiumBundleCoverage)), 'INVALID_PREMIUM_BUNDLE_PROJECTION');
     const ap=release.acquisitionProjection;
     const pins=selected?.complete?.acquisitionProjection;
     assert((!selected||Boolean(ap)===Boolean(pins))&&
@@ -1065,6 +1118,24 @@ export async function openPublicItemMaster(
     return Object.freeze(keys.map(k=>tables.get(linkedBucket(k))?.get(k)??null));
   }
   const fieldReader=createItemFieldReader(m.count,m.assets,asset);
+  let premiumIndex:Map<string,Readonly<PremiumBundleDefinition>>|undefined;
+  async function premiumCatalog():Promise<Readonly<PremiumBundleCatalog>|null>{
+    if(!m.premiumBundleProjectionSha256)return null;
+    const value=await asset('premium-bundles.json');
+    assert(isObject(value)&&value.schema==='wand.item-master.premium-bundle-source@1'&&
+      Array.isArray(value.definitions)&&value.definitions.length===m.assets?.['premium-bundles.json']?.count,
+      'INVALID_PREMIUM_BUNDLE_CATALOG');
+    if(!premiumIndex){
+      const found=new Map<string,Readonly<PremiumBundleDefinition>>();
+      for(const b of value.definitions){
+        assert(isObject(b)&&typeof b.bundleId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(b.bundleId)&&!found.has(b.bundleId)&&
+          (b.current!==null||b.legacy!==null)&&b.saleHistoryVerified===false&&b.currentAvailabilityVerified===false&&b.listingEligibility==='unverified','INVALID_PREMIUM_BUNDLE_DEFINITION');
+        found.set(b.bundleId,b as unknown as Readonly<PremiumBundleDefinition>);
+      }
+      premiumIndex=found;
+    }
+    return value as unknown as Readonly<PremiumBundleCatalog>;
+  }
   async function localizedItems(ids:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>{
     assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
     // Resolve only original text keys and category, not unrelated definitions.
@@ -1310,6 +1381,19 @@ export async function openPublicItemMaster(
       ]):Object.freeze([] as number[]);
       return Object.freeze({status:available?'indexed' as const:'not_indexed' as const,itemIds,
         coverageComplete:false as const,currentAvailabilityVerified:false as const});
+    },
+    getPremiumBundleCatalog:premiumCatalog,
+    async getPremiumBundleDefinitions(ids:readonly string[]){
+      assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
+      await premiumCatalog();
+      return Object.freeze(ids.map(id=>premiumIndex?.get(id)??null));
+    },
+    async getPremiumBundleMembership(ids:readonly number[]){
+      assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(ID),'INVALID_ITEM_BATCH');
+      if(!m.premiumBundleProjectionSha256)return Object.freeze(ids.map(()=>null));
+      const field='acquisition.premiumBundleMembership';
+      const rows=await fieldReader.getItemFields(ids,[field]);
+      return Object.freeze(rows.map(r=>r===null?null:deepFreeze((r.values[field]??{bundleIds:[],currentBundleIds:[],legacyBundleIds:[],occurrences:[]}) as unknown as PremiumBundleMembership)));
     },
     async getNativeAcquisitionCandidates(ids:readonly number[]){
       const field='acquisition.nativeCandidates';
