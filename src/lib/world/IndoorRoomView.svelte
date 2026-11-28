@@ -457,7 +457,7 @@
   </div>
  </div>
  {/if}
- {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} initialChildIndex={supportChild} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} initialFreePlacement={freeEdit} initialChildIndex={supportChild} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 {#if projectApplyOpen&&file&&room}<RoomProjectApply {file} {room} {stock} {owned} worker={terrainWorker} {locale} {nextRequest} {blocked} onClose={()=>projectApplyOpen=false}/>{/if}
 </div>
