@@ -27,6 +27,7 @@ import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
+import {buildStoreSequenceSources} from './store-sequence-sources.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
 import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
@@ -1340,6 +1341,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
   const ordinaryStore=ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices);
+  const storeSequences=buildStoreSequenceSources(rows,source,catalogFacts,storeLayout,originalPrices);
   const existingCategories=id=>new Set([...(acquisition?.summary.get(id)?.categories??[]),
     ...((protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)?['ordinary_gameplay']:[]),
     ...(questFlows.conditionalQuest.get(id)??[]).map(l=>l.category),
@@ -1653,6 +1655,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(conditionalQuest?.length){
       add('acquisition.conditionalQuestSources',row.itemId,conditionalQuest);
       for(const evidence of conditionalQuest)categorySet.add(evidence.category);
+    }
+    const sequenceSources=storeSequences.get(row.itemId);
+    if(sequenceSources?.length){
+      add('acquisition.ordinaryStoreSequenceSources',row.itemId,sequenceSources);
+      categorySet.add('ordinary_gameplay');
     }
     const configuredStore=ordinaryStore.get(row.itemId);
     if(configuredStore){

@@ -45,6 +45,7 @@ const extensionFields={
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+  storeSequence:'acquisition.ordinaryStoreSequenceSources',
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
@@ -108,6 +109,16 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
+        }else if(family==='storeSequence'){
+          check(evidence.kind==='ordinary_store_display_sequence'&&evidence.sourceDisplaySha256===sha?.Display&&
+            evidence.sourceBuildingSha256===sha?.Building&&
+            (evidence.sourceItemFileSha256===sha?.Furniture||evidence.sourceItemFileSha256===sha?.Clothing)&&
+            evidence.purchaseCurrencyItemId===80000000&&id(evidence.configuredPurchaseAmount)&&id(evidence.buildingItemId)&&
+            id(evidence.upgradeLevel)&&id(evidence.configuredDisplayQuantity)&&
+            typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.UpgradeInfo[')&&
+            object(evidence.sequence)&&evidence.sequence.displayItemId===sourceId&&
+            evidence.storeMembershipVerified===false&&evidence.liveTransactionVerified===false,'EXTENSION_STORE_SEQUENCE');
+          relatedIds.push(evidence.buildingItemId,80000000);
         }else if(family==='memorySpawn'){
           const realm=evidence.kind==='realm_fixed_memory_spawn';
           check((evidence.kind==='quest_gated_memory_spawn'||realm&&evidence.sourceSceneSha256===sha?.Scene)&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
@@ -361,7 +372,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
       const expected=e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'?['ConditionalEvent']:
-        e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
+        e.family==='storeSequence'?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
       return Object.freeze({family:e.family,category:e.category,evidence:e.evidence,identity:source,relatedIdentities:Object.freeze(related)});
