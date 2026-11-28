@@ -1,5 +1,5 @@
 import {nativeMapSourceScope} from '../media/native-local-preview.ts';
-import {bindMainland,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {bindMainland,bindFloatingIslandGrid,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
 
 // Steam 1.26.2 MapGridLocks -> GridScript -> exact local origin PPtr.
@@ -55,4 +55,10 @@ export function bindNativeCalibrationGrids(mapId:string,grids:readonly PublicTer
   result.push(bound.grid);
  }
  return result;
+}
+
+/** Save overview accepts only exact calibrated underwater grids or the
+ * existing independent island binding. Never merge unrelated scene planes. */
+export function bindIndependentEditorGrid(grid:PublicTerrainGridRef|null):MainlandGrid|null{
+ return nativeUnderwaterDesignGrid(grid)?.grid??bindFloatingIslandGrid(grid);
 }
