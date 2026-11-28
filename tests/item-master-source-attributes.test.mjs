@@ -478,7 +478,7 @@ test('native acquisition candidates expose original reward and output occurrence
 });
 
 
-test('verified historical item introduction from complete 1.25.3, 1.26.1 and hotfix source census',async()=>{
+test('verified historical item introduction from complete 1.24.13 through 1.26.2 source censuses',async()=>{
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=['history.firstObservedVersion','history.introducedVersion','history.introducedAfterVersion',
@@ -486,7 +486,7 @@ test('verified historical item introduction from complete 1.25.3, 1.26.1 and hot
     'history.sourceReleaseKind','history.nativeContentMarker','history.introductionShopSnapshot'];
   const rows=await db.getItemFields([40005160,2130000001,30200232,40006771,2130007038,99999999],fields);
   for(const row of rows.slice(0,2)){
-    assert.equal(row.values['history.firstObservedVersion'],'1.25.3');
+    assert.equal(row.values['history.firstObservedVersion'],'1.24.13');
     assert.equal(row.values['history.observationEvidence'],'verified_original_source_comparison');
     assert.equal(row.values['history.introducedVersion'],null);
   }
@@ -500,8 +500,12 @@ test('verified historical item introduction from complete 1.25.3, 1.26.1 and hot
   assert.equal(rows[4].values['history.sourceReleaseKind'],'hotfix');
   assert.equal(rows[5],null);
   for(const [field,value,count] of [
-    ['firstObservedVersion','1.25.3',35812],
-    ['introducedVersion',null,35812],
+    ['firstObservedVersion','1.24.13',34666],
+    ['firstObservedVersion','1.25.0',1145],
+    ['firstObservedVersion','1.25.3',1],
+    ['introducedVersion',null,34666],
+    ['introducedVersion','1.25.0',1145],
+    ['introducedVersion','1.25.3',1],
     ['introducedVersion','1.26.1',3254],
     ['introducedVersion','1.26.2',1],
     ['nativeContentMarker','expansion04',1584],
@@ -590,7 +594,7 @@ test('typed content origins distinguish observed versions, verified release, and
   const [old,bridge,outfit,memory,reward,hotfix,missing,duplicate]=await db.getItemContentOrigins(ids);
   assert.deepEqual(old,duplicate);
   assert.equal(old.attribution,'unassigned');
-  assert.equal(old.firstObservedVersion,'1.25.3');
+  assert.equal(old.firstObservedVersion,'1.24.13');
   assert.equal(old.introducedVersion,null);
   assert.equal(bridge.attribution,'candidate');
   assert.equal(bridge.contentReleaseId,null);
@@ -623,7 +627,7 @@ test('typed content origins distinguish observed versions, verified release, and
   assert.equal((await query('unconfirmed_candidate','version.26')).itemIds.length,18);
   assert.equal((await query('source_release','dlc.the-keepsake-sea')).itemIds.length,3254);
   assert.equal((await db.findItemIdsByContent({kind:'introduced_version',version:'1.26.1'})).itemIds.length,3254);
-  assert.equal((await db.findItemIdsByContent({kind:'unknown_introduction'})).itemIds.length,35812);
+  assert.equal((await db.findItemIdsByContent({kind:'unknown_introduction'})).itemIds.length,34666);
   const clothing=await db.findItemIdsByContent({kind:'unconfirmed_candidate',releaseId:'version.26'},
     [{field:'nativeCategory',anyOf:[{kind:'equals',value:'Clothing'}]}]);
   assert(clothing.itemIds.includes(50900420));
