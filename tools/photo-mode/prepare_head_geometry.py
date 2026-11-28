@@ -89,3 +89,4 @@ def apply_heads(raw,dest,base_source,morph_source):
     public["headGeometry"]={"heads":heads,"targets":targets}
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Native head geometry:",sum(map(len,heads.values())),"head variants;",len(assets),"unique visible meshes;",len(targets),"model bindings")
+    return m

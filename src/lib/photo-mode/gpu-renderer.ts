@@ -1,12 +1,14 @@
 import {limboViewDirection,validLimboMaterial} from './limbo-material.ts';
+import type {ExpressionWeights} from './expression-weights.ts';
 import type {PoseScene,PoseView,PoseRenderer,PosePrimitive} from './scene-session.ts';
 
 const vertexSource = '#version 300 es\n'+
 'precision highp float; precision highp int;\n'+
 'layout(location=0) in vec3 position; layout(location=1) in vec3 normal; layout(location=2) in vec2 uv; layout(location=3) in uvec4 joints; layout(location=4) in vec4 weights;\n'+
+'layout(location=5) in vec3 morph0; layout(location=6) in vec3 morph1; layout(location=7) in vec3 morph2; layout(location=8) in vec3 morph3; layout(location=9) in vec3 morph4; uniform vec4 expressionA; uniform float expressionB;\n'+
 'uniform highp sampler2D palette; uniform mat4 camera; out vec2 texcoord; out vec3 n;\n'+
 'mat4 bone(uint j){int y=int(j);return mat4(texelFetch(palette,ivec2(0,y),0),texelFetch(palette,ivec2(1,y),0),texelFetch(palette,ivec2(2,y),0),texelFetch(palette,ivec2(3,y),0));}\n'+
-'void main(){mat4 skin=weights.x*bone(joints.x)+weights.y*bone(joints.y)+weights.z*bone(joints.z)+weights.w*bone(joints.w);gl_Position=camera*skin*vec4(position,1.);n=normalize(mat3(skin)*normal);texcoord=uv;}';
+'void main(){mat4 skin=weights.x*bone(joints.x)+weights.y*bone(joints.y)+weights.z*bone(joints.z)+weights.w*bone(joints.w);vec3 p=position+morph0*expressionA.x+morph1*expressionA.y+morph2*expressionA.z+morph3*expressionA.w+morph4*expressionB;gl_Position=camera*skin*vec4(p,1.);n=normalize(mat3(skin)*normal);texcoord=uv;}';
 const fragmentSource='#version 300 es\nprecision highp float; in vec2 texcoord; in vec3 n; uniform sampler2D albedo; uniform vec4 tint; uniform bool limboEnabled; uniform vec3 viewDirection; uniform vec3 limboMain; uniform vec3 limboSecondary; uniform vec3 limboEdge; uniform vec4 limboParams; out vec4 color;\n'+
 'void main(){if(limboEnabled){float radial=pow(clamp(dot(normalize(n),viewDirection),0.,1.),limboParams.y);if(radial<limboParams.z)discard;float v=radial+limboParams.x;float rim=step(radial*v,limboParams.w);color=vec4(limboMain+(limboSecondary-limboMain)*v+limboEdge*rim,1.);return;}vec4 base=texture(albedo,texcoord)*tint;if(base.a<0.02)discard;float light=0.60+0.40*max(0.,dot(normalize(n),normalize(vec3(.3,.8,.6))));color=vec4(base.rgb*light,base.a);}';
 function check(x:unknown,m:string):asserts x{if(!x)throw new Error(m)}
@@ -24,6 +26,7 @@ export function validatePrimitive(p:PosePrimitive,counts:readonly number[]){
   check(Number.isSafeInteger(n)&&n>0&&p.normals.length===n*3&&p.uv.length===n*2&&p.joints.length===n*4&&p.weights.length===n*4&&p.indices.length>0&&p.indices.length%3===0,'Invalid geometry');
   check(Number.isSafeInteger(p.skin)&&p.skin>=0&&p.skin<counts.length&&counts[p.skin]>0,'Invalid skin');
   check(p.positions.every(Number.isFinite)&&p.normals.every(Number.isFinite)&&p.uv.every(Number.isFinite)&&p.weights.every(w=>Number.isFinite(w)&&w>=0)&&p.joints.every(j=>j<counts[p.skin])&&p.indices.every(i=>i<n)&&p.color.length===4&&p.color.every(c=>Number.isFinite(c)&&c>=0&&c<=1),'Invalid geometry values');
+  check(p.expressionDeltas===undefined||p.actorId==='player'&&p.expressionDeltas.length===5&&p.expressionDeltas.every(d=>d.length===n*3&&d.every(Number.isFinite)),'Invalid expression deltas');
   check(p.limbo===undefined||p.actorId==='companion'&&validLimboMaterial(p.limbo)&&!p.texture,'Invalid limbo primitive');
   for(let i=0;i<n;i++){const k=i*4;check(Math.abs(p.weights[k]+p.weights[k+1]+p.weights[k+2]+p.weights[k+3]-1)<.001,'Invalid skin weights')}
 }
@@ -37,7 +40,7 @@ export class GpuPoseRenderer implements PoseRenderer {
   private vaos:WebGLVertexArrayObject[]=[];
   private skins:WebGLTexture[]=[];
   private draws:Draw[]=[];
-  private uniforms!:Record<'palette'|'camera'|'albedo'|'tint'|'limboEnabled'|'viewDirection'|'limboMain'|'limboSecondary'|'limboEdge'|'limboParams',WebGLUniformLocation>;
+  private uniforms!:Record<'palette'|'camera'|'albedo'|'tint'|'limboEnabled'|'viewDirection'|'limboMain'|'limboSecondary'|'limboEdge'|'limboParams'|'expressionA'|'expressionB',WebGLUniformLocation>;
   private disposed=false;
   private canvas:HTMLCanvasElement;
   private scene:PoseScene;
@@ -49,7 +52,7 @@ export class GpuPoseRenderer implements PoseRenderer {
       check(scene.primitives.length>0&&new Set(scene.actors.map(a=>a.id)).size===scene.actors.length,'Invalid actors');
       const shader=(type:number,source:string)=>{const s=gl.createShader(type);check(s,'Shader allocation failed');this.shaders.push(s);gl.shaderSource(s,source);gl.compileShader(s);check(gl.getShaderParameter(s,gl.COMPILE_STATUS),gl.getShaderInfoLog(s)||'Shader failed');return s};
       const program=gl.createProgram();check(program,'Program allocation failed');this.program=program;gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);check(gl.getProgramParameter(program,gl.LINK_STATUS),gl.getProgramInfoLog(program)||'Program failed');
-      const loc=(n:string)=>{const l=gl.getUniformLocation(program,n);check(l!==null,'Missing uniform');return l};this.uniforms={palette:loc('palette'),camera:loc('camera'),albedo:loc('albedo'),tint:loc('tint'),limboEnabled:loc('limboEnabled'),viewDirection:loc('viewDirection'),limboMain:loc('limboMain'),limboSecondary:loc('limboSecondary'),limboEdge:loc('limboEdge'),limboParams:loc('limboParams')};
+      const loc=(n:string)=>{const l=gl.getUniformLocation(program,n);check(l!==null,'Missing uniform');return l};this.uniforms={palette:loc('palette'),camera:loc('camera'),albedo:loc('albedo'),tint:loc('tint'),limboEnabled:loc('limboEnabled'),viewDirection:loc('viewDirection'),limboMain:loc('limboMain'),limboSecondary:loc('limboSecondary'),limboEdge:loc('limboEdge'),limboParams:loc('limboParams'),expressionA:loc('expressionA'),expressionB:loc('expressionB')};
       const texture=()=>{const t=gl.createTexture();check(t,'Texture allocation failed');this.textures.push(t);gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);return t};
       this.skins=scene.jointCounts.map(n=>{const t=texture();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,4,n,0,gl.RGBA,gl.FLOAT,null);return t});
       const white=texture();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));
@@ -61,13 +64,13 @@ export class GpuPoseRenderer implements PoseRenderer {
         if(p.texture){const old=imageCache.get(p.texture);if(old)tex=old;else{tex=texture();gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,p.texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);imageCache.set(p.texture,tex)}}
         const vao=gl.createVertexArray();check(vao,'Vertex array allocation failed');this.vaos.push(vao);gl.bindVertexArray(vao);
         const attr=(i:number,n:number,data:Float32Array|Uint16Array)=>{buffer(gl.ARRAY_BUFFER,data);gl.enableVertexAttribArray(i);if(data instanceof Uint16Array)gl.vertexAttribIPointer(i,n,gl.UNSIGNED_SHORT,0,0);else gl.vertexAttribPointer(i,n,gl.FLOAT,false,0,0)};
-        attr(0,3,p.positions);attr(1,3,p.normals);attr(2,2,p.uv);attr(3,4,p.joints);attr(4,4,p.weights);buffer(gl.ELEMENT_ARRAY_BUFFER,p.indices);this.draws.push({vao,texture:tex,primitive:p});
+        attr(0,3,p.positions);attr(1,3,p.normals);attr(2,2,p.uv);attr(3,4,p.joints);attr(4,4,p.weights);p.expressionDeltas?.forEach((d,i)=>attr(i+5,3,d));buffer(gl.ELEMENT_ARRAY_BUFFER,p.indices);this.draws.push({vao,texture:tex,primitive:p});
       }
       gl.bindVertexArray(null);gl.enable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
       check(gl.getError()===gl.NO_ERROR,'GPU upload failed');
     }catch(e){this.dispose();throw e}
   }
-  draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>){
+  draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>,expression?:ExpressionWeights){
     if(this.disposed)return;
     const gl=this.gl;check(!gl.isContextLost(),'Graphics context lost');const rect=this.canvas.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,Math.round(rect.width*dpr)),h=Math.max(1,Math.round(rect.height*dpr));
     if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
@@ -75,7 +78,7 @@ export class GpuPoseRenderer implements PoseRenderer {
     gl.activeTexture(gl.TEXTURE0);
     for(const [i,p] of palettes.entries()){check(p.length===this.scene.jointCounts[i]*16,'Invalid palette');gl.bindTexture(gl.TEXTURE_2D,this.skins[i]);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,4,this.scene.jointCounts[i],gl.RGBA,gl.FLOAT,p)}
     gl.uniform1i(this.uniforms.palette,0);gl.uniform1i(this.uniforms.albedo,1);gl.uniform3f(this.uniforms.viewDirection,...limboViewDirection(view.yaw,view.pitch));
-    for(const d of this.draws){const p=d.primitive;if(hidden.has(p.actorId))continue;gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.skins[p.skin]);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,d.texture);gl.uniform4f(this.uniforms.tint,...p.color);gl.uniform1i(this.uniforms.limboEnabled,p.limbo?1:0);if(p.limbo){const m=p.limbo;gl.uniform3f(this.uniforms.limboMain,...m.main);gl.uniform3f(this.uniforms.limboSecondary,...m.secondary);gl.uniform3f(this.uniforms.limboEdge,...m.edge);gl.uniform4f(this.uniforms.limboParams,m.brightness,m.radial,m.threshold,m.edgeRatio)}gl.bindVertexArray(d.vao);gl.drawElements(gl.TRIANGLES,p.indices.length,p.indices instanceof Uint32Array?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT,0)}
+    for(const d of this.draws){const p=d.primitive;if(hidden.has(p.actorId))continue;const e=p.expressionDeltas?expression:undefined;gl.uniform4f(this.uniforms.expressionA,e?.[0]??0,e?.[1]??0,e?.[2]??0,e?.[3]??0);gl.uniform1f(this.uniforms.expressionB,e?.[4]??0);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.skins[p.skin]);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,d.texture);gl.uniform4f(this.uniforms.tint,...p.color);gl.uniform1i(this.uniforms.limboEnabled,p.limbo?1:0);if(p.limbo){const m=p.limbo;gl.uniform3f(this.uniforms.limboMain,...m.main);gl.uniform3f(this.uniforms.limboSecondary,...m.secondary);gl.uniform3f(this.uniforms.limboEdge,...m.edge);gl.uniform4f(this.uniforms.limboParams,m.brightness,m.radial,m.threshold,m.edgeRatio)}gl.bindVertexArray(d.vao);gl.drawElements(gl.TRIANGLES,p.indices.length,p.indices instanceof Uint32Array?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT,0)}
     gl.bindVertexArray(null);
   }
   dispose(){if(this.disposed)return;this.disposed=true;const gl=this.gl;for(const b of this.buffers)gl.deleteBuffer(b);for(const t of this.textures)gl.deleteTexture(t);for(const v of this.vaos)gl.deleteVertexArray(v);for(const s of this.shaders)gl.deleteShader(s);if(this.program)gl.deleteProgram(this.program)}
