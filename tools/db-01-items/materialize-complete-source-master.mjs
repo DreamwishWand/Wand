@@ -1258,7 +1258,43 @@ function memoryAppearanceSources(rows,source){
   const decl=source.sourceFieldDeclarations.MemoryShardItemData;
   check(decl.AppearanceCondition===14&&decl.Conditions===16&&decl.NumberOfShards===13&&
     decl.ConsummableOverrideItemID===11,'MEMORY_APPEARANCE_SCHEMA');
+  check(source.sourceFilesSha256.MemoryShard==='e5c017b208dc50e3e4b543a143fe57400429d67151d5fd68938fbda0a4ef5367'&&
+    source.sourceFilesSha256.Condition==='9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c','MEMORY_GATE_SOURCE');
   const byId=new Map(rows.map(r=>[r.itemId,r])),counts={},gates={};
+  const expansions=new Map([[2130001296,'Expansion01'],[2130001490,'Expansion02'],[2130003048,'Expansion03'],[2130004933,'Expansion04']]);
+  const festivals=new Map([[2130004213,['HauntedFloatingFestival2026',1540000195]],
+    [2130004415,['WinterFloatingFestival',1540000202]],[2130004992,['SpringFloatingFestival',1540000220]]]);
+  const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).every(k=>keys.includes(k));
+  const andLeaves=v=>exact(v,['Operator','Conditions'])&&(v.Operator===undefined||v.Operator===0)&&Array.isArray(v.Conditions)?v.Conditions:null;
+  let expansionCount=0,festivalCount=0;
+  const resolveGate=tree=>{
+    const leaves=andLeaves(tree);
+    if(!leaves?.length||!exact(leaves[0],['CommonConditions']))return null;
+    const c=leaves[0].CommonConditions;
+    if(!exact(c,['Condition','Inversed'])||!(c.Inversed===undefined||c.Inversed===false))return null;
+    const def=byId.get(c.Condition);
+    if(def?.nativeCategory!=='Condition')return null;
+    const original=({...def.nativeProperties,...def.sourceAttributes}).Conditions;
+    const nested=andLeaves(original);
+    if(!nested)return null;
+    const expansion=expansions.get(c.Condition),festival=festivals.get(c.Condition);
+    const base={commonConditionItemId:c.Condition,original,sourceConditionSha256:source.sourceFilesSha256.Condition};
+    if(expansion&&leaves.length===1&&nested.length===1&&exact(nested[0],['Expansion'])){
+      const p=nested[0].Expansion;
+      if(exact(p,['ExpansionName','Inversed','AnyPlatform'])&&p.ExpansionName===expansion&&
+        (p.Inversed===undefined||p.Inversed===false))return {...base,kind:'expansion_required',expansionName:expansion};
+    }
+    if(festival&&leaves.length===2&&nested.length===2&&exact(nested[0],['MissionStatus'])&&exact(nested[1],['FloatingFestivalTime'])&&
+      exact(leaves[1],['CurrentScene'])){
+      const m=nested[0].MissionStatus,f=nested[1].FloatingFestivalTime,scene=leaves[1].CurrentScene;
+      if(exact(m,['Mission','Operator','State'])&&m.Mission===2070000629&&m.State===8&&(m.Operator===undefined||m.Operator===0)&&
+        exact(f,['Event','Inversed','Status'])&&f.Event===festival[0]&&f.Status===2&&(f.Inversed===undefined||f.Inversed===false)&&
+        exact(scene,['Scene','Inversed'])&&scene.Scene===festival[1]&&(scene.Inversed===undefined||scene.Inversed===false)&&
+        byId.get(scene.Scene)?.nativeCategory==='Scene'&&byId.get(m.Mission)?.nativeCategory==='Mission')
+        return {...base,kind:'floating_festival_playable',eventName:f.Event,sceneItemId:scene.Scene,missionItemId:m.Mission};
+    }
+    return null;
+  };
   for(const row of rows){
     if(row.sourceClass!=='MemoryShardItemData')continue;
     check(row.nativeCategory==='MemoryShard','MEMORY_APPEARANCE_CLASS');
@@ -1270,21 +1306,26 @@ function memoryAppearanceSources(rows,source){
     const gateStatus=absent?'field_absent':empty?'explicit_empty':gate===undefined?'unresolved':'configured';
     // A condition-free explicit ordinary action is affirmative original
     // acquisition evidence. Other gates and Custom remain separately visible.
-    const ordinary=[1,2,3,4,5,6,7,8,10,11,13].includes(code)&&(absent||empty);
+    const resolvedGate=resolveGate(gate);
+    const standard=[1,2,3,4,5,6,7,8,10,11,13].includes(code);
+    const ordinary=standard&&(absent||empty||resolvedGate?.kind==='expansion_required');
+    const event=code===6&&resolvedGate?.kind==='floating_festival_playable';
+    if(standard&&resolvedGate?.kind==='expansion_required')expansionCount++;
+    if(event)festivalCount++;
     const override=p.ConsummableOverrideItemID;
     const evidence={kind:'memory_appearance_condition',appearanceConditionCode:code,
       appearanceCondition:memoryAppearanceNames[code],sourcePath:'source.AppearanceCondition',
       conditionsFieldPresent:gate!==undefined,conditions:gate??null,gateStatus,configuredShardCount:p.NumberOfShards,
       consummableOverrideItemId:ID(override)?override:null,
       consummableOverrideResolved:ID(override)&&byId.has(override),
-      category:ordinary?'ordinary_gameplay':null,
+      resolvedGate,category:ordinary?'ordinary_gameplay':event?'in_game_limited_event':null,
       sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256.MemoryShard,
       sourceIl2cppDumpSha256:source.sourceIl2cppDumpSha256,guaranteedGrantVerified:false,currentAvailabilityVerified:false};
     result.set(row.itemId,evidence);
     counts[code]=(counts[code]??0)+1;gates[gateStatus]=(gates[gateStatus]??0)+1;
   }
-  check(result.size===472&&counts[9]===299,'MEMORY_APPEARANCE_CENSUS');
-  console.log('DB01_MEMORY_APPEARANCE '+JSON.stringify({items:result.size,counts,gates,
+  check(result.size===472&&counts[9]===299&&expansionCount===100&&festivalCount===3,'MEMORY_APPEARANCE_CENSUS');
+  console.log('DB01_MEMORY_APPEARANCE '+JSON.stringify({items:result.size,counts,gates,expansionCount,festivalCount,
     ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
   return result;
 }
