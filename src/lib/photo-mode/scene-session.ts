@@ -1,3 +1,4 @@
+import type {LoadedMakeupLayer} from './makeup-assets.ts';
 import type {ExpressionWeights} from './expression-weights.ts';
 import type {LimboMaterial} from './limbo-material.ts';
 import {PosePlayback,type PosePlaybackState,type PoseSpeed} from './playback.ts';
@@ -15,6 +16,7 @@ export interface PosePrimitive {
   readonly texture?:ImageBitmap;
   readonly limbo?:LimboMaterial;
   readonly expressionDeltas?:readonly Float32Array[];
+  readonly nativeMakeup?:{uv:Float32Array;layers:readonly LoadedMakeupLayer[]};
 }
 export interface PoseScene {
   readonly duration:number;
