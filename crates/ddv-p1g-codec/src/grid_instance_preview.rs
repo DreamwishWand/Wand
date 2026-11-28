@@ -5366,6 +5366,31 @@ mod terrain_session_tests{
             assert_eq!(restored["Player"]["ContainerInventories"]["11"]["Inventory"],serde_json::json!([]));
             assert_eq!(restored["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"]["State"]["Storage"]["ContainerInventoryID"],11);
             assert_eq!(restored["World"]["GridCollection"]["Grids"]["20"],g["20"]);
+            // Return and rebuild the complete source-bound support tree
+            // in one area transaction. Its original geometry witness must
+            // remain available even after the old child Grid is removed.
+            let mut furnished=restored.clone();
+            let raster=terrain["grids"].as_array().unwrap().iter().find(|row|row[0].as_str()==Some(path)).unwrap();
+            let idx=raster[4].as_array().unwrap().iter().position(|v|v.as_u64().is_some_and(|n|n!=0)).unwrap();
+            let width=raster[1].as_u64().unwrap() as usize;
+            let (cx,cy)=((idx%width)*2,(idx/width)*2);
+            furnished["World"]["GridCollection"]["Grids"]["20"]["Objects"]["1"]=serde_json::json!({"ID":1,"ItemID":plain,"X":cx,"Y":cy,"Orientation":"GridOrientation_Down"});
+            furnished["World"]["GridCollection"]["Grids"]["20"]["NextGridObjectID"]=2.into();
+            let furnished_raw=furnished.to_string();
+            let (scan,_)=scan_grid_instances(furnished_raw.as_bytes()).unwrap();
+            let ord=scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id=="2").unwrap()+1;
+            let tree=subgrid_tree(furnished["World"]["GridCollection"].as_object().unwrap(),"7","2").unwrap();
+            let scene=serde_json::json!({"schema":"wand.preset.support-scene@1","gameVersion":"1.26.2","ownerItemId":owner,"tree":tree});
+            let restore=serde_json::json!([{"destination":w,"remove":[{"localOrdinal":ord,"itemId":owner.to_string(),"expectedX":2,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeSupport":true}],"add":[{"itemId":owner.to_string(),"destination":w,"x":4,"y":4,"orientation":"GridOrientation_Down","freePlacement":true,"scene":scene}]}]);
+            let moved:Value=serde_json::from_str(&island_furniture_candidate(furnished_raw.as_bytes(),&restore.to_string()).unwrap()).unwrap();
+            assert_eq!(moved["Player"],furnished["Player"]);
+            assert_eq!(moved["World"]["GridCollection"]["Grids"]["8"],furnished["World"]["GridCollection"]["Grids"]["8"]);
+            assert!(moved["World"]["GridCollection"]["Grids"].get("20").is_none());
+            assert_eq!(moved["World"]["GridCollection"]["Grids"]["21"]["Objects"],furnished["World"]["GridCollection"]["Grids"]["20"]["Objects"]);
+            assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["6"]["State"]["SubGrid"]["GridID"],21);
+            let mut bad_tree=restore.clone();bad_tree[0]["add"][0]["scene"]["tree"]["factor"]=1.into();
+            assert!(island_furniture_candidate(furnished_raw.as_bytes(),&bad_tree.to_string()).is_err());
+
             let mut full=v.clone();full["Player"]["ContainerInventories"]["10"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
             assert!(island_furniture_candidate(full.to_string().as_bytes(),&replacement.to_string()).is_err());
             let mut no_witness=root.clone();no_witness["World"]["GridCollection"]["Grids"]["8"].as_object_mut().unwrap().remove("TessellationFactor");
