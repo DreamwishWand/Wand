@@ -168,6 +168,5 @@ if __name__=='__main__':
         apply_native_materials(a.native_materials.read_bytes() if a.native_materials else download_native_materials(),a.dest,head_source,base_source)
         from prepare_avatar_makeup import download_makeup,apply_makeup
         apply_makeup(a.makeup.read_bytes() if a.makeup else download_makeup(),a.dest)
-        if a.skin_inputs:
-            from prepare_native_skin_inputs import apply_skin_inputs
-            apply_skin_inputs(a.skin_inputs.read_bytes(),a.dest,palette_source,base_source)
+        from prepare_native_skin_inputs import download_skin_inputs,apply_skin_inputs
+        apply_skin_inputs(a.skin_inputs.read_bytes() if a.skin_inputs else download_skin_inputs(),a.dest,palette_source,base_source)
