@@ -35,9 +35,9 @@ def decode_material(raw):
     return dict(name=name,shader=[shader[0],str(shader[1])],validKeywords=valid,invalidKeywords=invalid,flags=flags,instancing=instancing,queue=queue,tags=tags,disabledPasses=passes,textures=textures,ints=ints,floats=floats,colors=colors,sourceSha256=digest(raw))
 
 
-def decode_texture(raw,resources):
+def read_streamed_texture(raw,resources):
     r=Reader(raw);name=r.string();fallback,width,height,complete,stripped,fmt,mips=r.unpack('7I')
-    require(0<width<=8192 and 0<height<=8192 and stripped==0 and 0<mips<=16 and fmt in (10,12,25),'unsupported texture format')
+    require(0<width<=8192 and 0<height<=8192 and stripped==0 and 0<mips<=16 and fmt in (10,12,25,26),'unsupported texture format')
     # Unity 6 named mipmap-limit group changes the header size. Require a unique
     # exact streamed-resource tail and verify the entire mip chain byte count.
     tail=[]
@@ -48,9 +48,16 @@ def decode_texture(raw,resources):
             if t.pos==len(raw) and re.fullmatch(r'archive:/CAB-[0-9a-f]+/CAB-[0-9a-f]+\.resS',path) and size==complete and pos>=4 and raw[pos-4:pos]==bytes(4):tail.append((off,size,path))
         except (ValueError,UnicodeError,struct.error):continue
     require(len(tail)==1,'missing/ambiguous streamed texture tail');off,size,path=tail[0];key=path.rsplit('/',1)[-1];require(key in resources,'resource file missing');resource=resources[key];require(off+size<=len(resource),'resource bounds')
-    block=8 if fmt==10 else 16
+    block=8 if fmt in (10,26) else 16
     lengths=[max(1,((max(1,width>>i)+3)//4))*max(1,((max(1,height>>i)+3)//4))*block for i in range(mips)]
     require(sum(lengths)==size,'mip chain size mismatch');payload=resource[off:off+size]
+    return dict(name=name,width=width,height=height,format=fmt,mips=mips,sourceSha256=digest(raw),payloadSha256=digest(payload),resource=path,offset=off,size=size),payload,lengths
+
+
+def decode_texture(raw,resources):
+    info,payload,lengths=read_streamed_texture(raw,resources)
+    width,height,fmt=info['width'],info['height'],info['format']
+    require(fmt in (10,12,25),'unsupported PNG conversion format')
     # DDS wrapper for Pillow's native BC decoder. No channel swizzle or normal-map reconstruction.
     fourcc={10:b'DXT1',12:b'DXT5',25:b'DX10'}[fmt]
     header=struct.pack('<7I11I',124,0x81007,height,width,lengths[0],0,1,*([0]*11))+struct.pack('<II4s5I',32,4,fourcc,0,0,0,0,0)+struct.pack('<5I',0x1000,0,0,0,0)
@@ -58,7 +65,7 @@ def decode_texture(raw,resources):
     im=Image.open(io.BytesIO(b'DDS '+header+payload[:lengths[0]])).convert('RGBA');require(im.size==(width,height),'decoded dimensions mismatch')
     # Unity UV origin is lower-left; normalize the image for conventional top-left raster origin.
     im=im.transpose(Image.Transpose.FLIP_TOP_BOTTOM);buf=io.BytesIO();im.save(buf,format='PNG');png=buf.getvalue()
-    return dict(name=name,width=width,height=height,format=fmt,mips=mips,sourceSha256=digest(raw),payloadSha256=digest(payload),pngSha256=digest(png),resource=path,offset=off,size=size),png
+    return {**{k:info[k] for k in ('name','width','height','format','mips','sourceSha256','payloadSha256')},'pngSha256':digest(png),**{k:info[k] for k in ('resource','offset','size')}},png
 
 
 def main():
