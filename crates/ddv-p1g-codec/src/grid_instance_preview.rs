@@ -5393,6 +5393,24 @@ mod terrain_session_tests{
 
             let mut full=v.clone();full["Player"]["ContainerInventories"]["10"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
             assert!(island_furniture_candidate(full.to_string().as_bytes(),&replacement.to_string()).is_err());
+            // A private restore uses the same area replacement followed by
+            // strict storage rebind. Recreate an empty chest at the saved
+            // pose and restore its contents into the fresh container ID.
+            let scope=serde_json::json!({"kind":"outdoor","destinations":[w]}).to_string();
+            let full_raw=full.to_string();
+            let selected=crate::private_storage_scope::resolve(full_raw.as_bytes(),&scope).unwrap();
+            let backup=ddv_save_patch::storage_backup::export_scoped(&full_raw,selected.as_ref()).unwrap();
+            let mut recreate=replacement.clone();
+            recreate[0]["add"][0]["x"]=3.into();
+            recreate[0]["add"][0]["orientation"]="GridOrientation_Left".into();
+            let draft=island_furniture_candidate(placed.as_bytes(),&recreate.to_string()).unwrap();
+            let after=crate::private_storage_scope::resolve(draft.as_bytes(),&scope).unwrap();
+            assert_eq!(selected,after);
+            let restored_private=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,&backup,after.as_ref(),true,true).unwrap();
+            let restored_private:Value=serde_json::from_str(&restored_private).unwrap();
+            assert_eq!(restored_private["Player"]["ContainerInventories"]["11"]["Inventory"],full["Player"]["ContainerInventories"]["10"]["Inventory"]);
+            assert!(restored_private["Player"]["ContainerInventories"].get("10").is_none());
+            assert_eq!(restored_private["World"]["GridCollection"]["Grids"]["20"],g["20"]);
             let mut no_witness=root.clone();no_witness["World"]["GridCollection"]["Grids"]["8"].as_object_mut().unwrap().remove("TessellationFactor");
             assert!(group_paste_candidate(no_witness.to_string().as_bytes(),&plan.to_string()).is_err());
         }
