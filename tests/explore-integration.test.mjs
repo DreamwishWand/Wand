@@ -34,3 +34,25 @@ test('Explore uses the shared toolbar, flat filters, and noninteractive headings
  assert.match(explore,/<h2 class="universe-heading">/);
  assert.doesNotMatch(explore,/<details|showUniverse|searchOpen|allGrid/);
 });
+
+test('Quick View preserves the browse workspace and uses shared media and entity link contract',()=>{
+  const view=readFileSync(new URL('../src/lib/explore/ExploreQuickView.svelte',import.meta.url),'utf8');
+  assert.match(explore,/<ExploreQuickView /);
+  assert.match(explore,/export const snapshot=/);
+  assert.match(explore,/loadExploreCatalog\(base\)/);
+  assert.match(view,/itemEntityHref/);
+  assert.match(view,/ItemArtwork/);
+  assert.doesNotMatch(view,/<details|<summary/);
+  assert.match(explore,/class="tile-controls"/);
+});
+
+test('Quick View uses selective configured prices and separates cached and live transaction values',()=>{
+  const view=readFileSync(new URL('../src/lib/explore/ExploreQuickView.svelte',import.meta.url),'utf8');
+  assert.match(view,/currentItemViewMaster\(base\)/);
+  assert.match(view,/readItemPriceDetails\(db,\[id\],language\)/);
+  assert.match(view,/row\.amountFieldPresent&&row\.amount!==null&&row\.currency\?\.name/);
+  assert.match(view,/row\.source==='dynamic_cache'/);
+  assert.match(view,/label\('notLivePrice'\)/);
+  assert.match(view,/if\(live\)\{price=result/);
+  assert.doesNotMatch(view,/loadCompleteCollection|premiumBundleCatalog/);
+});

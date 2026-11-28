@@ -1,6 +1,22 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  configuredPurchase:['購入価格（原本設定）','Configured purchase price','Prix d’achat configuré','Prezzo d’acquisto configurato','Konfigurierter Kaufpreis','Precio de compra configurado','原始购买价格','Preço de compra configurado'],
+  configuredSell:['売却価格（原本設定）','Configured sell price','Prix de vente configuré','Prezzo di vendita configurato','Konfigurierter Verkaufspreis','Precio de venta configurado','原始出售价格','Preço de venda configurado'],
+  cachedPrice:['キャッシュ値','Cached value','Valeur en cache','Valore in cache','Cachewert','Valor en caché','缓存值','Valor em cache'],
+  notLivePrice:['現在の取引価格・販売可否ではありません。','Not a current transaction price or sale availability.','Ni prix de transaction actuel ni disponibilité confirmée.','Non indica il prezzo attuale né la disponibilità.','Kein aktueller Handelspreis oder bestätigte Verfügbarkeit.','No indica el precio actual ni la disponibilidad.','不代表当前交易价格或可购买状态。','Não indica o preço atual nem a disponibilidade.'],
+  priceLoading:['価格を読み込み中…','Loading prices…','Chargement des prix…','Caricamento prezzi…','Preise werden geladen…','Cargando precios…','正在加载价格…','Carregando preços…'],
+  priceUnavailable:['価格情報を取得できませんでした。','Could not load price data.','Impossible de charger les prix.','Impossibile caricare i prezzi.','Preise konnten nicht geladen werden.','No se pudieron cargar los precios.','无法加载价格信息。','Não foi possível carregar os preços.'],
+  series:['シリーズ','Series','Série','Serie','Serie','Serie','系列','Série'],
+  quickView:['クイックビュー','Quick view','Aperçu','Anteprima','Schnellansicht','Vista rápida','快速查看','Visualização rápida'],
+  itemPage:['アイテムページ','Item page','Page de l’objet','Pagina oggetto','Objektseite','Página del objeto','物品详情','Página do item'],
+  itemPagePending:['個別ページは準備中','Item page not yet available','Page en préparation','Pagina in preparazione','Objektseite noch nicht verfügbar','Página en preparación','详情页尚未开放','Página em preparação'],
+  ownedConfirmed:['所有確認済み','Ownership confirmed','Possession confirmée','Possesso confermato','Besitz bestätigt','Posesión confirmada','已确认拥有','Posse confirmada'],
+  placement:['装飾場所','Placement','Placement','Posizionamento','Platzierung','Colocación','摆放位置','Posicionamento'],
+  placementHint:['配置候補','Placement context','Contexte de placement','Contesto di posizionamento','Platzierungskontext','Contexto de colocación','摆放候选','Contexto de posicionamento'],
+  both:['屋内・屋外','Indoor & outdoor','Intérieur et extérieur','Interno ed esterno','Innen und außen','Interior y exterior','室内外','Interior e exterior'],
+  addBoard:['ボードに追加','Add to board','Ajouter au tableau','Aggiungi alla bacheca','Zur Pinnwand hinzufügen','Añadir al panel','添加到灵感板','Adicionar ao painel'],
+  removeBoard:['ボードから削除','Remove from board','Retirer du tableau','Rimuovi dalla bacheca','Von Pinnwand entfernen','Quitar del panel','从灵感板移除','Remover do painel'],
   outdoor:['屋外','Outdoors','Extérieur','Esterno','Draußen','Exterior','室外','Exterior'],
   indoor:['屋内','Indoors','Intérieur','Interno','Drinnen','Interior','室内','Interior'],
   all:['すべて','All','Tout','Tutto','Alle','Todo','全部','Todos'],
