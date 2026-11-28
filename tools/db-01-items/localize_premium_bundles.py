@@ -30,8 +30,16 @@ def enrich(catalog, tables):
                     key = bundle['bundleId'] + '_' + suffix
                     # Exact native ID + English text, independently for each field.
                     english = revision.get(field)
-                    if not display(english) or tables['en'].get(key) != english:
+                    if not display(english):
                         continue
+                    if tables['en'].get(key) != english:
+                        # Same native Bundle ID, explicit legacy key, and exact current English text.
+                        explicit = (bundle['legacy'] or {}).get(field + 'Key')
+                        if not isinstance(explicit, str) or not explicit.startswith('Liveops.'):
+                            continue
+                        key = explicit.split('.', 1)[1]
+                        if tables['en'].get(key) != english:
+                            continue
                 else:
                     explicit = revision.get(field + 'Key')
                     if not isinstance(explicit, str) or not explicit.startswith('Liveops.'):
@@ -60,7 +68,8 @@ def main():
     tables = {l: read_locale(a.loc_root / ('LocDB_' + NAMES.get(l, l) + '.zip'), l) for l in LOCALES}
     catalog = enrich(catalog, tables)
     catalog['source']['bundleLocalization'] = {'platform': 'Steam', 'gameVersion': '1.26.2',
-        'archiveSha256ByLocale': PINS, 'legacyTextSource': 'current_locdb_explicit_key_not_historical_translation'}
+        'archiveSha256ByLocale': PINS, 'legacyTextSource': 'current_locdb_explicit_key_not_historical_translation',
+        'currentTextSource': 'native_id_or_same_bundle_legacy_key_with_exact_english_match'}
     coverage = {source: {locale: {field: sum(bool((b[source] or {}).get('localizedText', {}).get(locale, {}).get(field))
         for b in catalog['definitions']) for field in ('title', 'description')} for locale in LOCALES}
         for source in ('current', 'legacy')}
