@@ -1198,7 +1198,9 @@ mod browser_amount_preview {
         }
         let plain=grid_instance_preview::underwater_plain_items(&root);
         let local_plain_ids=rows.iter().filter_map(|r|r["itemId"].as_u64().filter(|id|plain.contains(id))).collect::<Vec<_>>();
-        serde_json::to_string(&serde_json::json!({"contract":"wand.db05.furniture-catalog-stock@1","rows":rows,"localPlainItemIds":local_plain_ids,"exactStoredCounts":true,"canonicalVariationVerified":false,"writerAuthorized":false})).map_err(|_|CodecError::Json)
+        let local_storage_ids=super::storage_source::placement_storage_items(&root,rows.iter().filter_map(|r|r["itemId"].as_u64()));
+        let local_restorable_storage_ids=rows.iter().filter_map(|r|r["itemId"].as_u64().filter(|id|super::storage_source::initial_storage_template(*id).is_some())).collect::<Vec<_>>();
+        serde_json::to_string(&serde_json::json!({"contract":"wand.db05.furniture-catalog-stock@1","rows":rows,"localPlainItemIds":local_plain_ids,"localStorageItemIds":local_storage_ids,"localRestorableStorageItemIds":local_restorable_storage_ids,"exactStoredCounts":true,"canonicalVariationVerified":false,"writerAuthorized":false})).map_err(|_|CodecError::Json)
     }
 
     const MAX_EDITABLE_ROWS:usize=20000;
