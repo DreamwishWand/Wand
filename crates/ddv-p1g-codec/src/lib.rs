@@ -1509,6 +1509,19 @@ mod browser_amount_preview {
             let patched=indoor_room_view::room_project_candidate(source,plan).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
+        pub fn export_private_storage_contents(&self)->Result<String,JsValue>{
+            let invalid=||fail("DB05_STORAGE_BACKUP_INVALID");
+            if !self.ready||self.closed{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            ddv_save_patch::storage_backup::export(std::str::from_utf8(source).map_err(|_|invalid())?).map_err(|_|invalid())
+        }
+        pub fn prepare_private_storage_contents_copy(&mut self,backup:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
+            let invalid=||fail("DB05_STORAGE_RESTORE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let patched=ddv_save_patch::storage_backup::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup).map_err(|_|invalid())?;
+            self.prepare_copy_from_patched(patched,true)
+        }
         pub fn list_indoor_rooms(&self)->Result<String,JsValue>{
             if !self.ready||self.closed{return Err(fail("DB05_INDOOR_NOT_OPEN"));}
             let source=match self.kind{

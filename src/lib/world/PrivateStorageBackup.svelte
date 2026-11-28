@@ -1,0 +1,49 @@
+<script lang="ts">
+ import {onDestroy} from 'svelte';
+ import {browser} from '$app/environment';
+ import {testSaveExportEnabled} from './test-save-export.ts';
+ import {experimentalCopyDownload} from './experimental-copy.ts';
+ import type {WandLanguage} from '../ui/preferences.ts';
+ export let file:File,locale:WandLanguage='ja',blocked=false;
+ const words={
+ ja:['収納内容バックアップ','保存','復元','復元済みセーブをダウンロード','処理中…','対象なし・復元先不一致・未対応状態・変更なし','既存収納の内容のみ。共有プリセットには登録しません。','対象','対象外'],
+ en:['Storage contents backup','Back up','Restore','Download restored Save','Working…','No eligible contents, incompatible target, unsupported state or no change','Existing storage contents only. Not added to shared presets.','Included','Excluded'],
+ fr:['Sauvegarde des rangements','Sauvegarder','Restaurer','Télécharger la sauvegarde restaurée','Traitement…','Aucun contenu compatible ou aucune modification','Contenu des rangements existants uniquement. Aucun partage.','Inclus','Exclus'],
+ it:['Backup dei contenitori','Salva','Ripristina','Scarica il salvataggio ripristinato','Elaborazione…','Nessun contenuto compatibile o modifica','Solo contenuti dei contenitori esistenti. Nessuna condivisione.','Inclusi','Esclusi'],
+ de:['Lagerinhalt sichern','Sichern','Wiederherstellen','Wiederhergestellten Spielstand laden','Verarbeitung…','Kein kompatibler Inhalt oder keine Änderung','Nur bestehende Lagerinhalte. Keine Freigabe.','Enthalten','Ausgeschlossen'],
+ 'es-ES':['Copia del almacenamiento','Guardar','Restaurar','Descargar partida restaurada','Procesando…','Sin contenido compatible o cambios','Solo contenido de almacenamiento existente. No se comparte.','Incluidos','Excluidos'],
+ 'zh-CN':['储物内容备份','备份','恢复','下载恢复后的存档','处理中…','无兼容内容或无更改','仅限现有储物内容，不加入共享预设。','已包含','已排除'],
+ 'pt-BR':['Backup de armazenamento','Salvar','Restaurar','Baixar jogo restaurado','Processando…','Sem conteúdo compatível ou alterações','Somente conteúdo existente. Sem compartilhamento.','Incluídos','Excluídos']
+ } as const;
+ const allowed=browser&&testSaveExportEnabled(window.location);
+ let own:Worker|null=null,seen:File|null=null,input:HTMLInputElement,copy:ReturnType<typeof experimentalCopyDownload>|null=null,report='',error=false;
+ $: w=words[locale];
+ $: if(seen!==file||blocked){clear();seen=file;}
+ function clear(){own?.terminate();own=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;error=false;report='';}
+ function run(backup?:File){
+  if(own||blocked||backup&&!allowed)return;clear();const source=file,worker=new Worker(new URL('./private-storage-backup.worker.ts',import.meta.url),{type:'module'});own=worker;
+  const done=(d:any)=>{worker.terminate();if(own!==worker||file!==source||blocked){d?.bytes?.fill(0);return;}own=null;try{
+   if(d?.kind==='restored'&&backup){copy=experimentalCopyDownload(d,source);return;}
+   if(d?.kind!=='backup'||backup||typeof d.raw!=='string'||!Number.isSafeInteger(d.count)||!Number.isSafeInteger(d.skipped))throw Error('backup');
+   report=w[7]+': '+d.count+' · '+w[8]+': '+d.skipped;if(!d.count){error=true;return;}
+   const url=URL.createObjectURL(new Blob([d.raw],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-private-storage-contents.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch{error=true;}};
+  worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
+  worker.postMessage({command:backup?'restore':'backup',file:source,...(backup?{backup,allowExperimentalCopy:true}:{})});
+ }
+ function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)run(f);}
+ onDestroy(clear);
+</script>
+<details class="private-storage">
+ <summary>{w[0]}</summary>
+ <small>{w[6]}</small>
+ <div><button type="button" disabled={blocked||!!own} on:click={()=>run()}>{w[1]}</button>
+ {#if allowed}<input hidden type="file" accept=".json,application/json" bind:this={input} on:change={open}/><button type="button" disabled={blocked||!!own} on:click={()=>input.click()}>{w[2]}</button>{/if}</div>
+ {#if own}<small role="status">{w[4]}</small>{/if}
+ {#if report}<small role="status">{report}</small>{/if}
+ {#if error}<small role="alert">{w[5]}</small>{/if}
+ {#if copy&&!blocked}<a href={copy.url} download={copy.name}>{w[3]}</a>{/if}
+</details>
+<style>
+ .private-storage{font-size:12px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:5px;padding:5px;max-width:280px}.private-storage summary{cursor:pointer}.private-storage div{display:flex;gap:5px;margin-top:5px}.private-storage small,.private-storage a{display:block;margin-top:4px}.private-storage button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:4px;padding:4px}
+</style>

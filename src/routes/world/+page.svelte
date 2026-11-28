@@ -9,6 +9,7 @@
   import {checkpointWords} from '$lib/world/world-checkpoint-words.ts';
   import {localSaveSession,registerLocalSaveChangeGuard,restoreWorldCheckpoint,type WorldCheckpointHistory} from '$lib/ui/local-save-session';
   import WorldSaveExport from '$lib/world/WorldSaveExport.svelte';
+  import PrivateStorageBackup from '$lib/world/PrivateStorageBackup.svelte';
   import {saveDraftIdentity,makeSaveSessionDraft,parseSaveSessionDraft,readSaveDraft,writeSaveDraft,discardSaveDraft,isCheckpointSaveDraft,parseCheckpointSaveDraft,makeCheckpointSaveDraft,rememberOriginalSaveIdentity,originalSaveIdentity,type SaveDraftIdentity,type SaveSessionDraft} from '$lib/world/save-session-draft.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {bindMainland,bindFloatingIslandGrid} from '$lib/world/mainland-world-coordinates.ts';
@@ -334,6 +335,7 @@
   {#if !designMode&&recoveryBlocked}<div class="save-recovery" role="status">{#if recovery.phase==='offer'}<strong>{recovery.warning==='invalid'?recoveryText[5]:recovery.warning==='conflict'?recoveryText[6]:recoveryText[0]}</strong><div>{#if recovery.draft||recovery.checkpoint&&!recovery.warning}<button type="button" on:click={resumeSaveDraft}>{recoveryText[1]}</button>{/if}<button type="button" on:click={discardRecovery}>{recoveryText[2]}</button>{#if recovery.warning}<button type="button" on:click={continueWithoutSaveRecovery}>{recoveryText[7]}</button>{/if}</div>{:else}{recoveryText[3]}{#if replayProgress}<span> · {replayProgress}</span><button type="button" on:click={cancelCheckpointRecovery}>{locale==='ja'?'取消':'Cancel'}</button>{/if}{/if}</div>{:else if !designMode&&sourceFile&&recovery.warning}<p class="save-recovery" role="alert">{recovery.warning==='conflict'?recoveryText[6]:recoveryText[4]}</p>{/if}
   {#if !designMode&&sourceFile&&$localSaveSession.worldCheckpoint}<div class="world-checkpoints"><WorldCheckpointControls file={sourceFile} history={$localSaveSession.worldCheckpoint} {locale} blocked={comparing||recoveryBlocked||currentWorldEdits(timeline).length>0}/></div>{/if}
   {#if !designMode&&(overviewOpen||!shapeMap)&&!recoveryBlocked&&sourceFile&&currentWorldEdits(timeline).length}<div class="world-export"><WorldSaveExport file={sourceFile} {timeline} {locale}/></div>{/if}
+  {#if !designMode&&sourceFile&&!indoorOpen}<div class="world-private-storage"><PrivateStorageBackup file={sourceFile} {locale} blocked={comparing||recoveryBlocked||currentWorldEdits(timeline).length>0}/></div>{/if}
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
   {#if error}<p class="workspace-message" role="alert">{error}</p>{/if}
   {#if selected&&raster&&!designMode&&!recoveryBlocked}
@@ -376,6 +378,7 @@
  .world-navigation{position:absolute;z-index:12;top:6px;left:6px;right:50px;display:flex;align-items:center;gap:5px;pointer-events:none}.world-navigation>*{pointer-events:auto}
  .navigation-toggle{display:grid;place-items:center;width:38px;height:38px;flex:none;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.navigation-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}.navigation-toggle:focus-visible{outline:2px solid var(--wand-focus)}
  nav{max-width:calc(100% - 43px);padding:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}nav[hidden]{display:none}
+ .world-private-storage{position:absolute;z-index:18;right:6px;bottom:8px;max-width:calc(100% - 12px)}
  .workspace-message{position:absolute;z-index:13;top:52px;left:8px;padding:6px;background:var(--wand-card);border-radius:5px}
  .save-recovery{position:absolute;z-index:16;top:54px;left:6px;right:6px;max-width:430px;padding:8px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;font-size:12px}.save-recovery div{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.save-recovery button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:6px}.world-checkpoints{position:absolute;z-index:17;right:6px;top:48px;max-width:calc(100% - 12px);pointer-events:none}.world-export{position:absolute;z-index:17;right:6px;bottom:48px;max-width:calc(100% - 12px)}
  .workspace-grid,.terrain-side{position:absolute;inset:0;gap:0}.workspace-grid.overview-covered{display:none}.terrain-side>.note{position:absolute;z-index:4;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:5px 7px;border-radius:5px;background:var(--wand-card)}

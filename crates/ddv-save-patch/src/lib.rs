@@ -12,6 +12,7 @@ pub mod support_clone;
 pub mod bulk_furniture;
 pub mod player_house_create;
 pub mod room_structure;
+pub mod storage_backup;
 
 pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;
