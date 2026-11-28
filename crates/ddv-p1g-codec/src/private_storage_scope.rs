@@ -9,6 +9,33 @@ pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,C
  if s.is_null(){return Ok(None);}
  let m=s.as_object().filter(|m|m.len()==2).ok_or(bad)?;
  let kind=m.get("kind").and_then(Value::as_str).ok_or(bad)?;
+ if kind=="region-poses"{
+  let rows=m.get("areas").and_then(Value::as_array).filter(|a|!a.is_empty()&&a.len()<=64).ok_or(bad)?;
+  let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+  let mut selected=HashSet::new();let mut grids=HashSet::new();let mut total=0usize;
+  for area in rows{
+   let o=area.as_object().filter(|o|o.len()==2&&o.contains_key("destination")&&o.contains_key("poses")).ok_or(bad)?;
+   let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,&o["destination"])?;
+   let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+   if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1)||!grids.insert(d.grid_id.clone()){return Err(bad);}
+   let objects=root["World"]["GridCollection"]["Grids"][&d.grid_id]["Objects"].as_object().ok_or(bad)?;
+   let poses=o["poses"].as_array().ok_or(bad)?;
+   total=total.checked_add(poses.len()).filter(|n|*n<=8192).ok_or(bad)?;
+   let mut by_pose=HashMap::<(u64,i64,i64,&str),Option<&str>>::new();
+   for (id,obj) in objects{
+    if !ddv_save_patch::storage_pose(&root,obj){continue;}
+    let (Some(item),Some(x),Some(y),Some(orientation))=(obj["ItemID"].as_u64(),obj["X"].as_i64(),obj["Y"].as_i64(),obj["Orientation"].as_str())else{continue;};
+    by_pose.entry((item,x,y,orientation)).and_modify(|v|*v=None).or_insert(Some(id.as_str()));
+   }
+   for p in poses{
+    if p.as_object().is_none_or(|p|p.len()!=4||p.keys().any(|k|!matches!(k.as_str(),"item"|"x"|"y"|"orientation"))){return Err(bad);}
+    let key=(p["item"].as_u64().ok_or(bad)?,p["x"].as_i64().ok_or(bad)?,p["y"].as_i64().ok_or(bad)?,p["orientation"].as_str().ok_or(bad)?);
+    let id=by_pose.get(&key).copied().flatten().ok_or(bad)?;
+    if !selected.insert(format!("{}:{}",d.grid_id,id)){return Err(bad);}
+   }
+  }
+  return Ok(Some(selected));
+ }
  if kind=="region"{
   let rows=m.get("objects").and_then(Value::as_array).filter(|a|a.len()<=8192).ok_or(bad)?;
   let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;

@@ -13,7 +13,7 @@ export const privateDecorationWords={
 export async function readDecorationFile(file:File,limit:number){
  const raw=await readPresetText(file,PRESET_MAX_BYTES),v=JSON.parse(raw);
  if(v?.schema!==SCHEMA){if(raw.length>limit)throw Error('decoration limit');return {text:raw,storage:null};}
- if(Object.keys(v).length!==3||!v.decoration||typeof v.decoration!=='object'||!v.storage||v.storage.schema!=='wand.private.storage-contents@2'||!Array.isArray(v.storage.rows)||!Number.isSafeInteger(v.storage.skipped))throw Error('private backup');
+ if(Object.keys(v).length!==3||!v.decoration||typeof v.decoration!=='object'||!v.storage||v.storage.schema!=='wand.private.storage-contents@2'||!Array.isArray(v.storage.rows)||v.storage.skipped!==0)throw Error('private backup');
  const text=JSON.stringify(v.decoration),storage=JSON.stringify(v.storage);
  if(text.length>limit||storage.length>4*1024*1024)throw Error('private backup limit');
  return {text,storage};

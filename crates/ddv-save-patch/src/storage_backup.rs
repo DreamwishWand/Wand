@@ -85,9 +85,9 @@ fn replacement_key(row:&Value)->Option<String>{
 }
 pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{restore_scoped(source,backup,None)}
 pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
- restore_scoped_mode(source,backup,scope,false)
+ restore_scoped_mode(source,backup,scope,false,false)
 }
-pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>>,allow_noop:bool)->Result<String,PatchError>{
+pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>>,allow_noop:bool,strict_pose:bool)->Result<String,PatchError>{
  if backup.len()>LIMIT{return Err(BAD);}
  validate_json_without_edit(source)?;validate_json_without_edit(backup)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
@@ -107,7 +107,7 @@ pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>
   let n=id(&r["id"]).filter(|n|seen.insert(*n)).ok_or(BAD)?;
   if r.as_object().is_none_or(|m|m.len()!=4)||id(&r["metadata"]["ID"])!=Some(n)||!simple_inventory(&r["inventory"]){return Err(BAD);}
   let c=if let Some(c)=available.get(&n){
-   if r["metadata"]!=c["metadata"]||identity_roots(r).ok_or(BAD)?!=identity_roots(c).ok_or(BAD)?{return Err(BAD);}
+   if r["metadata"]!=c["metadata"]||identity_roots(r).ok_or(BAD)?!=identity_roots(c).ok_or(BAD)?||strict_pose&&(schema!=SCHEMA||r["roots"]!=c["roots"]){return Err(BAD);}
    *c
   }else{
    // Rebind only a removed source to one newly allocated empty storage at
@@ -143,6 +143,9 @@ mod tests{
   let original=r#"[{"ItemID":30000001,"Amount":3,"State":null}]"#;
   assert_eq!(restored,changed.replace(original,&doc["rows"][0]["inventory"].to_string()));
   assert!(restore(SAVE,&backup).is_err());
+  let relocated=changed.replace("\"X\":1","\"X\":3");
+  assert!(restore(&relocated,&backup).is_ok());
+  assert!(restore_scoped_mode(&relocated,&backup,None,true,true).is_err());
   let mut recreated:Value=serde_json::from_str(SAVE).unwrap();
   let mut new_container=recreated["Player"]["ContainerInventories"].as_object_mut().unwrap().remove("9").unwrap();
   new_container["ID"]=10.into();new_container["Inventory"]=json!([]);

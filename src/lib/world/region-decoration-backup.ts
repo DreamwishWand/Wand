@@ -19,11 +19,41 @@ export function regionStorageWitnesses(region:CaptureRegion,grids:readonly Mainl
  if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
  const all=grids.flatMap(g=>[...(objects.get(g.key)??[])]);
  if(grids.some(g=>!objects.has(g.key)))return null;
- const storage=all.filter(p=>p.object.storage===true);
+ const storage=all.filter(p=>p.object.storage===true||p.object.storageKnown===true);
  if(storage.some(p=>!p.shape))return null;
  const hit=mainlandSavedInRect(storage,region,{x:region.x+region.w,y:region.y+region.h});
- if(hit.some(p=>!inside(region,p)))return null;
+ if(hit.some(p=>!inside(region,p)||!p.object.storage))return null;
  return hit.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,x:p.object.x,y:p.object.y,orientation:p.object.orientation}));
+}
+export function privateRegionPoses(raw:string,region:CaptureRegion,grids:readonly MainlandGrid[]){
+ if(!validCaptureRegion(region,mainlandExtent(grids)))return null;
+ const doc=JSON.parse(raw);
+ if(doc?.schema!=='wand.private.storage-contents@2'||doc.skipped!==0||!Array.isArray(doc.rows)||doc.rows.length>8192)return null;
+ const areas=grids.map(g=>({grid:g,poses:[] as {item:number;x:number;y:number;orientation:string}[]}));
+ let count=0;const seen=new Set<string>();
+ for(const row of doc.rows){
+  if(!Array.isArray(row.roots)||!row.roots.length)return null;
+  for(const root of row.roots){
+   if(++count>8192)return null;
+   const matches=areas.filter(a=>a.grid.gridDataPath===root.path),p=root.pose;
+   if(matches.length!==1||!p||!Number.isSafeInteger(p.item)||!Number.isSafeInteger(p.x)||!Number.isSafeInteger(p.y)||!CARDINAL_ORIENTATIONS.some(o=>o===p.orientation))return null;
+   const a=matches[0],k=[a.grid.key,p.item,p.x,p.y,p.orientation].join(':');if(seen.has(k))return null;seen.add(k);
+   a.poses.push({item:p.item,x:p.x,y:p.y,orientation:p.orientation});
+  }
+ }
+ return areas;
+}
+export function privateRegionRestoreScope(region:CaptureRegion,areas:NonNullable<ReturnType<typeof privateRegionPoses>>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>){
+ const rows=[];
+ for(const {grid:g,poses} of areas){
+  const geometry=defs.get(g.key);if(!geometry)return null;
+  for(const p of poses){
+   const direction=CARDINAL_ORIENTATIONS.findIndex(o=>o===p.orientation),shape=geometry.get(p.item)?.shapes[p.item+':'+direction*4];
+   if(direction<0||!shape||!inside(region,{...mainlandMapAnchor(g,p.x,p.y),factor:g.factor,shape}))return null;
+  }
+  rows.push({destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},poses});
+ }
+ return JSON.stringify({kind:'region-poses',areas:rows});
 }
 const buildingKey=(p:BuildingPose)=>[p.itemId,p.x,p.y,p.orientation].join(':');
 /** Count pose multiplicities, not merely Item IDs or occupied anchors. */
