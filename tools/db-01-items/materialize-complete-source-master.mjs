@@ -28,6 +28,7 @@ import {buildMemoryNativeReferences} from './memory-native-references.mjs';
 import {buildMemoryLootSources} from './memory-loot-sources.mjs';
 import {buildMemoryDefaultContent} from './memory-default-content.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
+import {nativeCollectionPredicate} from './native-collection-predicates.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
@@ -1539,6 +1540,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       imageReferences.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
       add('media.sourceImageReferences',row.itemId,imageReferences);
       add('media.sourceImageGuids',row.itemId,[...new Set(imageReferences.map(r=>r[1]))].sort());
+    }
+    const collectionPredicate=nativeCollectionPredicate(row,source);
+    if(collectionPredicate){
+      add('collection.nativeEligibility',row.itemId,collectionPredicate);
+      if(collectionPredicate.eligible!==null)add('collection.nativeCanBeCollected',row.itemId,collectionPredicate.eligible);
     }
     const context=placementContexts.get(row.itemId);
     if(context){
