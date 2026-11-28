@@ -44,7 +44,27 @@ try{
     close([...ctx.getImageData(8,7,1,1).data],[0,0,255,255]);
     await r.render([red,masked],{x:4,y:0,width:8,height:16},source);
     close(read(8,8),[0,0,255,255]);
-    return {blend:true,culling:true,progress:true,rectMask:true,canvasCopy:true,sdfSamples:samples};
+    // Exercise actual context loss and restoration without reloading the page.
+    const lose=g.getExtension('WEBGL_lose_context');
+    let contextRecovery=false;
+    if(lose){
+     const once=(type,prevent=false)=>new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{canvas.removeEventListener(type,listener);reject(Error(type+' timeout'));},10000);
+      const listener=event=>{clearTimeout(timer);if(prevent)event.preventDefault();resolve();};
+      canvas.addEventListener(type,listener,{once:true});
+     });
+     const lost=once('webglcontextlost',true);lose.loseContext();await lost;
+     if(!g.isContextLost())throw Error('context was not lost');
+     r.dispose();
+     const restored=once('webglcontextrestored');lose.restoreContext();await restored;
+     const recovered=new NativeMapRenderer(canvas);
+     try{
+      await recovered.render([red,masked],view,source);
+      close(read(8,8),[0,0,255,255]);close(read(1,8),[255,0,0,255]);
+      contextRecovery=true;
+     }finally{recovered.dispose();}
+    }
+    return {blend:true,culling:true,progress:true,rectMask:true,canvasCopy:true,sdfSamples:samples,contextRecovery};
    }finally{r.dispose();}
   }finally{URL.revokeObjectURL(url);}
  },js);
