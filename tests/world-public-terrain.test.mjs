@@ -868,3 +868,18 @@ test('free area restoration accepts repeated anchors and overhang without changi
  assert.ok(q);assert.equal(q.plan.add.length,2);assert.ok(q.plan.add.every(p=>p.freePlacement===true&&p.x===rows[0].x&&p.y===0));assert.equal(q.missing.length,0);
  const low=biomeFurnitureReplacement(grid,grids,rasters,[],0,rows,defs,new Map([[itemId,1]]),false,undefined,false,true);assert.equal(low.missing[0].quantity,1);
 });
+
+import {parseSupportRecoveryOrdinals,supportFieldRecoveryRows} from '../src/lib/world/subgrid-local.ts';
+test('nested support recovery witnesses are separate from portable trees',()=>{
+ const leaf={itemId:30000001,x:0,y:1,orientation:'GridOrientation_DownRight',child:null};
+ const t={factor:1,sourcePath:null,objects:[{itemId:40000001,x:0,y:0,orientation:'GridOrientation_Down',child:{factor:1,sourcePath:null,objects:[leaf,{...leaf,itemId:30000002}]}}]};
+ const receipt={contract:'wand.world.subgrid-local@1',worldTransformVerified:false,tree:t,recoveryOrdinals:[{path:[0,0],ordinal:9},{path:[0,1],ordinal:10}]};
+ const tree=parseSupportTree(receipt),ord=parseSupportRecoveryOrdinals(receipt,tree);
+ assert.deepEqual(tree,t);
+ assert.deepEqual(supportFieldRecoveryRows(tree.objects[0].child,[0],[0,1],ord),[
+  {localOrdinal:9,itemId:'30000001',expectedX:0,expectedY:1,expectedOrientation:'GridOrientation_DownRight'},
+  {localOrdinal:10,itemId:'30000002',expectedX:0,expectedY:1,expectedOrientation:'GridOrientation_DownRight'}]);
+ assert.equal(supportFieldRecoveryRows(tree,[],[0],ord),null);
+ assert.throws(()=>parseSupportRecoveryOrdinals({...receipt,recoveryOrdinals:[{path:[0],ordinal:9}]},tree));
+ assert.throws(()=>parseSupportRecoveryOrdinals({...receipt,recoveryOrdinals:[{path:[0,0],ordinal:9},{path:[0,1],ordinal:9}]},tree));
+});
