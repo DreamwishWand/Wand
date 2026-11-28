@@ -949,6 +949,15 @@ mod tests{
   plan["edits"][0]["orientation"]=json!("GridOrientation_Left");
   let mut invalid:Value=serde_json::from_slice(raw).unwrap();invalid["Player"]["ContainerInventories"]["9"]["ID"]=10.into();assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
   invalid["Player"]["ContainerInventories"]["9"]["ID"]=9.into();invalid["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["Unknown"]=json!({});assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
+  let mut pair:Value=serde_json::from_slice(raw).unwrap();
+  let mut container=pair["Player"]["ContainerInventories"]["9"].clone();container["ID"]=10.into();container["Inventory"][0]["Amount"]=23.into();pair["Player"]["ContainerInventories"]["10"]=container;
+  let mut second=pair["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"].clone();second["ID"]=2.into();second["X"]=4.into();second["State"]["Storage"]["ContainerInventoryID"]=10.into();pair["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]=second;
+  let linked=json!({"roomOrdinal":1,"surfaceOrdinal":1,"freePlacement":true,"paired":{"mode":"vertical","edits":[{"index":0,"itemId":40001680,"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":2,"y":3,"orientation":"GridOrientation_Down"},{"index":1,"itemId":40001680,"expectedX":4,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":3,"y":3,"orientation":"GridOrientation_Down"}]}});
+  let d=furniture_candidate(&serde_json::to_vec(&pair).unwrap(),&linked.to_string()).unwrap();
+  let mut expected=pair.clone();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["X"]=2.into();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["Y"]=3.into();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["X"]=3.into();expected["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["Y"]=3.into();
+  assert_eq!(serde_json::from_str::<Value>(&d.patched_json).unwrap(),expected);
+  pair["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]["Storage"]["ContainerInventoryID"]=9.into();
+  assert!(furniture_candidate(&serde_json::to_vec(&pair).unwrap(),&linked.to_string()).is_err());
  }
  #[test]
  fn free_room_floor_allows_repeated_anchors_but_rejects_state_and_outside_bounds(){
