@@ -40,3 +40,35 @@ test('source details preserve distinct original occurrences and resolve canonica
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
   await assert.rejects(readItemAcquisitionSourceDetails(db,ids,'invalid'),/DB01_SOURCE_DETAILS_LOCALE/);
 });
+
+
+test('ordinary category extensions resolve every quest and production source using the same localized identity API',async()=>{
+  const requests=[];
+  const fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
+  const db=await openCurrentItemDatabase('',fetcher);
+  const intro=await db.getFieldRows('acquisition.ordinaryQuestIntroSources');
+  const production=await db.getFieldRows('acquisition.ordinaryProductionSources');
+  assert.equal(intro.length,66);assert.equal(production.length,8);
+  const ids=[...new Set([...intro,...production].map(([id])=>id))];
+  const a=new Map(intro),b=new Map(production);
+  const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');
+  assert.equal(rows[ids.length],null);assert.deepEqual(rows.at(-1),rows[0]);
+  const sourceIds=[...new Set([...intro.flatMap(([,v])=>v.map(e=>e.questId)),...production.flatMap(([,v])=>v.map(e=>e.sourceItemId))])];
+  const identity=new Map((await db.getItemFields(sourceIds,['names.ja','nativeCategory'])).map(r=>[r.itemId,r.values]));
+  for(const row of rows.slice(0,ids.length)){
+    assert.equal(row.ordinaryQuestIntroStatus,'indexed');assert.equal(row.ordinaryProductionStatus,'indexed');
+    assert(row.effectiveCategories.includes('ordinary_gameplay'));
+    assert.deepEqual(row.ordinaryQuestIntro.map(v=>v.evidence),a.get(row.itemId)??[]);
+    assert.deepEqual(row.ordinaryProduction.map(v=>v.evidence),b.get(row.itemId)??[]);
+    for(const {evidence,identity:source} of [...row.ordinaryQuestIntro,...row.ordinaryProduction]){
+      const id=evidence.questId??evidence.sourceItemId;
+      assert.equal(source.itemId,id);assert.equal(source.name,identity.get(id)['names.ja']||null);
+      assert.equal(source.nativeCategory,identity.get(id).nativeCategory);
+      assert.equal(source.locale,'ja');
+      assert.equal(evidence.currentAvailabilityVerified,false);
+    }
+  }
+  const details=await openCurrentItemDetails('',fetcher);
+  assert.deepEqual(await details.getItemAcquisitionSourceDetails(ids,'ja'),rows.slice(0,ids.length));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/acquisition/public/')));
+});
