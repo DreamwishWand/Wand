@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 export async function checkLinearSceneComposite(page){
- const source=stripTypeScriptTypes(await readFile('src/lib/photo-mode/linear-scene-target.ts','utf8')).replaceAll('export ','');
+ const assetSource=stripTypeScriptTypes(await readFile('src/lib/photo-mode/native-studio-assets.ts','utf8')).replace(/^import[^\n]*\n/gm,'').replaceAll('export ','');
+ const source=assetSource+'\n'+stripTypeScriptTypes(await readFile('src/lib/photo-mode/linear-scene-target.ts','utf8')).replace(/^import[^\n]*\n/gm,'').replaceAll('export ','');
  const result=await page.evaluate(source=>{
   const Target=new Function(source+'\nreturn LinearSceneTarget;')();
   const canvas=document.createElement('canvas');canvas.width=8;canvas.height=8;
