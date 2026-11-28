@@ -152,7 +152,7 @@
    session.terminate();if(own!==session||transferSource!==from||activeFile!==source)return;own=null;loading=false;
    try{if(d?.kind!=='subgrid-local')throw Error('receipt');const target=parseSupportTree(d.result);if(!target.sourcePath)throw Error('source path');
     transferTarget=p;owners=[p.itemId];stack=[target];path=[];showTree(target);
-    stockId=from.object.itemId;stockOrientation=from.object.orientation as EightWay;stockPlacing=true;requestShapes(target);
+    stockId=from.object.itemId;stockOrientation=supportOrientationAllowed(target.factor,from.object.orientation,nonstandard)?from.object.orientation:'GridOrientation_Down';stockPlacing=true;requestShapes(target);
     const epoch=imageEpoch;void worldArtwork(base,stockId).then(url=>{if(url&&epoch===imageEpoch)images=new Map(images).set(from.object.itemId,url);}).catch(()=>{});
    }catch{error=true;}
   };

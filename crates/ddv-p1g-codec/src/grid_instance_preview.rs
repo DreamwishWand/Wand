@@ -4068,6 +4068,26 @@ mod terrain_session_tests{
 
     }
     #[test]
+    fn support_factor_one_eight_way_transform_stock_and_transfer(){
+        let mut save:Value=serde_json::from_str(r#"{"GameInfo":{"Version":643},"Player":{"Marker":100,"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005161":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005160,"X":8,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":9}}}}},"8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}},"9":{"ID":9,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":1,"NextGridObjectID":1,"Objects":{}}}}}}"#).unwrap();
+        let raw=serde_json::to_vec(&save).unwrap();
+        let parents=room_support_ordinals(&raw).unwrap();
+        let from=parents[&("7".to_owned(),"1".to_owned())];let to=parents[&("7".to_owned(),"2".to_owned())];
+        let mut plan=serde_json::json!({"localOrdinal":from,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","freePlacement":true,"edits":[{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":0,"y":0,"orientation":"GridOrientation_DownLeft"}]});
+        let changed=support_child_candidate(&raw,&plan).unwrap();
+        let mut expected=save.clone();expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]="GridOrientation_DownLeft".into();
+        assert_eq!(serde_json::from_str::<Value>(&changed.patched_json).unwrap(),expected);
+        plan.as_object_mut().unwrap().remove("freePlacement");assert!(support_child_candidate(&raw,&plan).is_err());plan["freePlacement"]=true.into();
+        save["World"]["GridCollection"]["Grids"]["8"]["TessellationFactor"]=2.into();assert!(support_child_candidate(&serde_json::to_vec(&save).unwrap(),&plan).is_err());
+        let witness=serde_json::json!({"parentItemId":40005160,"parentX":4,"parentY":6,"path":[],"index":0});
+        let paste=serde_json::json!({"localOrdinal":to,"itemId":40005160,"expectedX":8,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","freePlacement":true,"floorTransfer":{"localOrdinal":from,"supportSource":witness,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_DownLeft","x":0,"y":0,"orientation":"GridOrientation_UpRight"}});
+        let moved=support_child_candidate(changed.patched_json.as_bytes(),&paste).unwrap();let after:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert_eq!(after["Player"],expected["Player"]);assert_eq!(after["World"]["GridCollection"]["Grids"]["8"]["Objects"],serde_json::json!({}));assert_eq!(after["World"]["GridCollection"]["Grids"]["9"]["Objects"]["1"]["Orientation"],"GridOrientation_UpRight");
+        let stock=serde_json::json!({"localOrdinal":to,"itemId":40005160,"expectedX":8,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","freePlacement":true,"stock":{"action":"place","itemId":40005161,"expectedStock":2,"x":0,"y":0,"orientation":"GridOrientation_UpLeft"}});
+        let d=support_child_candidate(moved.patched_json.as_bytes(),&stock).unwrap();let after:Value=serde_json::from_str(&d.patched_json).unwrap();assert_eq!(after["World"]["GridCollection"]["Grids"]["9"]["Objects"]["2"]["Orientation"],"GridOrientation_UpLeft");
+        assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],1);
+    }
+    #[test]
     fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},

@@ -3,7 +3,7 @@ import type {CutClipboard,CutWitness} from './group-paste.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import {supportShapeKey,supportPlacementFits,supportOrientationAllowed,type SupportTree} from './subgrid-local.ts';
-import {EIGHT_WAY_ORIENTATIONS,isEightWay,isCardinal} from './saved-map-transform.ts';
+import {CARDINAL_ORIENTATIONS,EIGHT_WAY_ORIENTATIONS,isEightWay} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
 import type {IndoorRoom} from './indoor-room-view.ts';
