@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {attachmentSortCenter,attachmentDepth,attachmentRenderQueue} from '../src/lib/photo-mode/attachment-draw-order.ts';
+const id=()=>new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+test('animated transparent sort center follows weighted skin matrices',()=>{const c=attachmentSortCenter({positions:new Float32Array([0,0,1,0,0,3]),joints:new Uint16Array([0,1,0,0,0,1,0,0]),weights:new Float32Array([.5,.5,0,0,.5,.5,0,0])},2);const p=new Float32Array(32);p.set(id());p.set(id(),16);p[30]=4;assert.equal(attachmentDepth(c,p,id()),4);assert.equal(attachmentRenderQueue({shader:'PBR/PBR Hair',dst:10,renderQueue:3000}),3000);assert.equal(attachmentRenderQueue({shader:'PBR/PBR Hair',dst:10,renderQueue:2000}),2000);assert.equal(attachmentRenderQueue(undefined),2000)});

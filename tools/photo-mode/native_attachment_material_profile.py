@@ -13,8 +13,13 @@ def profile(m,shader,shader_bytes,digest):
     require(shader[0]==CAB and shader[1] in PINS and digest(shader_bytes)==PINS[shader[1]],'unsupported shader identity')
     f,t,c=m['floats'],m['textures'],m['colors'];kw=m['validKeywords'];pid=shader[1]
     if pid=='7527358103810511856':
-        require(f.get('_dst')==0 and f.get('_src')==1,'unsupported hair blend')
-        return dict(shader='PBR/PBR Hair',dst=0,rawMaterialColors={k:c[k] for k in ('_BaseColor','_ColorOne','_ColorTwo','_ColorThree')}),'_MaskMap'
+        pair=(f.get('_src'),f.get('_dst'));require(pair in ((1,0),(5,10)),'unsupported hair blend')
+        state=dict(shader='PBR/PBR Hair',dst=int(pair[1]),rawMaterialColors={k:c[k] for k in ('_BaseColor','_ColorOne','_ColorTwo','_ColorThree')})
+        if pair==(5,10):
+            require(m['queue'] in (-1,3000),'unsupported hair render queue')
+            require(digest(shader_bytes[1744:2940])=='2a160e87959756e472a8fcb22cb850ef5fe8855ddbee8e0e2fcec5a13f2edbf9','hair forward blend/depth state')
+            state['renderQueue']=2000 if m['queue']==-1 else 3000
+        return state,'_MaskMap'
     tint=c['_Tint'];require(len(tint)==4 and all(0<=v<=1 for v in tint),'unsupported tint range')
     if pid=='-8600332103802174571':
         cutout='_ALPHATEST_ON' in kw
