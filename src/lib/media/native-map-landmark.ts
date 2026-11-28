@@ -18,3 +18,26 @@ export async function nativeLandmarkReport(map:LocalNativeMap,locked:boolean,poi
  const mapPlanSha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
  return {schema:'wand.media.native-map-landmark-evidence@1',platform:'Steam',gameVersion:'1.26.2',privateOnly:true,publicationAuthorized:false,worldPlacementVerified:false,runtimeMarkerAnchorVerified:false,mapId:map.id,mapPlanSha256,mapSize:[map.width,map.height],ticksToCanvas:map.ticksToCanvas,state:locked?'locked':'unlocked',measurements:points.map(p=>nativeLandmarkMeasurement(map,p))};
 }
+
+export type NativeLandmarkSession=ReadonlyMap<string,readonly NativeLandmark[]>;
+export function nativeLandmarkSessionKey(mapId:string,locked:boolean){return mapId+':'+(locked?'locked':'unlocked');}
+export function setNativeLandmarks(session:NativeLandmarkSession,map:LocalNativeMap,locked:boolean,points:readonly NativeLandmark[]):NativeLandmarkSession{
+ if(points.length>512)throw Error('Too many map measurements');
+ points.forEach(p=>nativeLandmarkMeasurement(map,p));
+ const next=new Map(session),key=nativeLandmarkSessionKey(map.id,locked);
+ if(points.length)next.set(key,[...points]);else next.delete(key);
+ return next;
+}
+export async function nativeLandmarkSessionReport(maps:readonly LocalNativeMap[],session:NativeLandmarkSession){
+ const reports=[];
+ for(const map of maps)for(const locked of [false,true]){
+  const points=session.get(nativeLandmarkSessionKey(map.id,locked));
+  if(points?.length)reports.push(await nativeLandmarkReport(map,locked,points));
+ }
+ if(!reports.length)throw Error('No map measurements');
+ const measured=reports.flatMap(r=>r.measurements.flatMap(p=>typeof p.distanceHalfWorldTicks==='number'?[p.distanceHalfWorldTicks]:[]));
+ return {schema:'wand.media.native-map-landmark-session@1',platform:'Steam',gameVersion:'1.26.2',privateOnly:true,publicationAuthorized:false,worldPlacementVerified:false,runtimeMarkerAnchorVerified:false,
+  mapCount:new Set(reports.map(r=>r.mapId)).size,measurementCount:reports.reduce((n,r)=>n+r.measurements.length,0),
+  referencedCount:measured.length,maxResidualHalfWorldTicks:measured.length?Math.max(...measured):null,
+  rmsResidualHalfWorldTicks:measured.length?Math.hypot(...measured)/Math.sqrt(measured.length):null,reports};
+}

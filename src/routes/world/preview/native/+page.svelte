@@ -6,7 +6,7 @@
  import {nativePreviewSession} from '$lib/media/native-preview-session.ts';
  import {nativeEditorExtent,editorViewToNativeCanvas,type LocalNativeMap} from '$lib/media/native-local-preview.ts';
  import {defaultMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture,zoomMapCamera,panMapCamera} from '$lib/world/map-camera.ts';
- import {nativeLandmarkMeasurement,nativeLandmarkReport,type NativeLandmark} from '$lib/media/native-map-landmark.ts';
+ import {nativeLandmarkMeasurement,nativeLandmarkReport,nativeLandmarkSessionKey,setNativeLandmarks,nativeLandmarkSessionReport,type NativeLandmark,type NativeLandmarkSession} from '$lib/media/native-map-landmark.ts';
  import {readTransitionWitnesses,witnessesForMap,type TransitionWitnessMap,type TransitionWitness} from '$lib/media/native-transition-witness.ts';
  import {selectNativeAreaLayers} from '$lib/media/native-map-area-rules.ts';
  import {localSaveSession} from '$lib/ui/local-save-session.ts';
@@ -21,7 +21,12 @@
  let maps:readonly LocalNativeMap[]=initial?.maps??[],map:LocalNativeMap|null=null,source:ImageSource|null=initial?.source??null,selected=initialMap(maps),locked=false;
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  let error='',status:'drawing'|'ready'|'error'='drawing',ticket=0;
- let points:NativeLandmark[]=[];
+ let measurements:NativeLandmarkSession=new Map();
+ let points:readonly NativeLandmark[]=[];
+ $: points=map&&!overrides.size?measurements.get(nativeLandmarkSessionKey(map.id,locked))??[]:[];
+ $: measurementCount=[...measurements.values()].reduce((n,p)=>n+p.length,0);
+ function updatePoints(next:readonly NativeLandmark[]){if(map&&!overrides.size)measurements=setNativeLandmarks(measurements,map,locked,next);}
+ function resetReference(){knownX=undefined;knownZ=undefined;reference='';reportError='';}
  let witnessDoc:ReadonlyMap<string,TransitionWitnessMap>|null=null,witnesses:readonly TransitionWitness[]=[],witnessId='',showWitness=false,witnessError='',witnessTicket=0;
  let witness:TransitionWitness|undefined;
  $: updateWitnesses(map,witnessDoc);
@@ -44,9 +49,9 @@
  $: states=new Map((map?.areaPlan?.areaTypes??[]).map(id=>[id,overrides.get(id)??locked]));
  $: drawLayers=map?(map.areaPlan?selectNativeAreaLayers(map.locked,map.areaPlan,states):locked?map.locked:map.unlocked):[];
  $: stateKey=map?.id+':'+locked+':'+[...states].map(([id,value])=>id+'='+Number(value)).join(',');
- function toggleArea(id:number,value:boolean){overrides=new Map(overrides).set(id,value);points=[];}
- function resetAreas(){overrides=new Map();appliedSave=null;points=[];}
- function applySavedAreas(value:Map<number,boolean>,file:File){if($localSaveSession.file!==file)return;overrides=value;appliedSave=file;points=[];}
+ function toggleArea(id:number,value:boolean){overrides=new Map(overrides).set(id,value);status='drawing';resetReference();}
+ function resetAreas(){overrides=new Map();appliedSave=null;resetReference();}
+ function applySavedAreas(value:Map<number,boolean>,file:File){if($localSaveSession.file!==file)return;overrides=value;appliedSave=file;resetReference();}
  let knownX:number|undefined,knownZ:number|undefined,reference='',reportError='';
  $: lastPoint=points.at(-1);
  $: lastMeasurement=map&&lastPoint?nativeLandmarkMeasurement(map,lastPoint):null;
@@ -63,15 +68,29 @@
   try{
    const {maps:next,source:provider}=await openNativePreviewPack(files);
    if(revision!==ticket)return;
-   nativePreviewSession.set({maps:next,source:provider});maps=next;source=provider;selected=initialMap(next);camera=defaultMapCamera();resetAreas();status='drawing';
+   nativePreviewSession.set({maps:next,source:provider});maps=next;source=provider;measurements=new Map();selected=initialMap(next);camera=defaultMapCamera();resetAreas();status='drawing';
   }catch(e){if(revision===ticket)error=e instanceof Error?e.message:'読み込み失敗';}
  }
- function clear(){ticket++;nativePreviewSession.clear();maps=[];source=null;selected='';resetAreas();error='';}
- function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();resetAreas();}
+ function clear(){ticket++;nativePreviewSession.clear();maps=[];source=null;measurements=new Map();selected='';resetAreas();error='';}
+ function changeMap(event:Event){selected=(event.currentTarget as HTMLSelectElement).value;camera=defaultMapCamera();status='drawing';resetAreas();}
  function attachReference(){
   if(!map||!lastPoint||typeof knownX!=='number'||typeof knownZ!=='number'||!Number.isFinite(knownX)||!Number.isFinite(knownZ)||!reference.trim())return;
   const p={...lastPoint,worldXZ:[knownX,knownZ] as const,reference:reference.trim()};
-  try{nativeLandmarkMeasurement(map,p);points=[...points.slice(0,-1),p];knownX=undefined;knownZ=undefined;reference='';reportError='';}catch(e){reportError=e instanceof Error?e.message:'比較点の座標が無効です';}
+  try{nativeLandmarkMeasurement(map,p);updatePoints([...points.slice(0,-1),p]);knownX=undefined;knownZ=undefined;reference='';reportError='';}catch(e){reportError=e instanceof Error?e.message:'比較点の座標が無効です';}
+ }
+ function focusWitness(){
+  if(!witness)return;
+  const zoom=Math.max(camera.zoom,8),x=(2*witness.worldXZ[0]-extent.x)/extent.w,y=(-2*witness.worldXZ[1]-extent.y)/extent.h;
+  camera=panMapCamera({...camera,zoom},x-camera.x,y-camera.y);
+ }
+ async function exportSession(){
+  if(!measurementCount)return;
+  reportError='';
+  try{
+   const report=await nativeLandmarkSessionReport(maps,measurements);
+   const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+   const a=document.createElement('a');a.href=url;a.download='native-map-landmarks-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){reportError=e instanceof Error?e.message:'検証記録の保存に失敗しました';}
  }
  async function exportLandmarks(){
   if(!map||!points.length||overrides.size)return;
@@ -93,13 +112,15 @@
   if(svg?.hasPointerCapture(e.pointerId)){try{svg.releasePointerCapture(e.pointerId);}catch{/* pointer ended */}}
  }
  function mark(e:MouseEvent){
-  if(gesture.consumeClick()||status!=='ready'||!svg)return;
+  if(gesture.consumeClick()||status!=='ready'||!svg||overrides.size)return;
   const transform=svg.getScreenCTM();if(!transform)return;
   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(transform.inverse());
   if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<viewport.x||p.y<viewport.y||p.x>viewport.x+viewport.w||p.y>viewport.y+viewport.h)return;
   if(!map)return;
   const point:NativeLandmark=witness?{x:p.x,y:p.y,worldXZ:witness.worldXZ,reference:witness.reference}:{x:p.x,y:p.y};try{nativeLandmarkMeasurement(map,point);}catch{return;}
-  points=[...points.slice(-99),point];knownX=undefined;knownZ=undefined;reference='';
+  const existing=witness?points.findIndex(p=>p.reference===witness?.reference):-1;
+  if(existing<0&&points.length>=512){reportError='測定点の上限に達しました。';return;}
+  updatePoints([...points.filter((_,i)=>i!==existing),point]);resetReference();
  }
 </script>
 <svelte:head><title>Native map — local preview</title></svelte:head>
@@ -111,7 +132,7 @@
    <a href={base+'/world/?native-map=1'}>World Editorで確認</a>
    <select aria-label="World" value={selected} on:change={changeMap}>{#each maps as m}<option value={m.id}>{m.id}</option>{/each}</select>
    <label><input type="checkbox" bind:checked={locked} on:change={resetAreas}/> 全区画を未解放として表示</label>
-   <button type="button" on:click={()=>points=[]}>検証マーカー消去</button>
+   <button type="button" disabled={!points.length} on:click={()=>updatePoints([])}>現在のマップの検証マーカー消去</button>
    <details><summary>原本の区画遷移座標と比較</summary>
     <div class="tools">
      <label>原本比較点 JSON <input type="file" accept=".json" on:change={openWitnesses}/></label>
@@ -119,12 +140,14 @@
      {#if witnesses.length}
       <select aria-label="原本の比較点" bind:value={witnessId}><option value="">比較点を選択</option>{#each witnesses as w}<option value={w.component}>{w.name} ({w.worldXZ[0].toFixed(2)}, {w.worldXZ[1].toFixed(2)})</option>{/each}</select>
       <label><input type="checkbox" bind:checked={showWitness}/> 候補位置を表示</label>
+      <button type="button" disabled={!witness} on:click={focusWitness}>比較点へ移動</button>
      {/if}
     </div>
     {#if witnessError}<p role="alert">{witnessError}</p>{:else if witnessDoc}<p>{witnesses.length} 件。選択後、背景画像上の対応する位置をクリックすると残差を記録します。候補位置は校正結果ではありません。</p>{/if}
    </details>
-   <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>検証座標を保存</button>
-   {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> {map.areaPlan.gridStateLabels?.[id-1]??('区画 '+id)} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>{appliedSave?'保存フラグによる試験表示（実行時判定未確認）':'手動指定・セーブ判定ではありません。'} 個別設定中は座標記録の出力を無効にします。</p></details>{/if}
+   <button type="button" disabled={!points.length||status!=='ready'||overrides.size>0} on:click={exportLandmarks}>現在のマップの検証座標を保存</button>
+   <button type="button" disabled={!measurementCount} on:click={exportSession}>全マップの検証記録を保存 ({measurementCount})</button>
+   {#if map.areaPlan?.areaTypes.length}<details><summary>区画別の解放状態（検証）</summary><div class="tools">{#each map.areaPlan.areaTypes as id}<label><input type="checkbox" checked={states.get(id)} on:change={e=>toggleArea(id,e.currentTarget.checked)}/> {map.areaPlan.gridStateLabels?.[id-1]??('区画 '+id)} 未解放</label>{/each}<button type="button" on:click={resetAreas}>個別設定を解除</button></div><p>{appliedSave?'保存フラグによる試験表示（実行時判定未確認）':'手動指定・セーブ判定ではありません。'} 個別設定中は新規座標測定を無効にします。既存の測定は保持します。</p></details>{/if}
    {#if map&&hasNativeGridLockStates(map.id)&&!map.areaPlan?.gridStateLabels}<p>旧マニフェストでは海中の個別グリッドを切り替えられません。</p>{/if}
    {#if map.areaPlan?.areaTypes.length&&!hasNativeGridLockStates(map.id)}<NativeMapSaveAreas mapId={map.id} areaTypes={map.areaPlan.areaTypes} onApply={applySavedAreas}/>{/if}
    {#if terrainScope}<label><input type="checkbox" bind:checked={showTerrain}/> 原本地形を重ねる</label>
