@@ -106,3 +106,36 @@ test('126 original critter food filters reuse the shared definition evidence and
   }
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
 });
+
+
+test('ordinary befriending classification preserves every eligible original village critter reward and excludes appearance gates',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const ids=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'CritterItemData'});
+  const reader=createCritterSourceReader(db);
+  const defs=(await reader.getForCritters(ids)).map(r=>r.definition);
+  const raw=await db.getItemFields(ids,['source.AppearanceConditions','observedFields']);
+  const gateTag=(await db.getSourceRelations()).sourceFieldDeclarations.CritterItemData.AppearanceConditions;
+  const classes=new Map(await db.getFieldRows('sourceClass'));
+  const key=(pet,critter,count,area,gate)=>JSON.stringify([pet,critter,count,area,gate]);
+  const expected=[];
+  for(const [i,d] of defs.entries()){
+    if(classes.get(d.befriendingPetItemId)!=='PetItemData'||d.location?.kind!=='village_area'||!(d.feedingBeforeUnlock>0)||
+      !d.schedule.some(day=>day.some(s=>s.endHour>s.startHour)))continue;
+    const v=raw[i].values,gate=v['source.AppearanceConditions'];
+    const absent=gate===undefined&&Number.isSafeInteger(gateTag)&&!v.observedFields.some(([n])=>n===gateTag);
+    const empty=gate!==null&&typeof gate==='object'&&!Array.isArray(gate)&&Object.keys(gate).length===0;
+    if(absent||empty)expected.push(key(d.befriendingPetItemId,d.critterItemId,d.feedingBeforeUnlock,d.location.areaCode,absent?'field_absent':'explicit_empty'));
+  }
+  assert(expected.length>0);
+  const actual=await db.getFieldRows('acquisition.ordinaryCritterSources');
+  const effective=new Map(await db.getFieldRows('acquisition.effectiveCategories'));
+  const native=await db.getNativeAcquisitionCandidates(actual.map(([id])=>id));
+  assert.deepEqual(actual.flatMap(([id,links],i)=>links.map(l=>{
+    assert(effective.get(id).includes('ordinary_gameplay'));
+    assert.equal(l.sourceFileSha256,db.release.sourceFilesSha256.Companion);
+    assert.equal(l.currentAvailabilityVerified,false);assert.equal(l.guaranteedGrantVerified,false);
+    assert(native[i].some(([source,role,path])=>source===l.sourceItemId&&role==='critter_befriending_reward'&&path===l.sourcePath));
+    return key(id,l.sourceItemId,l.configuredFeedingCount,l.villageAreaCode,l.appearanceGate);
+  })).sort(),expected.sort());
+  assert(!actual.some(([,links])=>links.some(l=>l.sourceItemId===120100056)));
+});
