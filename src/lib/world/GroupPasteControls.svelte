@@ -47,7 +47,7 @@
  $: if($worldFurnitureCut&&$worldFurnitureCut.file!==file){worldFurnitureCut.set(null);worldFurnitureClipboard.set([]);copied=false;}
  $: remainingObjects=cutRows?objects.filter(p=>!cutRows?.some(r=>r.localOrdinal===p.object.localOrdinal&&r.area===p.area)):objects;$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
  $: selection=captureFurnitureGroup(items,false,freePlacement);
- $: freeGroup=freePlacement&&(!cutRows||cutRows.every(r=>!r.supportFactor||!r.roomSource))&&!areaScene&&(!scene||scene.items.every(p=>Math.floor(p.itemId/100000)===400));
+ $: freeGroup=freePlacement&&!areaScene&&(!scene||scene.items.every(p=>Math.floor(p.itemId/100000)===400));
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
  $: if(active&&(source!==file||blocked))cancel();
  $: required=areaScene?areaSceneCounts(areaScene.items):supportScene?mixedSceneCounts(supportScene.items):sceneItemCounts(clip);
@@ -167,7 +167,7 @@
   else {const f=file,own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});read=own;
   const done=(raw:unknown)=>{own.terminate();if(read!==own||file!==f)return;read=null;try{counts=parseFurnitureStock(raw);if(!scene&&!supportScene&&!areaScene&&!symmetry&&!mirrorOnly&&!groupStockAvailable(clip,counts))error=true;}catch{error=true;}};
   own.onmessage=e=>done(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'read-furniture-stock',file:f});}
-  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&(!cutRows||cutRows.every(r=>!r.supportFactor||!r.roomSource))&&!areaDoc&&(!sceneDoc||sceneDoc.items.every(p=>Math.floor(p.itemId/100000)===400));
+  const ids=[...new Set(clip.map(p=>p.itemId))],factors=new Set<number>(),free=freePlacement&&!areaDoc&&(!sceneDoc||sceneDoc.items.every(p=>Math.floor(p.itemId/100000)===400));
   for(const g of grids){if(factors.has(g.factor))continue;factors.add(g.factor);const requestId=nextRequest();pending.set(requestId,{key:g.key,factor:g.factor});worker.postMessage({command:'design-shapes',key:g.key,itemIds:ids,requestId,freePlacement:free});}
   pending=new Map(pending);for(const id of (areaDoc?[...new Set([...ids,...areaSceneCounts(areaDoc.items).keys()])]:supportDoc?[...mixedSceneCounts(supportDoc.items).keys()]:ids))void worldArtwork(base,id).then(url=>{if(url)images=new Map(images).set(id,url);}).catch(()=>{});
   return true;

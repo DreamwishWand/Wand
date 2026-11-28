@@ -800,7 +800,7 @@ pub(super) fn resolve_outdoor_support_cut_target(profile:&[u8],ordinal:usize,ite
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
  let g=c.get("Grids").and_then(|v|v.get(&t.grid_id)).ok_or(bad)?;
- if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/")&&(v!=""||outdoor_identity(&root,&t.grid_id).is_err()))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")){return Err(bad);}
+ if g.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(factor))||g.get("GridDefaultLayoutPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("SceneLayouts/")&&(v!=""||outdoor_identity(&root,&t.grid_id).is_err()))||g.get("GridDataPath").and_then(Value::as_str).is_none_or(|v|!v.starts_with("GridData/Villages/")&&!v.starts_with("GridData/FloatingIslands/")){return Err(bad);}
  subgrid_tree(c,&t.grid_id,&t.object_id)?;
  let refs=grid_identity_dependencies(profile,t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
  Ok(t.clone())
@@ -1468,7 +1468,7 @@ pub(super) fn group_pickup_candidate(profile:&[u8],plan:&str)->Result<String,Cod
     let single=rows.as_array().is_some_and(|a|a.len()==1&&a[0].get("includeSupport").and_then(Value::as_bool)==Some(true));
     group_pickup_for_scope(profile,plan,if single{1}else{2},None)
 }
-fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize,limit:usize)->Result<(),CodecError>{
+pub(super) fn support_pickup_references(profile:&[u8],grids:&Map<String,Value>,grid:&str,object:&str,seen:&mut HashSet<String>,total:&mut usize,depth:usize,limit:usize)->Result<(),CodecError>{
  let bad=CodecError::Json;
  if depth>8{return Err(bad);}
  let child=grids.get(grid).and_then(|g|g.get("Objects")).and_then(|o|o.get(object)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
@@ -2748,7 +2748,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let row_value=if free{let o=value.as_object().filter(|o|o.len()==2&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)).ok_or(bad)?;o.get("rows").ok_or(bad)?}else{&value};
     let rows=row_value.as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
     if rows.iter().any(|r|r.get("roomSource").is_some()){
-        if rows.len()>32||free&&rows.iter().any(|r|r.get("supportFactor").is_some()){return Err(bad);}
+        if rows.len()>32{return Err(bad);}
         // All source indices refer to one unchanged room; remove highest first
         // so the remaining indices cannot shift. Reject mixed/duplicate witnesses.
         let mut sorted=Vec::new();let mut room=None;let mut seen=HashSet::new();
