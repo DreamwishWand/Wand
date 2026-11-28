@@ -197,6 +197,139 @@ def recover_aliases(aa,out,ledger=None):
     return finalize(report,out,ledger)
 
 
+def recover_typed_shop(aa,out,projection,ledger=None,existing_root=None):
+    """Keep separately typed source images; neither type is a rendering proof."""
+    raw=(out/"shared-source-report.json").read_bytes()
+    source=json.loads(raw);scope=json.loads(projection.read_bytes())
+    check(source.get("schema")==REPORT_SCHEMA and source.get("privateOnly") is True and
+          source.get("publicationAuthorized") is False and
+          scope.get("schema")=="wand.media.private-integrated-shop-artwork-refs@1" and
+          scope.get("privateOnly") is True and scope.get("publicationAuthorized") is False,
+          "Private Shop source reports required")
+    roles=targets({"schema":TARGET_SCHEMA,"gameVersion":source["gameVersion"],"targets":source["targets"]})
+    check(all(v=="shop-512" for v in roles.values()) and set(source["assets"])==set(roles),
+          "Complete original extraction required")
+    check(verify_game_version(aa,source["gameVersion"])==source["sourceFullVersion"],"Game version changed")
+    locs,pins=resolve(aa,set(roles))
+    check(pins==source["catalogSha256"]==scope["catalogSha256"] and
+          locs==scope["locations"],"Catalog or projection changed")
+    # Main and mega image prefab bindings use AsyncImage<Sprite>; component
+    # Icon bindings use both AsyncImage and AsyncRawImage. Retain background
+    # originals without claiming a particular runtime background binding.
+    wanted={g:{"Texture2D"} for g in roles}
+    uses={g:set() for g in roles}
+    for offer in scope["bundles"].values():
+        for revision in (offer,offer.get("historicalRevision")):
+            if revision is None:continue
+            for field,g in revision["refs"].items():
+                check(g in roles,"Unexpected projection GUID")
+                f=field.lower()
+                if f=="background":uses[g].add("background")
+                elif f=="image" or f.startswith("megabundleadjustment."):
+                    uses[g].add("sprite")
+                elif f.startswith("contents.") and f.endswith(".image"):
+                    uses[g].update(("sprite","texture"))
+                else:raise ValueError("Unrecognized Shop field: "+field)
+    for g,fields in uses.items():
+        check(fields,"Unreferenced GUID")
+        if "sprite" in fields:wanted[g].add("Sprite")
+    pin=hashlib.sha256(raw).hexdigest()
+    projection_pin=hashlib.sha256(projection.read_bytes()).hexdigest()
+    path=out/"typed-shop-source-report.json"
+    report={"schema":"wand.media.private-typed-shop-sources@1","privateOnly":True,
+            "publicationAuthorized":False,"renderingVerified":False,"gameVersion":source["gameVersion"],
+            "sourceReportSha256":pin,"projectionSha256":projection_pin,"catalogSha256":pins,
+            "assets":{},"errors":{},"complete":False}
+    def save():
+        tmp=path.with_suffix(".tmp")
+        write_json(tmp,report);tmp.replace(path)
+    if path.exists():
+        prior=json.loads(path.read_bytes())
+        check(all(prior.get(k)==report[k] for k in ("schema","privateOnly","publicationAuthorized",
+              "renderingVerified","gameVersion","sourceReportSha256","projectionSha256","catalogSha256")),
+              "Recovery checkpoint identity mismatch")
+        report=prior
+    pending={};aliases=source.get("aliasRecovery",{})
+    print("Checking existing original images and typed references...",flush=True)
+    for i,(g,row) in enumerate(sorted(source["assets"].items()),1):
+        classes=Counter(v["class"] for v in locs[g])
+        check(classes.get("Texture2D")==1 and classes.get("Sprite",0)<=1 and
+              set(classes)<={"Texture2D","Sprite"} and row["unityAssetId"].endswith(":Texture2D"),
+              "Unexpected typed source: "+g)
+        o=row["original"];verify_local_or_published(out,info(o),ledger)
+        entry=report["assets"].setdefault(g,{"uses":sorted(uses[g]),"sources":{}})
+        check(entry["uses"]==sorted(uses[g]),"Checkpoint role mismatch")
+        texture={"unityAssetId":row["unityAssetId"],"original":o}
+        check(all(entry["sources"].get("Texture2D",texture).get(k)==v for k,v in texture.items()),"Texture checkpoint mismatch")
+        entry["sources"]["Texture2D"]=texture
+        if "Sprite" in wanted[g]:
+            check(classes["Sprite"]==1,"Required Sprite not in catalog: "+g)
+            equivalent=[v for v in row.get("equivalentSourceObjects",[]) if v.endswith(":Sprite")]
+            if len(equivalent)==1 and g not in source["errors"]:
+                sprite={"unityAssetId":equivalent[0],"original":o}
+                check(all(entry["sources"].get("Sprite",sprite).get(k)==v for k,v in sprite.items()),"Sprite checkpoint mismatch")
+                entry["sources"]["Sprite"]=sprite
+            elif "Sprite" in entry["sources"]:
+                sprite=entry["sources"]["Sprite"];w=aliases.get(g,{})
+                check(sprite["unityAssetId"]==w.get("spriteIdentity") and
+                      sprite["original"].get("sourcePixelSha256")==w.get("spritePixelSha256"),
+                      "Sprite checkpoint witness mismatch")
+                verify_local_or_published(out,info(sprite["original"]),ledger)
+            else:
+                check(g in source["errors"] and aliases.get(g,{}).get("difference") in ("dimensions","alpha","visibleRgb","transparentRgbOnly","identical"),
+                      "Missing prior typed witness: "+g)
+                pending[g]=[v for v in locs[g] if v["class"]=="Sprite"]
+        if i==1 or i%50==0 or i==len(roles):print(f"  Originals verified: {i}/{len(roles)}",flush=True)
+    report["complete"]=False;save()
+    existing=manifests(existing_root)
+    cache_name="typed-shop-thumbnail-cache.json"
+    print(f"Extracting {len(pending)} distinct required Sprite objects; retaining every Texture2D original.",flush=True)
+    for i,(g,match,error) in enumerate(exact_objects(aa,pending),1):
+        try:
+            check(not error,error or "Unresolved typed object")
+            identity,refs,bundles=match;w=aliases[g]
+            check(identity==w["spriteIdentity"],"Sprite identity changed")
+            m=materialize(refs["Image"],bundles,existing,out,True,ledger,cache_name)
+            o=local_image(out,m)
+            check(o["sourcePixelSha256"]==w["spritePixelSha256"] and
+                  [o["width"],o["height"]]==w["spriteSize"],"Sprite pixel witness changed")
+            report["assets"][g]["sources"]["Sprite"]={"unityAssetId":identity,"original":o}
+            report["errors"].pop(g,None)
+        except Exception as exc:
+            report["errors"][g]=type(exc).__name__+": "+str(exc)[:200]
+        save()
+        if i==1 or i%10==0 or i==len(pending):
+            print(f"  Sprites: {i}/{len(pending)}; errors {len(report['errors'])}",flush=True)
+    check(not report["errors"] and all(set(report["assets"][g]["sources"])==wanted[g] for g in roles),
+          "Typed extraction incomplete; rerun RECOVER to resume")
+    # Generate only display-relevant variants. Main-only raw textures stay
+    # available as source originals but do not need an additional thumbnail.
+    cache_path=out/cache_name
+    cache_doc=json.loads(cache_path.read_bytes()) if cache_path.exists() else {"policy":POLICY,"images":{}}
+    check(cache_doc["policy"]==POLICY,"Unexpected thumbnail cache policy")
+    cache=cache_doc["images"];selected={}
+    for g,e in report["assets"].items():
+        for cls,row in e["sources"].items():
+            if cls=="Sprite" or "texture" in uses[g] or "background" in uses[g]:
+                selected[row["original"]["sha256"]]=row["original"]
+    print(f"Preparing 512px variants for {len(selected)} distinct display sources...",flush=True)
+    for i,(sha,o) in enumerate(sorted(selected.items()),1):
+        cache[sha]=thumbnail(out,info(o),cache,ledger)
+        tmp=cache_path.with_suffix(".tmp")
+        write_json(tmp,cache_doc);tmp.replace(cache_path)
+        if i==1 or i%10==0 or i==len(selected):print(f"  Variants: {i}/{len(selected)}",flush=True)
+    for e in report["assets"].values():
+        for row in e["sources"].values():
+            sha=row["original"]["sha256"]
+            if sha in selected:row["thumbnail"]=cache[sha]
+    for sha in selected:verify_local_or_published(out,info(cache[sha]),ledger)
+    report["complete"]=True;save()
+    return {"guids":len(roles),"textureOriginals":len(roles),
+            "spriteSources":sum("Sprite" in e["sources"] for e in report["assets"].values()),
+            "displaySourceImages":len(selected),"publicationAuthorized":False,
+            "renderingVerified":False,"report":str(path)}
+
+
 def finalize(report,out,ledger=None,prior_index=None):
     """Create variants and index for a completely resolved explicit scope."""
     roles=report["targets"]
@@ -415,6 +548,7 @@ def main():
     p.add_argument("--aa",type=Path)
     p.add_argument("--existing-root",type=Path)
     p.add_argument("--prior-index",type=Path)
+    p.add_argument("--shop-projection",type=Path)
     p.add_argument("--transport",choices=("urllib","curl"),default="urllib")
     p.add_argument("--max-objects",type=int,default=1000)
     p.add_argument("--max-bytes",type=int,default=100000000)
@@ -432,7 +566,9 @@ def main():
                        json.loads(a.prior_index.read_bytes()) if a.prior_index else None)
     elif a.mode=="recover":
         check(a.aa is not None and not root.is_relative_to(a.aa.resolve()) and not a.aa.resolve().is_relative_to(root),"Separate game and private recovery paths required")
-        result=recover_aliases(a.aa.resolve(),root,ledger)
+        if a.shop_projection:
+            result=recover_typed_shop(a.aa.resolve(),root,a.shop_projection,ledger,a.existing_root)
+        else:result=recover_aliases(a.aa.resolve(),root,ledger)
     elif a.mode=="stage":
         check(a.targets is not None and a.existing_root is not None,"Explicit subset and existing extraction required")
         result=stage_subset(a.existing_root,root,json.loads(a.targets.read_bytes()),ledger)
