@@ -233,7 +233,7 @@ def register(root,ledger,max_objects,max_bytes,r2):
     return summary
 
 
-def verify(root,ledger,ledger_path,max_objects,max_bytes):
+def verify(root,ledger,ledger_path,max_objects,max_bytes,transport='urllib'):
     report,index,cache,objects=prepare(root,ledger)
     raw=(root/"shared-publication-receipt.json").read_bytes();receipt=json.loads(raw)
     expected={k:m["bytes"] for k,m in objects.items()}
@@ -250,10 +250,42 @@ def verify(root,ledger,ledger_path,max_objects,max_bytes):
                 check(expected.get(k)==n,"Checkpoint mismatch");prior[k]=n
     print("Remaining CDN witnesses:",len(set(expected)-set(prior)),flush=True)
     if input("Type VERIFY: ")!="VERIFY":return
-    verified,errors,count,size=batch(expected,prior,max_objects,max_bytes)
-    doc={"schema":"wand.media.cdn-readback@1","origin":"https://media.dreamwishwand.com/",
-         "sourceReceiptSha256":pin,"cdnVerified":verified==expected and not errors,"verified":verified,"errors":errors}
-    write_json(checkpoint,doc)
+    def save(verified,errors):
+        doc={"schema":"wand.media.cdn-readback@1","origin":"https://media.dreamwishwand.com/",
+             "sourceReceiptSha256":pin,"cdnVerified":verified==expected and not errors,
+             "verified":verified,"errors":errors}
+        temp=checkpoint.with_suffix(".tmp")
+        write_json(temp,doc)
+        temp.replace(checkpoint)
+        return doc
+    if transport=="curl":
+        from native_cdn_curl import CurlReader
+        pending=[];size=0
+        for k,n in sorted(expected.items()):
+            if k in prior or len(pending)>=max_objects or size+n>max_bytes:continue
+            pending.append(k[7:-5]);size+=n
+        verified=dict(prior);errors={};count=0
+        save(verified,errors)
+        if pending:
+            print(f"CDN: {len(prior)}/{len(expected)} verified; {len(pending)} remaining in this batch. Reusing HTTPS connections.",flush=True)
+            with CurlReader(pending,expected) as reader:
+                budget=[size]
+                for sha in pending:
+                    k="images/"+sha+".webp";count+=1
+                    try:
+                        data=reader(sha,budget)
+                        check(hashlib.sha256(data).hexdigest()==sha and len(data)==expected[k],"CDN byte identity mismatch")
+                        verified[k]=len(data)
+                    except Exception as exc:
+                        errors[k]=type(exc).__name__+": "+str(exc)[:240]
+                        print("CDN interrupted: "+errors[k],flush=True)
+                        break
+                    save(verified,errors)
+                    if count==1 or count%10==0 or len(verified)==len(expected):
+                        print(f"  CDN readback {len(verified)}/{len(expected)}",flush=True)
+    else:
+        verified,errors,count,size=batch(expected,prior,max_objects,max_bytes)
+    doc=save(verified,errors)
     if doc["cdnVerified"]:
         write_json(ledger_path,build(report,index,cache,raw,doc,ledger))
     return {"checked":count,"expectedBytes":size,"remaining":len(set(expected)-set(verified)),"errors":errors,
@@ -269,6 +301,7 @@ def main():
     p.add_argument("--aa",type=Path)
     p.add_argument("--existing-root",type=Path)
     p.add_argument("--prior-index",type=Path)
+    p.add_argument("--transport",choices=("urllib","curl"),default="urllib")
     p.add_argument("--max-objects",type=int,default=1000)
     p.add_argument("--max-bytes",type=int,default=100000000)
     a=p.parse_args();root=a.root.resolve()
@@ -288,7 +321,7 @@ def main():
         result=stage_subset(a.existing_root,root,json.loads(a.targets.read_bytes()),ledger)
     elif a.mode=="verify":
         check(a.ledger is not None,"Specify permanent ledger file")
-        result=verify(root,ledger,a.ledger,a.max_objects,a.max_bytes)
+        result=verify(root,ledger,a.ledger,a.max_objects,a.max_bytes,a.transport)
     else:result=register(root,ledger,a.max_objects,a.max_bytes,a.mode=="publish")
     print(json.dumps(result,indent=2))
 

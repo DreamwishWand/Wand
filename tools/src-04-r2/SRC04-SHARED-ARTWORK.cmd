@@ -36,8 +36,8 @@ try {
     }
     $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/5db3a1a055e648a73a29620fcfb5ccbe50c832dc/tools/src-04-r2/'
-    foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py')) {
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/db67aa0432d0d0879302b4e4f09b6937fc1554b7/tools/src-04-r2/'
+    foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py','native_cdn_curl.py','audit_native_map_cdn.py')) {
         Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
     }
     $delta=Join-Path $work 'shared_source_delta.py'
@@ -57,7 +57,9 @@ try {
         }
         Remove-Item Env:R2_ACCOUNT_ID,Env:AWS_ACCESS_KEY_ID,Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
         if (-not (Test-Path -LiteralPath (Join-Path $root 'shared-publication-receipt.json'))) { throw 'No publication receipt. Registration not complete.' }
-        Run @($delta,'verify','--root',$root,'--ledger',$ledger,'--max-objects','1000','--max-bytes','100000000')
+        Run @($delta,'verify','--root',$root,'--ledger',$ledger,'--transport','curl','--max-objects','1000','--max-bytes','100000000')
+        $cdn=Get-Content -LiteralPath (Join-Path $root 'shared-cdn-readback.json') -Raw | ConvertFrom-Json
+        if (-not $cdn.cdnVerified -or -not (Test-Path -LiteralPath $ledger -PathType Leaf)) { throw 'CDN verification incomplete. Successful results saved; rerun UI to resume. No further upload needed.' }
         $release=Join-Path $root 'shared-ui-release.json'
         if (-not (Test-Path -LiteralPath $release)) {
             Run @((Join-Path $work 'project_shared_ui_release.py'),'--root',$root,'--ledger',$ledger,'--out',$release)
