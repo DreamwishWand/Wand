@@ -28,7 +28,7 @@ fn pose(v:&Value,origin:&str,source:bool)->Result<Value,CodecError>{
     Ok(json!({"itemId":item.to_string(),"x":x.ok_or(bad)?,"y":y.ok_or(bad)?,"orientation":o,"origin":origin}))
 }
 
-fn reconstruct(defaults:&[(u32,&Value)],grid:&Value)->Result<(Vec<Value>,usize),CodecError>{
+fn reconstruct(defaults:&[(u32,&Value)],grid:&Value)->Result<(Vec<Value>,Vec<u32>,usize),CodecError>{
     let bad=CodecError::Json;
     let empty=Map::new();
     let modified=field_map(grid,"ModifiedObjects",&empty)?;
@@ -45,28 +45,30 @@ fn reconstruct(defaults:&[(u32,&Value)],grid:&Value)->Result<(Vec<Value>,usize),
         if v.get("ID").map_or(id!=0,|x|uint(x)!=Some(id)){return Err(bad);}
         changes.insert(id,v);
     }
-    let mut points=Vec::new();
+    let mut points=Vec::new();let mut private_ids=Vec::new();
     let mut divergent=0;
     for (id,v) in defaults {
         if removed.contains(id){
             if changes.contains_key(id){divergent+=1;}
             continue;
         }
+        private_ids.push(*id);
         points.push(match changes.get(id){
             Some(changed)=>pose(changed,"modified",false)?,
             None=>pose(v,"default",true)?
         });
     }
     for (key,v) in modified {
-        if !ids.contains(&key_id(key).ok_or(bad)?){points.push(pose(v,"added",false)?);}
+        let id=key_id(key).ok_or(bad)?;
+        if !ids.contains(&id){private_ids.push(id);points.push(pose(v,"added",false)?);}
     }
-    Ok((points,divergent))
+    Ok((points,private_ids,divergent))
 }
 
 pub(super) fn project(profile:&[u8],witness:&Value)->Result<String,CodecError>{
     let bad=CodecError::Json;
     let row=obj(witness)?;
-    if row.len()!=8||witness["contract"]!="wand.db05.diffgrid-effective-witness@1"||
+    if !(row.len()==8||row.len()==9&&row.contains_key("gridBounds"))||witness["contract"]!="wand.db05.diffgrid-effective-witness@1"||
        witness["gameVersion"]!="1.26.2"||witness["platform"]!="Steam"{return Err(bad);}
     let layout=witness["layoutId"].as_str().filter(|p|p.starts_with("SceneLayouts/")&&p.ends_with(".json")&&p.len()<=512&&!p.contains("..")&&!p.contains('\\')&&!p.chars().any(char::is_control)).ok_or(bad)?;
     let layout_type=witness["layoutType"].as_str().filter(|v|matches!(*v,
@@ -82,7 +84,8 @@ pub(super) fn project(profile:&[u8],witness:&Value)->Result<String,CodecError>{
     let mut defaults=Vec::with_capacity(originals.len());
     let mut default_ids=HashSet::new();
     for v in originals{
-        if obj(v)?.len()!=5{return Err(bad);}
+        let row=obj(v)?;
+        if !(row.len()==5||row.len()==6&&row.get("plainSource").is_some_and(Value::is_boolean)){return Err(bad);}
         let id=uint(&v["gridObjectIdNative"]).ok_or(bad)?;
         if !default_ids.insert(id){return Err(bad);}
         pose(v,"default",true)?;
@@ -106,7 +109,7 @@ pub(super) fn project(profile:&[u8],witness:&Value)->Result<String,CodecError>{
         if full.contains_key(key)||key_id(key).is_none()||
            grid.get("ID").map_or(key!="0",|v|uint(v)!=key_id(key)){unresolved+=1;continue;}
         match reconstruct(&defaults,grid){
-            Ok((points,divergent))=>{
+            Ok((points,_,divergent))=>{
                 total+=points.len();if total>LIMIT{return Err(CodecError::Bounds);}
                 matched.push(json!({"localGridOrdinal":matched.len()+1,"points":points,"lookupEnumerationDivergenceCount":divergent}));
             }
@@ -128,7 +131,7 @@ mod tests{
     fn native_enumeration_is_not_lookup_precedence(){
         let a=source(1,10);let b=source(2,20);let c=source(3,30);let d=source(4,40);
         let grid=json!({"ModifiedObjects":{"1":saved(1,11),"2":saved(2,22),"5":saved(5,55),"6":saved(6,66)},"RemovedObjects":[1,3,5,999]});
-        let (points,divergent)=reconstruct(&[(1,&a),(2,&b),(3,&c),(4,&d)],&grid).unwrap();
+        let (points,_,divergent)=reconstruct(&[(1,&a),(2,&b),(3,&c),(4,&d)],&grid).unwrap();
         assert_eq!(divergent,1);
         assert_eq!(points.iter().map(|v|v["itemId"].as_str().unwrap()).collect::<Vec<_>>(),vec!["22","40","55","66"]);
         assert_eq!(points[0]["origin"],"modified");
