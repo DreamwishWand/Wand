@@ -42,7 +42,7 @@ export function supportLeafFreeEligible(itemId:number,source:{layer:string;shape
  return Math.floor(itemId/100000)===400&&(source.layer==='furniture'||source.layer==='surface')&&!!source.shapeKey&&!special.has(itemId);
 }
 export function supportParentEligible(p:MainlandSavedObject|null,nonstandard=false):p is MainlandSavedObject{
- return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&(nonstandard||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move'));
+ return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&(p.object.layer==='furniture'||nonstandard&&p.object.layer==='surface')&&isCardinal(p.object.orientation)&&(nonstandard||!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move'));
 }
 export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={},objects:readonly MainlandSavedObject[]=[],duplicate=false,nonstandard=false){
  if(!supportParentEligible(p,nonstandard)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
