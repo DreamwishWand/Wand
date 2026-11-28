@@ -47,6 +47,7 @@ assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind=
 const mermaidTextures=new Set();for(const id of mermaids)for(const b of ['male','female']){const slots=index.items[id][b].baseMaterials;assert.equal(slots.length,4);for(const s of slots)mermaidTextures.add(s.texture.sha256)}assert.equal(mermaidTextures.size,6);
 const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male','female']){avatarKeys.add(index.models[b].sha256);for(const row of [...Object.values(index.items),...Object.values(index.variants).flat()]){const o=row[b];if(o?.kind==='pair')avatarKeys.add(o.asset.sha256);else if(o?.kind==='mermaid')avatarKeys.add(o.model.sha256)}}assert.equal(Object.keys(index.avatarMaterials).length,avatarKeys.size);for(const key of avatarKeys){const slots=index.avatarMaterials[key];assert.ok(slots.some(s=>s.role==='face')&&slots.some(s=>s.role==='eyes')&&slots.some(s=>s.role==='body'||s.role==='mermaidBody'));for(const s of slots){assert.equal(s.uv.bytes,s.vertices*8);avatarTextures.add(s.texture.sha256)}}assert.equal(avatarTextures.size,5);
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
+assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
 const limboRows=Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true);
@@ -74,6 +75,7 @@ try{
   assert.ok(ready,'preview server not ready');
   browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
+  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
     const detail=page.locator('details.pose-test');
@@ -88,6 +90,7 @@ try{
       await body.nth(b).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
+      assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+index.eyePalette.items['70000001'].texture.sha256+'.png'),'source eye mask requested');
       const duration=Number(await seek.getAttribute('max'));
       assert.ok(duration>0);
       await seek.evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))},duration*.5);

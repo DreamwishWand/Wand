@@ -22,3 +22,15 @@ test('appearance refresh selects a new explicit body but retains a manual compar
  assert.equal(selectAppearanceOption([male],'female','female','female'),male);
  assert.equal(selectAppearanceOption([], 'female',undefined,'female'),undefined);
 });
+import {validEyePalette,selectEyeMaterial,eyeMaterialKey,projectEyeMask} from '../src/lib/photo-mode/eye-palette.ts';
+test('eye mask selection uses the exact item ID and matching form; invalid colors use reference defaults',()=>{
+ const colors=Array.from({length:75},(_,i)=>[i/74,0,0,1]);
+ const items=Object.fromEntries(Array.from({length:12},(_,i)=>[70000001+i,{texture:{sha256:(i+1).toString(16).padStart(64,'0'),bytes:12},defaults:[4,42,45]}]));
+ const p={colors,items,shaderParityVerified:false};
+ assert.equal(validEyePalette(p),true);assert.equal(validEyePalette({...p,shaderParityVerified:true}),false);
+ const appearance=sanitizeSavedAvatarAppearance({...value,avatars:{female:{Eyeball:{EyeballItemID:70000010,ColorIndex1:0,ColorIndex2:-1,ColorIndex3:74}},femaleMermaid:{Eyeball:{EyeballItemID:70000012,ColorIndex1:1,ColorIndex2:2,ColorIndex3:3}}}});
+ const land=selectEyeMaterial(p,appearance,'female',false),water=selectEyeMaterial(p,appearance,'female',true);
+ assert.deepEqual(land.indices,[0,42,74]);assert.deepEqual(water.indices,[1,2,3]);assert.equal(land.texture,items[70000010].texture);assert.equal(water.texture,items[70000012].texture);
+ assert.equal(selectEyeMaterial(p,appearance,'male',false).texture,items[70000001].texture);assert.notEqual(eyeMaterialKey(land),eyeMaterialKey(water));
+ const mask=new Uint8ClampedArray([255,0,0,255,0,128,0,255,0,0,255,255,0,0,0,255]);projectEyeMask(mask,[[.5,0,0,1],[0,1,0,1],[0,0,.25,1]]);assert.deepEqual([...mask],[128,0,0,255,0,128,0,255,0,0,64,255,0,0,0,255]);
+});
