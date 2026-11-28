@@ -5,6 +5,7 @@ import {validLimboMaterial,type LimboMaterial} from './limbo-material.ts';
 import {validSkinPalette,skinTextureFor,type SkinPalette} from './skin-palette.ts';
 import {validEyePalette,projectEyeMask,type EyePalette,type EyeSelection} from './eye-palette.ts';
 import {validFaceMorphs,hasFaceMorph,applyFaceMorphs,type FaceChoices,type FaceMorphs} from './face-morph.ts';
+import {validHeadGeometry,selectHead,headRoles,decodeHeadPart,type HeadGeometry} from './head-geometry.ts';
 import type {PoseScene} from './scene-session.ts';
 import {collectionItemHref,collectionItemIdFromSearch} from '../collection/item-permalink.ts';
 export const bodyTypes=['male','female'] as const;
@@ -18,7 +19,7 @@ function validMermaidBaseMaterials(slots:MermaidBaseMaterial[]|undefined){return
 export type MermaidOption={kind:'mermaid';sourceSha256:string;clip:ClipEntry;model:BlobEntry;camera:{center:[number,number,number];radius:number};neutralMaterialProjection:true;unresolvedTransform:number;nonTransform:number;baseMaterials?:MermaidBaseMaterial[]}&({accessoryIncluded?:false;prop?:never;anchor?:never}|{accessoryIncluded:true;prop:ActorEntry;anchor:ActorAnchor});
 export type PreviewOption=PairOption|PlayerOption|MermaidOption;
 export type PoseRow=Partial<Record<BodyType,PreviewOption>>;
-export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>;avatarMaterials?:Record<string,AvatarBaseMaterial[]>;skinPalette?:SkinPalette;eyePalette?:EyePalette;faceMorphs?:FaceMorphs};
+export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>;avatarMaterials?:Record<string,AvatarBaseMaterial[]>;skinPalette?:SkinPalette;eyePalette?:EyePalette;faceMorphs?:FaceMorphs;headGeometry?:HeadGeometry};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
 function validNativeLoops(x:NativeLoopPeriods|undefined){return x===undefined||!!x&&Object.keys(x).length===2&&[x.player,x.companion].every(v=>Number.isFinite(v)&&v>0&&v<=600)&&Math.abs(x.player-x.companion)>1e-5}
 function validEntry(e:BlobEntry){return e&&/^[a-f0-9]{64}$/.test(e.sha256)&&Number.isSafeInteger(e.bytes)&&e.bytes>0&&e.bytes<=64*1024*1024}
@@ -47,17 +48,18 @@ export function loadPagesPoseIndex(base:string){
     if(m.skinPalette!==undefined)check(m.avatarMaterials&&validSkinPalette(m.skinPalette),'Invalid skin palette');
     if(m.eyePalette!==undefined)check(m.avatarMaterials&&validEyePalette(m.eyePalette),'Invalid eye palette');
     if(m.faceMorphs!==undefined)check(m.avatarMaterials&&validFaceMorphs(m.faceMorphs),'Invalid face morphs');
+    if(m.headGeometry!==undefined)check(m.avatarMaterials&&m.faceMorphs&&validHeadGeometry(m.headGeometry,Object.keys(m.avatarMaterials)),'Invalid head geometry');
     return m;
   })();void request.catch(()=>{request=undefined})}
   return request;
 }
-export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
-async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv'|'.webp'|'.wfm',signal:AbortSignal){
+export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'|'.whg'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
+async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv'|'.webp'|'.wfm'|'.whg',signal:AbortSignal){
   const response=await fetch(assetUrl(base,entry,ext),{signal});check(response.ok,'Scene unavailable');
   return verifyBlob(await response.arrayBuffer(),entry);
 }
 const modelCache=new Map<string,ArrayBuffer>();
-export async function loadPreviewScene(base:string,itemId:number,body:BodyType,index:PreviewIndex,entry:PreviewOption,companionLabel:string,signal:AbortSignal,propLabel='Prop',skinIndex?:number,eye?:EyeSelection,face?:FaceChoices):Promise<PoseScene>{
+export async function loadPreviewScene(base:string,itemId:number,body:BodyType,index:PreviewIndex,entry:PreviewOption,companionLabel:string,signal:AbortSignal,propLabel='Prop',skinIndex?:number,eye?:EyeSelection,face?:FaceChoices,headIndex?:number):Promise<PoseScene>{
   signal.throwIfAborted();
   let raw:ArrayBuffer;const modelKey=entry.kind==='pair'?entry.asset.sha256:entry.kind==='mermaid'?entry.model.sha256:index.models?.[body].sha256;
   const avatarSlots=modelKey?index.avatarMaterials?.[modelKey]??[]:[];
@@ -73,13 +75,16 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
     else if(entry.kind==='player'&&entry.companionIncluded===true){const actor=await fetchAsset(base,entry.actor,'.glb',signal);signal.throwIfAborted();raw=await attachCompanion(raw,actor,entry.actor,entry.anchor,itemId,entry.sourceSha256,entry.actorRoot,entry.limboMaterial?.primitiveSlots)}
   }
   signal.throwIfAborted();
-  const g=openPrivateDiagnostic(raw,0,entry.kind==='player'&&entry.companionIncluded===true?entry.nativeLoops:undefined,entry.kind==='player'&&entry.companionIncluded===true?entry.limboMaterial:undefined);
+  const head=selectHead(index.headGeometry,modelKey,body,headIndex);
+  const replacements=head?await Promise.all(headRoles.map(async role=>{const p=head.row.parts[role];return decodeHeadPart(await fetchAsset(base,p.asset,'.whg',signal),p,head.target.slots[role])})):[];
+  signal.throwIfAborted();
+  const g=openPrivateDiagnostic(raw,0,entry.kind==='player'&&entry.companionIncluded===true?entry.nativeLoops:undefined,entry.kind==='player'&&entry.companionIncluded===true?entry.limboMaterial:undefined,replacements);
   const paired=g.primitives.some(p=>p.actorId==='companion'),hasProp=g.primitives.some(p=>p.actorId==='prop');
   check((entry.kind==='player'||entry.kind==='mermaid')&&entry.accessoryIncluded===true?hasProp&&g.propItemId===itemId:!hasProp&&g.propItemId===undefined,'Prop identity mismatch');
   check(g.sourceSha256===entry.sourceSha256&&(entry.kind==='pair'||entry.kind==='player'&&entry.companionIncluded===true?paired&&g.companionItemId===itemId:!paired&&g.companionItemId===undefined),'Scene identity mismatch');
   const images=new Map<string,ImageBitmap>();
   try{
-    const faceEntry=face&&hasFaceMorph(face)?index.faceMorphs?.[body]:undefined;
+    const faceEntry=face&&hasFaceMorph(face)?(head?.row.morph??index.faceMorphs?.[body]):undefined;
     const faceBytes=faceEntry?await fetchAsset(base,faceEntry.asset,'.wfm',signal):undefined;
     const primitives=[];const used=new Set<MermaidBaseMaterial>();const usedAvatar=new Set<AvatarBaseMaterial>();const uvCache=new Map<string,Float32Array>();
     async function getTexture(e:BlobEntry,format:'png'|'webp'='png'){const key='material:'+e.sha256;let texture=images.get(key);if(!texture){const bytes=await fetchAsset(base,e,format==='png'?'.png':'.webp',signal);signal.throwIfAborted();texture=await createImageBitmap(new Blob([bytes],{type:'image/'+format}));images.set(key,texture)}return texture}
@@ -91,10 +96,10 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
       const data=ctx.getImageData(0,0,canvas.width,canvas.height);projectEyeMask(data.data,selection.colors);ctx.putImageData(data,0,0);
       const texture=await createImageBitmap(canvas);images.set(key,texture);signal.throwIfAborted();return texture;
     }
-    for(const p of g.primitives){signal.throwIfAborted();const {image,meshIndex,primitiveIndex,...primitive}=p;let texture:ImageBitmap|undefined;
+    for(const p of g.primitives){signal.throwIfAborted();const {image,meshIndex,primitiveIndex,headReplaced,...primitive}=p;let texture:ImageBitmap|undefined;
       const slot=entry.kind==='mermaid'&&primitive.actorId==='player'?entry.baseMaterials?.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
       const avatarSlot=primitive.actorId==='player'?avatarSlots.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
-      if(avatarSlot){check(!slot&&!usedAvatar.has(avatarSlot)&&avatarSlot.vertices*3===primitive.positions.length,'Invalid avatar material slot');usedAvatar.add(avatarSlot);let uv=uvCache.get(avatarSlot.uv.sha256);if(!uv){const data=await fetchAsset(base,avatarSlot.uv,'.uv',signal);signal.throwIfAborted();uv=new Float32Array(data);check(uv.length===avatarSlot.vertices*2&&uv.every(Number.isFinite),'Invalid source UV');uvCache.set(avatarSlot.uv.sha256,uv)}const skin=skinTextureFor(index.skinPalette,skinIndex,body,avatarSlot.role);texture=avatarSlot.role==='eyes'&&eye?await getEyeTexture(eye):await getTexture(skin?.texture??avatarSlot.texture,skin?.format??'png');const positions=avatarSlot.role==='face'&&faceBytes&&face&&faceEntry?(check(faceEntry.vertices===primitive.positions.length/3,'Face mesh identity'),applyFaceMorphs(faceBytes,primitive.positions,face)):primitive.positions;primitives.push({...primitive,positions,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
+      if(avatarSlot){check(!slot&&!usedAvatar.has(avatarSlot)&&avatarSlot.vertices*3===primitive.positions.length,'Invalid avatar material slot');usedAvatar.add(avatarSlot);let uv=headReplaced?primitive.uv:uvCache.get(avatarSlot.uv.sha256);if(!uv){const data=await fetchAsset(base,avatarSlot.uv,'.uv',signal);signal.throwIfAborted();uv=new Float32Array(data);check(uv.length===avatarSlot.vertices*2&&uv.every(Number.isFinite),'Invalid source UV');uvCache.set(avatarSlot.uv.sha256,uv)}const skin=skinTextureFor(index.skinPalette,skinIndex,body,avatarSlot.role);texture=avatarSlot.role==='eyes'&&eye?await getEyeTexture(eye):await getTexture(skin?.texture??avatarSlot.texture,skin?.format??'png');const positions=avatarSlot.role==='face'&&faceBytes&&face&&faceEntry?(check(faceEntry.vertices===primitive.positions.length/3,'Face mesh identity'),applyFaceMorphs(faceBytes,primitive.positions,face)):primitive.positions;primitives.push({...primitive,positions,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
       if(slot){check(!used.has(slot),'Duplicate garment slot');used.add(slot);texture=await getTexture(slot.texture);const uv=slot.flipV?primitive.uv.slice():primitive.uv;if(slot.flipV)for(let i=1;i<uv.length;i+=2)uv[i]=1-uv[i];primitives.push({...primitive,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
       if(image){check(image.mime==='image/png','Unsupported image');const key=image.bytes.byteOffset+':'+image.bytes.byteLength;texture=images.get(key);if(!texture){texture=await createImageBitmap(new Blob([new Uint8Array(image.bytes)],{type:image.mime}));images.set(key,texture)}}
       primitives.push({...primitive,texture});

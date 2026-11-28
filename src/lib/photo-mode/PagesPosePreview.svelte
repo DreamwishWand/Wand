@@ -3,6 +3,7 @@
   import {onMount} from 'svelte';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {selectEyeMaterial,eyeMaterialKey} from './eye-palette.ts';
+  import {savedHeadIndex} from './head-geometry.ts';
   import {savedFaceChoices,hasFaceMorph} from './face-morph.ts';
   import {savedSkinIndex} from './skin-palette.ts';
   import {savedBodyPreference} from './saved-avatar-appearance.ts';
@@ -21,6 +22,8 @@
   let skinKey=$derived(bodyTypes.map(b=>savedSkinIndex(appearance,b,row?.[b]?.kind==='mermaid')??'-').join(':'));
   let eyeKey=$derived(bodyTypes.map(b=>eyeMaterialKey(selectEyeMaterial(index?.eyePalette,appearance,b,row?.[b]?.kind==='mermaid'))).join('|'));
   let faceKey=$derived(index?.faceMorphs?bodyTypes.map(b=>savedFaceChoices(appearance,b,row?.[b]?.kind==='mermaid').join(':')).join('|'):'-');
+  let headKey=$derived(index?.headGeometry?bodyTypes.map(b=>savedHeadIndex(appearance,b,row?.[b]?.kind==='mermaid')??'-').join(':'):'-');
+  let savedHeadAvailable=$derived(!!index?.headGeometry&&bodyTypes.some(b=>row?.[b]&&savedHeadIndex(appearance,b,row[b]?.kind==='mermaid')!==undefined));
   let savedFaceAvailable=$derived(!!index?.faceMorphs&&bodyTypes.some(b=>row?.[b]&&hasFaceMorph(savedFaceChoices(appearance,b,row[b]?.kind==='mermaid'))));
   let savedSkinAvailable=$derived(!!index?.skinPalette&&bodyTypes.some(b=>row?.[b]&&savedSkinIndex(appearance,b,row[b]?.kind==='mermaid')!==undefined));
   let options=$derived.by(()=>{
@@ -28,7 +31,7 @@
     if(!m||!r)return [];
     return bodyTypes.flatMap((b,i)=>{
       const entry=r[b],skin=savedSkinIndex(appearance,b,entry?.kind==='mermaid');
-      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'))}]:[];
+      return entry?[{id:b,iconUrl:assetUrl(base,m.bodyIcons[b],'.png'),label:c.bodyType+' '+(i+1),load:(signal:AbortSignal)=>loadPreviewScene(base,itemId,b,m,entry,c.companion,signal,c.prop,skin,selectEyeMaterial(m.eyePalette,appearance,b,entry.kind==='mermaid'),savedFaceChoices(appearance,b,entry.kind==='mermaid'),savedHeadIndex(appearance,b,entry.kind==='mermaid'))}]:[];
     });
   });
   let playerOnly=$derived(bodyTypes.some(b=>{const o=row?.[b];return [70200018,70200020,70200029].includes(itemId)&&(o?.kind==='player'&&o.accessoryIncluded===false&&o.companionIncluded===undefined||o?.kind==='mermaid'&&o.accessoryIncluded!==true)}));
@@ -50,7 +53,7 @@
   <details class="pose-test" bind:open={expanded}>
     <summary>{copy.title}</summary>
     {#if expanded}
-      <p>{copy.note} {#if savedSkinAvailable}{copy.savedSkin}{/if} {#if index?.eyePalette}{copy.eyeDiagnostic}{/if} {#if savedFaceAvailable}{copy.faceDiagnostic}{/if} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic}{/if}</p>
+      <p>{copy.note} {#if savedSkinAvailable}{copy.savedSkin}{/if} {#if index?.eyePalette}{copy.eyeDiagnostic}{/if} {#if savedFaceAvailable||savedHeadAvailable}{copy.faceDiagnostic}{/if} {#if options.length===1}{copy.partial}{/if} {#if playerOnly}{copy.playerOnly}{/if} {#if partialActor}{copy.partialActor}{:else if companionOnly}{copy.companionOnly}{/if} {#if independentTiming}{copy.nativeLoops}{/if} {#if secondaryPassOmitted}{copy.secondaryPassOmitted}{/if} {#if itemId===120000145}{copy.residualMotion}{/if} {#if limboGeometryDiagnostic}{copy.limboGeometryDiagnostic}{/if} {#if mermaidDiagnostic}{copy.mermaidDiagnostic}{/if}</p>
       {#if poses.length>1}
         <div class="pose-variants" aria-label={copy.pose}>
           {#each poses as _,i}
@@ -59,7 +62,7 @@
         </div>
       {/if}
       {#key itemId+':'+poseIndex}
-        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={skinKey+':'+eyeKey+':'+faceKey}/>
+        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={skinKey+':'+eyeKey+':'+faceKey+':'+headKey}/>
       {/key}
       {#await names then items}
         {@const found=items.filter(x=>x.name)}

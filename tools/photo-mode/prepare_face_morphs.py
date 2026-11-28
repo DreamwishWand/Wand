@@ -43,13 +43,14 @@ def apply_face_morphs(raw,dest,base_source):
                 e=entry(v["asset"]);name=e["sha256"]+".wfm";require(name not in used,"duplicate face morph");used.add(name)
                 info=z.getinfo(name);require(info.file_size==e["bytes"]<=2*1024*1024,"face morph size")
                 data=z.read(info);require(digest(data)==e["sha256"],"face morph digest");verify_morph(data,v["vertices"])
+                path=dest/name
+                if path.exists():require(path.read_bytes()==data,"face morph conflict")
+                else:path.write_bytes(data)
                 if mesh==source["meshSha256"]:
                     require(v["vertices"]==source["vertices"],"base skull vertices")
-                    path=dest/name
-                    if path.exists():require(path.read_bytes()==data,"face morph conflict")
-                    else:path.write_bytes(data)
                     result[body]={"vertices":v["vertices"],"asset":e}
         require(len(used)==16 and set(z.namelist())=={"face-morphs.json",*used} and set(result)==set(BODY_TYPES),"face full coverage")
     public["faceMorphs"]=result
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
-    print("Face morphs: 16 native skull meshes verified; 2 exact current skulls published; 21 configured position frames each")
+    print("Face morphs: 16 native skull meshes verified; all 16 skulls published; 21 configured position frames each")
+    return m

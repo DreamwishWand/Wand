@@ -49,6 +49,7 @@ const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male'
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
 assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
 assert.deepEqual(Object.keys(index.faceMorphs).sort(),['female','male']);for(const b of ['male','female']){const f=index.faceMorphs[b];assert.ok(index.avatarMaterials[index.models[b].sha256].filter(s=>s.role==='face').every(s=>s.vertices===f.vertices));const raw=await readFile('build/photo-mode-preview/'+f.asset.sha256+'.wfm');assert.equal(raw.length,f.asset.bytes);assert.equal(raw.subarray(0,4).toString(),'WFM1')}
+assert.equal(Object.keys(index.headGeometry.targets).length,Object.keys(index.avatarMaterials).length);for(const b of ['male','female'])assert.equal(index.headGeometry.heads[b].length,8);
 const limboActor='120000053',limboRaven='120000066';
 assert.equal(Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true&&row.female?.limboGeometryDiagnostic===true).length,17);
 const limboRows=Object.values(index.items).filter(row=>row.male?.limboGeometryDiagnostic===true);
@@ -147,7 +148,7 @@ try{
   console.log('Exact native alternate pose permalink ready:',maxDog);
   // Exercise the actual shared local save reader and the built renderer, not a
   // mocked appearance store. No private game save is used.
-  const avatar=(skin,eye,nose,mouth,jaw)=>({SkinColorIndex:skin,FaceType:{'1':nose,'2':mouth,'3':jaw},Eyeball:{EyeballItemID:eye,ColorIndex1:4,ColorIndex2:42,ColorIndex3:45}});
+  const avatar=(skin,eye,nose,mouth,jaw)=>({SkinColorIndex:skin,FaceType:{'0':7,'1':nose,'2':mouth,'3':jaw},Eyeball:{EyeballItemID:eye,ColorIndex1:4,ColorIndex2:42,ColorIndex3:45}});
   const profile={GameInfo:{Version:643},Player:{AvatarIsMale:false,FemaleAvatar:avatar(2,70000010,2,3,7),MaleAvatar:avatar(3,70000012,1,2,4),ListInventories:{},ContainerInventories:{},CollectionSets:[]},World:{GridCollection:{Grids:{},DiffGrids:{}}}};
   const saveInput=page.locator('input[aria-hidden="true"][accept*=".profile"]');
   const asset=entry=>base+'/photo-mode-preview/'+entry.sha256;
@@ -157,7 +158,7 @@ try{
   const controls=linked.locator('.pose-preview .body-options button');
   const faceSeek=linked.locator('input.seek');
   async function expectAppearance(body,skin,eye){
-    const urls=[asset(index.faceMorphs[body].asset)+'.wfm',asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
+    const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
     for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
     await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
     assert.equal(await controls.nth(body==='male'?0:1).getAttribute('aria-pressed'),'true');
