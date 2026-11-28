@@ -35,7 +35,7 @@
  export let initialChildIndex:number|null=null,initialChildPath:readonly number[]|null=null;
  export let initialParentPoint:{x:number;y:number}|null=null,onInitialConsumed:()=>void=()=>{};
  let parentPoint:{x:number;y:number}|null=null;
- $: preview=placing&&parentPoint&&parent&&canMove?supportParentCandidate(parent,grids,rasters,parentPoint.x,parentPoint.y,parentOrientation??parent.object.orientation,parentShapes,objects,duplicating):null;
+ $: preview=placing&&parentPoint&&parent&&canMove?supportParentCandidate(parent,grids,rasters,parentPoint.x,parentPoint.y,parentOrientation??parent.object.orientation,parentShapes,objects,duplicating,nonstandard):null;
  export function hoverParent(point:{x:number;y:number}|null){parentPoint=placing?point:null;}
  export let supports:readonly MainlandSavedObject[]=[];
  export let objects:readonly MainlandSavedObject[]=[];
@@ -228,10 +228,10 @@
   const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(previous)+delta+4)%4];
   if(placing){parentOrientation=orientation;return;}
   const x=ghost?.x??parent.x,y=ghost?.y??parent.y,factor=ghost?.factor??parent.factor;
-  const candidate=supportParentCandidate(parent,grids,rasters,x+.25/factor,y-.25/factor,orientation,parentShapes,objects,duplicating);
+  const candidate=supportParentCandidate(parent,grids,rasters,x+.25/factor,y-.25/factor,orientation,parentShapes,objects,duplicating,nonstandard);
   if(!candidate){error=true;return;}parentOrientation=orientation;ghost=candidate;error=false;
  }
- export function pick(point:{x:number;y:number}){if(!placing||!parent||!canMove)return;ghost=supportParentCandidate(parent,grids,rasters,point.x,point.y,parentOrientation??parent.object.orientation,parentShapes,objects,duplicating);error=!ghost;if(ghost){placing=false;parentPoint=null;}}
+ export function pick(point:{x:number;y:number}){if(!placing||!parent||!canMove)return;ghost=supportParentCandidate(parent,grids,rasters,point.x,point.y,parentOrientation??parent.object.orientation,parentShapes,objects,duplicating,nonstandard);error=!ghost;if(ghost){placing=false;parentPoint=null;}}
  function validate(){
   if(!canMove||!ghost||!file||file!==activeFile||own||!open||duplicating&&!duplicateReady)return;
   const source=file,plan=ghost;loading=true;error=false;clearCopy();
@@ -282,7 +282,7 @@
     {/each}</div>
    {:else}<small>{words[9]}</small>{/if}
    <small>{words[10]}</small>
-   {#if canMove&&terrain&&!loading&&!copy&&!edits&&!stockDraft&&!stockPlacing&&!transferSource&&!transferDraft&&!placing&&!ghost&&!free&&!swap}<label><input type="checkbox" bind:checked={nonstandard}/>{nonstandardWords[locale]}</label>{/if}
+   {#if canMove&&(terrain||parent)&&!loading&&!copy&&!edits&&!stockDraft&&!stockPlacing&&!transferSource&&!transferDraft&&!placing&&!ghost&&!free&&!swap}<label><input type="checkbox" bind:checked={nonstandard}/>{nonstandardWords[locale]}</label>{/if}
    {#if canMove&&!transferSource&&selected>=0&&!placing&&!ghost&&!copy&&!stockPlacing&&!stockDraft&&!stockOpen}<div class="child-actions"><button type="button" disabled={!left||loading||!!edits||swap} on:click={()=>beginChild(left)}>{cw[0]}</button><button type="button" disabled={!right||loading||!!edits||swap} on:click={()=>beginChild(right)}>{cw[1]}</button><button type="button" disabled={!partners.length||loading||!!edits||swap} on:click={()=>{swap=true;edits=null;}}>{cw[2]}</button>{#if transferEligible&&targets.length}<button type="button" disabled={loading||!!edits||free||swap} on:click={beginTransfer}>{trw[0]}</button>{/if}{#if pickup}<button type="button" disabled={loading||!!edits||free||swap} on:click={beginPickup}>{stw[2]}</button>{/if}{#if terrain&&stockCatalog.some(o=>o.itemId===tree?.objects[selected]?.itemId)&&isCardinal(tree.objects[selected].orientation)}<button type="button" disabled={loading||!!edits||free||swap} on:click={()=>chooseStock(tree!.objects[selected].itemId,tree!.objects[selected].orientation as typeof CARDINAL_ORIENTATIONS[number])}>{stw[3]}</button>{/if}{#if terrain}<button type="button" disabled={!freeEligible||loading||!!edits||swap||free} on:click={()=>{free=true;freeDraft=false;error=false;}}>{sw[0]}</button>{/if}</div><small>{free?sw[1]:swap?cw[3]:terrain?sw[2]:sw[3]}</small>{#if edits}<button type="button" disabled={loading} on:click={validateChild}>{cw[5]}</button>{/if}{#if edits||swap||free}<button type="button" disabled={loading} on:click={()=>{edits=null;swap=false;free=false;freeDraft=false;}}>{words[11]}</button>{/if}{/if}
    {#if canMove&&!transferSource&&terrain&&!placing&&!ghost&&!copy&&!free&&!edits&&!swap&&!stockDraft&&!stockPlacing}<button type="button" disabled={loading||!stockCatalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{stw[0]}</button>{/if}
    {#if stockOpen&&canMove}<input type="search" bind:value={stockQuery} placeholder={stw[6]} aria-label={stw[6]}/><div class="support-list">{#each stockOptions as item}<button type="button" on:click={()=>chooseStock(item.itemId)}>{item.name} · {counts.get(item.itemId)}</button>{/each}</div>{/if}

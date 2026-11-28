@@ -1,4 +1,4 @@
-import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
+import {mainlandMapAnchor,mainlandTerrainHits,mainlandFreeHits,type MainlandGrid} from './mainland-world-coordinates.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import {terrainWarnings,type TerrainRaster} from './terrain-binding.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
@@ -32,23 +32,24 @@ export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,Sou
 export function supportParentEligible(p:MainlandSavedObject|null):p is MainlandSavedObject{
  return !!p?.shape&&p.object.subgrid?.status==='resolved_full'&&Number(p.object.itemId)/100000>=400&&Math.floor(Number(p.object.itemId)/100000)===400&&p.object.layer==='furniture'&&isCardinal(p.object.orientation)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'move');
 }
-export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={},objects:readonly MainlandSavedObject[]=[],duplicate=false){
+export function supportParentCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,worldX:number,worldY:number,orientation:string|null=p.object.orientation,shapes:Readonly<Record<string,SourceObjectShape>>={},objects:readonly MainlandSavedObject[]=[],duplicate=false,nonstandard=false){
  if(!supportParentEligible(p)||!p.shape||!isCardinal(orientation)||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
- const original=grids.find(g=>g.key===p.area),hits=mainlandTerrainHits(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
+ const original=grids.find(g=>g.key===p.area),hits=(nonstandard?mainlandFreeHits:mainlandTerrainHits)(grids,rasters,worldX,worldY),g=hits.length===1?hits[0]:null,r=g&&rasters.get(g.key);
  if(!original||!g||!r||g.factor!==p.factor||original.factor!==p.factor)return null;
  const cross=original.key!==g.key,turned=orientation!==p.object.orientation;
  if(cross&&nativeActionBlocked(p.object.editRestrictions,'switchGrid')||turned&&nativeActionBlocked(p.object.editRestrictions,'rotate'))return null;
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
  const shape=turned?shapes[p.object.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]:p.shape;
- if(!shape||shape.cellCount>65536||x<0||y<0||x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||!cross&&!turned&&x===p.object.x&&y===p.object.y||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length)return null;
- for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
+ if(!shape||!shape.cellCount||shape.cellCount>65536||x<0||y<0||x>=g.sizeX*g.factor||y>=g.sizeY*g.factor||!cross&&!turned&&x===p.object.x&&y===p.object.y&&!(duplicate&&nonstandard))return null;
+ if(!nonstandard&&(x+shape.width>g.sizeX*g.factor||y+shape.height>g.sizeY*g.factor||shape.acceptedFloorTypesFlag===undefined||terrainWarnings({raster:r,factor:g.factor,verifiedGridOrdinals:[p.object.localGridOrdinal]},shape,x,y).length))return null;
+ if(!nonstandard)for(const run of shape.runs)for(let dx=0;dx<run.width;dx++){
   const a=mainlandMapAnchor(g,x+run.x+dx+.5,y+run.y+.5),hits=mainlandTerrainHits(grids,rasters,a.x,a.y);if(hits.length!==1||hits[0].key!==g.key)return null;
  }
  const witness=(g:MainlandGrid)=>({layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY});
  const occupied=duplicate?objects:objects.filter(o=>o.object.localOrdinal!==p.object.localOrdinal||o.area!==p.area);
  const at=mainlandMapAnchor(g,x,y);
- if(stockFootprintFeedback({area:g.key,...at,factor:g.factor,shape,plan:{action:'place',itemId:p.object.itemId,x,y,orientation},destination:witness(g)},occupied).overlaps>0)return null;
- return {...at,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{})}};
+ if(!nonstandard&&stockFootprintFeedback({area:g.key,...at,factor:g.factor,shape,plan:{action:'place',itemId:p.object.itemId,x,y,orientation},destination:witness(g)},occupied).overlaps>0)return null;
+ return {...at,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),expectedX:p.object.x,expectedY:p.object.y,x,y,destination:witness(g),...(turned?{expectedOrientation:p.object.orientation,orientation}:{}),...(cross?{source:witness(original)}:{}),...(nonstandard?{freePlacement:true as const}:{})}};
 }
 export type SupportParentCandidate=NonNullable<ReturnType<typeof supportParentCandidate>>;
 export const supportWords={
