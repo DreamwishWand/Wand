@@ -3319,9 +3319,12 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             // The existing pose writer preserves the native identity and State.
             // Only relocation that changes identity requires the plain-stock census.
             if !same_grid{
-                if !old.get("State").is_none_or(Value::is_null){return Err(bad);}
-                let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
-                if !ids.contains(&target.item_id){return Err(bad);}
+                if old.get("State").is_some_and(|v|!v.is_null()){
+                    if crate::storage_source::is_storage(target.item_id)||!old.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state){return Err(bad);}
+                }else{
+                    let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
+                    if !ids.contains(&target.item_id){return Err(bad);}
+                }
             }
             let from=plain_scene_identity(&root,&target.grid_id)?;
             let to=plain_scene_identity(&root,&d.grid_id)?;
@@ -3382,7 +3385,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }
             Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
-            if storage{if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if !building&&old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
+            if storage{if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if !building&&old.get("State").is_some_and(|v|!v.is_null()){
+                let local=free&&native_class==400&&!crate::storage_source::is_storage(target.item_id)&&selection.4.as_deref().is_some_and(|o|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str());
+                if !local||if target.grid_id==d.grid_id{!old.get("State").is_some_and(|v|v.as_object().is_some_and(|m|m.is_empty())||local_interaction_transform_state(v))}else{!old.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state)}{return Err(bad);}
+            }
             None
         };
         let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
@@ -3670,6 +3676,19 @@ mod tests{
                 assert!(group_cut_candidate(blocked.to_string().as_bytes(),&plan.to_string()).is_err());
                 let mut wrong=plan.clone();wrong["rows"][0]["destination"]["sizeX"]=65536.into();
                 assert!(group_cut_candidate(raw.as_bytes(),&wrong.to_string()).is_err());
+                for state in [serde_json::json!({}),serde_json::json!({"Toggle":{"Value":true,"DesignID":null}}),serde_json::json!({"ItemList":{"Items":[]}})]{
+                    let mut local=root.clone();local["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=state.clone();
+                    let moved=group_cut_candidate(local.to_string().as_bytes(),&plan.to_string()).unwrap();
+                    let after:Value=serde_json::from_str(&moved).unwrap();
+                    assert_eq!(after["World"]["GridCollection"]["Grids"]["43"]["Objects"]["7"]["State"],state);
+                    assert_eq!(after["Player"],local["Player"]);
+                    let returned=group_cut_candidate(moved.as_bytes(),&back.to_string()).unwrap();
+                    assert_eq!(serde_json::from_str::<Value>(&returned).unwrap()["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["State"],state);
+                }
+                for state in [serde_json::json!({"Toggle":{"Value":true,"DesignID":7}}),serde_json::json!({"ItemList":{"Items":[40000001]}}),serde_json::json!({"Keyhole":{"KeyholeConfigDataGUID":"protected"}})]{
+                    let mut local=root.clone();local["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=state;
+                    assert!(group_cut_candidate(local.to_string().as_bytes(),&plan.to_string()).is_err());
+                }
             }
         }
     }
