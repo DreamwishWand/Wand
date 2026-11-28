@@ -3,6 +3,7 @@
   import {onDestroy,type Snippet} from 'svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import {collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES} from '$lib/collection/db01-native-facets';
   import {collectionAcquisitionCopy} from '$lib/collection/acquisition-copy';
   import {acquireCollectionEvidenceClient,type CollectionEvidenceHandle} from '$lib/collection/source-evidence-client';
   import type {CollectionAcquisitionWithDistribution} from '$lib/collection/distribution-evidence';
@@ -25,6 +26,7 @@
   let client:CollectionEvidenceHandle|undefined;
   onDestroy(()=>client?.release());
   const copy=$derived(collectionAcquisitionCopy(locale));
+  const colors=$derived([...new Set(item.tags.filter(([facet])=>facet==='color').map(([,key])=>key))].map(key=>({key,name:collectionDb01TagLabel(locale,key),swatch:COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]})));
   $effect(()=>{
     const id=item.itemId;void attempt;
     let live=true;
@@ -48,8 +50,9 @@
     <small class="pending">{label('itemPagePending')}</small>
   {/if}
   {#if variants}{@render variants()}{/if}
-  {#if attributes.length}
+  {#if attributes.length||colors.length}
     <dl class="attributes">
+      {#if colors.length}<div><dt>{collectionDb01FacetLabel(locale,'color')}</dt><dd class="color-list">{#each colors as color (color.key)}<span class="color-tag">{#if color.swatch}<span class="color-swatch" style:background={color.swatch} aria-hidden="true"></span>{/if}{color.name}</span>{/each}</dd></div>{/if}
       {#each attributes as row (row.label)}
         {#if row.values.length}<div><dt>{row.label}</dt><dd>{row.values.join(' · ')}</dd></div>{/if}
       {/each}
@@ -66,7 +69,7 @@
 </aside>
 <style>
   .quick-view{min-width:0;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:10px;overflow:auto;box-sizing:border-box}
-  header{display:flex;align-items:flex-start;gap:8px;justify-content:space-between;margin-bottom:8px}
+  header{position:sticky;top:-12px;z-index:2;display:flex;align-items:flex-start;gap:8px;justify-content:space-between;margin:-12px -12px 8px;padding:12px;background:var(--wand-menu);border-bottom:1px solid var(--wand-line)}
   h2{font-size:1.05rem;line-height:1.4;overflow-wrap:anywhere;margin:0}
   button,a{border:1px solid var(--wand-line);border-radius:7px;background:var(--wand-menu);color:inherit;padding:6px 9px}
   .close{flex:none;display:grid;place-items:center;padding:4px;min-width:32px;min-height:32px;cursor:pointer}
@@ -75,6 +78,9 @@
   .attributes{display:grid;gap:7px;margin:12px 0}
   .attributes>div{display:grid;grid-template-columns:minmax(74px,32%) minmax(0,1fr);gap:8px;align-items:baseline;font-size:.83rem}
   dt{opacity:.72}dd{margin:0;overflow-wrap:anywhere}
+  .color-list{display:flex;flex-wrap:wrap;gap:5px 8px}
+  .color-tag{display:inline-flex;align-items:center;gap:4px}
+  .color-swatch{display:inline-block;width:13px;height:13px;flex:none;border-radius:50%;border:1px solid var(--wand-line)}
   .owned{display:flex;align-items:center;gap:5px;font-size:.82rem}
   .minor{font-size:.78rem;line-height:1.4;margin:8px 0}
   .minor p{margin:3px 0}.minor small,.pending{opacity:.75}

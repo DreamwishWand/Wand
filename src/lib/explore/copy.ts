@@ -1,6 +1,7 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  series:['シリーズ','Series','Série','Serie','Serie','Serie','系列','Série'],
   quickView:['クイックビュー','Quick view','Aperçu','Anteprima','Schnellansicht','Vista rápida','快速查看','Visualização rápida'],
   itemPage:['アイテムページ','Item page','Page de l’objet','Pagina oggetto','Objektseite','Página del objeto','物品详情','Página do item'],
   itemPagePending:['個別ページは準備中','Item page not yet available','Page en préparation','Pagina in preparazione','Objektseite noch nicht verfügbar','Página en preparación','详情页尚未开放','Página em preparação'],

@@ -169,9 +169,10 @@
   function reviewAttributes(i:ExploreItem){
     const tags=(facet:Facet)=>[...new Set(i.tags.filter(([key])=>key===facet).map(([,key])=>collectionDb01TagLabel(locale,key)))];
     const hint=i.sourcePlacement?.ordinaryScope?.scopeHint;
+    const setName=i.sourceSetNames?.[locale]??i.sourceSetNames?.en;
     return [
       {label:label('universe'),values:i.universes.map(id=>universeName(String(id)))},
-      {label:collectionDb01FacetLabel(locale,'color'),values:tags('color')},
+      {label:label('series'),values:setName?[setName]:[]},
       {label:collectionDb01FacetLabel(locale,'furnitureStyle'),values:tags('furnitureStyle')},
       {label:label('category'),values:categoriesOf(i).map(key=>label(key))},
       {label:label('placementHint'),values:hint&&hint!=='unknown'?[label(hint)]:[]}
@@ -415,10 +416,11 @@
   .catalog-tile{box-sizing:border-box;height:100%;display:grid;grid-template-rows:minmax(0,1fr) 25px;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .catalog-tile .item{width:100%;height:100%;min-height:0;padding:3px;grid-template-rows:minmax(0,1fr);overflow:hidden}.catalog-tile .art{height:100%;min-height:0;overflow:hidden}
-  .tile-controls{display:flex;align-items:center;justify-content:space-between;gap:1px;min-width:0;padding:0 2px;box-sizing:border-box}
-  .variants-button{display:flex;align-items:center;justify-content:center;gap:1px;font-size:10px;background:var(--wand-menu);padding:1px;border:0;border-radius:5px;cursor:pointer;min-width:0;max-width:34px;height:23px}
+  .tile-controls{display:flex;align-items:center;justify-content:space-between;gap:1px;min-width:0;padding:0 1px;box-sizing:border-box}
+  .variants-button{display:flex;align-items:center;justify-content:center;gap:1px;font-size:10px;background:var(--wand-menu);padding:1px;border:0;border-radius:5px;cursor:pointer;min-width:0;max-width:30px;height:23px;flex:0 1 auto;overflow:hidden}
+  .variants-button :global(svg){flex-shrink:1;min-width:0}
   .variant-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:8px 0;max-height:180px;overflow:auto}.variant-grid button{height:46px;padding:2px}.variant-grid button[aria-pressed=true]{outline:2px solid var(--wand-accent)}
-  .tile-add,.tile-favorite{display:grid;place-items:center;width:23px;height:23px;flex:0 0 23px;padding:1px;border:0;background:var(--wand-menu);border-radius:5px;cursor:pointer}
+  .tile-add,.tile-favorite{display:grid;place-items:center;width:22px;height:23px;flex:0 0 22px;padding:1px;border:0;background:var(--wand-menu);border-radius:5px;cursor:pointer}
   .tile-add{margin-left:auto}.tile-favorite{opacity:0}
   .tile-add[aria-pressed=true],.tile-favorite[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast);opacity:1}
   .catalog-tile:hover .tile-favorite,.catalog-tile:focus-within .tile-favorite{opacity:1}
