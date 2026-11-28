@@ -58,3 +58,11 @@ test('head geometry parser preserves independent skin and vertex arrays',()=>{
  const p={vertices:n,indices:ic,jointPaths:['root/x'],asset:{bytes:b.byteLength,sha256:'a'.repeat(64)}};
  const slot={mesh:1,primitive:2},r=decodeHeadPart(b,p,slot);assert.equal(r.positions[0],1.25);assert.deepEqual([...r.indices],[0,0,0]);assert.deepEqual([...r.weights],[1,0,0,0]);assert.equal(r.inverseBind.length,16);r.positions[0]=99;assert.equal(v.getFloat32(16,true),1.25);v.setUint16(16+32,1,true);assert.throws(()=>decodeHeadPart(b,p,slot));
 });
+import {savedBodyType,applyBodyMorph,validBodyMorphs} from '../src/lib/photo-mode/body-morph.ts';
+test('native land body choice is bounded and independent of mermaid shape',()=>{
+ const a=sanitizeSavedAvatarAppearance({...value,avatars:{female:{BodyType:5},male:{BodyType:0},femaleMermaid:{BodyType:2}}});
+ assert.equal(savedBodyType(a,'female',false),5);assert.equal(savedBodyType(a,'male',false),0);assert.equal(savedBodyType(a,'female',true),undefined);
+ const entry={vertices:2,asset:{sha256:'a'.repeat(64),bytes:108}};assert.equal(validBodyMorphs({male:entry,female:entry}),true);assert.equal(validBodyMorphs({male:entry}),false);
+ const bytes=new ArrayBuffer(8+5*20),v=new DataView(bytes);v.setUint32(0,0x314d4257,true);v.setUint32(4,2,true);for(let i=0;i<5;i++){const o=8+20*i;v.setUint32(o,1,true);v.setUint32(o+4,0,true);v.setFloat32(o+8,i+1,true)}
+ const base=new Float32Array([0,0,0,1,0,0]);assert.deepEqual([...applyBodyMorph(bytes,base,5)],[5,0,0,1,0,0]);assert.deepEqual([...applyBodyMorph(bytes,base,0)],[0,0,0,1,0,0]);assert.deepEqual([...base],[0,0,0,1,0,0]);assert.throws(()=>applyBodyMorph(bytes.slice(0,-1),base,1));
+});
