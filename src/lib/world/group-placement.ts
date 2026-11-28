@@ -34,7 +34,7 @@ export function groupStockAvailable(clip:readonly DesignClipItem[],counts:Readon
 }
 /** Rotate in common half-cell coordinates. Scale source factor-1 dimensions
  * for rotation only; actual placement uses the native runs for each target. */
-export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGeometry,turn:number){
+export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGeometry,turn:number,free=false){
  // The Save clipboard retains the legacy quarter-turn unit (0..3).
  // Half-integers encode 45-degree poses, without changing cardinal values.
  if(clip.some(p=>!Number.isInteger(p.orientation))){
@@ -50,8 +50,9 @@ export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGe
  const scaled=new Map<number,DesignItemGeometry>();
  for(const item of clip){
   const a=defs.get(item.itemId),d=a?.get(2)??a?.get(1);if(!d)return null;
-  if(a?.has(2))scaled.set(item.itemId,d);
-  else scaled.set(item.itemId,{...d,shapes:Object.fromEntries(Object.entries(d.shapes).map(([key,s])=>[key,{...s,width:s.width*2,height:s.height*2,cellCount:s.cellCount*4,runs:s.runs.flatMap(r=>[0,1].map(dy=>({x:r.x*2,y:r.y*2+dy,width:r.width*2})))}]))});
+  const g=free?{...d,editRestrictions:undefined}:d;
+  if(a?.has(2))scaled.set(item.itemId,g);
+  else scaled.set(item.itemId,{...g,shapes:Object.fromEntries(Object.entries(d.shapes).map(([key,s])=>[key,{...s,width:s.width*2,height:s.height*2,cellCount:s.cellCount*4,runs:s.runs.flatMap(r=>[0,1].map(dy=>({x:r.x*2,y:r.y*2+dy,width:r.width*2})))}]))});
  }
  return rotateDesignClipboard(clip,scaled,turn);
 }
