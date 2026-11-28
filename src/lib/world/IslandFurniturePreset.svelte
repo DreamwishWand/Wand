@@ -180,7 +180,8 @@
    }
    const restoredPrivateScope=privatePoses&&regionDoc?privateRegionRestoreScope(regionDoc.region,privatePoses,definitions):loaded.storage?outdoorPrivateScope(grids):null;
    if(loaded.storage&&!restoredPrivateScope)throw Error('private storage boundary');
-   let planningFile=f,planningSnapshot=snapshot,planningNetworks=networks,planningLandscapes=landscapes,normalized=loaded.storage;
+   let planningFile=f,planningNetworks=networks,planningLandscapes=landscapes,normalized=loaded.storage;
+   let planningSnapshot:ReturnType<typeof islandSaveSnapshot>=snapshot;
    const valid=()=>epoch===token&&file===f&&sessions===ss&&worker===own&&!blocked&&!!snapshot;
    // Rectangular region restores retain the original object-scoped contract.
    if(normalized&&!regionDoc&&restoredPrivateScope){
