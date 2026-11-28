@@ -1,4 +1,6 @@
 <script lang="ts">
+ import FieldRecoveryControls from './FieldRecoveryControls.svelte';
+ import {indoorFieldRecoveryRows} from './indoor-room-view.ts';
  import PresetFilePicker from './PresetFilePicker.svelte';
  import {savePresetFile} from './preset-session.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -121,6 +123,7 @@
  }
 
  $: cutIndices=selectedGroup.size?[...selectedGroup]:selectedObject>=0?[selectedObject]:[];
+ $: recoverySelection=indoorFieldRecoveryRows(face,cutIndices);
  $: cutSelection=room?captureIndoorCut(face,room.ordinal,cutIndices,shapes,freeEdit?indoorTransformAllowed(face,new Set([...freeEligible,...editable])):editable,freeEdit?indoorTransformAllowed(face,new Set([...freeEligible,...removable])):removable,new Set(roomSupports.map(p=>p.index)),freeEdit):null;
  $: cutPreview=placing&&cutSource&&hoverCell?indoorGroupTransfer(face,shapes,freeEdit?new Set([...freeEligible,...removable]):removable,cutSource.rows,cutClip,hoverCell.x,hoverCell.y,freeEdit):null;
  $: mixedAllowed=freeEdit?new Set([...removable,...freeEligible]):removable;
@@ -443,6 +446,7 @@
      {#if face.terrain&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!cutSource}<button type="button" disabled={!editAllowed||!catalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{itw[2]}</button>{/if}
      {#if stockOpen}<input type="search" bind:value={stockQuery} placeholder={itw[4]} aria-label={itw[4]}/><select aria-label={itw[2]} value={0} on:change={e=>chooseStock(Number(e.currentTarget.value))}><option value={0} disabled>{itw[2]}</option>{#each options as o}<option value={o.itemId}>{o.name} · {stock.get(o.itemId)}</option>{/each}</select>{/if}
      {#if selectedObject>=0&&!moving&&!placing&&!editDraft&&!pickupDraft&&!placeDraft&&!transferDraft&&!editCopy&&!swap&&!stockOpen}
+      {#if recoverySelection}<FieldRecoveryControls selection={recoverySelection} {file} {locale} names={supportNames} blocked={!editAllowed||!!sceneCaptureWorker||!!supportParent} onApplied={resetObject}/>{/if}
       {#if selectedGroup.size>1||mixedSelected}<button type="button" disabled={!editAllowed||!groupPickup} on:click={()=>pickupDraft=groupPickup}>{mixedSelected?supportPickupWords[locale][0]:indoorGroupStockWords[locale][0]} · {cutIndices.length}</button>{/if}
       {#if storageDuplicateReady}<button type="button" disabled={!editAllowed||!!sceneCaptureWorker} on:click={()=>beginStorageDuplicate(false)}>{({ja:'空の収納として複製',en:'Duplicate with empty storage',fr:'Dupliquer avec rangements vides',it:'Duplica con contenitori vuoti',de:'Mit leeren Behältern duplizieren','es-ES':'Duplicar con almacenamiento vacío','zh-CN':'复制为空储物箱','pt-BR':'Duplicar com recipientes vazios'} as const)[locale]}{#if cutIndices.length>1} · {cutIndices.length}{/if}</button><button type="button" disabled={!editAllowed||!!sceneCaptureWorker} on:click={()=>beginStorageDuplicate(true)}>{({ja:'中身も複製',en:'Duplicate with contents',fr:'Dupliquer avec le contenu',it:'Duplica con contenuto',de:'Mit Inhalt duplizieren','es-ES':'Duplicar con contenido','zh-CN':'连同内容复制','pt-BR':'Duplicar com conteúdo'} as const)[locale]}{#if cutIndices.length>1} · {cutIndices.length}{/if}</button>{:else}      <button type="button" disabled={!editAllowed||!!sceneCaptureWorker||!duplicateClip&&!mixedSelected||!!linkedAxis&&mixedSelected} on:click={beginDuplicate}>{indoorGroupStockWords[locale][1]}{#if selectedGroup.size>1} · {selectedGroup.size}{/if}</button>{/if}
      {/if}
