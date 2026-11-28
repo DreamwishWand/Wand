@@ -431,7 +431,7 @@ scope.onmessage=async({data})=>{
         const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
         if(!item.shapeKey||!building&&item.layer==='other'||data.freePlacement!==true&&nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
         for(const code of [0,4,12])cache.resolve(itemId,code);
-        if((data.freePlacement===true||data.eightWay===true)&&grid.factor===1&&Math.floor(itemId/100000)===400&&item.layer==='furniture'&&!item.surfaceCapable)for(const code of [2,6,10,14])cache.resolve(itemId,code);
+        if((data.freePlacement===true||data.eightWay===true)&&grid.factor===1&&Math.floor(itemId/100000)===400&&(item.layer==='furniture'||data.freePlacement===true&&item.layer==='surface')&&!item.surfaceCapable)for(const code of [2,6,10,14])cache.resolve(itemId,code);
         runs+=Object.values(cache.shapes).reduce((n,shape)=>n+shape.runs.length,0);
         if(runs>1_000_000)throw Error('geometry limit');
         const supportPath=(landscapeSupports?.get(itemId) as {SubGrid?:{SubGridDataPath?:string}}|undefined)?.SubGrid?.SubGridDataPath;
