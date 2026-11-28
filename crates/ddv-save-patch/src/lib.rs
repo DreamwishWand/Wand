@@ -833,21 +833,21 @@ pub fn preview_plain_grid_transfer(
     destination:&PlainGridDestination,replacement:(i32,i32),
     orientation:&str,
 )->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,false)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,false,false)
 }
 /// Only for an exact owned support hierarchy resolved by the codec.
 pub fn preview_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false,false)
 }
 /// Transfer a validated support parent between source-backed outdoor worlds.
 pub fn preview_support_parent_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,true)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,true,false)
 }
 /// Only for ordinary, state-free furniture in a source-backed outdoor world.
 /// The codec must prove the exact old/new identities and reject references.
 /// The older same-scope and support-parent APIs remain unchanged.
 pub fn preview_plain_world_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
-    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,true)
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,false,true,false)
 }
 /// Relocate an exact plain outdoor leaf without inventory mutation. The
 /// codec proves original source/destination catalog identity and references.
@@ -889,7 +889,10 @@ fn saved_layout_matches(layout:Option<&str>,expected:&str,data:&str)->bool{
     let folder=if name=="Desert"{"FloatingIlsnad_Desert"}else{family};
     data.starts_with(&format!("GridData/FloatingIslands/{folder}/{family}"))&&data.ends_with(".json")&&!data.contains("..")&&!data.contains('\\')
 }
-fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool)->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_free_support_parent_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+    preview_grid_transfer(source,target,expected,destination,replacement,orientation,true,false,true)
+}
+fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),destination:&PlainGridDestination,replacement:(i32,i32),orientation:&str,support_parent:bool,allow_world_change:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
        target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
        destination.grid_id.starts_with('0')||
@@ -909,8 +912,10 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     let to=grids.get(&destination.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
     let from_layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::MissingTarget)?;
     let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
-    let from_scope=saved_outdoor_scope(from_layout,from.get("GridDataPath").and_then(|v|v.as_str()).unwrap_or("")).ok_or(PatchError::InvalidTarget)?;
+    let from_data=from.get("GridDataPath").and_then(|v|v.as_str()).unwrap_or("");
+    let from_scope=saved_outdoor_scope(from_layout,from_data).or_else(||(free&&from_data.starts_with("GridData/FloatingIslands/")).then_some("FloatingIslands")).ok_or(PatchError::InvalidTarget)?;
     let same_world=from_scope==to_scope;
+    if free&&(!support_parent||house_exterior_world(from_layout,from_data).is_none()||house_exterior_world(from_layout,from_data)!=house_exterior_world(&destination.layout_path,&destination.data_path)){return Err(PatchError::InvalidTarget);}
     // Landscape is an identity-preserving logical move, not an inventory
     // pickup or grant. Limit it to verified outdoor source path families
     // within one world, with unchanged orientation and native resolution.
@@ -951,7 +956,7 @@ fn preview_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
     }else if target.item_id/100_000==402&&from.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(|v|v.get("State")).is_some_and(|v|v.is_null()){
         Some("null")
     }else{None};
-    if support_parent&&to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::AmbiguousTarget);}
+    if support_parent&&!free&&to.get("Objects").and_then(|v|v.as_object()).is_none_or(|m|m.values().any(|v|v.get("X").and_then(|v|v.as_i64())==Some(i64::from(replacement.0))&&v.get("Y").and_then(|v|v.as_i64())==Some(i64::from(replacement.1)))){return Err(PatchError::AmbiguousTarget);}
     let removed=preview_grid_structure(source,target,expected,PlainGridStructureAction::Remove,support_parent)?;
     insert_grid_record(&removed.patched_json,destination,target.item_id,replacement,orientation,state)
 }

@@ -1956,7 +1956,7 @@ mod browser_amount_preview {
                 let draft=grid_instance_preview::support_scene_place_candidate(source,item,(int("x")?,int("y")?),o.get("destination").ok_or_else(invalid)?,o.get("orientation").and_then(|v|v.as_str()).ok_or_else(invalid)?,o.get("scene").ok_or_else(invalid)?).map_err(|_|invalid())?;
                 return self.prepare_copy_from_patched(draft.patched_json,true);
             }
-            let o=v.as_object().filter(|o|(7..=12).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"|"expectedOrientation"|"orientation"|"source"|"duplicate"|"scene"))).ok_or_else(invalid)?;
+            let o=v.as_object().filter(|o|(7..=13).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"x"|"y"|"destination"|"expectedOrientation"|"orientation"|"source"|"duplicate"|"scene"|"freePlacement"))).ok_or_else(invalid)?;
             let duplicate=match o.get("duplicate"){None=>false,Some(v)=>v.as_bool().filter(|b|*b).ok_or_else(invalid)?};
             let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|n|usize::try_from(n).ok()).ok_or_else(invalid)?;
             let item=o.get("itemId").and_then(|v|v.as_u64()).ok_or_else(invalid)?;
@@ -1964,7 +1964,8 @@ mod browser_amount_preview {
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let turn=match (o.get("expectedOrientation"),o.get("orientation")){(None,None)=>None,(Some(a),Some(b))=>Some((a.as_str().ok_or_else(invalid)?,b.as_str().ok_or_else(invalid)?)),_=>return Err(invalid())};
             let expected=(int("expectedX")?,int("expectedY")?);let replacement=(int("x")?,int("y")?);let destination=o.get("destination").ok_or_else(invalid)?;
-            let draft=if let Some(scene)=o.get("scene"){
+            let free=match o.get("freePlacement"){None=>false,Some(v)=>v.as_bool().filter(|b|*b).ok_or_else(invalid)?};
+            let draft=if free{grid_instance_preview::free_support_parent_candidate(source,ordinal,item,expected,replacement,destination,turn,o.get("source"),duplicate,o.get("scene"))}else if let Some(scene)=o.get("scene"){
                 if !duplicate{return Err(invalid());}
                 grid_instance_preview::support_parent_scene_candidate(source,ordinal,item,expected,replacement,destination,turn,o.get("source"),scene)
             }else{

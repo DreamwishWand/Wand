@@ -1002,10 +1002,10 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
 }
 /// Test-only parent transform. Child grids and the exact State remain unchanged.
 pub(super) fn support_parent_move_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
- support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,false,None)
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,false,None,false)
 }
 pub(super) fn support_parent_duplicate_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
- support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None)
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,None,false)
 }
 pub(super) fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecError>{
  let m=scene.as_object().filter(|m|m.len()==4&&m.get("schema").and_then(Value::as_str)==Some("wand.preset.support-scene@1")&&m.get("gameVersion").and_then(Value::as_str)==Some("1.26.2")&&m.get("ownerItemId").and_then(Value::as_u64)==Some(item)).ok_or(CodecError::Json)?;
@@ -1032,7 +1032,7 @@ pub(super) fn checked_support_scene(item:u64,scene:&Value)->Result<&Value,CodecE
 }
 pub(super) fn support_parent_scene_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let tree=checked_support_scene(item,scene)?;
- support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,Some(tree))
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,true,Some(tree),false)
 }
 pub(super) fn support_scene_place_candidate(profile:&[u8],item:u64,xy:(i32,i32),witness:&Value,orientation:&str,scene:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
@@ -1054,9 +1054,14 @@ pub(super) fn support_scene_place_candidate(profile:&[u8],item:u64,xy:(i32,i32),
  if &subgrid_tree(after,&dest.grid_id,&next)?!=tree||!d.changed||!d.untouched_bytes_preserved||d.export_authorized||d.writer_authorized{return Err(bad);}
  Ok(d)
 }
-fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool,scene:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+pub(super) fn free_support_parent_candidate(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool,scene:Option<&Value>)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+ let tree=scene.map(|s|checked_support_scene(item,s)).transpose()?;
+ if tree.is_some()&&!duplicate{return Err(CodecError::Json);}
+ support_parent_operation(profile,ordinal,item,expected,replacement,witness,turn,source_witness,duplicate,tree,true)
+}
+fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i32),replacement:(i32,i32),witness:&Value,turn:Option<(&str,&str)>,source_witness:Option<&Value>,duplicate:bool,scene:Option<&Value>,free:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
- if ordinal==0||item/100_000!=400||expected==replacement&&turn.is_none()&&source_witness.is_none(){return Err(bad);}
+ if ordinal==0||item/100_000!=400||expected==replacement&&turn.is_none()&&source_witness.is_none()&&!(free&&duplicate){return Err(bad);}
  let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
  if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
  let (scan,_)=scan_grid_instances(profile)?;
@@ -1069,6 +1074,10 @@ fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i
  let source=if cross{let src=resolve_plain_grid_destination(profile,source_witness.ok_or(bad)?)?;if src.grid_id!=target.grid_id||src.tessellation!=dest.tessellation{return Err(bad);}src}else{if source_witness.is_some(){return Err(bad);}dest.clone()};
  let valid=|d:&ddv_save_patch::PlainGridDestination,(x,y):(i32,i32)|x>=0&&y>=0&&(x as u32)<d.size.0*d.tessellation&&(y as u32)<d.size.1*d.tessellation;
  if !valid(&source,expected)||!valid(&dest,replacement){return Err(bad);}
+ if free{
+  let identity=|d:&ddv_save_patch::PlainGridDestination|->Result<String,CodecError>{let (scope,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}Ok(scope)};
+  if identity(&source)?!=identity(&dest)?{return Err(bad);}
+ }
  let obj=c.get("Grids").and_then(|g|g.get(&target.grid_id)).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).ok_or(bad)?;
  if obj.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id)||obj.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
     obj.get("State").and_then(Value::as_object).is_none_or(|s|s.len()!=1||!s.contains_key("SubGrid"))||
@@ -1087,14 +1096,16 @@ fn support_parent_operation(profile:&[u8],ordinal:usize,item:u64,expected:(i32,i
   let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
   let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
   if refs.blocking()>0||refs.historical>0{return Err(bad);}
-  let d=if let Some(scene)=scene{ddv_save_patch::support_clone::preview_support_scene_duplicate(json,target,expected,&dest,replacement,new,scene)}else{ddv_save_patch::support_clone::preview_support_tree_duplicate(json,target,expected,&dest,replacement,new)}.map_err(|_|CodecError::Patch)?;
+  let d=if free{ddv_save_patch::support_clone::preview_free_outdoor_support_duplicate(json,target,expected,&dest,replacement,new,scene)}else if let Some(scene)=scene{ddv_save_patch::support_clone::preview_support_scene_duplicate(json,target,expected,&dest,replacement,new,scene)}else{ddv_save_patch::support_clone::preview_support_tree_duplicate(json,target,expected,&dest,replacement,new)}.map_err(|_|CodecError::Patch)?;
   let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
   let next_collection=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
   if &subgrid_tree(next_collection,&dest.grid_id,&next)?!=scene.unwrap_or(&tree)||subgrid_tree(next_collection,&target.grid_id,&target.object_id)?!=tree{return Err(bad);}
   d
  }else if cross{
   let next=c.get("Grids").and_then(|g|g.get(&dest.grid_id)).and_then(|g|g.get("NextGridObjectID")).and_then(Value::as_u64).ok_or(bad)?.to_string();
-  let d=ddv_save_patch::preview_support_parent_grid_transfer(json,target,expected,&dest,replacement,new).map_err(|_|CodecError::Patch)?;
+  let refs=grid_identity_dependencies_for_ids(profile,&dest.grid_id,&[next.clone()])?;
+  if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  let d=if free{ddv_save_patch::preview_free_support_parent_grid_transfer(json,target,expected,&dest,replacement,new)}else{ddv_save_patch::preview_support_parent_grid_transfer(json,target,expected,&dest,replacement,new)}.map_err(|_|CodecError::Patch)?;
   let parsed:Value=serde_json::from_str(&d.patched_json).map_err(|_|bad)?;
   let next_collection=parsed.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(bad)?;
   if subgrid_tree(next_collection,&dest.grid_id,&next)?!=tree{return Err(bad);}
@@ -3915,6 +3926,36 @@ mod terrain_session_tests{
         assert!(inspect_scene_network(result.as_bytes(),&serde_json::to_string(&incomplete).unwrap()).is_err());
         rows[5]["x"]=Value::from(26);
         assert!(group_paste_candidate(source,&rows.to_string()).is_err());
+    }
+    #[test]
+    fn free_outdoor_support_parent_preserves_children_and_allocates_independent_clone(){
+        let layout="SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json";
+        let data="GridData/Villages/Village04-MeadowLevel-GridData.json";
+        let raw=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40005160":{"Amount":1},"40005161":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+            "7":{"ID":7,"GridDefaultLayoutPath":layout,"GridDataPath":data,"TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}},"2":{"ID":2,"ItemID":40005161,"X":5,"Y":6,"Orientation":"GridOrientation_Down"}}},
+            "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"}}}
+        }}}});
+        let witness=serde_json::json!({"layoutId":layout,"gridDataPath":data,"factor":1,"sizeX":196,"sizeY":100});
+        let input=raw.to_string();
+        let draft=free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(4,6),&witness,None,None,true,None).unwrap();
+        let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        let grids=&result["World"]["GridCollection"]["Grids"];
+        assert_eq!(grids["7"]["Objects"]["3"]["State"]["SubGrid"]["GridID"],20);
+        assert_eq!(grids["7"]["Objects"]["3"]["X"],4);
+        assert_eq!(grids["8"],raw["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(grids["20"]["Objects"],grids["8"]["Objects"]);
+        assert_eq!(result["Player"]["ListInventories"]["0"]["Inventory"]["40005161"]["Amount"],0);
+        assert!(support_parent_duplicate_candidate(input.as_bytes(),1,40005160,(4,6),(4,6),&witness,None,None).is_err());
+        let moved=free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(5,6),&witness,Some(("GridOrientation_Down","GridOrientation_Left")),None,false,None).unwrap();
+        let moved:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"],raw["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["State"]);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["8"],raw["World"]["GridCollection"]["Grids"]["8"]);
+        assert_eq!(moved["Player"],raw["Player"]);
+        assert_eq!(moved["World"]["GridCollection"]["Grids"]["7"]["Objects"]["1"]["X"],5);
+        let mut invalid=witness.clone();invalid["sizeX"]=197.into();
+        assert!(free_support_parent_candidate(input.as_bytes(),1,40005160,(4,6),(5,6),&invalid,None,None,false,None).is_err());
+        let mut linked=raw.clone();linked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":7,"GridObjectID":1}]);
+        assert!(free_support_parent_candidate(linked.to_string().as_bytes(),1,40005160,(4,6),(5,6),&witness,None,None,false,None).is_err());
     }
     #[test]
     fn support_duplicate_allocates_fresh_nested_grids_and_consumes_exact_stock(){
