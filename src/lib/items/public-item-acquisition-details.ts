@@ -47,6 +47,7 @@ const extensionFields={
   progression:'acquisition.ordinaryProgressionSources',
   critterBefriending:'acquisition.ordinaryCritterSources',
   conditionalQuest:'acquisition.conditionalQuestSources',
+  initialVillageMemory:'acquisition.initialVillageMemoryTreasureSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
   memoryDefaultContent:'acquisition.memoryDefaultContentSources',
   miniEventReward:'acquisition.miniEventRewardSources',
@@ -103,6 +104,19 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           evidence.nativeInitializationVerified===true&&evidence.guaranteedGrantVerified===false&&
           evidence.grantVerified===false&&evidence.playerOwnershipVerified===false,'EXTENSION_INITIAL_INVENTORY');
         output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
+      }
+      if(family==='initialVillageMemory'){
+        check(categories.includes('ordinary_gameplay')&&evidence.category==='ordinary_gameplay'&&
+          evidence.kind==='initial_village_memory_treasure'&&evidence.sourceItemId===31300038&&id(evidence.targetItemId)&&
+          evidence.sourceMemorySha256===sha?.MemoryShard&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
+          evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&evidence.sourceGameVersion===db.release.target.gameVersion&&
+          evidence.gridId===0&&id(evidence.objectId)&&typeof evidence.x==='number'&&Number.isSafeInteger(evidence.x)&&typeof evidence.y==='number'&&Number.isSafeInteger(evidence.y)&&
+          typeof evidence.sourceBiome==='string'&&['Beach','Cliff','DarkMountains','Forest','Meadow','Savannah','Urban','Wetland'].includes(evidence.sourceBiome)&&
+          evidence.sourceFile==='DefaultVillageLayout01-'+evidence.sourceBiome+'Grids.json'&&typeof evidence.sourceFileSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourceFileSha256)&&
+          evidence.sourcePath==='Grids[0].Objects['+evidence.objectId+'].State.WeedData.Treasure.ItemID'&&
+          evidence.shardIndex===0&&evidence.configuredShardCount===1&&evidence.configuredAmount===1&&
+          evidence.nativeRewardActionVerified===true&&evidence.guaranteedGrantVerified===false&&evidence.currentAvailabilityVerified===false,'EXTENSION_INITIAL_VILLAGE_MEMORY');
+        output.push({family,category:'ordinary_gameplay',evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
       }
       if(family==='miniEventReward'){
         check(categories.includes('in_game_limited_event')&&evidence.category==='in_game_limited_event'&&
@@ -712,7 +726,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='evolutionAcquisition'?['Clothing','Tool']:e.family==='storyUnlock'?['Story']:e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='initialVillageMemory'?['ActivityItem']:e.family==='evolutionAcquisition'?['Clothing','Tool']:e.family==='storyUnlock'?['Story']:e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
