@@ -7,7 +7,7 @@
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
  import {worldArtwork} from './world-artwork.ts';
- import {parseFurnitureStock,parseLocalPlainStock} from './furniture-stock-view.ts';
+ import {parseFurnitureStock,parseLocalPlainStock,parseLocalStorageStock,parseLocalSupportStock} from './furniture-stock-view.ts';
  import {characterHouseExterior} from './character-house-exteriors.ts';
  import {readLocalHouseTemplates,houseSourceWords,newHouseWords} from './player-house-source.ts';
  import {stockToolWords,stockFootprintWords,stockFootprintFeedback,ordinaryFurniture,landscapeId,landscapeSourceEligible,stockSourceEligible,stockPickup,buildingSourceEligible,buildingPickup,buildingPlacementSources,initialBuildingEligible,nativePlacementCandidate,type StockCandidate} from './save-furniture-placement.ts';
@@ -24,7 +24,7 @@
  let lastFree=false;
  $: if(freePlacement!==lastFree){lastFree=freePlacement;catalogLocale=null;if(!freePlacement)buildingMode=false;cancel();}
  let landscapeMode=false,buildingMode=false,catalogMode=false,catalogBuildings=false;
- let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,localPlainIds=new Set<number>(),query='',limit=80;
+ let catalog:DesignCatalogItem[]=[],counts:Map<number,number>|null=null,localPlainIds=new Set<number>(),localStorageIds=new Set<number>(),localSupportIds=new Set<number>(),query='',limit=80;
  let catalogState:'idle'|'loading'|'ready'|'error'='idle',stockState:'idle'|'loading'|'ready'|'error'='idle';
  let detached=new Set<number>(),newHouseIds=new Set<number>(),localHouseSources=new Map<number,string>(),houseImportState:'idle'|'loading'|'ready'|'error'='idle',houseImportEpoch=0;
  $: availableInitial=new Set([...detached,...[...newHouseIds].filter(id=>localHouseSources.has(id))]);
@@ -57,7 +57,7 @@
  $: houseToolId=Number((candidate?.plan.itemId??source?.object.itemId??chosen?.object.itemId)??0);
  $: hw=Math.floor(houseToolId/100000)===205?houseWords[locale]:characterHouseExterior(houseToolId)?characterWords[locale]:buildingWords[locale];
  $: newHouseCandidate=!!candidate&&candidate.plan.action==='place'&&!detached.has(Number(candidate.plan.itemId))&&newHouseIds.has(Number(candidate.plan.itemId))&&localHouseSources.has(Number(candidate.plan.itemId));
- $: storageCandidate=!!candidate&&source?.object.storage===true&&(candidate.plan.action==='duplicate'||candidate.plan.action==='remove');
+ $: storageCandidate=!!candidate&&(source?.object.storage===true&&(candidate.plan.action==='duplicate'||candidate.plan.action==='remove')||plainLocalOnly&&candidate.plan.action==='place'&&(localStorageIds.has(Number(candidate.plan.itemId))||localSupportIds.has(Number(candidate.plan.itemId))));
  $: houseCandidate=!!candidate&&[200,201,202,203,205].includes(Math.floor(Number(candidate.plan.itemId)/100000));
  $: canRemoveHouse=!!buildingPickup(chosen,objects);
  $: landscapeCandidate=!!candidate&&landscapeId(Number(candidate.plan.itemId));
@@ -71,11 +71,11 @@
  $: if(!open||blocked||!canStart)cancel();
  $: normalized=query.normalize('NFKC').toLocaleLowerCase().trim();
  $: buildingSources=buildingPlacementSources(grids,objects);
- $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g,availableInitial))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):(o.layer==='furniture'||freePlacement&&o.layer==='surface')&&ordinaryFurniture(o.itemId)&&(!plainLocalOnly||localPlainIds.has(o.itemId))&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
+ $: items=catalog.filter(o=>(buildingMode?o.nativeType==='Building'&&(buildingSources.has(o.itemId)||grids.some(g=>initialBuildingEligible(o.itemId,g,availableInitial))):landscapeMode?o.layer==='landscape'&&landscapeId(o.itemId):(o.layer==='furniture'||freePlacement&&o.layer==='surface')&&ordinaryFurniture(o.itemId)&&(!plainLocalOnly||localPlainIds.has(o.itemId)||localStorageIds.has(o.itemId)||localSupportIds.has(o.itemId))&&(counts?.get(o.itemId)??0)>0)&&o.name.normalize('NFKC').toLocaleLowerCase().includes(normalized));
  $: visible=items.slice(0,limit);
  $: if(open)loadArtwork(visible);
  $: ghost=candidate??(placing&&point?(nativePlacementCandidate(grids,rasters,definitions,itemId,orientation,point.x,point.y,source,freePlacement,buildingMode,availableInitial)):null);
- function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;ownHouses?.terminate();ownHouses=null;detached=new Set();newHouseIds=new Set();houseState='idle';counts=null;localPlainIds=new Set();stockState='idle';seenFile=next;}
+ function resetFile(next:File|null){cancel();ownStock?.terminate();ownStock=null;ownHouses?.terminate();ownHouses=null;detached=new Set();newHouseIds=new Set();houseState='idle';counts=null;localPlainIds=new Set();localStorageIds=new Set();localSupportIds=new Set();stockState='idle';seenFile=next;}
  function loadDetached(f:File){
   houseState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownHouses=own;
   const finish=(d:any)=>{own.terminate();if(ownHouses!==own||file!==f)return;ownHouses=null;const r=d?.result;
@@ -89,7 +89,7 @@
  }
  function loadArtwork(rows:readonly DesignCatalogItem[]){for(const row of rows){if(asked.has(row.itemId))continue;asked.add(row.itemId);void worldArtwork(base,row.itemId).then(url=>{if(url)artwork=new Map(artwork).set(row.itemId,url);}).catch(()=>{});}}
  function loadStock(f:File){stockState='loading';const own=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});ownStock=own;
-  const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);localPlainIds=plainLocalOnly?parseLocalPlainStock(raw):new Set();stockState='ready';}catch{counts=null;localPlainIds=new Set();stockState='error';}};
+  const finish=(raw:unknown)=>{own.terminate();if(ownStock!==own||file!==f)return;ownStock=null;try{counts=parseFurnitureStock(raw);localPlainIds=plainLocalOnly?parseLocalPlainStock(raw):new Set();localStorageIds=plainLocalOnly?parseLocalStorageStock(raw):new Set();localSupportIds=plainLocalOnly?parseLocalSupportStock(raw):new Set();stockState='ready';}catch{counts=null;localPlainIds=new Set();localStorageIds=new Set();localSupportIds=new Set();stockState='error';}};
   own.onmessage=e=>finish(e.data?.kind==='furniture-stock'?e.data.result:null);own.onerror=()=>finish(null);own.onmessageerror=()=>finish(null);own.postMessage({command:'read-furniture-stock',file:f});
  }
  function loadCatalog(own:Worker,g:MainlandGrid,l:WandLanguage,landscape:boolean,buildings:boolean){catalogLocale=l;catalogMode=landscape;catalogBuildings=buildings;catalogState='loading';catalog=[];catalogRequest=nextRequest();own.postMessage({command:'design-catalog',key:g.key,locale:l,requestId:catalogRequest,landscapeOnly:landscape,allowBuildings:buildings,freePlacement});}
@@ -107,7 +107,7 @@
  export function cancel(){clearCopy();ownPreview?.terminate();ownPreview=null;placing=false;candidate=null;point=null;shapeRequests=new Map();definitions=new Map();itemId=0;source=null;status='idle';stockChange=null;}
  let storageCopyContents=false;
  function begin(id:number,duplicate:MainlandSavedObject|null=null,copyContents=false){
-  if(plainLocalOnly&&(!ordinaryFurniture(id)||!localPlainIds.has(id)&&!duplicate?.object.storage||duplicate&&(duplicate.object.storageKnown&&!duplicate.object.storage||duplicate.object.subgrid)))return;
+  if(plainLocalOnly&&(!ordinaryFurniture(id)||!localPlainIds.has(id)&&!localStorageIds.has(id)&&!localSupportIds.has(id)&&!duplicate?.object.storage||duplicate&&(duplicate.object.storageKnown&&!duplicate.object.storage||duplicate.object.subgrid)))return;
   if(blocked||!canStart||!open||!file||!worker||(landscapeId(id)?!testExport||(duplicate?(!landscapeSourceEligible(duplicate,freePlacement)||!freePlacement&&duplicate.object.editRestrictions?.move!=='allowedFlag'):!landscapeMode||!catalog.some(o=>o.itemId===id&&o.layer==='landscape')):!ordinaryFurniture(id)||(counts?.get(id)??0)<1))return;
   cancel();onBegin();storageCopyContents=copyContents;itemId=id;source=duplicate;orientation=duplicate&&isEightWay(duplicate.object.orientation)&&(freePlacement||isCardinal(duplicate.object.orientation))?duplicate.object.orientation:'GridOrientation_Down';placing=true;
   const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId,freePlacement});}shapeRequests=new Map(shapeRequests);
@@ -144,7 +144,7 @@
   if(!candidate||!file||blocked||!canStart||status==='working'||exporting&&(!testExport||!landscape&&!house&&!storage&&(status!=='valid'||!stockChange)))return;
   const q=candidate,f=file;
   const command=house||storage?'group-paste-export':landscape?'landscape-export':exporting?'furniture-stock-export':'furniture-stock-preview';
-  const plan=storage&&source&&q.plan.action==='remove'?{storagePickup:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,expectedOrientation:source.object.orientation}}:storage&&source&&q.plan.action==='duplicate'?{storageDuplicate:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,expectedOrientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.replacementOrientation??source.object.orientation,copyContents:storageCopyContents,freePlacement}}:house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation,...(!detached.has(Number(q.plan.itemId))&&newHouseIds.has(Number(q.plan.itemId))&&localHouseSources.has(Number(q.plan.itemId))?{nativeHouseTemplate:localHouseSources.get(Number(q.plan.itemId))}:{})}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,...(q.plan.replacementOrientation?{replacementOrientation:q.plan.replacementOrientation}:{})}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):freePlacement&&(plainLocalOnly||q.plan.action!=='remove')?{...q.plan,freePlacement:true}:q.plan;
+  const plan=storage&&q.plan.action==='place'?{freePlacement:true,rows:[{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation}]}:storage&&source&&q.plan.action==='remove'?{storagePickup:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,expectedOrientation:source.object.orientation}}:storage&&source&&q.plan.action==='duplicate'?{storageDuplicate:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,expectedOrientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.replacementOrientation??source.object.orientation,copyContents:storageCopyContents,freePlacement}}:house&&q.plan.action==='place'?{buildingInitial:{itemId:q.plan.itemId,destination:q.destination,x:q.plan.x,y:q.plan.y,orientation:q.plan.orientation,...(!detached.has(Number(q.plan.itemId))&&newHouseIds.has(Number(q.plan.itemId))&&localHouseSources.has(Number(q.plan.itemId))?{nativeHouseTemplate:localHouseSources.get(Number(q.plan.itemId))}:{})}}:house&&q.plan.action!=='place'&&source?(q.plan.action==='duplicate'?{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseDuplicate':'buildingDuplicate']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation,destination:q.destination,x:q.plan.x,y:q.plan.y,...(q.plan.replacementOrientation?{replacementOrientation:q.plan.replacementOrientation}:{})}}:{[Math.floor(Number(q.plan.itemId)/100000)===205?'playerHouseRemove':'buildingRemove']:{localOrdinal:q.plan.localOrdinal,itemId:q.plan.itemId,expectedX:q.plan.expectedX,expectedY:q.plan.expectedY,orientation:source.object.orientation}}):freePlacement&&(plainLocalOnly||q.plan.action!=='remove')?{...q.plan,freePlacement:true}:q.plan;
   ownPreview?.terminate();clearCopy();status='working';if(!exporting)stockChange=null;
   const own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});ownPreview=own;
   const finish=(data:unknown)=>{
