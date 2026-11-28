@@ -90,3 +90,19 @@ test('single room floor cut can be reused by support paste without stock or nati
  for(const r of [{...row,storage:true},{...row,supportFactor:2},{...row,expectedOrientation:'GridOrientation_DownLeft'},{...row,itemId:'40100001'}])assert.equal(supportFloorCut({...cut,rows:[r]},file),null);
  assert.equal(supportFloorCut({...cut,rows:[row,row]},file),null);
 });
+
+test('support cut uses a parent witness and cannot accidentally enter outdoor paste',async()=>{
+ const {indoorGroupTransfer}=await import('../src/lib/world/indoor-room-view.ts');
+ const {groupCutPlan,cutClipboardMatches}=await import('../src/lib/world/group-paste.ts');
+ const id=40000002,orientation='GridOrientation_Down',supportSource={parentItemId:40000003,parentX:1,parentY:2,path:[0],index:0};
+ const row={localOrdinal:7,supportSource,area:'indoor',itemId:String(id),expectedX:0,expectedY:0,expectedOrientation:orientation};
+ const floor={...face,positions:[],items:[],terrain:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,4,4])}};
+ const shapes={[id+':8']:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''}};
+ const clip=[{itemId:id,dx:0,dy:0,orientation:2}],allowed=new Set([id]);
+ assert.equal(indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,false),null);
+ const moves=indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,true);
+ assert.equal(moves?.[0].localOrdinal,7);assert.deepEqual(moves?.[0].supportSource,supportSource);
+ const file=new File(['save'],'local.json');
+ assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],true),false);
+ assert.equal(groupCutPlan([row],{rows:[]},true),null);
+});

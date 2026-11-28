@@ -826,6 +826,38 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
  let tree=subgrid_tree(c,&target.grid_id,&target.object_id)?;
  serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false})).map_err(|_|CodecError::Json)
 }
+/// Resolve a plain leaf within an exact, exclusively owned support hierarchy.
+pub(super) fn resolve_support_leaf_cut(source:&[u8],ordinal:usize,w:&Value,item:u64,expected:(i32,i32),old:&str)->Result<GridCoordinateTarget,CodecError>{
+ let bad=CodecError::Json;
+ if ordinal==0||item/100_000!=400||crate::storage_source::is_storage(item)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
+ let w=w.as_object().filter(|m|m.len()==5&&m.keys().all(|k|matches!(k.as_str(),"parentItemId"|"parentX"|"parentY"|"path"|"index"))).ok_or(bad)?;
+ let (scan,_)=scan_grid_instances(source)?;
+ if scan.sampled||scan.invalid>0||!scan.subgrid_parents.contains(&ordinal){return Err(bad);}
+ let (parent,pose)=scan.private_targets.get(ordinal-1).ok_or(bad)?;
+ if parent.kind!=GridObjectKind::Full||w.get("parentItemId").and_then(Value::as_u64)!=Some(parent.item_id)||pose.map(|(x,y)|(i64::from(x),i64::from(y)))!=w.get("parentX").and_then(Value::as_i64).zip(w.get("parentY").and_then(Value::as_i64)){return Err(bad);}
+ let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+ let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
+ subgrid_tree(c,&parent.grid_id,&parent.object_id)?;
+ let grids=c.get("Grids").and_then(Value::as_object).ok_or(bad)?;
+ let path=w.get("path").and_then(Value::as_array).filter(|a|a.len()<=8).ok_or(bad)?;
+ let index=|v:&Value|v.as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512).ok_or(bad);
+ let mut gid=parent.grid_id.clone();let mut oid=parent.object_id.clone();
+ let child=|g:&str,o:&str|grids.get(g).and_then(|v|v.get("Objects")).and_then(|v|v.get(o)).and_then(|v|v.get("State")).and_then(|v|v.get("SubGrid")).and_then(|v|v.get("GridID")).and_then(Value::as_u64).map(|v|v.to_string()).ok_or(bad);
+ for i in path{gid=child(&gid,&oid)?;oid=grids[&gid]["Objects"].as_object().and_then(|m|m.keys().nth(index(i).ok()?)).cloned().ok_or(bad)?;}
+ gid=child(&gid,&oid)?;
+ let g=grids.get(&gid).ok_or(bad)?;
+ let path=g.get("GridDataPath").and_then(Value::as_str).ok_or(bad)?;
+ let factor=g.get("TessellationFactor").map_or(Some(1),Value::as_u64).filter(|n|matches!(n,1|2)).ok_or(bad)?;
+ let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
+ let entry=catalog["grids"].as_array().and_then(|a|a.iter().find(|v|v[0].as_str()==Some(path))).ok_or(bad)?;
+ let sx=entry[1].as_u64().filter(|n|(1..=256).contains(n)).ok_or(bad)?;let sy=entry[2].as_u64().filter(|n|(1..=256).contains(n)).ok_or(bad)?;
+ if expected.0<0||expected.1<0||expected.0 as u64>=sx*factor||expected.1 as u64>=sy*factor{return Err(bad);}
+ let (key,v)=g["Objects"].as_object().and_then(|m|m.iter().nth(index(w.get("index")?).ok()?)).ok_or(bad)?;
+ if v.get("ID").and_then(Value::as_u64)!=key_id(key)||v["ItemID"].as_u64()!=Some(item)||v["Orientation"].as_str()!=Some(old)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(bad);}
+ let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:item};
+ let refs=grid_identity_dependencies(source,&target)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+ Ok(target)
+}
 /// Existing child cells only; UI separately establishes identical source
 /// footprint and mask. Never infer bounds from occupied extent.
 pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
