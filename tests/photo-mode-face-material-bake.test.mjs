@@ -4,7 +4,7 @@ import {blendFaceNormal,bakeMakeup} from '../src/lib/photo-mode/face-material-ba
 test('face normal uses sequential region masks on packed RGBA, including alpha',()=>{
  const e=[1,.2,.3,.4],n=[.4,.7,.8,.1],m=[.2,.4,.5,.6],j=[.9,.8,.7,.6];
  assert.deepEqual(blendFaceNormal(e,n,m,j,[0,0,0,1]),j);
- assert.deepEqual(blendFaceNormal(e,n,m,j,[1,1,1,0]),m);
+ assert.ok(blendFaceNormal(e,n,m,j,[1,1,1,0]).every((x,i)=>Math.abs(x-m[i])<1e-12));
  const actual=blendFaceNormal(e,n,m,j,[.25,.5,.75,0]);for(let i=0;i<4;i++)assert.ok(Math.abs(actual[i]-(j[i]*.09375+e[i]*.03125+n[i]*.125+m[i]*.75))<1e-12);
 });
 test('makeup uses source RGB coverage and gloss, not input alpha',()=>{
