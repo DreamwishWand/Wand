@@ -116,3 +116,18 @@ test('support paste accepts ordinary outdoor and support leaf cuts on the same f
  assert.deepEqual(supportFloorCut({...cut,rows:[{...row,supportSource}]},file)?.supportSource,supportSource);
  assert.equal(supportFloorCut({...cut,rows:[{...row,supportFactor:1}]},file),null);
 });
+
+test('free support group transforms all selected ordinary leaves or rejects the whole group',async()=>{
+ const {supportFreeGroupTransform}=await import('../src/lib/world/subgrid-local.ts');
+ const a=40000002,b=40000003,down='GridOrientation_Down',left='GridOrientation_Left';
+ const tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:a,x:1,y:1,orientation:down,child:null},{itemId:b,x:2,y:1,orientation:down,child:null}]};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''};
+ const shapes={[a+':8']:shape,[a+':12']:shape,[b+':8']:shape,[b+':12']:shape},raster={sizeX:4,sizeY:4,nativeFloorValues:new Uint32Array(16)},allowed=new Set([a,b]);
+ const move=supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,2,2,0);
+ assert.deepEqual(move?.map(p=>[p.x,p.y,p.orientation]),[[2,2,down],[3,2,down]]);
+ const rotate=supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,1,1,1);
+ assert.deepEqual(rotate?.map(p=>[p.x,p.y,p.orientation]),[[1,1,left],[1,2,left]]);
+ assert.equal(supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,3,3,0),null);
+ assert.equal(supportFreeGroupTransform(tree,shapes,new Set([a]),raster,[0,1],0,2,2,0),null);
+ assert.equal(supportFreeGroupTransform(tree,shapes,allowed,raster,[0,0],0,2,2,0),null);
+});

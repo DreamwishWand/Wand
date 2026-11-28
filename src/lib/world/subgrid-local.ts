@@ -123,6 +123,23 @@ export function supportFreeEdit(tree:SupportTree,shapes:Readonly<Record<string,S
  }
  return [{index,itemId:a.itemId,expectedX:a.x,expectedY:a.y,expectedOrientation:a.orientation,x,y,orientation}];
 }
+/** Rigid group translation or quarter-turn around the selected anchor.
+ * Free mode retains native bounds, source shape and ordinary leaf checks.
+ * Unchanged rows are omitted; no partial group operation is returned. */
+export function supportFreeGroupTransform(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,indices:readonly number[],anchor:number,x:number,y:number,turn:0|-1|1):SupportChildEdit[]|null{
+ const a=tree.objects[anchor];if(!a||!indices.includes(anchor)||indices.length<2||indices.length>32||new Set(indices).size!==indices.length||![x,y].every(Number.isSafeInteger))return null;
+ const out:SupportChildEdit[]=[];
+ for(const index of indices){
+  const o=tree.objects[index];if(!o||o.child||!eligible.has(o.itemId)||!isCardinal(o.orientation))return null;
+  const dx=o.x-a.x,dy=o.y-a.y,px=x+(turn===1?-dy:turn===-1?dy:dx),py=y+(turn===1?dx:turn===-1?-dx:dy),orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4];
+  if(px===o.x&&py===o.y&&orientation===o.orientation){const key=supportShapeKey(o),s=key?shapes[key]:null;if(!s?.cellCount||s.cellCount>65536||!supportAnchorFits(tree,raster,o.x,o.y))return null;continue;}
+  const edit=supportFreeEdit(tree,shapes,eligible,raster,index,px,py,orientation,true);if(!edit)return null;out.push(...edit);
+ }
+ return out.length?out:null;
+}
+export const supportGroupWords={
+ ja:['複数選択','まとめて移動','選択解除'],en:['Select multiple','Move group','Clear selection'],fr:['Sélection multiple','Déplacer le groupe','Effacer la sélection'],it:['Selezione multipla','Sposta gruppo','Deseleziona'],de:['Mehrfachauswahl','Gruppe verschieben','Auswahl aufheben'],'es-ES':['Selección múltiple','Mover grupo','Borrar selección'],'zh-CN':['多选','移动组合','清除选择'],'pt-BR':['Seleção múltipla','Mover grupo','Limpar seleção']
+} as const;
 /** Exchange two existing ordinary leaves in one transaction. In free mode
  * their footprints may differ and occupied anchors may overlap other leaves. */
 export function supportFreeSwap(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,first:number,second:number):SupportChildEdit[]|null{

@@ -862,9 +862,10 @@ pub(super) fn resolve_support_leaf_cut(source:&[u8],ordinal:usize,w:&Value,item:
 /// footprint and mask. Never infer bounds from occupied extent.
 pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
  let bad=CodecError::Json;
- let o=plan.as_object().filter(|o|(6..=8).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"path"|"edits"|"terrainPath"|"stock"|"transfer"|"floorTransfer"|"freePlacement"))&&["edits","stock","transfer","floorTransfer"].iter().filter(|k|o.contains_key(**k)).count()==1).ok_or(bad)?;
+ let o=plan.as_object().filter(|o|(6..=9).contains(&o.len())&&o.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"path"|"edits"|"terrainPath"|"stock"|"transfer"|"floorTransfer"|"freePlacement"|"groupEdit"))&&["edits","stock","transfer","floorTransfer"].iter().filter(|k|o.contains_key(**k)).count()==1).ok_or(bad)?;
  let int=|v:&Value,k:&str|v.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
  let free=o.get("freePlacement").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+ if o.contains_key("groupEdit")&&(!free||!o.contains_key("edits")){return Err(bad);}
  let ordinal=o.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
  let item=o.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
  let expected=(int(plan,"expectedX")?,int(plan,"expectedY")?);
@@ -1025,8 +1026,10 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   }
   return (if free{ddv_save_patch::preview_free_support_grid_stock_place(source,&d,id,(x,y),orientation,amount)}else{ddv_save_patch::preview_support_grid_stock_place(source,&d,id,(x,y),orientation,amount)}).map_err(|_|CodecError::Patch);
  }
- let edits=o.get("edits").and_then(Value::as_array).filter(|a|matches!(a.len(),1|2)).ok_or(bad)?;
- let swap=edits.len()==2;
+ let group=o.get("groupEdit").map(|v|v.as_bool().filter(|b|*b).ok_or(bad)).transpose()?.unwrap_or(false);
+ if group&&!free{return Err(bad);}
+ let edits=o.get("edits").and_then(Value::as_array).filter(|a|if group{(1..=32).contains(&a.len())}else{matches!(a.len(),1|2)}).ok_or(bad)?;
+ let swap=!group&&edits.len()==2;
  if free&&!o.contains_key("terrainPath"){return Err(bad);}
  let mut terrain=None;
  if let Some(path)=o.get("terrainPath"){
