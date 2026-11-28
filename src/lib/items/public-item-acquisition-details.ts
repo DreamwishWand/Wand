@@ -114,11 +114,18 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
             evidence.sourceMemorySha256===sha?.MemoryShard&&id(evidence.configuredAmount)&&evidence.shardIndexValid===true&&
             typeof evidence.shardIndex==='number'&&Number.isSafeInteger(evidence.shardIndex)&&evidence.shardIndex>=0&&
             ['source.Spawn.RewardOverride.ItemID','source.Spawn.RewardOverride.State.ConsummableData.ItemID'].some(k=>k===evidence.sourcePath)&&
-            Array.isArray(evidence.questGates)&&evidence.questGates.length>0&&Array.isArray(evidence.sceneItemIds),'EXTENSION_MEMORY_SPAWN');
+            Array.isArray(evidence.questGates)&&evidence.questGates.length>0&&Array.isArray(evidence.sceneItemIds)&&
+            (evidence.characterItemIds===undefined||Array.isArray(evidence.characterItemIds))&&
+            (evidence.additionalGates===undefined||Array.isArray(evidence.additionalGates)),'EXTENSION_MEMORY_SPAWN');
           for(const gate of evidence.questGates){
             check(object(gate)&&id(gate.questId)&&gate.category===category,'EXTENSION_QUEST_GATE');relatedIds.push(gate.questId);
           }
           for(const n of evidence.sceneItemIds){check(id(n),'EXTENSION_MEMORY_SCENE');relatedIds.push(n);}
+          if(Array.isArray(evidence.characterItemIds))for(const n of evidence.characterItemIds){check(id(n),'EXTENSION_MEMORY_CHARACTER');relatedIds.push(n);}
+          if(Array.isArray(evidence.additionalGates))for(const g of evidence.additionalGates){
+            check(object(g)&&['CharacterUnlocked','CharacterFriendship','AreaUnlocked'].some(k=>k===g.kind)&&
+              typeof g.sourcePath==='string'&&g.sourcePath.startsWith('source.Conditions.Conditions[')&&object(g.original),'EXTENSION_MEMORY_EXTRA_GATE');
+          }
         }else if(family==='conditionalQuest'){
           check(evidence.sourceEventSha256===sha?.ConditionalEvent&&evidence.sourceConditionSha256===sha?.Condition&&id(evidence.configuredAmount)&&
             ['conditional_grant','conditional_mail_attachment','conditional_swap_grant'].some(k=>k===evidence.role)&&

@@ -8,7 +8,9 @@ test('all Custom direct spawn memory references preserve shard index and classif
  const all=new Map(await db.getFieldRows('acquisition.memorySpawnSources'));
  const classified=new Map(await db.getFieldRows('acquisition.classifiedMemorySpawnSources'));
  assert.equal(all.size,53);assert.equal([...all.values()].flat().length,78);
- assert.equal(classified.size,24);assert.equal([...classified.values()].flat().length,38);
+ assert.equal(classified.size,27);assert.equal([...classified.values()].flat().length,41);
+ const extra=[...classified.values()].flat().filter(l=>l.additionalGates.length);
+ assert.deepEqual(extra.map(l=>l.sourceItemId).sort((a,b)=>a-b),[1520000067,1520000068,1520000110]);
  const links=[...all.values()].flat();
  const srcIds=[...new Set(links.map(l=>l.sourceItemId))].sort((a,b)=>a-b);
  const events=new Map((await db.getItemFields(srcIds,['source.Spawn','source.Conditions'])).map(r=>[r.itemId,r.values]));
@@ -20,6 +22,7 @@ test('all Custom direct spawn memory references preserve shard index and classif
    assert.equal(l.targetItemId,nested?r.State.ConsummableData.ItemID:r.ItemID);
    assert.equal(l.shardIndex,(nested?r.State.ConsummableData.State:r.State).MemoryShardIndex);
    assert.deepEqual(l.conditions,v['source.Conditions']??null);
+   for(const gate of l.additionalGates){const index=Number(gate.sourcePath.match(/Conditions\[(\d+)\]/)[1]);assert.deepEqual(gate.original,l.conditions.Conditions[index][gate.kind]);}
    assert.equal(l.configuredAmount,s.AmountToSpawn.Value.Value);
    assert.equal(l.currentAvailabilityVerified,false);assert.equal(l.guaranteedGrantVerified,false);
    assert.equal(l.sourceEventSha256,db.release.sourceFilesSha256.ConditionalEvent);
@@ -29,6 +32,7 @@ test('all Custom direct spawn memory references preserve shard index and classif
    assert(d[i].effectiveCategories.includes('ordinary_gameplay'));
    const evidence=d[i].classificationExtensions.filter(e=>e.family==='memorySpawn');
    assert.deepEqual(evidence.map(e=>e.evidence),classified.get(id));
-   for(const e of evidence){assert.equal(e.identity.nativeCategory,'ConditionalEvent');assert(e.relatedIdentities.some(r=>r.nativeCategory==='Mission'));}
+   for(const e of evidence){assert.equal(e.identity.nativeCategory,'ConditionalEvent');assert(e.relatedIdentities.some(r=>r.nativeCategory==='Mission'));
+     for(const n of e.evidence.characterItemIds)assert(e.relatedIdentities.some(r=>r.itemId===n&&r.nativeCategory==='Character'));}
  }
 });

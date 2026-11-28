@@ -7,7 +7,7 @@ const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const exact=(v,keys)=>obj(v)&&Object.keys(v).every(k=>keys.includes(k));
 function gate(tree,known,questKinds){
   if(!exact(tree,['Operator','Conditions'])||!(tree.Operator===undefined||tree.Operator===0)||!Array.isArray(tree.Conditions)||!tree.Conditions.length)return null;
-  const questGates=[],sceneItemIds=[];
+  const questGates=[],sceneItemIds=[],characterItemIds=[],additionalGates=[];
   for(const [i,leaf] of tree.Conditions.entries()){
     if(!obj(leaf)||Object.keys(leaf).length!==1)return null;
     const v=leaf.CurrentScene;
@@ -15,15 +15,30 @@ function gate(tree,known,questKinds){
       if(!exact(v,['Scene','Inversed'])||!(v.Inversed===undefined||v.Inversed===false)||known.get(v.Scene)?.nativeCategory!=='Scene')return null;
       sceneItemIds.push(v.Scene);continue;
     }
-    // For this reviewed family, only direct positive quest leaves and
-    // scene restrictions are admitted. Preserve exact original indices.
+    const k=Object.keys(leaf)[0],p=leaf[k];
+    // These additional requirements remain exact source predicates. A
+    // configured friendship comparison is not interpreted as a live level.
+    // AreaUnlocked's absent VillageArea remains absent (no guessed area).
+    const unlocked=k==='CharacterUnlocked'&&exact(p,['Character','Inversed'])&&
+      known.get(p.Character)?.nativeCategory==='Character'&&(p.Inversed===undefined||p.Inversed===false);
+    const friendship=k==='CharacterFriendship'&&exact(p,['Character','FriendshipLevel','Operator'])&&
+      known.get(p.Character)?.nativeCategory==='Character'&&id(p.FriendshipLevel)&&p.FriendshipLevel<=10&&p.Operator===5;
+    const area=k==='AreaUnlocked'&&exact(p,['VillageArea','Inversed'])&&
+      (p.VillageArea===undefined||Number.isSafeInteger(p.VillageArea)&&p.VillageArea>=0)&&
+      (p.Inversed===undefined||p.Inversed===false);
+    if(unlocked||friendship||area){
+      if(unlocked||friendship)characterItemIds.push(p.Character);
+      additionalGates.push({kind:k,sourcePath:'source.Conditions.Conditions['+i+'].'+k,original:p});
+      continue;
+    }
+    // Only reviewed conjunctive predicates are admitted. Preserve indices.
     if(leaf.CommonConditions||leaf.SubConditions)return null;
     const parsed=questGate({Conditions:[leaf]},new Map(),questKinds);
     if(!parsed?.length)return null;
     questGates.push(...parsed.map(p=>({...p,sourcePath:p.sourcePath.replace('Conditions[0]','Conditions['+i+']')})));
   }
   if(!questGates.length||new Set(questGates.map(p=>p.category)).size!==1)return null;
-  return {category:questGates[0].category,questGates,sceneItemIds:[...new Set(sceneItemIds)]};
+  return {category:questGates[0].category,questGates,sceneItemIds:[...new Set(sceneItemIds)],characterItemIds:[...new Set(characterItemIds)],additionalGates};
 }
 export function buildMemorySpawnSources(rows,source,memories,questKinds){
   const result=new Map();
@@ -51,6 +66,7 @@ export function buildMemorySpawnSources(rows,source,memories,questKinds){
       configuredAmount:exactAmount?amount:null,configuredConsumableAmount:direct?null:nested?.Amount??null,
       orbItemId:direct?null:r.ItemID,spawnLocationKinds:Object.keys(s.SpawnLocationSource??{}),
       conditions:p.Conditions??null,category:gateResult?.category??null,questGates:gateResult?.questGates??[],sceneItemIds:gateResult?.sceneItemIds??[],
+      characterItemIds:gateResult?.characterItemIds??[],additionalGates:gateResult?.additionalGates??[],
       sourceGameVersion:source.target.gameVersion,sourceEventSha256:source.sourceFilesSha256.ConditionalEvent,
       sourceConditionSha256:source.sourceFilesSha256.Condition,sourceMissionSha256:source.sourceFilesSha256.Mission,
       sourceMemorySha256:source.sourceFilesSha256.MemoryShard,guaranteedGrantVerified:false,currentAvailabilityVerified:false};
