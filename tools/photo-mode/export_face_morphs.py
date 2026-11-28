@@ -41,7 +41,7 @@ def morph_asset(raw,groups,sex):
             out+=struct.pack('<I',n);seen=set()
             for row in morph[first:first+n]:
                 index=int(row['index']);delta=[float(x) for x in row['delta']]
-                require(index<vertices and index not in seen and all(math.isfinite(v) for v in delta),'morph vertex');seen.add(index)
+                require(index<vertices and index not in seen and all(math.isfinite(v) for v in delta) and not any(delta[3:]),'position-only morph vertex');seen.add(index)
                 w=intensity/100;out+=struct.pack('<I3f',index,-delta[0]*w,delta[1]*w,delta[2]*w)
     return bytes(out),vertices
 
