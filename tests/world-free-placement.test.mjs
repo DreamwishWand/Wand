@@ -212,3 +212,17 @@ test('common free coordinate transaction stages mixed plain, landscape, building
  assert.equal(draftSavedMapTransform(storage,2,2,'GridOrientation_DownLeft',true),null);
  assert.equal(draftSavedMapTransform(support,2,2,'GridOrientation_DownLeft',true),null);
 });
+
+test('free duplicate previews a new orientation without changing the source pose',()=>{
+ const g=bindMainlandGrid({key:'Beach',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json',gridDataPath:'GridData/Villages/Village04-BeachLevel-GridData.json',gridIdNative:0,factor:1,sizeX:400,sizeY:350});assert.ok(g);
+ const rasters=new Map([[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:new Uint32Array(g.sizeX*g.sizeY)}]]);
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}]};
+ const x=2*g.origin.position[0]+5.1,y=-2*g.origin.position[2]-6.1;
+ for(const [id,layer] of [[40000001,'furniture'],[40200001,'landscape']]){
+  const source={area:g.key,factor:1,shape,object:{...o,itemId:String(id),layer,orientation:'GridOrientation_Down'}};
+  const defs=new Map([[1,{itemId:id,layer,surfaceCapable:false,shapes:{[id+':12']:shape}}]]);
+  const q=stockPlacement([g],rasters,defs,id,'GridOrientation_Left',x,y,source,true);
+  assert.ok(q);assert.equal(q.plan.replacementOrientation,'GridOrientation_Left');assert.equal(source.object.orientation,'GridOrientation_Down');
+  assert.equal(stockPlacement([g],rasters,defs,id,'GridOrientation_Left',x,y,source,false),null);
+ }
+});
