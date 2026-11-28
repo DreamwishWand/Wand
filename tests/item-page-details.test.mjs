@@ -47,3 +47,11 @@ test('bundle display uses only revisions with actual membership and hides source
  const db={getPremiumBundleMembership:async()=>[{bundleIds:['a','b','c'],currentBundleIds:['a'],legacyBundleIds:['b','c']}],getPremiumBundleLocalizedText:async()=>[{bundleId:'a',current:{displayTitle:'New'},legacy:{displayTitle:'Old'}},{bundleId:'b',current:{displayTitle:'Unrelated'},legacy:{displayTitle:'Original'}},{bundleId:'c',current:{displayTitle:'Wrong'},legacy:{displayTitle:null}}]};
  assert.deepEqual(await readItemBundleContext(db,1,'en'),{count:3,names:['New','Original']});
 });
+
+import {readItemIntroductionContext} from '../src/lib/items/item-page-source-context.ts';
+test('source observation, native definition introduction and confirmed content attribution remain distinct',async()=>{
+ const db={getItemContentOrigins:async ids=>ids.map(id=>id===1?{attribution:'candidate',firstObservedVersion:'1.24.13',introducedVersion:null,contentReleaseKind:'paid_dlc',contentDlcType:'expansion'}:id===2?{attribution:'confirmed',firstObservedVersion:'1.26.1',introducedVersion:'1.26.1',contentReleaseKind:'paid_dlc',contentDlcType:'expansion'}:null)};
+ assert.deepEqual(await readItemIntroductionContext(db,1),{introduced:null,observed:'1.24.13',releaseKind:null});
+ assert.deepEqual(await readItemIntroductionContext(db,2),{introduced:'1.26.1',observed:null,releaseKind:'expansion'});
+ assert.equal(await readItemIntroductionContext(db,3),null);
+});

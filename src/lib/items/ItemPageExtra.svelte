@@ -8,7 +8,7 @@
   import {formatPublicGuideText} from '$lib/guide/public-guide';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
-  import {readItemPlacementHint,readItemBundleContext,type ItemPlacementHint,type ItemBundleContext} from './item-page-source-context';
+  import {readItemPlacementHint,readItemBundleContext,type ItemPlacementHint,type ItemBundleContext,readItemIntroductionContext,type ItemIntroductionContext} from './item-page-source-context';
   export let record:CompleteItemMasterRecord;
   export let locale:ItemMasterLocale;
   let mounted=false,loading=false,failed=false,sequence=0;
@@ -16,32 +16,36 @@
   let relations:ItemPageRelations|null=null;
   let placement:ItemPlacementHint|null=null;
   let bundles:ItemBundleContext|null=null;
+  let introduction:ItemIntroductionContext|null=null;
   $: native=itemPageNativeFacts(record);
   $: copy=itemPageCopy(locale);
   $: interfaceCopy=collectionInterfaceCopy(locale);
   onMount(()=>{mounted=true;});
   onDestroy(()=>{sequence++;});
   async function load(row:CompleteItemMasterRecord,language:ItemMasterLocale){
-    const ticket=++sequence;description='';relations=null;placement=null;bundles=null;failed=false;loading=true;
+    const ticket=++sequence;description='';relations=null;placement=null;bundles=null;introduction=null;failed=false;loading=true;
     try{
       const db=await currentItemViewMaster(base);
-      const [text,links,scope,shop]=await Promise.allSettled([db.getLocalizedItemText(row.itemId,language),readItemPageRelations(db,row,language),readItemPlacementHint(db,row.itemId,row.nativeCategory),readItemBundleContext(db,row.itemId,language)]);
+      const [text,links,scope,shop,history]=await Promise.allSettled([db.getLocalizedItemText(row.itemId,language),readItemPageRelations(db,row,language),readItemPlacementHint(db,row.itemId,row.nativeCategory),readItemBundleContext(db,row.itemId,language),readItemIntroductionContext(db,row.itemId)]);
       if(ticket!==sequence)return;
       if(text.status==='fulfilled')description=formatPublicGuideText(text.value?.Description?.text??text.value?.DescriptionText?.text??'');
       if(links.status==='fulfilled')relations=links.value;
       if(scope.status==='fulfilled')placement=scope.value;
       if(shop.status==='fulfilled')bundles=shop.value;
-      failed=[text,links,scope,shop].some(result=>result.status==='rejected')||relations?.partial===true;
+      if(history.status==='fulfilled')introduction=history.value;
+      failed=[text,links,scope,shop,history].some(result=>result.status==='rejected')||relations?.partial===true;
     }catch{if(ticket===sequence)failed=true;}
     finally{if(ticket===sequence)loading=false;}
   }
   $: if(mounted)void load(record,locale);
 </script>
-{#if description||native.footprint||native.energy!==null||placement}
+{#if description||native.footprint||native.energy!==null||placement||introduction}
   <section class="native-item-summary">
     <h2>{copy.attributes}</h2>
     {#if description}<p>{description}</p>{/if}
-    {#if native.footprint||native.energy!==null||placement}<dl>
+    {#if native.footprint||native.energy!==null||placement||introduction}<dl>
+      {#if introduction?.releaseKind}<dt>{copy.releaseType}</dt><dd>{copy[introduction.releaseKind]}</dd>{/if}
+      {#if introduction?.introduced}<dt>{copy.introduced}</dt><dd>{introduction.introduced}</dd>{:else if introduction?.observed}<dt>{copy.observed}</dt><dd>{introduction.observed}</dd>{/if}
       {#if placement}<dt>{copy.placement}</dt><dd>{copy[placement]}</dd>{/if}
       {#if native.footprint}<dt>{copy.dimensions}</dt><dd>{native.footprint.x} × {native.footprint.y}</dd>{/if}
       {#if native.energy!==null}<dt>{copy.energy}</dt><dd>{native.energy.toLocaleString(locale)}</dd>{/if}

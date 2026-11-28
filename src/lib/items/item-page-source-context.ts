@@ -27,3 +27,13 @@ export async function readItemBundleContext(db:PublicCompleteItemMaster,id:numbe
   }
   return {count:ids.length,names:[...names].sort((a,b)=>a.localeCompare(b,locale))};
 }
+
+export interface ItemIntroductionContext {readonly introduced:string|null;readonly observed:string|null;readonly releaseKind:'free_update'|'expansion'|'adventure_pack'|'paid_dlc'|null}
+/** An observed source version is not necessarily an introduction or release date. */
+export async function readItemIntroductionContext(db:PublicCompleteItemMaster,id:number):Promise<ItemIntroductionContext|null>{
+  const [row]=await db.getItemContentOrigins([id]);
+  if(!row)return null;
+  const introduced=row.introducedVersion,observed=introduced===null?row.firstObservedVersion:null;
+  const releaseKind=row.attribution!=='confirmed'?null:row.contentReleaseKind==='free_update'?'free_update':row.contentReleaseKind==='paid_dlc'?row.contentDlcType??'paid_dlc':null;
+  return introduced||observed||releaseKind?{introduced,observed,releaseKind}:null;
+}

@@ -57,5 +57,16 @@ export function itemPageCopy(locale:string){
     'pt-BR':['Posicionamento habitual (fonte)','Interior','Exterior','Interior e exterior','Apenas dimensões externas, não células ocupadas nem permissão de posicionamento.','Pacotes relacionados da loja premium','Composição original; vendas e disponibilidade não verificadas.']
   };
   const [placement,indoor,outdoor,both,boundsOnly,bundleTitle,bundleNote]=context[locale]??context.en;
-  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete,baseEntity,dreamStyles,mountStyles,mountGear,placement,indoor,outdoor,both,boundsOnly,bundleTitle,bundleNote};
+  const origin:Record<string,readonly [string,string,string,string,string,string,string]>={
+    ja:['追加定義の確認版','原本での初回確認版（初出未確定）','追加コンテンツ種別','無料アップデート','エキスパンション','アドベンチャーパック','有料DLC'],
+    en:['Definition introduced in version','First observed source version (introduction unknown)','Content release type','Free update','Expansion','Adventure Pack','Paid DLC'],
+    fr:['Version d’apparition de la définition','Première version source observée (apparition inconnue)','Type de contenu','Mise à jour gratuite','Extension','Pack aventure','DLC payant'],
+    it:['Versione di introduzione della definizione','Prima versione osservata (introduzione ignota)','Tipo di contenuto','Aggiornamento gratuito','Espansione','Pacchetto avventura','DLC a pagamento'],
+    de:['Version der erstmals hinzugefügten Definition','Erste beobachtete Quellversion (Einführung unbekannt)','Inhaltstyp','Kostenloses Update','Erweiterung','Abenteuerpaket','Kostenpflichtiger DLC'],
+    'es-ES':['Versión de introducción de la definición','Primera versión observada (introducción desconocida)','Tipo de contenido','Actualización gratuita','Expansión','Paquete de aventura','DLC de pago'],
+    'zh-CN':['定义新增版本','首次确认的原始版本（初次加入未确认）','追加内容类型','免费更新','扩展包','冒险包','付费DLC'],
+    'pt-BR':['Versão de introdução da definição','Primeira versão observada (introdução desconhecida)','Tipo de conteúdo','Atualização gratuita','Expansão','Pacote de aventura','DLC pago']
+  };
+  const [introduced,observed,releaseType,free_update,expansion,adventure_pack,paid_dlc]=origin[locale]??origin.en;
+  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete,baseEntity,dreamStyles,mountStyles,mountGear,placement,indoor,outdoor,both,boundsOnly,bundleTitle,bundleNote,introduced,observed,releaseType,free_update,expansion,adventure_pack,paid_dlc};
 }
