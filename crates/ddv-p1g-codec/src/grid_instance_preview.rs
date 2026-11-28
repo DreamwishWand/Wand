@@ -3568,6 +3568,24 @@ pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,Code
 }
 /// Conservatively protect direct item references in the saved mission
 /// structures. Never infer completion from a MissionId or source category.
+/// Source objective candidates are protected when the corresponding save
+/// mission is ongoing or has an unrecognized state. Completion history
+/// alone cannot authorize recovery, since repeatable missions may recur.
+fn active_source_quest_items(root:&Value)->Result<HashSet<u64>,CodecError>{
+ let mut missions=HashSet::new();
+ if let Some(groups)=root["World"].get("MissionSlots"){
+  for group in groups.as_object().ok_or(CodecError::Json)?.values(){
+   let Some(slots)=group.get("Slots")else{continue;};
+   for slot in slots.as_array().ok_or(CodecError::Json)?{
+    if slot["State"].as_str()==Some("MissionSlotState_Available"){continue;}
+    if let Some(id)=slot["MissionId"].as_u64().filter(|id|*id>0){missions.insert(id);}
+   }
+  }
+ }
+ static INDEX:std::sync::OnceLock<std::collections::BTreeMap<u64,Vec<u64>>>=std::sync::OnceLock::new();
+ let index=INDEX.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/quest-target-items.json"))).expect("compiled quest target source"));
+ Ok(index.iter().filter(|(_,ids)|ids.iter().any(|id|missions.contains(id))).map(|(item,_)|*item).collect())
+}
 fn mission_item_referenced(root:&Value,item:u64)->Result<bool,CodecError>{
  let mut stack=Vec::new();
  for key in ["MissionSlots","Missions","QuestData","Quests"]{
@@ -3594,22 +3612,26 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
  }
  let rows=o["rows"].as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
  let mut selections=Vec::new();let mut checked=HashSet::new();
+ let active_items=active_source_quest_items(&root)?;
  for row in rows{
   let m=row.as_object().filter(|m|m.len()==5&&m.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(bad)?;
   let ord=m["localOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
   let item=m["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&activity_item_id(*n))).ok_or(bad)?;
-  if checked.insert(item)&&mission_item_referenced(&root,item)?{return Err(bad);}
+  if active_items.contains(&item)||checked.insert(item)&&mission_item_referenced(&root,item)?{return Err(bad);}
   let xy=(m["expectedX"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?,m["expectedY"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?);
   let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
   selections.push((ord,item,xy,"full".to_owned(),Some(ori.to_owned())));
  }
  let targets=resolve_grid_mixed_targets(source,&selections)?;
+ let mut groups=HashMap::<String,Vec<String>>::new();
  for (t,s) in targets.iter().zip(&selections){
   let (_,_,factor,sx,sy)=plain_scene_identity(&root,&t.grid_id)?;
   let (x,y)=s.2;
   if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||!ddv_save_patch::field_recovery::stateless_field_object(&root,t,s.2,s.4.as_deref().ok_or(bad)?){return Err(bad);}
-  let refs=grid_identity_dependencies(source,t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
+  groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
  }
+ for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+
  let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
  for (t,s) in targets.iter().zip(&selections){
   let next=ddv_save_patch::field_recovery::recover(&working,t,s.2,s.4.as_deref().ok_or(bad)?,&dest.container_id).map_err(|_|CodecError::Patch)?;
@@ -3621,6 +3643,18 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn source_mission_targets_follow_current_slots_not_completion_history(){
+        let index:std::collections::BTreeMap<u64,Vec<u64>>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/quest-target-items.json"))).unwrap();
+        let (&item,ids)=index.iter().next().unwrap();let mission=ids[0];
+        let mut root=serde_json::json!({"World":{"QuestInfo":{"MissionsCompleted":[mission]},"MissionSlots":{"1":{"Slots":[{"MissionId":mission,"State":"MissionSlotState_OnGoing"}]}}}});
+        assert!(active_source_quest_items(&root).unwrap().contains(&item));
+        root["World"]["MissionSlots"]["1"]["Slots"][0]["State"]="MissionSlotState_Available".into();
+        assert!(!active_source_quest_items(&root).unwrap().contains(&item));
+        root["World"]["MissionSlots"]["1"]["Slots"][0]["State"]="FutureUnknownState".into();
+        assert!(active_source_quest_items(&root).unwrap().contains(&item));
+    }
 
     #[test]
     fn activity_recovery_batch_uses_original_catalog_and_rejects_mission_references(){
