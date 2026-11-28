@@ -194,7 +194,7 @@ scope.onmessage=async({data})=>{
       const keys=new Set<string>(),editable=new Set<number>(),removable=new Set<number>(),freeEligible=new Set<number>();
       const special=data.command==='support-shapes'?await supportSpecialIds():null;
       for(const row of data.items){
-        if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||!(data.command==='indoor-shapes'&&data.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).includes(row.orientationCode))throw Error('indoor item');
+        if(!row||!Number.isSafeInteger(row.itemId)||row.itemId<1||row.itemId>0xffffffff||!(data.factor===1?[0,2,4,6,8,10,12,14]:[0,4,8,12]).includes(row.orientationCode))throw Error('indoor item');
         const key=row.itemId+':'+row.orientationCode;if(keys.has(key))continue;keys.add(key);
         const obj=cache.resolve(row.itemId,row.orientationCode);
         if(data.command==='indoor-shapes'&&obj.shapeKey&&obj.layer==='furniture'&&!obj.surfaceCapable&&Math.floor(row.itemId/100000)===400||special&&supportLeafFreeEligible(row.itemId,obj,special))freeEligible.add(row.itemId);

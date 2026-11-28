@@ -827,9 +827,10 @@ pub(super) fn inspect_subgrid_json(profile:&[u8],ordinal:usize,item:u64,expected
  serde_json::to_string(&serde_json::json!({"contract":"wand.world.subgrid-local@1","tree":tree,"worldTransformVerified":false})).map_err(|_|CodecError::Json)
 }
 /// Resolve a plain leaf within an exact, exclusively owned support hierarchy.
+fn support_leaf_orientation(factor:u64,orientation:&str,free:bool)->bool{ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)}
 pub(super) fn resolve_support_leaf_cut(source:&[u8],ordinal:usize,w:&Value,item:u64,expected:(i32,i32),old:&str)->Result<GridCoordinateTarget,CodecError>{
  let bad=CodecError::Json;
- if ordinal==0||item/100_000!=400||crate::storage_source::is_storage(item)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
+ if ordinal==0||item/100_000!=400||crate::storage_source::is_storage(item){return Err(bad);}
  let w=w.as_object().filter(|m|m.len()==5&&m.keys().all(|k|matches!(k.as_str(),"parentItemId"|"parentX"|"parentY"|"path"|"index"))).ok_or(bad)?;
  let (scan,_)=scan_grid_instances(source)?;
  if scan.sampled||scan.invalid>0||!scan.subgrid_parents.contains(&ordinal){return Err(bad);}
@@ -851,7 +852,7 @@ pub(super) fn resolve_support_leaf_cut(source:&[u8],ordinal:usize,w:&Value,item:
  let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/support-terrain.json")).map_err(|_|bad)?;
  let entry=catalog["grids"].as_array().and_then(|a|a.iter().find(|v|v[0].as_str()==Some(path))).ok_or(bad)?;
  let sx=entry[1].as_u64().filter(|n|(1..=256).contains(n)).ok_or(bad)?;let sy=entry[2].as_u64().filter(|n|(1..=256).contains(n)).ok_or(bad)?;
- if expected.0<0||expected.1<0||expected.0 as u64>=sx*factor||expected.1 as u64>=sy*factor{return Err(bad);}
+ if !support_leaf_orientation(factor,old,true)||expected.0<0||expected.1<0||expected.0 as u64>=sx*factor||expected.1 as u64>=sy*factor{return Err(bad);}
  let (key,v)=g["Objects"].as_object().and_then(|m|m.iter().nth(index(w.get("index")?).ok()?)).ok_or(bad)?;
  if v.get("ID").and_then(Value::as_u64)!=key_id(key)||v["ItemID"].as_u64()!=Some(item)||v["Orientation"].as_str()!=Some(old)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(bad);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:item};
@@ -896,7 +897,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let id=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400&&!crate::storage_source::is_storage(*n)).ok_or(bad)?;
   let expected=(int(transfer,"expectedX")?,int(transfer,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-  if v.get("ItemID").and_then(Value::as_u64)!=Some(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!free&&objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(expected)).count()!=1{return Err(bad);}
+  if v.get("ItemID").and_then(Value::as_u64)!=Some(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(expected)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||!support_leaf_orientation(grids[&gid].get("TessellationFactor").map_or(Some(1),Value::as_u64).ok_or(bad)?,old,free)||!free&&objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(expected)).count()!=1{return Err(bad);}
   let dest=row.get("destination").and_then(Value::as_object).filter(|d|d.len()==5&&d.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"terrainPath"))).ok_or(bad)?;
   let dord=dest.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0&&*n!=ordinal).ok_or(bad)?;
   let ditem=dest.get("itemId").and_then(Value::as_u64).ok_or(bad)?;
@@ -947,14 +948,13 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    if row.len()!=8+usize::from(row.contains_key("supportSource"))||row.contains_key("roomSource")==row.contains_key("localOrdinal")||row.contains_key("roomSource")&&row.contains_key("supportSource")||row.keys().any(|k|!matches!(k.as_str(),"roomSource"|"localOrdinal"|"supportSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation")){return Err(bad);}
    let expected=(int(value,"expectedX")?,int(value,"expectedY")?);
    let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
-   // The support writer remains cardinal-only, including its source witness.
-   if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
+   if !ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&old){return Err(bad);}
    let t=if let Some(w)=row.get("roomSource"){crate::indoor_room_view::resolve_room_cut_source(profile,&root,w,id,expected,old,None,true,false)?}else{
     let ordinal=row.get("localOrdinal").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
     if let Some(w)=row.get("supportSource"){resolve_support_leaf_cut(profile,ordinal,w,id,expected,old)?}else{
      let t=resolve_grid_orientation_target(profile,ordinal,id,expected,"full",old)?;
-     let (_,_,f,sx,sy)=house_exterior_identity(&root,&t.grid_id)?;
-     if expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}
+     let (scope,_,f,sx,sy)=house_exterior_identity(&root,&t.grid_id)?;
+     if !support_leaf_orientation(if scope.starts_with("SceneLayouts/FloatingIslands/"){2}else{f},old,true)||expected.0<0||expected.1<0||expected.0 as u64>=sx*f||expected.1 as u64>=sy*f{return Err(bad);}
      let refs=grid_identity_dependencies(profile,&t)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}
      t
     }
@@ -968,7 +968,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
    if t.grid_id==gid||!seen.insert((t.grid_id.clone(),t.object_id.clone())){return Err(bad);}
    let xy=(int(row,"x")?,int(row,"y")?);
    if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor{return Err(bad);}
-   let orientation=row.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+   let orientation=row.get("orientation").and_then(Value::as_str).filter(|s|support_leaf_orientation(u64::from(factor),s,true)).ok_or(bad)?;
    moves.push((t,expected,xy,orientation));
   }
   let next=u64::from(ddv_save_patch::support_grid_next_object_id(g).map_err(|_|bad)?);
@@ -1009,7 +1009,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
      let index=m.get("index").and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).filter(|n|*n<512&&seen.insert(*n)).ok_or(bad)?;
      let (key,v)=objects.iter().nth(index).ok_or(bad)?;
      let xy=(int(row,"expectedX")?,int(row,"expectedY")?);
-     let old=m.get("expectedOrientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+     let old=m.get("expectedOrientation").and_then(Value::as_str).filter(|s|support_leaf_orientation(u64::from(factor),s,free)).ok_or(bad)?;
      if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor||v.get("ID").and_then(Value::as_u64)!=key_id(key)||v["ItemID"].as_u64()!=Some(item)||v["Orientation"].as_str()!=Some(old)||v.as_object().and_then(observed_coordinates)!=Some(xy)||v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){return Err(bad);}
      ids.push(key.clone());moves.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid.clone(),object_id:key.clone(),item_id:item},xy,amount));
     }
@@ -1035,7 +1035,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
     let amount=m.get("expectedStock").and_then(Value::as_u64).and_then(|n|u32::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
     let xy=(int(row,"x")?,int(row,"y")?);
     if xy.0<0||xy.1<0||xy.0 as u32>=sx*factor||xy.1 as u32>=sy*factor||!free&&(!anchors.insert(xy)||cells[((xy.1 as u32/factor)*sx+xy.0 as u32/factor) as usize].as_u64().is_none_or(|n|n==0)){return Err(bad);}
-    let orientation=m.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+    let orientation=m.get("orientation").and_then(Value::as_str).filter(|s|support_leaf_orientation(u64::from(factor),s,free)).ok_or(bad)?;
     moves.push((item,amount,xy,orientation));
    }
    let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
@@ -1106,7 +1106,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;let new=row.get("orientation").and_then(Value::as_str).ok_or(bad)?;
   if v.get("ItemID").and_then(Value::as_u64)!=Some(item)||v.get("ID").and_then(Value::as_u64)!=key_id(id)||observed_coordinates(v.as_object().ok_or(bad)?)!=Some(before)||v.get("Orientation").and_then(Value::as_str)!=Some(old)||
      v.get("State").is_some_and(|s|!s.is_null())||v.as_object().is_none_or(|o|o.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
-     !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&new)||
+     !support_leaf_orientation(terrain.as_ref().map_or(2,|t|t.2 as u64),old,free)||!support_leaf_orientation(terrain.as_ref().map_or(2,|t|t.2 as u64),new,free)||
      if swap{before==after||old!=new}else if terrain.is_some(){before==after&&old==new}else{before!=after||old==new}{return Err(bad);}
   if let Some((sx,sy,factor,cells))=&terrain{
    let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as usize)/ *factor<*sx&&(y as usize)/ *factor<*sy&&(free||cells[(y as usize)/ *factor* *sx+(x as usize)/ *factor].as_u64().is_some_and(|n|n!=0));

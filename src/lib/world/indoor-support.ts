@@ -2,8 +2,8 @@ import type {GroupPickupRow} from './group-pickup.ts';
 import type {CutClipboard,CutWitness} from './group-paste.ts';
 import type {DesignClipItem} from './design-layout.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
-import {supportShapeKey,supportPlacementFits,type SupportTree} from './subgrid-local.ts';
-import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
+import {supportShapeKey,supportPlacementFits,supportOrientationAllowed,type SupportTree} from './subgrid-local.ts';
+import {EIGHT_WAY_ORIENTATIONS,isEightWay,isCardinal} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
 import type {IndoorRoom} from './indoor-room-view.ts';
@@ -27,29 +27,29 @@ export function captureSupportCut(tree:SupportTree,shapes:Readonly<Record<string
  const rows:CutWitness[]=[],clip:DesignClipItem[]=[];
  for(const index of indices){
   const o=tree.objects[index],key=o?supportShapeKey(o):null;
-  if(!o||o.child||!eligible.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!isCardinal(o.orientation)||!key||!shapes[key]?.cellCount||o.x<0||o.y<0||o.x>=raster.sizeX*tree.factor||o.y>=raster.sizeY*tree.factor)return null;
+  if(!o||o.child||!eligible.has(o.itemId)||Math.floor(o.itemId/100000)!==400||!supportOrientationAllowed(tree.factor,o.orientation,true)||!key||!shapes[key]?.cellCount||o.x<0||o.y<0||o.x>=raster.sizeX*tree.factor||o.y>=raster.sizeY*tree.factor)return null;
   rows.push({localOrdinal:parent.localOrdinal,supportSource:{parentItemId:parent.itemId,parentX:parent.x,parentY:parent.y,path:[...path],index},area:'indoor',itemId:String(o.itemId),expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation});
-  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:CARDINAL_ORIENTATIONS.indexOf(o.orientation)});
+  clip.push({itemId:o.itemId,dx:o.x*2/tree.factor,dy:o.y*2/tree.factor,orientation:EIGHT_WAY_ORIENTATIONS.indexOf(o.orientation)/2});
  }
  const x=Math.min(...clip.map(p=>p.dx)),y=Math.min(...clip.map(p=>p.dy));
  return {rows,clip:clip.map(p=>({...p,dx:p.dx-x,dy:p.dy-y}))};
 }
 export function supportFloorGroup(cut:CutClipboard|null,file:File|null,clip:readonly DesignClipItem[]){
  if(!file||!cut||cut.file!==file||!cut.rows.length||cut.rows.length>32||cut.rows.length!==clip.length)return null;
- const rows=cut.rows.map((row,i)=>{const source=supportFloorCut({...cut,rows:[row]},file),p=clip[i];return source&&p.itemId===source.itemId&&[p.dx,p.dy,p.orientation].every(Number.isSafeInteger)&&p.dx>=0&&p.dy>=0&&p.orientation>=0&&p.orientation<4?{source,p}:null;});
+ const rows=cut.rows.map((row,i)=>{const source=supportFloorCut({...cut,rows:[row]},file),p=clip[i];return source&&p.itemId===source.itemId&&[p.dx,p.dy,p.orientation*2].every(Number.isSafeInteger)&&p.dx>=0&&p.dy>=0&&p.orientation>=0&&p.orientation<4?{source,p}:null;});
  return rows.every(r=>r!==null)?rows as NonNullable<typeof rows[number]>[]:null;
 }
 export function supportFloorGroupPlan(cut:CutClipboard|null,file:File|null,clip:readonly DesignClipItem[],tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,eligible:ReadonlySet<number>,raster:TerrainRaster,x:number,y:number){
  const group=supportFloorGroup(cut,file,clip);
  if(!group||tree.objects.length+group.length>512)return null;
- const rows=group.map(({source,p})=>{const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=CARDINAL_ORIENTATIONS[p.orientation];return eligible.has(source.itemId)&&supportPlacementFits(tree,shapes,raster,source.itemId,px,py,orientation,true)?{...source,x:px,y:py,orientation}:null;});
+ const rows=group.map(({source,p})=>{const px=x+p.dx*tree.factor/2,py=y+p.dy*tree.factor/2,orientation=EIGHT_WAY_ORIENTATIONS[p.orientation*2];return eligible.has(source.itemId)&&supportPlacementFits(tree,shapes,raster,source.itemId,px,py,orientation,true)?{...source,x:px,y:py,orientation}:null;});
  return rows.every(r=>r!==null)?rows as NonNullable<typeof rows[number]>[]:null;
 }
 /** Only one exact ordinary room floor leaf may be pasted into a support.
  * The clipboard is bound to the unchanged local working Save. */
 export function supportFloorCut(cut:CutClipboard|null,file:File|null){
  const row=cut?.rows[0];
- if(!file||!cut||cut.file!==file||cut.rows.length!==1||!row||row.supportFactor!==undefined||row.storage||!isCardinal(row.expectedOrientation)||row.roomSource&&cut.scope!=='indoor')return null;
+ if(!file||!cut||cut.file!==file||cut.rows.length!==1||!row||row.supportFactor!==undefined||row.storage||!isEightWay(row.expectedOrientation)||row.roomSource&&cut.scope!=='indoor')return null;
  const itemId=Number(row.itemId);
  if(!Number.isSafeInteger(itemId)||String(itemId)!==row.itemId||Math.floor(itemId/100000)!==400)return null;
  return {...(row.roomSource?{roomSource:row.roomSource}:{localOrdinal:row.localOrdinal,...(row.supportSource?{supportSource:row.supportSource}:{})}),itemId,expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};
