@@ -27,9 +27,9 @@
  'zh-CN':['同时恢复位置和朝向','将其他区域的储物家具移回保存的位置，可能与当前家具重叠。'],
  'pt-BR':['Restaurar também posição e rotação','Retorna à posição salva mesmo de outra área; pode sobrepor móveis atuais.']
  } as const;
- function outdoorScope(raw:string){try{return JSON.parse(raw)?.kind==='outdoor';}catch{return false;}}
+ function poseScope(raw:string){try{return ['outdoor','room','floor','building'].includes(JSON.parse(raw)?.kind);}catch{return false;}}
  let restorePose=false;
- $: canRestorePose=outdoorScope(scopeJson);
+ $: canRestorePose=poseScope(scopeJson);
  const allowed=browser&&testSaveExportEnabled(window.location);
  let own:Worker|null=null,seen:File|null=null,input:HTMLInputElement,copy:ReturnType<typeof experimentalCopyDownload>|null=null,report='',error=false;
  $: w=words[locale];
