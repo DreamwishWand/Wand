@@ -183,8 +183,8 @@
    let planningFile=f,planningNetworks=networks,planningLandscapes=landscapes,normalized=loaded.storage;
    let planningSnapshot:ReturnType<typeof islandSaveSnapshot>=snapshot;
    const valid=()=>epoch===token&&file===f&&sessions===ss&&worker===own&&!blocked&&!!snapshot;
-   // Rectangular region restores retain the original object-scoped contract.
-   if(normalized&&!regionDoc&&restoredPrivateScope){
+   // A region uses the same staging transaction, limited to its exact backed-up storage poses.
+   if(normalized&&restoredPrivateScope){
     const stage=await stagePrivateDecoration(f,normalized,restoredPrivateScope,valid);
     if(!valid())return;normalized=stage.storage;planningFile=stage.file;
     if(planningFile!==f){
@@ -211,8 +211,14 @@
    if(localDoc){trees=planningFile!==f?await readSupports(planningFile,own,planningSnapshot):supportTrees??await readSupports(f,own);const ac=new AbortController();supportAbort=ac;await validateAreaSupportTrees(own,localDoc.supports!.values(),nextRequest,ac.signal);if(ac.signal.aborted||epoch!==token||file!==f||!snapshot)return;if(planningFile===f){supportTrees=trees;const captured=captureBiomeDecoration(grids[0],snapshot.objects.get(grids[0].key)??[],0,[],false,trees,true,undefined,false,false,localPlainIds);if(!captured)throw Error('support');localSupportText=captured.text;}}
    const stock=await readStock(planningFile);
    if(token!==epoch||file!==f||sessions!==ss||worker!==own||blocked||!snapshot)return;
-   if(regionDoc){if(!trees||!current||!combined)throw Error('region');combined=mergeRegionDecoration(regionDoc.region,grids,snapshot,networks,trees,current,combined,definitions,world,landscapes,freePlacement&&world);if(!combined)throw Error('region boundary');}
    if(!planningSnapshot)throw Error('planning snapshot');
+   if(regionDoc){
+    if(!trees||!current||!combined)throw Error('region');
+    const stagedCapture=planningFile!==f?captureIslandDecoration(grids,planningSnapshot,planningNetworks,trees,world,planningLandscapes,false):null;
+    if(planningFile!==f&&!stagedCapture)throw Error('staged region');
+    const planningCurrent=stagedCapture?parseIslandDecoration(stagedCapture.text,grids,world):current;
+    combined=mergeRegionDecoration(regionDoc.region,grids,planningSnapshot,planningNetworks,trees,planningCurrent,combined,definitions,world,planningLandscapes,freePlacement&&world);if(!combined)throw Error('region boundary');
+   }
    if(combined){decorationReview=reviewIslandDecoration(grids,rasters,planningSnapshot,planningNetworks,combined,definitions,stock,trees,world,planningLandscapes,freePlacement&&world);if(!decorationReview)throw Error('plan');}else{review=islandSaveReplacement(grids,rasters,planningSnapshot,incoming,definitions,stock,localScene?localPlainIds:undefined,localDoc&&trees?{before:trees,after:localDoc.supports!}:undefined);if(!review)throw Error('plan');}
    // Do not change the confirmed rectangle or mode on a rejected import.
    if(regionDoc)region=regionDoc.region;
