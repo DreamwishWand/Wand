@@ -86,14 +86,14 @@ import {CARDINAL_ORIENTATIONS,isCardinal,worldOrientationAllowed,worldOrientatio
  * Both the original and every destination occupied cell must resolve to
  * the same root; no cross-grid mutation or support transfer is inferred. */
 export function mainlandSavedMoveEligible(p:MainlandSavedObject|null,free=false){
- return !!p?.shape&&p.object.layer!=='surface'&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object,free);
+ return !!p?.shape&&(p.object.layer!=='surface'||free&&Math.floor(Number(p.object.itemId)/100000)===400)&&!exclusiveAnchorClass(p.object.itemId)&&worldMoveEligible(p.object,free);
 }
 /** Position-only network group editing. Native state stays untouched. */
 export function mainlandSavedGroupMoveEligible(p:MainlandSavedObject|null,free=false){
- return !!p?.shape&&p.object.layer!=='surface'&&worldMoveEligible(p.object,free)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
+ return !!p?.shape&&(p.object.layer!=='surface'||free&&Math.floor(Number(p.object.itemId)/100000)===400)&&worldMoveEligible(p.object,free)&&(!exclusiveAnchorClass(p.object.itemId)||isCardinal(p.object.orientation));
 }
 export function mainlandSavedRotateEligible(p:MainlandSavedObject|null,free=false){
- return !!p?.shape&&p.object.layer!=='surface'&&worldRotateEligible(p.object,free);
+ return !!p?.shape&&(p.object.layer!=='surface'||free&&Math.floor(Number(p.object.itemId)/100000)===400)&&worldRotateEligible(p.object,free);
 }
 export interface MainlandSavedDraft{readonly x:number;readonly y:number;readonly shape:SourceObjectShape;readonly valid:boolean;readonly next:WorldEditTimeline|null}
 export function mainlandSavedDraft(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,worldX:number,worldY:number,orientation:string|null,geometryOnly=false,free=false):MainlandSavedDraft|null{
@@ -218,7 +218,7 @@ export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],
  * collision or runtime reference proof. */
 export interface MainlandTransferPlan{
  readonly area:string;readonly x:number;readonly y:number;readonly factor:1|2;readonly shape:SourceObjectShape;
- readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string;crossWorld?:'move'|'duplicate'};
+ readonly plan:{localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string;destination:{layoutId:string;gridDataPath:string;factor:1|2;sizeX:number;sizeY:number};x:number;y:number;orientation:string;crossWorld?:'move'|'duplicate';freePlacement?:true;storage?:true};
 }
 export function exteriorWorldKey(g:MainlandGrid):string{return sourceWorldScope(g)==='FloatingIslands'?g.layoutId:sourceWorldScope(g);}
 export function crossWorldBuildingCandidate(p:MainlandSavedObject|null,from:MainlandGrid|undefined,g:MainlandGrid|undefined,timeline:WorldEditTimeline,x:number,y:number,mode:'move'|'duplicate'):MainlandTransferPlan|null{
@@ -232,12 +232,16 @@ export function crossWorldBuildingCandidate(p:MainlandSavedObject|null,from:Main
 export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,timeline:WorldEditTimeline,worldX:number,worldY:number,free=false):MainlandTransferPlan|null{
  const building=free&&p.object.nativeType==='Building'&&[200,201,202,203,205].includes(Math.floor(Number(p.object.itemId)/100000));
  const landscape=p.object.layer==='landscape'&&Math.floor(Number(p.object.itemId)/100000)===402;
- const bypass=building||free&&landscape;
+ const furniture=Math.floor(Number(p.object.itemId)/100000)===400&&(p.object.layer==='furniture'||free&&p.object.layer==='surface');
+ const bypass=free&&(building||landscape||furniture);
  if(landscape&&!free&&(p.object.editRestrictions?.move!=='allowedFlag'||p.object.editRestrictions?.switchGrid!=='allowedFlag'))return null;
- if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p,bypass)||p.object.layer!=='furniture'&&!landscape&&!building||p.object.surfaceCapable||!p.shape||!isCardinal(p.object.orientation)||!bypass&&(nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove'))||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
+ if(currentWorldEdits(timeline).length||!mainlandSavedMoveEligible(p,bypass)||!furniture&&!landscape&&!building||p.object.subgrid||p.object.surfaceCapable||!p.shape||!worldOrientationAllowed(p.object,p.object.orientation,bypass&&p.factor===1)||!bypass&&(nativeActionBlocked(p.object.editRestrictions,'switchGrid')||nativeActionBlocked(p.object.editRestrictions,'remove'))||!Number.isFinite(worldX)||!Number.isFinite(worldY))return null;
  const hit=bypass?mainlandFreeHits(grids,rasters,worldX,worldY):mainlandTerrainHits(grids,rasters,worldX,worldY);
- if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor)return null;
+ if(hit.length!==1||hit[0].key===p.area||hit[0].factor!==p.factor&&(!bypass||!furniture||!isCardinal(p.object.orientation)))return null;
  const g=hit[0],r=rasters.get(g.key),shape=p.shape;
+ // A drag preview uses source-scale geometry. Keep the same factor until
+ // the picker has independently resolved the destination footprint.
+ if(g.factor!==p.factor||!isCardinal(p.object.orientation)&&(!bindMainlandGrid(g)||!bindMainlandGrid(grids.find(q=>q.key===p.area)??g)))return null;
  if(landscape||building){const from=grids.find(q=>q.key===p.area),house=building&&(Math.floor(Number(p.object.itemId)/100000)===205||characterHouseExterior(Number(p.object.itemId)));
   if(!from||exteriorWorldKey(from)!==exteriorWorldKey(g)||!(bindMainlandGrid(g)||house&&bindFloatingIslandGrid(g)))return null;}
  const x=Math.floor((worldX-2*g.origin.position[0])*g.factor),y=Math.floor((-worldY-2*g.origin.position[2])*g.factor);
@@ -249,5 +253,5 @@ export function mainlandTransferCandidate(p:MainlandSavedObject,grids:readonly M
   if(owners.length!==1||owners[0].key!==g.key)return null;
  }
  const anchor=mainlandMapAnchor(g,x,y);
- return {area:g.key,...anchor,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},x,y,orientation:p.object.orientation}};
+ return {area:g.key,...anchor,factor:g.factor,shape,plan:{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation,destination:{layoutId:g.layoutId,gridDataPath:g.gridDataPath,factor:g.factor,sizeX:g.sizeX,sizeY:g.sizeY},x,y,orientation:p.object.orientation,...(bypass?{freePlacement:true as const,...(p.object.storage?{storage:true as const}:{})}:{})}};
 }
