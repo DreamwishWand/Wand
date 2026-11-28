@@ -72,8 +72,10 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
       if(family==='historicalStarpath'){
-        check(evidence.sourcePlatform==='Switch'&&evidence.sourceGameVersion==='1.24.1'&&
-          evidence.sourceProtoDbSha256==='36c2f64d849a5c7e2350b874e9e9443795c0675381a185d801649b587b093b60'&&
+        check(evidence.sourcePlatform==='Switch'&&(
+          evidence.sourceGameVersion==='1.24.1'&&evidence.sourceProtoDbSha256==='36c2f64d849a5c7e2350b874e9e9443795c0675381a185d801649b587b093b60'||
+          evidence.sourceGameVersion==='1.24.11'&&evidence.sourceProtoDbSha256==='6433b7f00b2d746a28b0d57367f2ba0f8274ab94821ec5be5ffeb881fc553ac2'&&
+          evidence.seasonId==='PopCity2026'&&evidence.unresolvedVaultDefinitionId==='PopCity2026_VR'&&evidence.kind!=='vault')&&
           typeof evidence.seasonId==='string'&&/^[A-Za-z0-9_]+$/.test(evidence.seasonId)&&
           typeof evidence.sourceSeasonSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourceSeasonSha256)&&
           id(evidence.configuredAmount)&&typeof evidence.premiumOnly==='boolean'&&typeof evidence.premiumFieldPresent==='boolean'&&
