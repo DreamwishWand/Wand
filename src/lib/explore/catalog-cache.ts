@@ -22,7 +22,7 @@ export function loadExploreCatalog(base:string):Promise<ExploreCatalog>{
       worker.terminate();
       resolve({items:d.items,universeTags:d.universeTags??[],worldTags:d.worldTags??[],releases:d.releases??[]});
     };
-    worker.postMessage({base});
+    try{worker.postMessage({base});}catch{fail();}
   });
   catalogs.set(base,task);
   void task.catch(()=>{if(catalogs.get(base)===task)catalogs.delete(base);});

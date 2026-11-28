@@ -3,7 +3,7 @@
   import ExploreQuickView from '$lib/explore/ExploreQuickView.svelte';
   import {loadExploreCatalog,loadExploreHistoricalArtwork} from '$lib/explore/catalog-cache';
   import {readExploreBrowseSnapshot,type ExploreBrowseSnapshot} from '$lib/explore/browse-snapshot';
-  import {beforeNavigate} from '$app/navigation';
+
   import {registerServiceToolbar} from '$lib/ui/service-toolbar';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
@@ -12,7 +12,7 @@
   import type {ItemMasterTagLabel} from '$lib/items/public-item-master';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
-  import {goto} from '$app/navigation';
+  import {goto,beforeNavigate} from '$app/navigation';
   import {catalogHandoff,catalogPlacementCandidate,worldIncoming,worldIncomingWords} from '$lib/world/world-incoming.ts';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
@@ -58,7 +58,7 @@
   function applyBrowse(raw:unknown){
     const saved=readExploreBrowseSnapshot(raw);if(!saved)return;
     restoring=true;pendingRestore=saved;scope=saved.scope;search=saved.search;filters=saved.filters;
-    favorites=saved.favorites;restoreOwned=saved.ownedOnly;ownedOnly=ownershipAvailable&&restoreOwned;
+    favorites=saved.favorites;restoreOwned=saved.ownedOnly&&!ownershipSettled;ownedOnly=ownershipAvailable&&saved.ownedOnly;
     boardsOpen=saved.boardsOpen;filtersOpen=saved.filtersOpen;selectionMode=saved.selectionMode;
     selectedIds=saved.selectedIds;variantChoices=saved.variantChoices;
   }
@@ -188,7 +188,9 @@
   function toggleSelection(){selectionMode=!selectionMode;selectedIds=[];}
   function toggleUniverse(key:string){filters.universes=filters.universes.includes(key)?filters.universes.filter(x=>x!==key):[...filters.universes,key];resetBrowse();}
   function toggleFacet(key:Facet,value:string){const list=filters.tags[key];filters.tags[key]=list.includes(value)?list.filter(x=>x!==value):[...list,value];resetBrowse();}
-  function chooseItem(id:number){if(active)toggle(id);else boardsOpen=true;}
+  function narrowRail(){return window.matchMedia('(max-width:780px)').matches;}
+  function toggleBoards(){if(selected&&narrowRail()){closeReview();boardsOpen=true;}else boardsOpen=!boardsOpen;}
+  function chooseItem(id:number){if(active)toggle(id);else{if(selected&&narrowRail())closeReview();boardsOpen=true;}}
   function save(next:BoardState){if(!ready||storageFailed)return;try{
     if(localStorage.getItem(STORAGE_KEY)!==storageRaw)throw Error('CONFLICT');
     const raw=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,raw);storageRaw=raw;boards=next;
@@ -244,7 +246,7 @@
     <button class="icon-button" aria-label={label('filters')} title={label('filters')} aria-expanded={filtersOpen} class:activeTab={filterCount>0} onclick={()=>filtersOpen=!filtersOpen}><WandIcon name="filter" size={20}/>{#if filterCount}<small>{filterCount}</small>{/if}</button>
     <button class="icon-button" aria-label={label('owned')} title={ownershipAvailable?label('owned'):label('noOwnership')} aria-pressed={ownedOnly} disabled={!ownershipAvailable} onclick={()=>{ownedOnly=!ownedOnly;resetBrowse();}}><WandIcon name="owned" size={20}/></button>
     <button class="icon-button" aria-label={label('favorites')} title={label('favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
-    <button class="icon-button" aria-label={label('boards')} title={active?.name??label('boards')} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={()=>boardsOpen=!boardsOpen}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
+    <button class="icon-button" aria-label={label('boards')} title={active?.name??label('boards')} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={toggleBoards}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
     {#if selectionMode}<button class="icon-button" aria-label={t('選択を追加','Add selected')} disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}><WandIcon name="plus" size={16}/>{selectedIds.length}</button>{#if selectedCandidates.length}<button class="icon-button" aria-label={incomingWords[1]} title={incomingWords[1]} onclick={()=>sendCandidates(selectedCandidates)}><WandIcon name="world" size={18}/>{selectedCandidates.length}</button>{/if}<button class="icon-button" aria-label={label('close')} onclick={toggleSelection}><WandIcon name="close" size={16}/></button>{/if}
     {#if filtersOpen}
       <section class="filter-panel" aria-label={label('filters')}>
@@ -363,6 +365,7 @@
   .workspace.withBoards,.workspace.withReview{grid-template-columns:minmax(0,1fr) minmax(310px,35%)}
   .right-rail{min-width:0;position:sticky;top:calc(var(--shell-height,60px) + 12px);max-height:calc(100dvh - var(--shell-height,60px) - 24px);display:flex;flex-direction:column;gap:8px;overflow:hidden}
   .right-rail :global(.quick-view){flex:1 1 auto;min-height:0}
+  .right-rail.hasReview.hasBoards{height:calc(100dvh - var(--shell-height,60px) - 24px)}
   .right-rail.hasReview.hasBoards :global(.quick-view){flex:0 1 62%;max-height:62%}
   .right-rail.hasReview.hasBoards .boards{flex:1 1 38%;min-height:0;overflow:auto}
   .catalog{min-width:0;overflow-anchor:none}
@@ -425,6 +428,8 @@
     .workspace.withBoards,.workspace.withReview{grid-template-columns:minmax(0,1fr);padding-bottom:58dvh}
     .right-rail{position:fixed;z-index:42;inset:auto 0 0;max-height:58dvh;width:100%;background:var(--wand-menu);box-shadow:0 -4px 24px #0005;border-radius:12px 12px 0 0;overflow:auto;gap:0}
     .right-rail.hasReview :global(.quick-view){max-height:58dvh;flex:1 1 auto;border-radius:12px 12px 0 0}
+    .right-rail.hasReview.hasBoards{height:auto}
+    .right-rail.hasReview.hasBoards :global(.quick-view){flex:1 1 auto;max-height:58dvh}
     .right-rail.hasReview.hasBoards .boards{display:none}
     .boards{padding:12px;max-height:58dvh;border-left:0;box-sizing:border-box}
     .active-name{display:none}

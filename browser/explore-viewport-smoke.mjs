@@ -10,6 +10,7 @@ try{
  browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:1280,height:720}});
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ let catalogRequests=0;page.on('request',req=>{if(req.url().includes('/ddv/item-master-releases.json'))catalogRequests++;});
  await page.goto(url);
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  assert.equal(await page.locator('[data-scope="outdoor"]').getAttribute('aria-pressed'),'true');
@@ -80,11 +81,13 @@ try{
  await cards.first().locator('.item').click();
  await quick.waitFor();
  const selectedId=await quick.getAttribute('data-item-id');
+ const requestsBeforeBack=catalogRequests;
  await page.locator('.explore-service-toolbar .back').click();
  await page.waitForURL('**/decorate/');
  await page.goBack();
  await quick.waitFor({timeout:30000});
  assert.equal(await searchBox.inputValue(),query);
+ assert.equal(catalogRequests,requestsBeforeBack,'catalog is reused on SPA Back');
  assert.equal(await quick.getAttribute('data-item-id'),selectedId);
  assert.equal(await page.locator('[data-scope="all"]').getAttribute('aria-pressed'),'true');
  assert.equal(await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).getAttribute('aria-expanded'),'true');

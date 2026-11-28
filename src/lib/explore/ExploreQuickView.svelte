@@ -1,10 +1,10 @@
 <script lang="ts">
   import {base} from '$app/paths';
-  import type {Snippet} from 'svelte';
+  import {onDestroy,type Snippet} from 'svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {collectionAcquisitionCopy} from '$lib/collection/acquisition-copy';
-  import {acquireCollectionEvidenceClient} from '$lib/collection/source-evidence-client';
+  import {acquireCollectionEvidenceClient,type CollectionEvidenceHandle} from '$lib/collection/source-evidence-client';
   import type {CollectionAcquisitionWithDistribution} from '$lib/collection/distribution-evidence';
   import type {WandLanguage} from '$lib/ui/preferences';
   import {exploreLabel} from './copy';
@@ -21,20 +21,22 @@
   let loading=$state(false);
   let failed=$state(false);
   let attempt=$state(0);
+  let client:CollectionEvidenceHandle|undefined;
+  onDestroy(()=>client?.release());
   const copy=$derived(collectionAcquisitionCopy(locale));
   $effect(()=>{
     const id=item.itemId;void attempt;
     let live=true;
     acquisition=null;loading=true;failed=false;
-    const client=acquireCollectionEvidenceClient();
+    client??=acquireCollectionEvidenceClient();
     void client.loadAcquisition(id,base).then(result=>{
       if(live){acquisition=result;loading=false;}
     },()=>{if(live){loading=false;failed=true;}});
-    return()=>{live=false;client.release();};
+    return()=>{live=false;};
   });
 </script>
-<aside class="quick-view" aria-label={label('quickView')} data-quick-view data-item-id={item.itemId}
-  onkeydown={e=>{if(e.key==='Escape'){e.stopPropagation();close();}}}>
+<svelte:window onkeydown={e=>{if(e.key==='Escape'&&!e.defaultPrevented){e.preventDefault();close();}}}/>
+<aside class="quick-view" aria-label={label('quickView')} data-quick-view data-item-id={item.itemId}>
   <header><h2>{name}</h2><button class="close" aria-label={label('close')} title={label('close')} onclick={close}><WandIcon name="close" size={20}/></button></header>
   <div class="quick-art"><ItemArtwork itemId={item.itemId} alt={name} {sourcePath} large/></div>
   <div class="quick-actions">{@render actions()}</div>
