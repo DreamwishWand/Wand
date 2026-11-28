@@ -36,9 +36,10 @@ try {
     }
     $work=Join-Path $env:TEMP ('wand-shared-artwork-'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
-    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/79bb2a2f8e85d14c23e4d0e2e156d883149cb0/tools/src-04-r2/'
+    $base='https://raw.githubusercontent.com/DreamwishWand/Wand/091407a050a7976b3b32a74099467a84bac57f4e/tools/src-04-r2/'
     foreach ($name in @('shared_source_delta.py','project_shared_ui_release.py','integrated_shop_artwork_targets.py','bundle_thumbnails.py','extract_memory_sources.py','extract_story_puzzle_sources.py','resolve_shop_catalog.py','publish_bundle_thumbnails.py','publish_memory_sources.py','publish_recovered_map_parts.py','source_image_ledger.py','item_cdn_ledger.py','resolve_shop_objects.py','migrate_item_thumbnails_256.py','verify_source_cdn.py','publish_world_map_parts.py','recover_world_map_parts.py','recover_public_map_parts.py','stage_media_v2.py','plan_media_update.py','native_cdn_curl.py','audit_native_map_cdn.py')) {
-        Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60
+        try { Invoke-WebRequest -UseBasicParsing -Uri ($base+$name) -OutFile (Join-Path $work $name) -TimeoutSec 60 }
+        catch { throw ('Dependency download failed: '+$base+$name+' ; '+$_.Exception.Message) }
     }
     $delta=Join-Path $work 'shared_source_delta.py'
     if ($mode -eq 'UI') {
