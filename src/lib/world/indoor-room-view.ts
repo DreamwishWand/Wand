@@ -363,6 +363,14 @@ export const indoorGroupMoveWords={ja:'選択した家具を一括移動',en:'Mo
 export function indoorPlace(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,x:number,y:number,orientation:string,free=false):IndoorPlace|null{
  const t=indoorEditableTree(face),n=stock.get(itemId);return t&&face?.terrain&&n!==undefined&&n>0&&allowed.has(itemId)&&(free?freeRoomPose(face,shapes,itemId,x,y,orientation):supportPlacementFits(t,shapes,face.terrain,itemId,x,y,orientation))?{itemId,expectedStock:n,x,y,orientation}:null;
 }
+/** A resolved support witness stays cardinal even in free mode. The writer
+ * independently verifies the complete native tree and aggregate stock. */
+export function indoorSupportDuplicatePlacement(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,itemId:number,witness:NonNullable<IndoorPlace['supportSource']>,x:number,y:number,orientation:string,free=false):IndoorPlace|null{
+ const p=face?.positions[witness.index];
+ if(face?.kind!=='floor'||!p||p.plain===true||p.storage===true||p.storageKnown===true||p.protected||p.itemId!==itemId||p.x!==witness.expectedX||p.y!==witness.expectedY||!isCardinal(witness.expectedOrientation)||worldOrientationCode(witness.expectedOrientation)!==p.orientationCode||!isCardinal(orientation))return null;
+ const row=indoorPlace(face,shapes,allowed,stock,itemId,x,y,orientation,free);
+ return row?{...row,supportSource:witness}:null;
+}
 /** Copy only layout poses; the original objects remain in place and all
  * new records must fit the actual room and available furniture stock. */
 export function indoorDuplicateClip(face:IndoorSurface|null,indices:readonly number[],shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,stock:ReadonlyMap<number,number>,free=false):DesignClipItem[]|null{
