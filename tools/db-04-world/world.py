@@ -668,8 +668,8 @@ def native_uint32(value):
 
 # Steam 1.26.2 native GetHashCode implementation, corroborated against
 # original PE/IL2CPP methods and matching private Save identity pairs.
-# This is a deliberately bounded subset: no guessed GridState, unknown
-# protobuf fields or direct-JSON GridData initialization semantics.
+# This is a deliberately bounded subset: only source-correlated GridState,
+# no unknown protobuf fields or direct-JSON initialization semantics.
 _HASH_MASK = 0xffffffff
 
 
@@ -708,8 +708,114 @@ def native_grid_data_hash(raw):
                         & _HASH_MASK)
 
 
+# GridState.GetHashCode XORs the selected child's hash and oneof case
+# with the seed 1. Confirmed in original Steam 1.26.2 native bodies.
+# The same recursive primitives serve all supported GridState families.
+def native_hash_fields(raw, schema, repeated=()):
+    result = {}
+    for number, kind, value in wire_fields(raw):
+        if (schema.get(number) != kind or
+                (number in result and number not in repeated)):
+            raise ValueError("unverified nested hash field")
+        if number in repeated:
+            result.setdefault(number, []).append(value)
+        else:
+            result[number] = value
+    return result
+
+
+def native_wrapped_int(raw):
+    return native_int32(native_hash_fields(raw, {1: 0}).get(1))
+
+
+def native_bool(value):
+    if value not in (0, 1):
+        raise ValueError("unsupported bool encoding")
+    return value
+
+
+def native_item_state_hash(raw, depth=0):
+    if depth > 32:
+        raise ValueError("excessive nested item state")
+    fields = native_hash_fields(raw, {2: 0, 4: 2, 5: 0})
+    if len(fields) > 1:
+        raise ValueError("ambiguous ItemState oneof")
+    if not fields:
+        return 1
+    number, value = next(iter(fields.items()))
+    if number in (2, 5):
+        return 1 ^ number ^ native_int32(value)
+    items = native_hash_fields(value, {1: 2}, (1,)).get(1, [])
+    return 1 ^ number ^ 1 ^ native_accum31(
+        native_item_instance_hash(item, depth + 1) for item in items)
+
+
+def native_item_instance_hash(raw, depth):
+    fields = native_hash_fields(raw, {1: 0, 2: 0, 3: 2})
+    return (1 ^ native_int32(fields.get(1)) ^ native_int32(fields.get(2)) ^
+            (native_item_state_hash(fields[3], depth) if 3 in fields else 0))
+
+
+def native_item_with_state_hash(raw):
+    fields = native_hash_fields(raw, {1: 0, 2: 2})
+    return (1 ^ native_int32(fields.get(1)) ^
+            (native_item_state_hash(fields[2]) if 2 in fields else 0))
+
+
+def native_grid_state_hash(raw):
+    # Unsupported nested representations remain excluded. A present empty
+    # message is not equivalent to an absent message or absent oneof.
+    fields = native_hash_fields(raw, {n: 2 for n in (1, 2, 8, 11, 14, 15, 22, 23)})
+    if len(fields) > 1:
+        raise ValueError("ambiguous GridState oneof")
+    if not fields:
+        return 1
+    number, value = next(iter(fields.items()))
+    h = 1
+    if number == 1:  # SubGrid
+        child = native_hash_fields(value, {1: 0, 2: 2})
+        h ^= native_uint32(child.get(1))
+        if 2 in child:
+            h ^= native_wrapped_int(child[2])
+    elif number == 2:  # AmountWithState
+        child = native_hash_fields(value, {1: 2, 2: 2, 3: 2})
+        for field in (1, 3):
+            if field in child:
+                h ^= native_wrapped_int(child[field])
+        if 2 in child:
+            h ^= native_item_state_hash(child[2])
+    elif number == 8:  # WeedData, Treasure oneof
+        child = native_hash_fields(value, {2: 2})
+        if 2 in child:
+            h ^= 2 ^ native_item_with_state_hash(child[2])
+    elif number == 11:  # StorageGridData
+        child = native_hash_fields(value, {1: 0, 2: 2, 3: 0, 4: 2, 5: 2})
+        h ^= native_uint32(child.get(1)) ^ native_int32(child.get(3))
+        for field in (2, 4):
+            if child.get(field):
+                h ^= native_string_hash(child[field].decode("utf-8"))
+        if 5 in child:
+            h ^= native_wrapped_int(child[5])
+    elif number == 14:  # ToggleGridData
+        child = native_hash_fields(value, {1: 2, 2: 2})
+        if 1 in child:
+            h ^= native_bool(native_wrapped_int(child[1]))
+        if 2 in child:
+            h ^= native_wrapped_int(child[2])
+    elif number == 15:  # IndexGridData
+        h ^= native_int32(native_hash_fields(value, {1: 0}).get(1))
+    elif number == 22:  # BuildingWithSkinData
+        child = native_hash_fields(value, {1: 2, 3: 0})
+        if 1 in child:
+            h ^= 1 ^ native_int32(native_hash_fields(child[1], {1: 0}).get(1))
+        h ^= native_int32(child.get(3))
+    elif number == 23:  # FenceModeGridData
+        h ^= native_bool(native_hash_fields(value, {1: 0}).get(1, 0))
+    return 1 ^ number ^ h
+
+
 def native_stateless_grid_hash(fields):
-    """Native Grid and GridObject hash for independently supported fields."""
+    """Native Grid and GridObject hash, including supported nested state."""
     if any((f, w) not in ((1, 0), (2, 2), (3, 2), (4, 0),
                           (5, 2), (6, 0)) for f, w, _ in fields):
         raise ValueError("unverified native Grid hash field")
@@ -730,12 +836,19 @@ def native_stateless_grid_hash(fields):
         key = native_uint32(one(entry, 1, 0))
         obj = wire_fields(one(entry, 2, 2, True))
         if (key in seen or native_uint32(one(obj, 1, 0)) != key or
-                any(n not in (1, 2, 3, 4, 5) or k != 0 for n, k, _ in obj)):
+                any((n, k) not in ((1, 0), (2, 0), (3, 0), (4, 0),
+                                   (5, 0), (6, 2), (7, 0)) for n, k, _ in obj)):
             raise ValueError("unverified GridObject state or identity")
         seen.add(key)
         oh = 1 ^ key
         for number in (2, 3, 4, 5):
             oh ^= native_int32(one(obj, number, 0))
+        state = one(obj, 6, 2)
+        if state is not None:
+            oh ^= native_grid_state_hash(state)
+        source = one(obj, 7, 0)
+        if source is not None:
+            oh ^= 7 ^ native_int32(source)
         h ^= (31 * key + oh) & _HASH_MASK
     return native_int32(h & _HASH_MASK)
 
