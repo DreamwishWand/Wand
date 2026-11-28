@@ -1095,7 +1095,8 @@ function ordinaryProductionLinks(rows,source,acquisition,protoAcquisition){
     if(!ID(target)||target===row.itemId||!byId.has(target)||!ID(amount))return;
     if(byId.get(target).nativeCategory!=='ActivityItem')return;
     const list=links.get(target)??[];
-    list.push({sourceItemId:row.itemId,kind,sourcePath:path,configuredAmount:amount,
+    list.push({sourceItemId:row.itemId,kind,sourcePath:path,configuredQuantity:amount,
+      quantityKind:kind==='ordinary_seed_production'?'configured_yield':'maximum_produced',
       sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256[row.nativeCategory],
       ordinarySourceIndependentlyClassified:true,currentAvailabilityVerified:false});
     links.set(target,list);
