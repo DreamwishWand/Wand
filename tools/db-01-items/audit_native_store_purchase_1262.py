@@ -27,6 +27,19 @@ PINS={
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
 WINDOWS=(
+ # ItemGridFilter.Matches, GridAreaData validity, qualifier and bounds branches.
+ (0x3872e65,83,'9d0ac558f2a47c61ac27e6d455bfcb977adf57d022b5f037b603d3109b188f5f'),
+ (0x3872f0d,200,'1b16329c5a795b36fd2c3602457403bb9340ce039080974d56dc6e27f7f15cf0'),
+ (0x38730df,100,'5bea494ad4a9e558e090caaa95e7ef65eb685491e51986694caefb86e687fea5'),
+ (0x38731e7,129,'98d3ff869d28f1fa409f4e54fda5cbc2ff5916362c8d2ec32e7cda42570b4737'),
+ (0x38732fd,246,'0a3a20853a3c9eac22c1a1dd4a49fc7392f93b0d9ddbad99e53e216b16e1b4f8'),
+ (0x38733f3,306,'c3ae0cbe135d0b0e6264390ef6d1b7ae7cb40fc3fc03cc31fee09da4b9b58c93'),
+ (0x38f9eca,57,'0b9b4203f7a27f3e425e25275f8efd463a18fa789678f588596555b28e0afea6'),
+ (0x38fa36e,47,'8609f2df9fd556a2edf83af08955ac87fdf1639529aa5364e3246795baac036b'),
+ (0x38faa80,38,'5e4071a3b9eb62d189a96907b490b54b5e0761781b09897de26395a4b7b1ba11'),
+ (0x38faba0,38,'c66b28becdd1ea486e5b14694eb3c9835bbd4f7d515036c9878f80509cb1c8df'),
+ (0x39231b7,9,'62a052153d3248bd4d53b5d4148853ecddac133b56ea97c5ecf9235083708350'),
+ (0x3924603,11,'4a0e151ff00b862bde6383c3f746f983594e698d30c8238ba05043ecd361cafe'),
  (0x410813c,48,'8155b505f5cd3d2191a43354e8c393ebd063901647f1ed5754ad93b071a89a4e'),
  (0xf6c9d0,8,'f735d0fc9d977dae4106869f19103860041ce8fe3fcea5a380c84ac3a66f7df4'),
  (0xff8b70,8,'b96a99bb019c6c196f2d811c580adcf2028e3696b8a30e4838ae8294f6715cb7'),
@@ -129,6 +142,13 @@ def audit(assembly,dump,proto,itemlist):
  original_price_provider_census(original)
  require(len(original)==PROTO_BYTES and sha(original)==PROTO_SHA,'PROTO_SHA')
  entries=fields(original);require(len(entries)==EXPECTED_RECORDS,'PROTO_CENSUS')
+ qualifier=fields(entries[88][2]);meta=fields(one(qualifier,2));body=one(meta,6)
+ require(strings(qualifier,1)=='GridSizeQualifierData' and strings(meta,5)=='Definitions.Grid.GridSizeQualifierData' and sha(body)=='99a5348bc8a6688173c5435f9ff0a33b627b44eb8cbc498b7225a214ab203409','GRID_QUALIFIER_SOURCE')
+ ranges={1:[],2:[]}
+ for n,w,v in fields(body):
+  require(n in ranges and w==2,'GRID_QUALIFIER_WIRE');f=fields(v)
+  ranges[n].append([one(f,1) or 0,one(f,2),one(f,3)])
+ require(ranges=={1:[[0,1,1],[2,16,2],[17,64,3],[65,999999999,4]],2:[[0,1,1],[2,4,2],[5,7,3],[8,999999999,4]]},'GRID_QUALIFIER_RANGES')
  providers={}
  for _,_,rec in entries:
   meta=fields(one(fields(rec),2));typ=strings(meta,5);payload=one(meta,6)
@@ -172,6 +192,7 @@ def audit(assembly,dump,proto,itemlist):
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
   'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
   'nativeCatalogueEnumerationPriceBandsVerified':True,'nativeSetUnlockFallbackVerified':True,
+  'nativeGridQualifierRanges':ranges,'nativeGridBoundsAndLayerBranchesVerified':True,
   'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}

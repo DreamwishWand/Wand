@@ -56,6 +56,7 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
       catalogExclusionFlags:f?.exclusionFlags??null,
       sourceTagIds:row.tags.filter(t=>t.sourceField===9).map(t=>t.id),
       directLayoutMatch:true,nativeOwnershipCheckRequired:row.nativeCategory==='Clothing',
+      nativeGrid:layout.dimensionComparisons.get(itemId)?.find(g=>g.areaKey===l.areaKey)?.nativeGrid??null,
       gridPredicateEvaluated:false,runtimeStorePoolVerified:false,
       storeMembershipVerified:false,currentAvailabilityVerified:false})));
     counts[row.nativeCategory]=(counts[row.nativeCategory]??0)+1;

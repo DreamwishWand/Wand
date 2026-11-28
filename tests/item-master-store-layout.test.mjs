@@ -126,6 +126,13 @@ test('store layout numeric dimension comparisons are independent of unverified n
       assert.equal(comparison.swappedWithinNumericBounds,size&&f.canRotate===true?numeric(size[1],size[0]):null);
       assert(comparison.directIgnoreSizeTagIds.every(tag=>f.ignoreSizeForTags.includes(tag)));
       assert.equal(comparison.gridPredicateEvaluated,false);
+      const native=comparison.nativeGrid;
+      assert(['passed','failed','unresolved'].includes(native.status));
+      assert.equal(native.qualifierSourceRecordIndex,88);
+      assert.equal(native.storeMembershipVerified,false);
+      if(native.basePredicatePassed===true)assert.equal(native.status,'passed');
+      if(native.basePredicatePassed===false&&!f.ignoreSizeForTags?.length)assert.equal(native.status,'failed');
+      if(native.basePredicatePassed===false&&f.ignoreSizeForTags?.length)assert.equal(native.status,'unresolved');
       assert.equal(comparison.storeMembershipVerified,false);
       assert.equal(comparison.currentAvailabilityVerified,false);
       if(size)validSizeCount++;

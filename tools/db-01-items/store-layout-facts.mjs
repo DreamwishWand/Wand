@@ -1,3 +1,4 @@
+import {evaluateSourceGridPredicate} from './store-native-grid-predicate.mjs';
 /** Build-only original StoreLayoutArea predicates and Display Item relations.
  * A match compares only declared type/subtype and direct source tag criteria.
  * It never evaluates grid qualifiers, dynamic tags, runtime state or stock.
@@ -74,7 +75,7 @@ export function buildStoreLayoutFacts(source,rows,screens){
   // Reuse the existing three verified native screening predicates. Restrict
   // this comparison to their scope. Source-direct tag matches are not
   // assertions about native dynamic or set-derived tag resolution.
-  const counts={Furniture:0,Clothing:0},matches={Furniture:0,Clothing:0},perArea={};
+  const counts={Furniture:0,Clothing:0},matches={Furniture:0,Clothing:0},perArea={},gridStatus={};
   for(const row of rows){
     if(screens.get(row.itemId)?.status!=='not_excluded_by_reviewed_gates')continue;
     const category=row.nativeCategory;
@@ -103,7 +104,9 @@ export function buildStoreLayoutFacts(source,rows,screens){
       (!filter.minArea||n>=filter.minArea[i])&&(!filter.maxArea||n<=filter.maxArea[i]));
     const comparisons=matchingAreas.filter(a=>a.filter.grid).map(a=>{
       const f=a.filter.grid;
-      return {areaKey:a.key,sourceSizeXY:size,
+      const nativeGrid=evaluateSourceGridPredicate(g,f);
+      gridStatus[nativeGrid.status]=(gridStatus[nativeGrid.status]??0)+1;
+      return {areaKey:a.key,sourceSizeXY:size,nativeGrid,
         directWithinNumericBounds:size?within(size,f):null,
         swappedWithinNumericBounds:size&&f.canRotate===true?within([size[1],size[0]],f):null,
         directIgnoreSizeTagIds:(f.ignoreSizeForTags??[]).filter(id=>tags.has(id)),
@@ -120,6 +123,6 @@ export function buildStoreLayoutFacts(source,rows,screens){
   check(counts.Furniture===1544&&counts.Clothing===904&&matches.Furniture===1544&&matches.Clothing===864,'MATCH_CENSUS');
   check(perArea['Clothing.StoreLayoutArea_Top']===205&&perArea['Clothing.StoreLayoutArea_Jewelry']===140&&
     perArea['Furniture.StoreLayoutArea_10x10']===23&&perArea['Furniture.StoreLayoutArea_WallFurniture']===298,'MATCH_SAMPLE_CENSUS');
-  console.log('DB01_STORE_LAYOUT '+JSON.stringify({counts,matches,perArea,sequenceCount}));
+  console.log('DB01_STORE_LAYOUT '+JSON.stringify({counts,matches,perArea,sequenceCount,gridStatus}));
   return result;
 }
