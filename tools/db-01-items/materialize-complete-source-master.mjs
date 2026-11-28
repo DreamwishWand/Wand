@@ -10,6 +10,7 @@ import {gunzipSync,inflateSync} from 'node:zlib';
 import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
 import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
 import {loadAcquisitionColumns} from './acquisition-columns.mjs';
+import {loadPremiumBundleColumns} from './premium-bundle-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
@@ -1050,7 +1051,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1269,9 +1270,17 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       sourceKeys(row.itemId,'additional',extraSources,l=>[l.kind,l.sourceId]);
     }
     if(ownerRewards?.length)add('acquisition.individualFriendshipRewards',row.itemId,ownerRewards);
-    const effectiveCategories=acquisition?.summary.get(row.itemId)?.categories??[];
-    const friendship=rewardLinks.some(link=>link.amount!==null);
-    const effective=friendship&&!effectiveCategories.includes('ordinary_gameplay')?['ordinary_gameplay',...effectiveCategories]:effectiveCategories;
+    const membership=premiumBundles?.byItem.get(row.itemId);
+    if(membership){
+      add('acquisition.premiumBundleMembership',row.itemId,membership);
+      add('acquisition.premiumBundleIds',row.itemId,membership.bundleIds);
+      if(membership.currentBundleIds.length)add('acquisition.premiumCurrentBundleIds',row.itemId,membership.currentBundleIds);
+      if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
+    }
+    const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
+    if(membership?.currentBundleIds.length)categorySet.add('premium_shop');
+    const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
     if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
     if(acquisition){
       const summary=acquisition.summary.get(row.itemId);
@@ -1580,6 +1589,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ['browseItemCount','browseItems']])f[key]=f[count].length;
   exploreThemeCensus(explore,byId);
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
+  const premiumBundles=loadPremiumBundleColumns(project,e.premiumBundleProjectionSha256,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
   const originalPrices=loadOriginalPriceFacts(project,source,byId);
   const questFlows=loadQuestFlowColumns(project,source,rows);
@@ -1596,6 +1606,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
+    ...(premiumBundles?{premiumBundleProjectionSha256:e.premiumBundleProjectionSha256,premiumBundleCoverage:premiumBundles.coverage}:{}),
     ...(originalPrices.metadata?{originalPriceProjection:originalPrices.metadata}:{}),
     ...(questFlows.metadata?{questFlowProjection:questFlows.metadata}:{}),
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
@@ -1634,6 +1645,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
       universeTags:source.universeTags},explore.length);
     index.assets['collection-facets.json']=write('collection-facets.json',f,f.sourceItemCount);
+    if(premiumBundles)index.assets['premium-bundles.json']=write('premium-bundles.json',{...premiumBundles.catalog,release:e.release},premiumBundles.catalog.definitions.length);
     for(const l of LOCALES)index.assets['locale/'+l+'.json']=write('locale/'+l+'.json',
       {schema:'wand.item-master.complete-browse-names@1',release:e.release,locale:l,items:names[l]},names[l].length);
     index.assets['source-relations.json']=write('source-relations.json',{
@@ -1657,7 +1669,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
