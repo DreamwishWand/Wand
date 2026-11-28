@@ -9,6 +9,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {inflateSync} from 'node:zlib';
 import {attachHistoricalContentRelations} from './attach-historical-content-relations.mjs';
+import {attachHistoricalContentScopes} from './attach-historical-content-scopes.mjs';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const check=(ok,code)=>{if(!ok)throw Error('DB01_CONTENT_ORIGIN_'+code)};
 const id=x=>Number.isSafeInteger(x)&&x>0;
@@ -104,6 +105,7 @@ export function attachHistoricalContentOrigin(project,source,history){
       [...candidates.values()].filter(x=>x.has(free)).length===18&&
       [...candidates.values()].every(x=>x.size===1)&&additional.verified.size===29,'EXTENDED_CENSUS');
   }
+  attachHistoricalContentScopes(project,source,history,fresh,add);
   for(const [i,rows] of facts){
     const h=history.get(i);
     h.contentOriginEvidence=rows;

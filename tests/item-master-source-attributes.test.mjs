@@ -521,7 +521,7 @@ test('content attribution is independent of observed source version and release 
     'history.contentReleaseKind','history.contentDlcType'];
   const rows=await db.getItemFields([40005160,2130000001],fields);
   for(const row of rows)for(const field of fields)assert.equal(row.values[field],null);
-  assert.equal((await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'dlc.the-keepsake-sea'})).length,29);
+  assert.equal((await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'dlc.the-keepsake-sea'})).length,519);
   assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'version.26'}),[]);
 });
 
@@ -531,7 +531,10 @@ test('historical content evidence keeps source cohort candidates distinct from a
   const field='history.contentCandidateReleaseIds';
   const dlc=await db.findItemIdsByField(field,{kind:'contains',value:'dlc.the-keepsake-sea'});
   const free=await db.findItemIdsByField(field,{kind:'contains',value:'version.26'});
-  assert.equal(dlc.length,1058);
+  const scopeProjection=JSON.parse(await readFile('data/ddv/item-master/historical-content-scope-steam-1261.json','utf8'));
+  const addedEvidenceIds=new Set([...scopeProjection.scopeRows.map(r=>r[0]),...scopeProjection.gateRows.map(r=>r[0]),...scopeProjection.groupRows.map(r=>r[0]),...scopeProjection.grantRows.map(r=>r[1])]);
+  assert(dlc.length>=1058);
+  assert([...addedEvidenceIds].every(id=>dlc.includes(id)));
   assert.equal(free.length,18);
   assert(!dlc.some(i=>free.includes(i)));
   const evidence='history.contentOriginEvidence';
@@ -566,7 +569,7 @@ test('typed historic source joins distinguish proven DLC association from indire
     [130000507,130000480,30300732,31000118,30400282,120100112,20300089,10000049],fields);
   const has=(row,kind,value)=>row.values[fields[3]]?.some(x=>x[0]===kind&&x[1]===value);
   const confirmed=await db.findItemIdsByField(fields[0],{kind:'equals',value:'dlc.the-keepsake-sea'});
-  assert.equal(confirmed.length,29);
+  assert.equal(confirmed.length,519);
   assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_condition'})).length,25);
   assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_package'})).length,4);
   assert(has(memory,'memory_expansion_gate',2130004933));
@@ -615,7 +618,7 @@ test('typed content origins distinguish observed versions, verified release, and
   const query=(kind,releaseId)=>db.findItemIdsByContent({kind,releaseId});
   const confirmed=await query('confirmed_release','dlc.the-keepsake-sea');
   assert.equal(confirmed.status,'indexed');
-  assert.equal(confirmed.itemIds.length,29);
+  assert.equal(confirmed.itemIds.length,519);
   const unresolved=await query('unconfirmed_candidate','dlc.the-keepsake-sea');
   assert(unresolved.itemIds.includes(40006771));
   assert(!unresolved.itemIds.some(id=>confirmed.itemIds.includes(id)));
