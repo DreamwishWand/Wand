@@ -1647,6 +1647,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.questObjectiveGrantSources',row.itemId,objectiveGrants);
       for(const link of objectiveGrants)if(link.category!==null)categorySet.add(link.category);
     }
+    const questLoot=questFlows.additionalLoot.get(row.itemId);
+    if(questLoot?.length){
+      add('acquisition.questAdditionalLootSources',row.itemId,questLoot);
+      for(const link of questLoot)categorySet.add(link.category);
+    }
     const intro=questFlows.ordinaryIntro.get(row.itemId);
     if(intro?.length){
       add('acquisition.ordinaryQuestIntroSources',row.itemId,intro);

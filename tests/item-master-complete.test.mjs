@@ -485,9 +485,10 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   const production=fields.has('acquisition.ordinaryProductionSources')?
     new Map(await master.getFieldRows('acquisition.ordinaryProductionSources')):new Map();
   const intro=new Map(await master.getFieldRows('acquisition.ordinaryQuestIntroSources'));
+  const questLoot=new Map(await master.getFieldRows('acquisition.questAdditionalLootSources'));
   const progress=new Map(await master.getFieldRows('acquisition.ordinaryProgressionSources'));
   const loot=fields.has('acquisition.ordinaryLootPresentSources')?new Map(await master.getFieldRows('acquisition.ordinaryLootPresentSources')):new Map();
-  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys(),...progress.keys(),...loot.keys()]);
+  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys(),...intro.keys(),...questLoot.keys(),...progress.keys(),...loot.keys()]);
   const critter=new Map(await master.getFieldRows('acquisition.ordinaryCritterSources'));
   for(const id of critter.keys())expected.add(id);
   const conditional=fields.has('acquisition.conditionalQuestSources')?new Map(await master.getFieldRows('acquisition.conditionalQuestSources')):new Map();
@@ -514,6 +515,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of expected){
     const old=previous.get(id)??[];
     const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id)||critter.has(id)||stores.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
+    for(const link of questLoot.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
     if(historicStar.has(id)&&!want.includes('star_path'))want.push('star_path');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);

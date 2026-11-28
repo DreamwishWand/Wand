@@ -78,10 +78,23 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
     const override=p.PriceOverride;
     if(!override||typeof override!=='object'||Array.isArray(override)){reject('override_unknown');continue;}
     const provider=prices.items.get(itemId);
-    // A formula/ambiguous override is not interchangeable with provider
-    // pricing. Accept only an empty override and an explicit sole coin cost.
-    if(Object.keys(override).length||!provider||provider.purchaseCosts.length!==1){reject('price_override_or_provider');continue;}
-    const price=provider.purchaseCosts[0];
+    // The independently audited native matching-currency explicit override
+    // precedes provider lookup. A different-currency, currency-only or
+    // ambiguous override is not evidence of a positive coin price.
+    const explicit=override.Price;
+    let price,priceSource,priceProviderRecordIndex;
+    if(Object.keys(override).length){
+      if(Object.keys(override).length!==1||!explicit||typeof explicit!=='object'||Array.isArray(explicit)||
+        Object.keys(explicit).length!==2||explicit.Id!==80000000||!id(explicit.Amount)||
+        explicit.Amount>2147483647||!['FurnitureItemData','ClothingItemData'].includes(row.sourceClass)){
+        reject('price_override_unresolved');continue;
+      }
+      price={currencyItemId:explicit.Id,amount:explicit.Amount,amountFieldPresent:true};
+      priceSource='explicit_override';priceProviderRecordIndex=null;
+    }else{
+      if(!provider||provider.purchaseCosts.length!==1){reject('price_provider_unresolved');continue;}
+      price=provider.purchaseCosts[0];priceSource=provider.providerKind;priceProviderRecordIndex=provider.sourceRecordIndex;
+    }
     if(price.currencyItemId!==80000000||!price.amountFieldPresent||!id(price.amount)||price.amount>2147483647){reject('coin_price');continue;}
     const qualifying=[];
     for(const l of links){
@@ -113,8 +126,8 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
           sourceProtoDbSha256:l.sourceProtoDbSha256,sourceGameVersion:source.target.gameVersion,
           sourceDisplaySha256:sha.Display,sourceBuildingSha256:sha.Building,sourceItemFileSha256:sha[row.nativeCategory],sourceSetSha256:sha.Set,
           nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
-          purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource:provider.providerKind,
-          priceProviderRecordIndex:provider.sourceRecordIndex,tableIndex,bandIndex,minimum,maximum,
+          purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource,
+          priceProviderRecordIndex,tableIndex,bandIndex,minimum,maximum,
           setItemId:setId||null,itemCatalogGateEmpty:true,inheritedSetGateEmpty:true,
           itemTypeCode:row.itemType.code,itemSubtypeCode:row.itemType.subtypeCode,
           configuredPoolRouteVerified:true,runtimeStockVerified:false,storeMembershipVerified:false,
