@@ -53,3 +53,40 @@ test('conditional event signed amounts, mail attachments and swap sides preserve
   assert.deepEqual(swapped.itemIds,[31202068]);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
 });
+
+
+test('conditional event source reader joins every signed action to original condition tree and item grant index',async()=>{
+  const requests=[];
+  const fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
+  const db=await openCurrentItemDatabase('',fetcher);
+  const {createConditionalEventSourceReader}=await import('../src/lib/items/public-conditional-event-sources.ts');
+  const reader=createConditionalEventSourceReader(db);
+  const ids=await db.findItemIdsByField('nativeCategory',{kind:'equals',value:'ConditionalEvent'});
+  const [events,raw]=await Promise.all([reader.getForEvents(ids),db.getItemFields(ids,['source.Conditions'])]);
+  for(const [i,e] of events.entries()){
+    assert.equal(e.status,'indexed');
+    assert.equal(e.conditionsFieldPresent,Object.hasOwn(raw[i].values,'source.Conditions'));
+    assert.deepEqual(e.conditions,raw[i].values['source.Conditions']??null);
+    assert.equal(e.executionVerified,false);
+    assert.equal(e.currentAvailabilityVerified,false);
+  }
+  const all=events.flatMap(e=>e.actions.map(action=>({event:e,action})));
+  assert.equal(all.length,414);
+  const grants=all.filter(e=>e.action.grantRole!==null);
+  assert.equal(grants.length,353);
+  assert.equal(all.filter(e=>e.action.kind==='give'&&e.action.configuredAmount<0).length,59);
+  assert.equal(all.filter(e=>e.action.kind==='swap_remove').length,2);
+  const itemIds=[...new Set(all.map(e=>e.action.itemId))];
+  const inverse=await reader.getForItems(itemIds);
+  const key=e=>JSON.stringify([e.event.eventItemId,e.action.itemId,e.action.sourcePath,e.action.grantRole]);
+  assert.deepEqual(inverse.flatMap(r=>r.grants.map(key)).sort(),grants.map(key).sort());
+  assert(inverse.every(r=>r.status==='indexed'&&r.currentAvailabilityVerified===false));
+  const [a,missing,other,b]=await reader.getForEvents([1520000829,99999999,30300438,1520000829]);
+  assert.equal(missing,null);assert.equal(other.status,'not_conditional_event');assert.deepEqual(a,b);
+  assert(a.actions.some(r=>r.itemId===30300438&&r.configuredAmount===-1&&r.grantRole===null));
+  assert(Object.isFrozen(a)&&Object.isFrozen(a.actions));
+  assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
+  const details=await (await import('../src/lib/items/public-item-details.ts')).openCurrentItemDetails('',fetcher);
+  assert.deepEqual(await details.getConditionalEventSources([1520000829]),[a]);
+  assert.deepEqual(await details.getItemConditionalEventSources([31202068]),await reader.getForItems([31202068]));
+});
