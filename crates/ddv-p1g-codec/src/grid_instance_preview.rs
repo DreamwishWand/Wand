@@ -455,9 +455,9 @@ fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Re
     Ok(())
 }
 
-/// Original schema-643 underwater scene layout catalog. Unlike the village
-/// writer this contract admits only same-Grid coordinate edits. The three
-/// scenes have independent coordinate planes and no proven allocation path.
+/// Original schema-643 underwater scene layout catalog. Each scene has an
+/// independent coordinate plane; this identity is shared by coordinate,
+/// stock and plain relocation preflight.
 pub(super) fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
     let bad=CodecError::Json;
     let c=&root["World"]["GridCollection"];
@@ -3314,9 +3314,15 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
         if is_underwater_grid(source)||is_underwater_grid(&grids[&d.grid_id]){
-            if !free||storage||factor.is_some()||target.item_id/100_000!=400||!old.get("State").is_none_or(Value::is_null){return Err(bad);}
-            let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
-            if !ids.contains(&target.item_id){return Err(bad);}
+            if !free||storage||factor.is_some()||target.item_id/100_000!=400{return Err(bad);}
+            let same_grid=target.grid_id==d.grid_id;
+            // The existing pose writer preserves the native identity and State.
+            // Only relocation that changes identity requires the plain-stock census.
+            if !same_grid{
+                if !old.get("State").is_none_or(Value::is_null){return Err(bad);}
+                let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
+                if !ids.contains(&target.item_id){return Err(bad);}
+            }
             let from=plain_scene_identity(&root,&target.grid_id)?;
             let to=plain_scene_identity(&root,&d.grid_id)?;
             let before=selection.4.as_ref().ok_or(bad)?;
@@ -3326,8 +3332,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
                !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&before.as_str())||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str()){return Err(bad);}
             let refs=grid_identity_dependencies(profile,target)?;
             if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
-            if target.grid_id==d.grid_id{
-                if *xy!=selection.2||before!=orientation{same.push(GridMixedEdit{target:target.clone(),expected:selection.2,position:(*xy!=selection.2).then_some(*xy),orientation:(before!=orientation).then(||(before.clone(),orientation.clone()))});}
+            if same_grid{
+                let edit=GridMixedEdit{target:target.clone(),expected:selection.2,position:(*xy!=selection.2).then_some(*xy),orientation:(before!=orientation).then(||(before.clone(),orientation.clone()))};
+                validate_underwater_transform(&root,&edit)?;
+                if edit.position.is_some()||edit.orientation.is_some(){same.push(edit);}
             }else{
                 *new_counts.entry(d.grid_id.clone()).or_default()+=1;
                 old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
@@ -3737,12 +3745,20 @@ mod tests{
                 let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
                 assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"],state);
                 assert_eq!(result["Player"],root["Player"]);
+                let (scan,_)=scan_grid_instances(raw.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="42"&&t.object_id=="1").unwrap()+1;
+                let witness=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+                let cut=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":witness,"x":2,"y":2,"orientation":"GridOrientation_Left"}]});
+                let moved=group_cut_candidate(raw.as_bytes(),&cut.to_string()).unwrap();
+                assert_eq!(serde_json::from_str::<Value>(&moved).unwrap(),result);
                 let mut invalid=e.clone();invalid.position=Some((65536,2));assert!(validate_oblique_grid_edits(raw.as_bytes(),&[invalid]).is_err());
                 root["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
                 assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+                assert!(group_cut_candidate(root.to_string().as_bytes(),&cut.to_string()).is_err());
                 root["World"].as_object_mut().unwrap().remove("SpawnedObjects");
                 root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Keyhole":{"KeyholeConfigDataGUID":"protected"}});
                 assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+                assert!(group_cut_candidate(root.to_string().as_bytes(),&cut.to_string()).is_err());
             }
         }
     }
