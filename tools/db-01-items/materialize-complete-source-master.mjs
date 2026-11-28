@@ -1081,6 +1081,44 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
+// An explicit befriending target on a regularly scheduled village critter
+// with a positive unlock count is an ordinary path only if no appearance
+// gate is configured. Quest/event-specific and opaque gates stay unclassified.
+function ordinaryCritterRewards(rows,source){
+  const links=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'||
+    source.sourceFilesSha256?.Companion!=='62008c61bf0b407c40d0adf417db043ab058f4ec0ca2764355e176a3532c2219')return links;
+  const byId=new Map(rows.map(r=>[r.itemId,r]));
+  const declarations=source.sourceFieldDeclarations?.CritterItemData;
+  let candidates=0;
+  for(const row of rows){
+    if(row.sourceClass!=='CritterItemData')continue;
+    const p={...row.nativeProperties,...row.sourceAttributes};
+    const target=p.BefriendingPetRewardItemID;
+    if(!ID(target)||byId.get(target)?.sourceClass!=='PetItemData')continue;
+    candidates++;
+    const gate=p.AppearanceConditions;
+    const gateAbsent=gate===undefined&&ID(declarations?.AppearanceConditions)&&
+      Array.isArray(row.observedFields)&&!row.observedFields.some(([n])=>n===declarations.AppearanceConditions);
+    const emptyGate=gate!==null&&typeof gate==='object'&&!Array.isArray(gate)&&Object.keys(gate).length===0;
+    if(!gateAbsent&&!emptyGate)continue;
+    if(!Number.isSafeInteger(p.Location)||p.Location<0||p.Scene!==undefined||
+      !ID(p.NumberOfFeedingBeforeUnlock)||!Array.isArray(p.DailySchedule)||p.DailySchedule.length!==7||
+      !p.DailySchedule.some(day=>(day.Schedule??[]).some(s=>
+        Number.isSafeInteger(s.End)&&s.End<=24&&Number.isSafeInteger(s.Start??0)&&(s.Start??0)>=0&&s.End>(s.Start??0))))continue;
+    const list=links.get(target)??[];
+    list.push({sourceItemId:row.itemId,kind:'ordinary_critter_befriending',sourcePath:'source.BefriendingPetRewardItemID',
+      configuredFeedingCount:p.NumberOfFeedingBeforeUnlock,villageAreaCode:p.Location,
+      appearanceGate:gateAbsent?'field_absent':'explicit_empty',
+      sourceGameVersion:source.target.gameVersion,sourceFileSha256:source.sourceFilesSha256.Companion,
+      currentAvailabilityVerified:false,guaranteedGrantVerified:false});
+    links.set(target,list);
+  }
+  console.log('DB01_CRITTER_CANDIDATES '+JSON.stringify({candidates,ordinaryItems:links.size,
+    ordinaryOccurrences:[...links.values()].reduce((n,a)=>n+a.length,0)}));
+  return links;
+}
 // Extend the ordinary source category only through explicit production from
 // an independently classified ordinary source item. No transitive promotion,
 // generic LootTable candidate, shop display, negative action or unknown flag.
@@ -1127,6 +1165,12 @@ function ordinaryProductionLinks(rows,source,acquisition,protoAcquisition){
   return links;
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source){
+  const ordinaryCritters=ordinaryCritterRewards(rows,source);
+  const critterNew=[...ordinaryCritters.keys()].filter(id=>!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
+    !(protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)&&!questFlows.ordinaryIntro.has(id));
+  console.log('DB01_ORDINARY_CRITTER '+JSON.stringify({items:ordinaryCritters.size,newOrdinaryCategory:critterNew.length,
+    previouslyUnclassified:critterNew.filter(id=>!(acquisition?.summary.get(id)?.categories.length)&&
+      !premiumBundles?.byItem.get(id)?.currentBundleIds.length).length}));
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const introNew=[...questFlows.ordinaryIntro.keys()].filter(id=>
     !acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')&&
@@ -1370,6 +1414,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
+    const critters=ordinaryCritters.get(row.itemId);
+    if(critters?.length){
+      add('acquisition.ordinaryCritterSources',row.itemId,critters);
+      categorySet.add('ordinary_gameplay');
+    }
     const production=ordinaryProduction.get(row.itemId);
     if(production?.length){
       add('acquisition.ordinaryProductionSources',row.itemId,production);
