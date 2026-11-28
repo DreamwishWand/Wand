@@ -3849,6 +3849,13 @@ mod tests{
         let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
         assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
         assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
+        assert_eq!(list["quantity"],2);
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"ItemAmountState":{"Amount":17,"State":null,"AssignedPlayer":null}});
+        let list:Value=serde_json::from_str(&field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).unwrap()).unwrap();
+        assert_eq!(list["quantity"],18);
+        assert_eq!(list["rows"][0]["afterUsed"],1);
+        let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],18);
         root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionId":80000001,"MissionSteps":[{"RequiredItemID":item}]}]}});
         assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
         assert!(field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).is_err());
