@@ -8,7 +8,8 @@
   import type {CollectionAcquisitionWithDistribution} from '$lib/collection/distribution-evidence';
   import type {WandLanguage} from '$lib/ui/preferences';
   import {exploreLabel} from './copy';
-  import {itemEntityHref,ITEM_ENTITY_PAGE_AVAILABLE} from '$lib/items/entity-url';
+  import {itemEntityHref} from '$lib/items/entity-item-url';
+  import {ITEM_ENTITY_PAGE_AVAILABLE} from './item-page-availability';
   import type {ExploreItem} from './model';
   let {item,name,locale,sourcePath,attributes,owned,actions,variants,close,relatedWorks}:{
     item:ExploreItem;name:string;locale:WandLanguage;sourcePath:string|null;
@@ -56,7 +57,7 @@
     <div class="minor"><strong>{copy.title}</strong><p>{acquisition.kinds.map(k=>copy.kinds[k]).join(' · ')}</p><small>{copy.caveat}</small></div>
   {/if}
   {#if ITEM_ENTITY_PAGE_AVAILABLE}
-    <a class="page-link" href={itemEntityHref(base,locale,item.itemId)}>{label('itemPage')}<WandIcon name="arrow" size={18}/></a>
+    <a class="page-link" href={itemEntityHref(base,item.itemId,locale)}>{label('itemPage')}<WandIcon name="arrow" size={18}/></a>
   {:else}
     <button class="page-link" disabled title={label('itemPagePending')}>{label('itemPage')}<WandIcon name="arrow" size={18}/></button>
     <small class="pending">{label('itemPagePending')}</small>
