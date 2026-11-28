@@ -1,6 +1,6 @@
 const captions = {
   "ja": {
-    "faceDiagnostic": "保存された頭部・鼻・口・顎の形状を原本メッシュで表示します。顔の法線マップ・影用メッシュ・表情の完全再現は未対応です。",
+    "faceDiagnostic": "保存された頭部・鼻・口・顎の形状を原本メッシュで表示します。",
     "nativeNormalDiagnostic": "原本の顔法線を反映しています。照明・影・化粧の最終再現は未完了です。",
     "bodyMorphDiagnostic": "通常形態の保存体型を原本ボディに反映します。衣装の体型補正とマーメイド体型は未対応です。",
     "eyeDiagnostic": "瞳の模様と色は原本データを使用したRGBマスクの簡易表示です。ゲームのシェーダーは未再現で、未記録の色はアイテム既定値を使用します。",
@@ -37,7 +37,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
-    "faceDiagnostic": "Saved head, nose, mouth and jaw shapes use original meshes. Face normal maps, shadow meshes and full facial-expression fidelity remain incomplete.",
+    "faceDiagnostic": "Saved head, nose, mouth and jaw shapes use original meshes.",
     "nativeNormalDiagnostic": "Native facial normals are applied; final lighting, shadows and makeup are not yet reproduced.",
     "bodyMorphDiagnostic": "Saved land body shapes use native body morphs. Clothing fit and mermaid body shapes are not reproduced.",
     "eyeDiagnostic": "Eye patterns and colors use a diagnostic RGB mask projection of original data. Game shaders are not reproduced; missing colors use item reference defaults.",
@@ -74,7 +74,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
-    "faceDiagnostic": "La tête, le nez, la bouche et la mâchoire enregistrés utilisent les maillages originaux. Les cartes de normales, les ombres et les expressions faciales restent incomplets.",
+    "faceDiagnostic": "La tête, le nez, la bouche et la mâchoire enregistrés utilisent les maillages originaux.",
     "nativeNormalDiagnostic": "Les normales originales du visage sont appliquées ; éclairage, ombres et maquillage restent incomplets.",
     "bodyMorphDiagnostic": "La morphologie terrestre enregistrée utilise les déformations du corps d’origine. Les vêtements et les morphologies de sirène ne sont pas reproduits.",
     "eyeDiagnostic": "Les motifs et couleurs des yeux utilisent une projection RGB de diagnostic des données originales. Les shaders du jeu ne sont pas reproduits ; les couleurs manquantes utilisent les valeurs de référence.",
@@ -111,7 +111,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
-    "faceDiagnostic": "Testa, naso, bocca e mascella salvati usano le mesh originali. Mappe normali, ombre ed espressioni facciali restano incomplete.",
+    "faceDiagnostic": "Testa, naso, bocca e mascella salvati usano le mesh originali.",
     "nativeNormalDiagnostic": "Normali originali del viso applicate; illuminazione, ombre e trucco non ancora riprodotti.",
     "bodyMorphDiagnostic": "La corporatura terrestre salvata usa le deformazioni originali. Adattamento degli abiti e corporatura da sirena non riprodotti.",
     "eyeDiagnostic": "I motivi e i colori degli occhi usano una proiezione RGB diagnostica dei dati originali. Gli shader del gioco non sono riprodotti; i colori mancanti usano i valori di riferimento.",
@@ -148,7 +148,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
-    "faceDiagnostic": "Gespeicherte Kopf-, Nasen-, Mund- und Kieferformen verwenden Originalmeshes. Normalmaps, Schatten und Mimik bleiben unvollständig.",
+    "faceDiagnostic": "Gespeicherte Kopf-, Nasen-, Mund- und Kieferformen verwenden Originalmeshes.",
     "nativeNormalDiagnostic": "Originale Gesichtsnormalen aktiv; Beleuchtung, Schatten und Make-up sind noch nicht vollständig reproduziert.",
     "bodyMorphDiagnostic": "Gespeicherte Land-Körperformen nutzen Originalverformungen. Kleidungsanpassung und Meerjungfrauen-Körperformen fehlen.",
     "eyeDiagnostic": "Augenmuster und -farben verwenden eine diagnostische RGB-Projektion der Originaldaten. Spielshader sind nicht nachgebildet; fehlende Farben nutzen die Referenzwerte.",
@@ -185,7 +185,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
-    "faceDiagnostic": "La cabeza, nariz, boca y mandíbula guardadas usan mallas originales. Los mapas de normales, las sombras y las expresiones faciales siguen incompletos.",
+    "faceDiagnostic": "La cabeza, nariz, boca y mandíbula guardadas usan mallas originales.",
     "nativeNormalDiagnostic": "Normales faciales originales aplicadas; iluminación, sombras y maquillaje aún incompletos.",
     "bodyMorphDiagnostic": "La forma corporal terrestre guardada usa deformaciones originales. No se reproduce el ajuste de ropa ni el cuerpo de sirena.",
     "eyeDiagnostic": "Los patrones y colores de ojos usan una proyección RGB de diagnóstico de los datos originales. No se reproducen los shaders del juego; los colores ausentes usan valores de referencia.",
@@ -222,7 +222,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
-    "faceDiagnostic": "存档中的头部、鼻、嘴和下颌使用原始网格。面部法线贴图、阴影网格和表情仍未完全复现。",
+    "faceDiagnostic": "存档中的头部、鼻、嘴和下颌使用原始网格。",
     "nativeNormalDiagnostic": "已应用原始面部法线；最终光照、阴影和妆容尚未复现。",
     "bodyMorphDiagnostic": "普通形态使用存档中的原始体型变形，尚未支持服装适配和人鱼体型。",
     "eyeDiagnostic": "眼睛图案和颜色使用原始数据的RGB遮罩诊断显示。尚未复现游戏着色器；缺失颜色使用物品参考默认值。",
@@ -259,7 +259,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
-    "faceDiagnostic": "Cabeça, nariz, boca e maxilar salvos usam as malhas originais. Mapas normais, sombras e expressões faciais ainda estão incompletos.",
+    "faceDiagnostic": "Cabeça, nariz, boca e maxilar salvos usam as malhas originais.",
     "nativeNormalDiagnostic": "Normais faciais originais aplicadas; iluminação, sombras e maquiagem ainda incompletas.",
     "bodyMorphDiagnostic": "O corpo terrestre salvo usa deformações originais. Ajuste de roupas e formas de sereia não são reproduzidos.",
     "eyeDiagnostic": "Os padrões e cores dos olhos usam uma projeção RGB de diagnóstico dos dados originais. Os shaders do jogo não são reproduzidos; cores ausentes usam os valores de referência.",
