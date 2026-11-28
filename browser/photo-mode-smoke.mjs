@@ -49,6 +49,7 @@ assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind=
 const mermaidTextures=new Set();for(const id of mermaids)for(const b of ['male','female']){const slots=index.items[id][b].baseMaterials;assert.equal(slots.length,4);for(const s of slots)mermaidTextures.add(s.texture.sha256)}assert.equal(mermaidTextures.size,6);
 const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male','female']){avatarKeys.add(index.models[b].sha256);for(const row of [...Object.values(index.items),...Object.values(index.variants).flat()]){const o=row[b];if(o?.kind==='pair')avatarKeys.add(o.asset.sha256);else if(o?.kind==='mermaid')avatarKeys.add(o.model.sha256)}}assert.equal(Object.keys(index.avatarMaterials).length,avatarKeys.size);for(const key of avatarKeys){const slots=index.avatarMaterials[key];assert.ok(slots.some(s=>s.role==='face')&&slots.some(s=>s.role==='eyes')&&slots.some(s=>s.role==='body'||s.role==='mermaidBody'));for(const s of slots){assert.equal(s.uv.bytes,s.vertices*8);avatarTextures.add(s.texture.sha256)}}assert.equal(avatarTextures.size,5);
 assert.equal(Object.keys(index.avatarMakeup.items).length,69);assert.equal(Object.keys(index.avatarMakeup.textures).length,128);assert.equal(index.avatarMakeup.palette.length,75);
+assert.equal(index.nativeSkinInputs.rows.length,30);assert.equal(index.nativeSkinInputs.lightingParityVerified,false);assert.deepEqual(Object.keys(index.nativeBodyGeometry).sort(),['female','male']);
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
 assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
 assert.deepEqual(Object.keys(index.faceMorphs).sort(),['female','male']);for(const b of ['male','female']){const f=index.faceMorphs[b];assert.ok(index.avatarMaterials[index.models[b].sha256].filter(s=>s.role==='face').every(s=>s.vertices===f.vertices));const raw=await readFile('build/photo-mode-preview/'+f.asset.sha256+'.wfm');assert.equal(raw.length,f.asset.bytes);assert.equal(raw.subarray(0,4).toString(),'WFM1')}
@@ -206,6 +207,8 @@ try{
   async function expectAppearance(body,skin,eye){
     const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
     const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
+    const materials=index.nativeSkinInputs.rows[skin][body];assert.equal(materials.face.faceFlag,1);
+    urls.push(asset(index.nativeBodyGeometry[body].asset)+'.wsg',...Object.values(materials).flatMap(r=>[r.spec,r.shadow,...(r.normal?[r.normal]:[])].map(m=>asset(m.asset)+'.wsi')));
     urls.push(...Object.values(makeup).map(r=>asset(index.avatarMakeup.textures[index.avatarMakeup.items[String(r.MakeupItemID)].masks[body]].asset)+'.wmp'));
     for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
     await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
@@ -215,6 +218,6 @@ try{
   await controls.nth(0).click();
   await expectAppearance('male',3,70000012);
   assert.ok(Number(await faceSeek.getAttribute('max'))>0);
-  console.log('Local synthetic save: both body branches load actual native skin, eye, face and makeup assets');
+  console.log('Local synthetic save: both body branches load actual native skin, eye, face, makeup and surface material assets');
 
 }finally{await browser?.close();server.kill('SIGTERM')}
