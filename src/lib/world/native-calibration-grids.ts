@@ -25,6 +25,20 @@ const sources:Readonly<Record<string,{folder:string;layout:string;rows:readonly 
   [0,'UnderwaterKingdom_01',-4,-4.5,-13,47,112],
   [2,'UnderwaterKingdom_03',88,-4.5,-13,39,111]]}
 };
+/** Exact source grid match for the three decoratable independent underwater scenes. */
+export function nativeUnderwaterDesignGrid(g:PublicTerrainGridRef|null):{mapId:string;grid:MainlandGrid}|null{
+ if(!g)return null;
+ for(const [mapId,source] of Object.entries(sources)){
+  const layoutId='SceneLayouts/'+scope+'/'+source.folder+'/'+source.layout;
+  if(g.layoutId!==layoutId)continue;
+  for(const [id,name,x,y,z,w,h] of source.rows){
+   const gridDataPath='GridData/OffGridBuildings/Expansion04/'+source.folder+'/'+name+'-GridData.json';
+   if(g.key===layoutId+'#'+id&&g.gridIdNative===id&&g.gridDataPath===gridDataPath&&g.factor===1&&g.sizeX===w&&g.sizeY===h)
+    return {mapId,grid:{...g,origin:{gridDataPath,position:[x,y,z]},bounds:{x:2*x,y:-2*z-h,w,h}}};
+  }
+ }
+ return null;
+}
 export function nativeCalibrationScope(mapId:string):string|null{
  return Object.hasOwn(sources,mapId)?scope:nativeMapSourceScope(mapId);
 }
@@ -34,11 +48,11 @@ export function bindNativeCalibrationGrids(mapId:string,grids:readonly PublicTer
  const candidates=grids.filter(g=>g.layoutId===layoutId);
  if(candidates.length!==4||new Set(candidates.map(g=>g.key)).size!==4)return null;
  const result:MainlandGrid[]=[];
- for(const [id,name,x,y,z,w,h] of source.rows){
-  const gridDataPath='GridData/OffGridBuildings/Expansion04/'+source.folder+'/'+name+'-GridData.json';
-  const g=candidates.find(g=>g.key===layoutId+'#'+id&&g.gridIdNative===id&&g.gridDataPath===gridDataPath&&g.factor===1&&g.sizeX===w&&g.sizeY===h);
-  if(!g)return null;
-  result.push({...g,origin:{gridDataPath,position:[x,y,z]},bounds:{x:2*x,y:-2*z-h,w,h}});
+ for(const [id] of source.rows){
+  const g=candidates.find(g=>g.gridIdNative===id);
+  const bound=nativeUnderwaterDesignGrid(g??null);
+  if(!bound||bound.mapId!==mapId)return null;
+  result.push(bound.grid);
  }
  return result;
 }
