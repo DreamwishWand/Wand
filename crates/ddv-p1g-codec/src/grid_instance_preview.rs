@@ -3625,6 +3625,48 @@ mod tests{
     }
 
     #[test]
+    fn plain_scene_cut_preserves_state_and_inventory_across_original_grids(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entries=catalog["entries"].as_array().unwrap();
+        let rows=entries.iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        let mainland=&entries.iter().find(|e|e["scope"]=="Village04").unwrap()["grids"][0];
+        let witness=|r:&Value|serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":r["factor"],"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+        for (index,a) in rows.iter().enumerate(){
+            for b in [&rows[(index+1)%rows.len()],mainland]{
+                let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":123},"World":{"GridCollection":{"Grids":{
+                 "42":{"ID":42,"GridDefaultLayoutPath":a["layoutId"],"GridDataPath":a["gridDataPath"],"TessellationFactor":a["factor"],"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":null}}},
+                 "43":{"ID":43,"GridDefaultLayoutPath":b["layoutId"],"GridDataPath":b["gridDataPath"],"TessellationFactor":b["factor"],"NextGridObjectID":7,"Objects":{"2":{"ID":2,"ItemID":40000002,"X":1,"Y":1,"Orientation":"GridOrientation_Left"}}}
+                }}}});
+                let raw=root.to_string();
+                let (scan,_)=scan_grid_instances(raw.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="42"&&t.object_id=="1").unwrap()+1;
+                let plan=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":witness(b),"x":2,"y":3,"orientation":"GridOrientation_Left"}]});
+                let moved=group_cut_candidate(raw.as_bytes(),&plan.to_string()).unwrap();
+                let v:Value=serde_json::from_str(&moved).unwrap();
+                assert_eq!(v["Player"],root["Player"]);
+                let grids=&v["World"]["GridCollection"]["Grids"];
+                assert!(grids["42"]["Objects"].as_object().unwrap().is_empty());
+                assert_eq!(grids["42"]["NextGridObjectID"],4);
+                assert_eq!(grids["43"]["NextGridObjectID"],8);
+                assert_eq!(grids["43"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["43"]["Objects"]["2"]);
+                assert_eq!(grids["43"]["Objects"]["7"],serde_json::json!({"ID":7,"ItemID":40000001,"X":2,"Y":3,"Orientation":"GridOrientation_Left","State":null}));
+                let (scan,_)=scan_grid_instances(moved.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="43"&&t.object_id=="7").unwrap()+1;
+                let back=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":2,"expectedY":3,"expectedOrientation":"GridOrientation_Left","destination":witness(a),"x":1,"y":1,"orientation":"GridOrientation_Down"}]});
+                let returned=group_cut_candidate(moved.as_bytes(),&back.to_string()).unwrap();
+                let v:Value=serde_json::from_str(&returned).unwrap();
+                assert_eq!(v["Player"],root["Player"]);
+                assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["State"],Value::Null);
+                let mut blocked=root.clone();
+                blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+                assert!(group_cut_candidate(blocked.to_string().as_bytes(),&plan.to_string()).is_err());
+                let mut wrong=plan.clone();wrong["rows"][0]["destination"]["sizeX"]=65536.into();
+                assert!(group_cut_candidate(raw.as_bytes(),&wrong.to_string()).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn underwater_group_place_cut_and_pickup_share_stock_and_ids(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
