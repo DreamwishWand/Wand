@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {nativeEyeColor,nativeEyeHighlight,packNativeEyeColor,nativeEyePackedOutput} from '../src/lib/photo-mode/native-eye-surface.ts';
+import {nativeEyeColor,nativeEyeHighlight,packNativeEyeColor,nativeEyePackedOutput,nativeEyeHighlightDirection} from '../src/lib/photo-mode/native-eye-surface.ts';
 const c=[[1,0,0,1],[0,1,0,1],[0,0,1,1]];
 test('eye native color: sequential blend, blue modulation and alpha preserve source',()=>{
  assert.deepEqual(nativeEyeColor([1,1,1,1],c),[1,0,0]);
@@ -25,4 +25,13 @@ test('eye shadow suppresses gloss and applies original premultiplied vertex alph
  assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[0,.5]),[.48,.48,.48,.5]);
  assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[0,0]),[0,0,0,0]);
  assert.deepEqual(nativeEyePackedOutput([0,0,0],[.2,.2,.2],[1,1]),[.2,.2,.2,1]);
+});
+
+test('original eye highlight direction reflects back-facing horizontal light and retains vertical shift',()=>{
+ const a=nativeEyeHighlightDirection([0,1],[0,1],.8,.2),b=nativeEyeHighlightDirection([0,1],[0,-1],.8,.2);
+ assert.deepEqual(a,b);assert.ok(Math.abs(a[1]-.2/Math.hypot(1,.2))<1e-12);assert.ok(Math.abs(Math.hypot(...a)-1)<1e-12);
+ const d=nativeEyeHighlightDirection([0,1],[1,0],.8,.2);assert.ok(Math.abs(d[0]-.6/Math.hypot(.6,.2,.8))<1e-12);assert.ok(Math.abs(d[2]-.8/Math.hypot(.6,.2,.8))<1e-12);
+ assert.throws(()=>nativeEyeHighlightDirection([0,0],[1,0],.8,.2));
+ // The native eye has additive-highlight vertices with alpha=0 and red=1.
+ assert.deepEqual(nativeEyePackedOutput([1,1,1],[.2,.2,.2],[1,0]),[.2,.2,.2,0]);
 });
