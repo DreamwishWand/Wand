@@ -30,3 +30,25 @@ test('only exact primary canonical ItemID index is used; distinct male never use
  assert.deepEqual(calls,[[123,'original']]);
  assert.equal(await readShopPrimaryIconCandidate(db,media,124),null);
 });
+
+test('male selection precedes the primary fallback, and non-GUID source values do not silently fall back',()=>{
+ const m=row('ClothingItemData',{iconGuid:null,'source.IconAddress':'','source.MaleIconAddress':male});
+ assert.equal(selectShopProfileIcon(m,'male',true).guid,male);
+ assert.equal(selectShopProfileIcon(m,'default',true).reason,'missing_primary');
+ assert.equal(selectShopProfileIcon(row('ClothingItemData',{'source.MaleIconAddress':'unknown/address'}),'male',true).reason,'unsupported_address');
+ assert.equal(selectShopProfileIcon(row('FurnitureItemData',{'source.IconAddress':'unknown/address'}),'default',true).reason,'unsupported_address');
+});
+test('existing typed GUID artwork is reused only for the exact native consumer',async()=>{
+ const clothing=row('ClothingItemData',{'source.MaleIconAddress':male});
+ const db={getFieldCatalog:async()=>['sourceClass','iconGuid','source.IconAddress','source.MaleIconAddress'].map(field=>({field})),getItemFields:async()=>[clothing]};
+ const media={getItemImage:async()=>{throw Error('male must not use primary');}};
+ const original={sha256:'1'.repeat(64),width:400,height:400,bytes:1};
+ const thumbnail={sha256:'2'.repeat(64),width:256,height:256,bytes:1};
+ const sprite={original,thumbnail};
+ const make=texture=>({get:(address,kind)=>address==='guid:'+male?(kind==='Sprite'?sprite:texture):null,url:()=> 'https://media.dreamwishwand.com/images/'+thumbnail.sha256+'.webp'});
+ const r=await readShopPrimaryIconCandidate(db,media,123,'thumbnail','male',make(null),'Sprite');
+ assert.equal(r.image.sha256,thumbnail.sha256);assert.equal(r.imageSource,'published_guid');
+ assert.equal((await readShopPrimaryIconCandidate(db,media,123,'thumbnail','male',make(null),'Icon')).image,null);
+ assert.equal((await readShopPrimaryIconCandidate(db,media,123,'thumbnail','male',make(sprite),'Icon')).image.sha256,thumbnail.sha256);
+ assert.equal((await readShopPrimaryIconCandidate(db,media,123,'thumbnail','male',make({...sprite,thumbnail:{...thumbnail,sha256:'3'.repeat(64)}}),'Icon')).image,null);
+});
