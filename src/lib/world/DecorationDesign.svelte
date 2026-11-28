@@ -24,7 +24,8 @@
  import MapCameraControls from './MapCameraControls.svelte';
  import {browser} from '$app/environment';
  import {testSaveExportEnabled} from './test-save-export.ts';
- import NativeMapCanvas from './NativeMapCanvas.svelte';
+ import NativeMapCanvas,{nativeMapRetryLabels} from './NativeMapCanvas.svelte';
+ let designNativeCanvas:NativeMapCanvas|undefined;
  import NativeMapLoading from './NativeMapLoading.svelte';
  import type {NativeMapProgress} from '../media/native-map-renderer.ts';
  import {nativePreviewSession} from '../media/native-preview-session.ts';
@@ -931,7 +932,7 @@
    </div>{/if}
    <div class="design-map-frame">
     {#if designNativeMap&&designNativeView&&designPack&&designBackground}
-     {#key designPack}{#key designNativeMap.id}<div class="design-native-bg"><NativeMapCanvas layers={designNativeMap.unlocked} view={designNativeView} source={designPack.source} activeKey={designNativeMap.id} {locale} showLoading={false} onProgress={p=>designNativeProgress=p} onStatus={s=>setDesignNativeStatus(s,designNativeMap?.id??'')}/></div>{/key}{/key}
+     {#key designPack}{#key designNativeMap.id}<div class="design-native-bg"><NativeMapCanvas bind:this={designNativeCanvas} layers={designNativeMap.unlocked} view={designNativeView} source={designPack.source} activeKey={designNativeMap.id} {locale} showLoading={false} onProgress={p=>designNativeProgress=p} onStatus={s=>setDesignNativeStatus(s,designNativeMap?.id??'')}/></div>{/key}{/key}
      {#if designNativeLoading}<NativeMapLoading {locale} progress={designNativeProgress} compact={designNativeActive}/>{/if}
     {/if}
     <button class="design-plot" class:native-design-backed={designNativeActive} type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
@@ -1000,7 +1001,7 @@
     </svg>
    </button><MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
-    {#if designNativeActive}<small>{designNativeWords[3]}</small>{/if}{#if designNativeError&&nativeDesignEnabled&&worldFrame}<small role="alert">{designNativeWords[4]}</small>{/if}
+    {#if designNativeActive}<small>{designNativeWords[3]}</small>{/if}{#if designNativeError&&nativeDesignEnabled&&worldFrame}<small role="alert">{designNativeWords[4]}</small>{#if designNativeCanvas}<button type="button" on:click={()=>designNativeCanvas?.retry()}>{nativeMapRetryLabels[locale]??nativeMapRetryLabels.en}</button>{/if}{/if}
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small><div class="attached-art">{#each [...attachmentCounts] as [id,n]}{@const count=n-(id===chosenAttachment.scene.ownerItemId?1:0)}{#if count>0}<span>{#if images.get(id)}<img src={images.get(id)} alt="" title={definitions.get(id)?.name??adw[1]}/>{/if}×{count}</span>{/if}{/each}</div>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}

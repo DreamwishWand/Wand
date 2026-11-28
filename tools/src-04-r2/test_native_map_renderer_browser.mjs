@@ -44,7 +44,28 @@ try{
     close([...ctx.getImageData(8,7,1,1).data],[0,0,255,255]);
     await r.render([red,masked],{x:4,y:0,width:8,height:16},source);
     close(read(8,8),[0,0,255,255]);
-    return {blend:true,culling:true,progress:true,rectMask:true,canvasCopy:true,sdfSamples:samples};
+    // A lost stage is replaced rather than waiting for the driver to restore it.
+    const lose=g.getExtension('WEBGL_lose_context');
+    let contextRecovery=false;
+    if(lose){
+     const lost=new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('webglcontextlost timeout')),10000);
+      canvas.addEventListener('webglcontextlost',()=>{clearTimeout(timer);resolve();},{once:true});
+     });
+     lose.loseContext();await lost;
+     if(!g.isContextLost())throw Error('context was not lost');
+     await r.render([red],view,source).then(()=>{throw Error('lost context accepted a render');},()=>{});
+     r.dispose();
+     const fresh=document.createElement('canvas');fresh.width=16;fresh.height=16;
+     const recovered=new NativeMapRenderer(fresh),next=fresh.getContext('webgl2');
+     try{
+      await recovered.render([red,masked],view,source);
+      const readFresh=(x,y)=>{const p=new Uint8Array(4);next.readPixels(x,y,1,1,next.RGBA,next.UNSIGNED_BYTE,p);return [...p];};
+      close(readFresh(8,8),[0,0,255,255]);close(readFresh(1,8),[255,0,0,255]);
+      contextRecovery=true;
+     }finally{recovered.dispose();}
+    }
+    return {blend:true,culling:true,progress:true,rectMask:true,canvasCopy:true,sdfSamples:samples,contextRecovery};
    }finally{r.dispose();}
   }finally{URL.revokeObjectURL(url);}
  },js);

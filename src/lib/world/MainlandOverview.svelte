@@ -51,7 +51,8 @@
  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import MapCameraControls from './MapCameraControls.svelte';
- import NativeMapCanvas from './NativeMapCanvas.svelte';
+ import NativeMapCanvas,{nativeMapRetryLabels} from './NativeMapCanvas.svelte';
+ let nativeCanvas:NativeMapCanvas|undefined;
  import NativeMapSaveAreas from './NativeMapSaveAreas.svelte';
  import {selectNativeAreaLayers} from '../media/native-map-area-rules.ts';
  import NativeMapLoading from './NativeMapLoading.svelte';
@@ -631,7 +632,7 @@ $: cutWords=groupCutWords[locale];
  {#if !bound||failed}<p role="alert">{words[3]}</p>{:else if pending.size||images.size<bound.length}<p role="status">{words[2]} {images.size}/{bound.length}</p>{/if}
  {#if nativeMap&&nativePack&&nativeVisible}
   {#key nativePack}
-   <div class="native-editor-background"><NativeMapCanvas layers={nativeLayers} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeRenderKey} {locale} showLoading={false} onProgress={p=>nativeProgress=p} onStatus={s=>nativeStatus(s,nativeRenderKey)}/></div>
+   <div class="native-editor-background"><NativeMapCanvas bind:this={nativeCanvas} layers={nativeLayers} view={editorViewToNativeCanvas(nativeMap,viewport)} source={nativePack.source} activeKey={nativeRenderKey} {locale} showLoading={false} onProgress={p=>nativeProgress=p} onStatus={s=>nativeStatus(s,nativeRenderKey)}/></div>
   {/key}
  {/if}
  {#if nativeMap&&nativePack&&nativeVisible&&nativeLoading}<NativeMapLoading {locale} progress={nativeProgress} compact={nativeActive}/>{/if}
@@ -694,7 +695,7 @@ $: cutWords=groupCutWords[locale];
   {#if saveMode&&nativeMap.areaPlan?.areaTypes.length}<NativeMapSaveAreas mapId={nativeMap.id} areaTypes={nativeMap.areaPlan.areaTypes} onApply={applyNativeSavedTrial}/>{/if}
   {#if nativeTrialActive}<button type="button" on:click={clearNativeSavedTrial}>{nativeSavedWords[1]}</button>{/if}
   {:else if nativePack}<small>{nativeWords[5]}</small>{/if}
-  {#if nativeError}<small role="alert">{nativeError}</small>{/if}
+  {#if nativeError}<small role="alert">{nativeError}</small>{#if nativeCanvas}<button type="button" on:click={()=>nativeCanvas?.retry()}>{nativeMapRetryLabels[locale]??nativeMapRetryLabels.en}</button>{/if}{/if}
  </aside>{/if}
  <MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/>
  {#if saveMode&&saveLoading}<p role="status" class="save-status">{sw[3]}</p>{:else if saveMode&&(saveFailed||projection.omitted)}<p class="save-status" role="status">{saveFailed?sw[4]:sw[5]} {projection.omitted||''}</p>{/if}
