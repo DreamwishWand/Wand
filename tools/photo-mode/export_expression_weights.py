@@ -23,7 +23,7 @@ def morph(raw):
             require(b==1 and 0<=a<len(frames) and weights[a]==100,'native single frame');first,count,norm,tan=frames[a];require(first+count<=len(deltas)//40 and count<=n and norm==tan==0,'position only')
         buf+=struct.pack('<I',count);counts.append(count);seen=set()
         for i in range(first,first+count):
-            *d,index=struct.unpack_from('<9fI',deltas,i*40);require(index<n and index not in seen and all(map(math.isfinite,d)),'vertex delta');seen.add(index);buf+=struct.pack('<I3f',index,-d[0],d[1],d[2])
+            *d,index=struct.unpack_from('<9fI',deltas,i*40);require(index<n and index not in seen and all(map(math.isfinite,d)) and not any(d[3:]),'position-only expression vertex');seen.add(index);buf+=struct.pack('<I3f',index,-d[0],d[1],d[2])
     return name,n,bytes(buf),counts
 
 def scalar(clip,i):
