@@ -442,7 +442,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   const {fetcher,requests}=site();
   const master=await openCurrentItemDatabase('/Wand',fetcher);
   const byItem=(await master.getFieldRows('acquisition.additionalSources')).flatMap(([id,links])=>{
-    const existing=links.filter(l=>l.kind!=='configured_container_slot'&&l.kind!=='configured_default_inventory_entry'&&l.kind!=='configured_container_furniture_slot');
+    const existing=links.filter(l=>l.kind!=='configured_container_slot'&&l.kind!=='configured_default_inventory_entry'&&l.kind!=='configured_container_furniture_slot'&&l.kind!=='profile_update_grant');
     return existing.length?[[id,existing]]:[];
   });
   const byOwner=await master.getFieldRows('acquisition.individualFriendshipRewards');

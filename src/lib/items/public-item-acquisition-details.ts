@@ -607,8 +607,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
       e.sourcePath==='TransformInto'&&e.sourceGameVersion===db.release.target.gameVersion&&
       e.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&e.sourceProjectionSha256==='a30c153bd4769c36b0f3f881b5dc4a01d4f8b8b492794a440245afef47872082'&&
       e.conditionsSemanticsVerified===false&&e.requiredStateSemanticsVerified===false&&e.inventoryGrantVerified===false&&
-      e.currentAvailabilityVerified===false&&Array.isArray(e.requirementLevels)&&e.requirementLevels.every((l,i)=>l.levelIndex===i&&
-      Array.isArray(l.neededItems)&&l.neededItems.every((n,j)=>id(n.itemId)&&id(n.configuredAmount)&&n.sourcePosition===j&&typeof n.statePresent==='boolean'&&typeof n.canonicalItemResolved==='boolean'))),'KEYHOLE_TRANSFORMS');
+      e.currentAvailabilityVerified===false&&Array.isArray(e.requirementLevels)&&e.requirementLevels.every((l:KeyholeTransformEvidence['requirementLevels'][number],i:number)=>l.levelIndex===i&&
+      Array.isArray(l.neededItems)&&l.neededItems.every((n:KeyholeTransformEvidence['requirementLevels'][number]['neededItems'][number],j:number)=>id(n.itemId)&&id(n.configuredAmount)&&n.sourcePosition===j&&typeof n.statePresent==='boolean'&&typeof n.canonicalItemResolved==='boolean'))),'KEYHOLE_TRANSFORMS');
     const native=nativeRows?.[i]??[];
     const categories=(row.values[effective]??[]) as unknown as readonly GameNativeItemCategory[];
     check(Array.isArray(categories),'CATEGORIES');
