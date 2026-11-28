@@ -489,24 +489,33 @@ pub(super) fn is_underwater_grid(grid:&Value)->bool{
 /// For new underwater placement the opened Save must corroborate a plain
 /// existing instance of the same Item ID. Native storage definitions remain
 /// excluded even if a malformed save contains a state-free chest.
-pub(super) fn underwater_plain_item(root:&Value,item:u64)->bool{
-    if root["GameInfo"]["Version"].as_u64()!=Some(643)||item/100_000!=400||crate::storage_source::is_storage(item){return false;}
+/// Scan once for all positive plain instances and conflicting state witnesses.
+/// Source-derived candidates do not require a previous placement. Actual
+/// incompatible state in the opened Save takes precedence over the census.
+pub(super) fn underwater_plain_items(root:&Value)->HashSet<u64>{
+    if root["GameInfo"]["Version"].as_u64()!=Some(643){return HashSet::new();}
     let c=&root["World"]["GridCollection"];
-    let Some(grids)=c["Grids"].as_object()else{return false;};
-    if grids.len()>100_000||c.get("DiffGrids").is_some_and(|v|!v.is_object()){return false;}
+    let Some(grids)=c["Grids"].as_object()else{return HashSet::new();};
+    if grids.len()>100_000||c.get("DiffGrids").is_some_and(|v|!v.is_object()){return HashSet::new();}
+    let mut plain:HashSet<u64>=crate::storage_source::plain_source_items().iter().copied().filter(|id|!crate::storage_source::is_storage(*id)).collect();
+    let mut conflicting=HashSet::new();
     let mut scanned=0usize;
     for (gid,g) in grids{
         if g["ID"].as_u64()!=key_id(gid)||c["DiffGrids"].get(gid).is_some(){continue;}
         let Some(objects)=g["Objects"].as_object()else{continue;};
-        scanned=scanned.saturating_add(objects.len());if scanned>200_000{return false;}
+        scanned=scanned.saturating_add(objects.len());if scanned>200_000{return HashSet::new();}
         for (id,o) in objects{
-            if o["ItemID"].as_u64()==Some(item)&&key_id(id).is_some_and(|n|n>0)&&o["ID"].as_u64()==key_id(id)&&
+            let Some(item)=o["ItemID"].as_u64().filter(|n|n/100_000==400&&!crate::storage_source::is_storage(*n))else{continue;};
+            if key_id(id).is_some_and(|n|n>0)&&o["ID"].as_u64()==key_id(id)&&
                o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))&&observed_coordinates(m).is_some())&&
-               o.get("State").is_none_or(Value::is_null)&&o["Orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){return true;}
+               o.get("State").is_none_or(Value::is_null)&&o["Orientation"].as_str().is_some_and(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&s)){plain.insert(item);}
+            else if o.get("State").is_some_and(|s|!s.is_null()){conflicting.insert(item);}
         }
     }
-    false
+    plain.retain(|id|!conflicting.contains(id));
+    plain
 }
+pub(super) fn underwater_plain_item(root:&Value,item:u64)->bool{underwater_plain_items(root).contains(&item)}
 pub(super) fn validate_underwater_stock_destination(root:&Value,d:&ddv_save_patch::PlainGridDestination,item:u64,orientation:&str)->Result<(),CodecError>{
     let bad=CodecError::Json;
     let (sx,sy)=underwater_transform_identity(root,&d.grid_id)?;
@@ -3547,6 +3556,17 @@ mod tests{
         stale["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":2}]);
         assert!(group_cut_candidate(&serde_json::to_vec(&stale).unwrap(),&plan.to_string()).is_err());
         plan[1]["expectedX"]=Value::from(3);assert!(group_cut_candidate(raw,&plan.to_string()).is_err());
+    }
+
+    #[test]
+    fn source_backed_plain_items_need_no_placed_instance_and_exclude_stateful_definitions(){
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"World":{"GridCollection":{"Grids":{}}}});
+        let item=*crate::storage_source::plain_source_items().iter().find(|id|crate::storage_source::is_plain_source_item(**id)).unwrap();
+        let ids=underwater_plain_items(&root);
+        assert!(ids.len()>1000&&ids.contains(&item));
+        assert!(!ids.contains(&40000047)&&!ids.contains(&40001680)&&!ids.contains(&u64::MAX));
+        root["World"]["GridCollection"]["Grids"]["42"]=serde_json::json!({"ID":42,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":{"Toggle":{"Value":true}}}}});
+        assert!(!underwater_plain_item(&root,item));
     }
 
     #[test]
