@@ -13,7 +13,7 @@ export function createShopSourceReader(doc:unknown,version='1.26.2'){
   if(doc.state==='unpublished'){
     check(Object.keys(doc).length===1,'unpublished index');
   }else{
-    check(Object.keys(doc).sort().join(',')==='gameVersion,images,publicationAuthorized,publicReadbackVerified,references,renderingVerified,schema,state'&&
+    check(Object.keys(doc).sort().join(',')==='gameVersion,images,publicReadbackVerified,publicationAuthorized,references,renderingVerified,schema,state'&&
       doc.schema==='wand.media.shop-source-release@1'&&doc.state==='published'&&doc.gameVersion===version&&
       doc.publicationAuthorized===true&&doc.publicReadbackVerified===true&&doc.renderingVerified===false&&
       record(doc.images)&&record(doc.references),'release identity');
