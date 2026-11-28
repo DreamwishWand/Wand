@@ -133,6 +133,24 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
   }
   return output;
 }
+export interface EvolutionEvidence {
+  readonly kind:'item_evolution';
+  readonly baseItemId:number;
+  readonly targetItemId:number;
+  readonly stepIndex:number;
+  readonly previousConfiguredTargetItemId:number|null;
+  readonly objectiveKind:'GiftToCharacter'|'WaterPlant'|'MineMineral'|'CatchFish';
+  readonly configuredAmount:number;
+  readonly originalAction:ItemFieldValue;
+  readonly sourcePath:string;
+  readonly sourceGameVersion:string;
+  readonly sourceFileSha256:string;
+  readonly sourceIl2cppDumpSha256:string;
+  readonly requiresBaseItem:true;
+  readonly progressCounterSemanticsVerified:false;
+  readonly currentAvailabilityVerified:false;
+  readonly guaranteedGrantVerified:false;
+}
 export interface MemoryAppearanceEvidence {
   readonly kind:'memory_appearance_condition';
   readonly appearanceConditionCode:number;
@@ -169,6 +187,9 @@ export interface ItemAcquisitionSourceDetails {
   readonly ordinaryProductionStatus:'indexed'|'not_indexed';
   readonly ordinaryQuestIntro:readonly Readonly<{evidence:OrdinaryQuestIntroEvidence;identity:AcquisitionSourceIdentity|null}>[];
   readonly ordinaryProduction:readonly Readonly<{evidence:OrdinaryProductionEvidence;identity:AcquisitionSourceIdentity|null}>[];
+  readonly evolutionStatus:'indexed'|'not_indexed';
+  readonly evolutionSource:Readonly<{evidence:EvolutionEvidence;baseIdentity:AcquisitionSourceIdentity}>|null;
+  readonly evolutionChain:readonly Readonly<{evidence:EvolutionEvidence;targetIdentity:AcquisitionSourceIdentity}>[];
   readonly memoryAppearanceStatus:'indexed'|'not_indexed';
   readonly memoryAppearance:Readonly<{evidence:MemoryAppearanceEvidence;consummableOverrideIdentity:AcquisitionSourceIdentity|null}>|null;
   readonly classificationExtensionStatus:Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
@@ -197,7 +218,9 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   const classificationExtensionStatus=Object.freeze(Object.fromEntries(extensionFamilies.map(f=>[f,catalog.has(extensionFields[f])?'indexed':'not_indexed']))) as Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
   const memoryField='acquisition.memoryAppearance';
   const memoryAppearanceStatus=catalog.has(memoryField)?'indexed':'not_indexed';
-  const fields=[...(memoryAppearanceStatus==='indexed'?[memoryField]:[]),...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
+  const evolutionSourceField='acquisition.evolutionSource',evolutionChainField='acquisition.evolutionChain';
+  const evolutionStatus=catalog.has(evolutionSourceField)&&catalog.has(evolutionChainField)?'indexed':'not_indexed';
+  const fields=[...(evolutionStatus==='indexed'?[evolutionSourceField,evolutionChainField]:[]),...(memoryAppearanceStatus==='indexed'?[memoryField]:[]),...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
     ...(catalog.has(effective)?[effective]:[]),...(ordinaryQuestIntroStatus==='indexed'?[introField]:[]),
     ...(ordinaryProductionStatus==='indexed'?[productionField]:[])];
   const [rows,nativeRows]=await Promise.all([
@@ -206,7 +229,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   ]);
   type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
     native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[];
-    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[];memory:MemoryAppearanceEvidence|null};
+    intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[];memory:MemoryAppearanceEvidence|null;evolutionSource:EvolutionEvidence|null;evolutionChain:readonly EvolutionEvidence[]};
   const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
     const record=row.values[relation] as unknown as {itemId:string;links:readonly Db01ItemSourceLink[]}|undefined;
@@ -245,7 +268,20 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
         (memory.resolvedGate.kind==='expansion_required'&&/^Expansion0[1-4]$/.test(memory.resolvedGate.expansionName)&&memory.category==='ordinary_gameplay'||
          memory.resolvedGate.kind==='floating_festival_playable'&&typeof memory.resolvedGate.eventName==='string'&&id(memory.resolvedGate.sceneItemId)&&id(memory.resolvedGate.missionItemId)&&memory.category==='in_game_limited_event'))&&
       (memory.consummableOverrideItemId===null||id(memory.consummableOverrideItemId)),'MEMORY_APPEARANCE');
-    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories),memory};
+    const evolutionSource=(row.values[evolutionSourceField]??null) as unknown as EvolutionEvidence|null;
+    const evolutionChain=(row.values[evolutionChainField]??[]) as unknown as readonly EvolutionEvidence[];
+    const validEvolution=(e:EvolutionEvidence)=>e.kind==='item_evolution'&&id(e.baseItemId)&&id(e.targetItemId)&&
+      e.baseItemId!==e.targetItemId&&Number.isSafeInteger(e.stepIndex)&&e.stepIndex>=0&&
+      e.sourcePath==='source.EvolvingConditions['+e.stepIndex+']'&&id(e.configuredAmount)&&
+      (e.previousConfiguredTargetItemId===null||id(e.previousConfiguredTargetItemId))&&
+      ['GiftToCharacter','WaterPlant','MineMineral','CatchFish'].includes(e.objectiveKind)&&
+      e.sourceGameVersion===db.release.target.gameVersion&&e.sourceIl2cppDumpSha256===db.release.sourceIl2cppDumpSha256&&
+      [db.release.sourceFilesSha256?.Clothing,db.release.sourceFilesSha256?.Tool].includes(e.sourceFileSha256)&&
+      e.requiresBaseItem===true&&e.progressCounterSemanticsVerified===false&&e.currentAvailabilityVerified===false&&e.guaranteedGrantVerified===false;
+    check(!evolutionSource||validEvolution(evolutionSource)&&evolutionSource.targetItemId===row.itemId,'EVOLUTION_SOURCE');
+    check(Array.isArray(evolutionChain)&&evolutionChain.every((e,i)=>validEvolution(e)&&e.baseItemId===row.itemId&&e.stepIndex===i&&
+      e.previousConfiguredTargetItemId===(i?evolutionChain[i-1].targetItemId:null)),'EVOLUTION_CHAIN');
+    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories),memory,evolutionSource,evolutionChain};
   });
   const resolveIds=new Set<number>();
   for(const context of contexts){
@@ -256,6 +292,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     for(const e of context.intro)resolveIds.add(e.questId);
     for(const e of context.production)resolveIds.add(e.sourceItemId);
     if(context.memory?.consummableOverrideResolved&&id(context.memory.consummableOverrideItemId))resolveIds.add(context.memory.consummableOverrideItemId);
+    if(context.evolutionSource)resolveIds.add(context.evolutionSource.baseItemId);
+    for(const e of context.evolutionChain)resolveIds.add(e.targetItemId);
     for(const e of context.extensions){if(e.sourceId!==null)resolveIds.add(e.sourceId);for(const n of e.relatedIds)resolveIds.add(n);}
   }
   const resolved=new Map<number,Readonly<AcquisitionSourceIdentity>>();
@@ -291,6 +329,9 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     ordinaryQuestIntro:Object.freeze(c.intro.map(e=>Object.freeze({evidence:e,identity:identity(e.questId,['Mission'])}))),
     ordinaryProduction:Object.freeze(c.production.map(e=>Object.freeze({evidence:e,
       identity:identity(e.sourceItemId,e.kind==='ordinary_seed_production'?['ActivityItem']:['Furniture'])}))),
+    evolutionStatus,
+    evolutionSource:c.evolutionSource?(()=>{const baseIdentity=identity(c.evolutionSource.baseItemId,['Clothing','Tool']);check(baseIdentity,'EVOLUTION_BASE');return Object.freeze({evidence:c.evolutionSource,baseIdentity});})():null,
+    evolutionChain:Object.freeze(c.evolutionChain.map(e=>{const targetIdentity=identity(e.targetItemId,['Clothing','Tool']);check(targetIdentity,'EVOLUTION_TARGET');return Object.freeze({evidence:e,targetIdentity});})),
     memoryAppearanceStatus,
     memoryAppearance:c.memory?Object.freeze({evidence:c.memory,consummableOverrideIdentity:c.memory.consummableOverrideResolved?identity(c.memory.consummableOverrideItemId):null}):null,
     classificationExtensionStatus,
