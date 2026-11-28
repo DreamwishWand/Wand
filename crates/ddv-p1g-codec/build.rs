@@ -17,6 +17,21 @@ fn decode64(s:&str)->Vec<u8>{
 fn main(){
  let manifest=PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
  let root=manifest.join("../..");
+ // Reuse the pinned public DB03 objective reverse index. Only direct/alternative
+ // candidate membership is compiled, never completion or mandatory status.
+ let quests=root.join("static/guide/public/quest-target-reverse-1.26.2.json");
+ println!("cargo:rerun-if-changed={}",quests.display());
+ let quest_bytes=fs::read(quests).expect("public quest objective source");
+ assert_eq!(format!("{:x}",Sha256::digest(&quest_bytes)),"967f1bc885a13ba5bdc99c4e965e1288b9227170f888e0ac85d944799cff6d20");
+ let quest_source:Value=serde_json::from_slice(&quest_bytes).unwrap();
+ assert_eq!(quest_source["schema"],"wand.db03.public-quest-target-reverse@1");
+ let mut quest_items=std::collections::BTreeMap::<u64,std::collections::BTreeSet<u64>>::new();
+ for (id,rows) in quest_source["items"].as_object().unwrap(){
+  let item=id.parse::<u64>().unwrap();
+  for row in rows.as_array().unwrap(){quest_items.entry(item).or_default().insert(row[0].as_str().unwrap().parse::<u64>().unwrap());}
+ }
+ assert_eq!(quest_items.len(),2551);
+ fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("quest-target-items.json"),serde_json::to_vec(&quest_items).unwrap()).unwrap();
  let catalog=root.join("static/ddv/item-master-releases.json");
  let attributes=root.join("data/ddv/item-master/reviewed-structure-steam-1.26.2.json");
  println!("cargo:rerun-if-changed={}",catalog.display());
