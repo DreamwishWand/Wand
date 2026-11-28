@@ -41,6 +41,12 @@
   <header><h2>{name}</h2><button class="close" aria-label={label('close')} title={label('close')} onclick={close}><WandIcon name="close" size={20}/></button></header>
   <div class="quick-art"><ItemArtwork itemId={item.itemId} alt={name} {sourcePath} large/></div>
   <div class="quick-actions">{@render actions()}</div>
+  {#if ITEM_ENTITY_PAGE_AVAILABLE}
+    <a class="page-link" data-item-page-link href={itemEntityHref(base,item.itemId,locale)}>{label('itemPage')}<WandIcon name="arrow" size={18}/></a>
+  {:else}
+    <button class="page-link" disabled title={label('itemPagePending')}>{label('itemPage')}<WandIcon name="arrow" size={18}/></button>
+    <small class="pending">{label('itemPagePending')}</small>
+  {/if}
   {#if variants}{@render variants()}{/if}
   {#if attributes.length}
     <dl class="attributes">
@@ -56,12 +62,7 @@
   {:else if acquisition?.kinds.length}
     <div class="minor"><strong>{copy.title}</strong><p>{acquisition.kinds.map(k=>copy.kinds[k]).join(' · ')}</p><small>{copy.caveat}</small></div>
   {/if}
-  {#if ITEM_ENTITY_PAGE_AVAILABLE}
-    <a class="page-link" href={itemEntityHref(base,item.itemId,locale)}>{label('itemPage')}<WandIcon name="arrow" size={18}/></a>
-  {:else}
-    <button class="page-link" disabled title={label('itemPagePending')}>{label('itemPage')}<WandIcon name="arrow" size={18}/></button>
-    <small class="pending">{label('itemPagePending')}</small>
-  {/if}
+
 </aside>
 <style>
   .quick-view{min-width:0;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:10px;overflow:auto;box-sizing:border-box}
@@ -77,7 +78,7 @@
   .owned{display:flex;align-items:center;gap:5px;font-size:.82rem}
   .minor{font-size:.78rem;line-height:1.4;margin:8px 0}
   .minor p{margin:3px 0}.minor small,.pending{opacity:.75}
-  .page-link{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;box-sizing:border-box;text-decoration:none;margin-top:10px;font-weight:600}
+  .page-link{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;box-sizing:border-box;text-decoration:none;margin:4px 0 10px;font-weight:600}
   .page-link:not(:disabled){background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
   .page-link:disabled{opacity:.6;cursor:not-allowed}.pending{display:block;margin-top:4px;font-size:.72rem}
 </style>
