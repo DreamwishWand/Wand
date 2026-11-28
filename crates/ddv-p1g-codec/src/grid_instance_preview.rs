@@ -3551,7 +3551,7 @@ fn activity_item_id(item:u64)->bool{
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
- ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)
+ Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(crate::storage_source::is_storage)).collect())
 }
 pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
@@ -3562,7 +3562,7 @@ pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,Code
    let g=&root["World"]["GridCollection"]["Grids"][&t.grid_id];let o=&g["Objects"][&t.object_id];
    serde_json::json!({"itemId":t.item_id,"gridDataPath":g["GridDataPath"],"x":o["X"],"y":o["Y"]})
   });
-  serde_json::json!({"ordinal":i+1,"kind":if r.parent_item.is_some(){"chest"}else{"inventory"},"capacity":r.capacity,"used":r.used,"owner":owner})
+  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else{"chest"},"capacity":r.capacity,"used":r.used,"owner":owner})
  }).collect::<Vec<_>>();
  Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@1","rows":out}).to_string())
 }
@@ -3627,11 +3627,11 @@ mod tests{
         let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
         assert_eq!(ids.len(),4050);
         let item=*ids.iter().find(|n|**n/100_000==300).unwrap_or(&ids[0]);
-        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"1":{"ID":1,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":item,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}});
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":item,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}});
         let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":2,"itemId":item.to_string(),"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}]});
         let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
         assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
-        assert_eq!(result["Player"]["ContainerInventories"]["1"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
         root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionId":80000001,"MissionSteps":[{"RequiredItemID":item}]}]}});
         assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
         root["World"].as_object_mut().unwrap().remove("MissionSlots");
