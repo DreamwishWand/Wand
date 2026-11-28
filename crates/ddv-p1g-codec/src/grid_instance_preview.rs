@@ -3597,6 +3597,18 @@ pub(super) fn activity_item_id(item:u64)->bool{
  static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
 }
+/// The payload's item references are original DB01 definitions, not
+/// allocated Save IDs. A recovered bag may contain ordinary item rewards,
+/// but unresolved and progression-specific definitions remain protected.
+fn recovery_reward_reference(id:u64)->bool{
+ static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
+ IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/recovery-reward-items.json"))).expect("compiled recovery reward source")).binary_search(&id).is_ok()
+}
+fn recovery_item_with_source(root:&Value,t:&GridCoordinateTarget,xy:(i32,i32),ori:&str)->Option<ddv_save_patch::field_recovery::RecoveryItem>{
+ let item=ddv_save_patch::field_recovery::field_recovery_item(root,t,xy,ori)?;
+ if ddv_save_patch::field_recovery::recovery_item_references(&item).iter().any(|id|!recovery_reward_reference(*id)){return None;}
+ Some(item)
+}
 /// Return only transient ordinals for structurally recoverable Activity Items; room UI
 /// never receives native Grid IDs or object IDs.
 pub(super) fn field_recovery_ordinals(source:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
@@ -3609,7 +3621,7 @@ fn field_recovery_ordinals_from_scan(root:&Value,scan:&Scan)->HashMap<(String,St
  scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
   let xy=(*xy)?;
   let ori=scan.rows.get(i)?.get("orientation")?.as_str()?;
-  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::field_recovery_item(root,t,xy,ori).is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
+  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&recovery_item_with_source(root,t,xy,ori).is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
  }).collect()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
@@ -3635,7 +3647,7 @@ pub(super) fn field_recovery_destinations_json(source:&[u8],plan:&str)->Result<S
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(CodecError::Json);}
  let request:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
  let batch=activity_recovery_selection(source,&root,&request)?;
- let items=batch.iter().map(|(t,xy,ori)|ddv_save_patch::field_recovery::field_recovery_item(&root,t,*xy,ori).ok_or(CodecError::Json)).collect::<Result<Vec<_>,_>>()?;
+ let items=batch.iter().map(|(t,xy,ori)|recovery_item_with_source(&root,t,*xy,ori).ok_or(CodecError::Json)).collect::<Result<Vec<_>,_>>()?;
  let quantity=items.iter().map(|i|i.amount).sum::<u64>();
  let rows=activity_recovery_destinations(&root)?;
  let allowed=activity_recovery_destination_safety(&root,&rows)?;
@@ -3762,7 +3774,6 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
   let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
   selections.push((ord,item,xy,"full".to_owned(),Some(ori.to_owned())));
  }
- if mission_items_referenced(root,&checked)?{return Err(bad);}
  let targets=resolve_grid_mixed_targets(source,&selections)?;
  let mut groups=HashMap::<String,Vec<String>>::new();
  let mut bounds=HashMap::<String,(u64,u64,u64)>::new();
@@ -3775,9 +3786,15 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
    bounds.insert(t.grid_id.clone(),b);b
   };
   let (x,y)=s.2;
-  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||ddv_save_patch::field_recovery::field_recovery_item(root,t,s.2,s.4.as_deref().ok_or(bad)?).is_none(){return Err(bad);}
+  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy{return Err(bad);}
+  let item=recovery_item_with_source(root,t,s.2,s.4.as_deref().ok_or(bad)?).ok_or(bad)?;
+  for id in ddv_save_patch::field_recovery::recovery_item_references(&item){
+   if active_items.contains(&id){return Err(bad);}
+   checked.insert(id);
+  }
   groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
  }
+ if mission_items_referenced(root,&checked)?{return Err(bad);}
  let identity_groups=groups.into_iter().map(|(gid,ids)|{
   let grid=key_id(&gid).ok_or(bad)?;
   let objects=ids.iter().map(|id|key_id(id).ok_or(bad)).collect::<Result<HashSet<_>,_>>()?;
@@ -3807,6 +3824,23 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn loot_recovery_uses_source_membership_and_protects_nested_mission_items(){
+        let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
+        let item=*ids.iter().find(|id|**id/100_000==314).unwrap();
+        let reward=*ids.iter().find(|id|**id/100_000==302).unwrap();
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"ItemAmountState":{"Amount":2,"State":{"LootPresentData":{"Items":[{"ItemID":reward,"Amount":3,"State":null}]}}}}}}}}}}});
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}]});
+        let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"][0]["State"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["ItemAmountState"]["State"]);
+        root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionSteps":[{"RequiredItemID":reward}]}]}});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+        assert!(field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).is_err());
+        root["World"].as_object_mut().unwrap().remove("MissionSlots");
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["ItemAmountState"]["State"]["LootPresentData"]["Items"][0]["ItemID"]=2147483647.into();
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+    }
 
     #[test]
     fn activity_recovery_in_nested_support_keeps_all_owners_and_rejects_aliases(){
