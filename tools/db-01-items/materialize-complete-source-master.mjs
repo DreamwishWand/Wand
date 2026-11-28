@@ -20,12 +20,15 @@ import {loadOriginalPriceFacts} from './original-price-facts.mjs';
 import {loadQuestFlowColumns} from './quest-flow-columns.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
+import {buildMemoryNativeReferences} from './memory-native-references.mjs';
+import {buildMemoryLootSources} from './memory-loot-sources.mjs';
 import {buildPlacementContexts} from './placement-context.mjs';
 import {attachOriginalSceneFacts} from './original-scene-facts.mjs';
 import {attachOriginalFurnitureProduction} from './original-furniture-production.mjs';
 import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 import {buildStoreLayoutFacts} from './store-layout-facts.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
+import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1332,6 +1335,7 @@ function memoryAppearanceSources(rows,source){
 }
 function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
   const memoryAppearance=memoryAppearanceSources(rows,source);
+  const memorySpawn=buildMemorySpawnSources(rows,source,memoryAppearance,questFlows.questKinds);
   const ordinaryProduction=ordinaryProductionLinks(rows,source,acquisition,protoAcquisition);
   const progression=ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition);
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
@@ -1366,6 +1370,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
+  const memoryLoot=buildMemoryLootSources(rows,source,memoryAppearance);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
   const feedingNew=[...ordinaryFeeding.keys()].filter(id=>!existingCategories(id).has('ordinary_gameplay')&&!ordinaryStore.has(id)&&!ordinaryLoot.has(id));
   console.log('DB01_ORDINARY_CRITTER_FEEDING_DELTA '+JSON.stringify({newOrdinaryCategory:feedingNew.length,
@@ -1665,6 +1670,17 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const tagId=({...row.nativeProperties,...row.sourceAttributes}).MemoryShardTagItemID;
       if(ID(tagId))add('acquisition.memoryShardTagItemId',row.itemId,tagId);
       if(memory.category)categorySet.add(memory.category);
+      const loot=memoryLoot.get(row.itemId);
+      if(loot?.length)add('acquisition.memoryLootSources',row.itemId,loot);
+      const spawns=memorySpawn.get(row.itemId);
+      if(spawns?.length){
+        add('acquisition.memorySpawnSources',row.itemId,spawns);
+        const verified=spawns.filter(s=>s.category!==null);
+        if(verified.length){
+          add('acquisition.classifiedMemorySpawnSources',row.itemId,verified);
+          for(const s of verified)categorySet.add(s.category);
+        }
+      }
     }
     const historicStar=historicalStarpath.byItem.get(row.itemId);
     if(historicStar?.length){
@@ -1714,6 +1730,14 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
         if(prefix==='source')addSource(prefix+'.'+name,row.itemId,part);
         else add(prefix+'.'+name,row.itemId,part);
       }
+    }
+  }
+  const memoryReferences=buildMemoryNativeReferences(source,rows,memoryAppearance);
+  for(const row of rows){
+    const links=memoryReferences.get(row.itemId);
+    if(links?.length){
+      add('acquisition.memoryNativeReferences',row.itemId,links);
+      add('acquisition.memoryNativeSourceItemIds',row.itemId,[...new Set(links.map(l=>l.sourceItemId))].sort((a,b)=>a-b));
     }
   }
   const refs=buildReferenceColumns(rows);

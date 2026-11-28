@@ -13,8 +13,8 @@ export function islandSaveGrids(grid:PublicTerrainGridRef|null,all:readonly Publ
 export function worldDecorationScope(grids:readonly MainlandGrid[]):string|null{
  return grids.length&&grids.length<=64&&bindMainland(grids)?sourceWorldScope(grids[0]):null;
 }
-export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],maps:ReadonlyMap<string,SavedShapeMap>,world=false){
- if(!grids.length||(world?!worldDecorationScope(grids):grids.some(g=>g.layoutId!==grids[0].layoutId)))return null;
+export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readonly TerrainScopeReceipt[],maps:ReadonlyMap<string,SavedShapeMap>,world=false,localPlain?:ReadonlySet<number>){
+ if(!grids.length||(localPlain?grids.length!==1:world?!worldDecorationScope(grids):grids.some(g=>g.layoutId!==grids[0].layoutId)))return null;
  const layouts:Record<string,DesignTimeline>={},objects=new Map<string,readonly MainlandSavedObject[]>(),summaries:{key:string;editable:number;preserved:number}[]=[];
  const ordinals=new Set<number>();
  for(const g of grids){
@@ -23,13 +23,13 @@ export function islandSaveSnapshot(grids:readonly MainlandGrid[],sessions:readon
   ordinals.add(s.completeGridOrdinal);
   // Separate native coordinate planes. Never test collision across grids.
   const projected=projectMainlandSaved([g],sessions,maps,[]);
-  const snapshot=biomeFurnitureSnapshot(g,projected.objects,projected.omitted,!world,undefined,world);if(!snapshot)return null;
+  const snapshot=biomeFurnitureSnapshot(g,projected.objects,projected.omitted,!world,undefined,world,false,localPlain);if(!snapshot)return null;
   objects.set(g.key,projected.objects);
   layouts[g.key]={snapshots:[snapshot.placements],cursor:0,nextId:snapshot.placements.length+1};
   summaries.push({key:g.key,editable:snapshot.editable.length,preserved:snapshot.protectedObjects.length});
  }
  try{
-  const text=world?'':grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],'floating-island'):serializeIslandDesign(grids,layouts);
+  const text=world?'':grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],localPlain?'world-grid':'floating-island'):serializeIslandDesign(grids,layouts);
   return {text,objects,summaries};
  }catch{return null;}
 }
@@ -42,17 +42,18 @@ export function privateIslandFurnitureText(grids:readonly MainlandGrid[],snapsho
  }
  try{return grids.length===1?serializeWholeArea(layouts[grids[0].key],grids[0],'floating-island'):serializeIslandDesign(grids,layouts);}catch{return null;}
 }
-export function parseIslandSavePreset(text:string,grids:readonly MainlandGrid[]):Map<string,DesignPlacement[]>{
+export function parseIslandSavePreset(text:string,grids:readonly MainlandGrid[],localPlain=false):Map<string,DesignPlacement[]>{
+ if(localPlain){if(grids.length!==1)throw Error('LOCAL_SCOPE');return new Map([[grids[0].key,parseWholeArea(text,grids[0],'world-grid')]]);}
  if(grids.length===1&&JSON.parse(text)?.schema==='wand.preset.whole-area-design@1')return new Map([[grids[0].key,parseWholeArea(text,grids[0],'floating-island')]]);
  return parseIslandDesign(text,grids);
 }
-export function islandSaveReplacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:NonNullable<ReturnType<typeof islandSaveSnapshot>>,incoming:ReadonlyMap<string,readonly DesignPlacement[]>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>){
+export function islandSaveReplacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:NonNullable<ReturnType<typeof islandSaveSnapshot>>,incoming:ReadonlyMap<string,readonly DesignPlacement[]>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,localPlain?:ReadonlySet<number>){
  const plan:BiomeFurniturePlan[]=[],reviews=new Map<string,NonNullable<ReturnType<typeof biomeFurnitureReplacement>>>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0;
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),placements=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!placements||!geometry||!rasters.has(g.key))return null;
-  const review=biomeFurnitureReplacement(g,[g],rasters,objects,0,placements,geometry,stock,true);if(!review)return null;
+  const review=biomeFurnitureReplacement(g,[g],rasters,objects,0,placements,geometry,stock,true,undefined,false,!!localPlain,localPlain);if(!review)return null;
   reviews.set(g.key,review);plan.push(review.plan);
   changes+=review.plan.remove.length+review.plan.add.length;
   if(changes>BIOME_CHANGE_LIMIT)return null;

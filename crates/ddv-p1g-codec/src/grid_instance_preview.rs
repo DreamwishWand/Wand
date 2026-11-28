@@ -455,9 +455,9 @@ fn validate_owned_transform_root(profile:&[u8],target:&GridCoordinateTarget)->Re
     Ok(())
 }
 
-/// Original schema-643 underwater scene layout catalog. Unlike the village
-/// writer this contract admits only same-Grid coordinate edits. The three
-/// scenes have independent coordinate planes and no proven allocation path.
+/// Original schema-643 underwater scene layout catalog. Each scene has an
+/// independent coordinate plane; this identity is shared by coordinate,
+/// stock and plain relocation preflight.
 pub(super) fn underwater_transform_identity(root:&Value,gid:&str)->Result<(u64,u64),CodecError>{
     let bad=CodecError::Json;
     let c=&root["World"]["GridCollection"];
@@ -522,6 +522,15 @@ pub(super) fn validate_underwater_stock_destination(root:&Value,d:&ddv_save_patc
     if g["GridDefaultLayoutPath"].as_str()!=Some(d.layout_path.as_str())||g["GridDataPath"].as_str()!=Some(d.data_path.as_str())||
        d.tessellation!=1||d.size!=(sx as u32,sy as u32)||!underwater_plain_item(root,item)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
     Ok(())
+}
+/// Plain scene moves use the same catalog-backed identity on either side.
+fn plain_scene_identity(root:&Value,gid:&str)->Result<(String,String,u64,u64,u64),CodecError>{
+    let g=&root["World"]["GridCollection"]["Grids"][gid];
+    if is_underwater_grid(g){
+        let (sx,sy)=underwater_transform_identity(root,gid)?;
+        let layout=g["GridDefaultLayoutPath"].as_str().ok_or(CodecError::Json)?;
+        Ok((layout.to_owned(),layout.to_owned(),1,sx,sy))
+    }else{house_exterior_identity(root,gid)}
 }
 /// An identity-preserving transform of local interaction data, not a state
 /// mutation or clone. These discriminants and field types are present in
@@ -1851,6 +1860,17 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     }
     let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
+    let local=targets.iter().find(|t|is_underwater_grid(&grids[&t.grid_id])).map(|t|t.grid_id.as_str());
+    if let Some(gid)=local{
+        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&scope!=Some(gid)||targets.iter().any(|t|t.grid_id!=gid)||support_flags.iter().any(|v|*v)||storage_flags.iter().any(|v|*v){return Err(CodecError::Json);}
+        let (sx,sy)=underwater_transform_identity(&root,gid)?;
+        let checked=underwater_plain_items(&root);
+        for (target,selection) in targets.iter().zip(&selections){
+            let obj=&grids[gid]["Objects"][&target.object_id];let (x,y)=selection.2;
+            if x<0||y<0||x as u64>=sx||y as u64>=sy||!obj.get("State").is_none_or(Value::is_null)||selection.4.as_deref().is_none_or(|o|!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o)){return Err(CodecError::Json);}
+            if !checked.contains(&target.item_id){return Err(CodecError::Json);}
+        }
+    }
     for ((target,selection),storage) in targets.iter().zip(&selections).zip(&storage_flags){
         if !storage{continue;}
         let from=house_exterior_identity(&root,&target.grid_id)?;
@@ -1884,7 +1904,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let mut by_grid=HashMap::<String,Vec<String>>::new();
     for t in &targets{by_grid.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());}
     for (grid,ids) in by_grid{
-        for chunk in ids.chunks(512){if grid_identity_dependencies_for_ids(profile,&grid,chunk)?.blocking()>0{return Err(CodecError::Json);}}
+        for chunk in ids.chunks(512){let refs=grid_identity_dependencies_for_ids(profile,&grid,chunk)?;if refs.blocking()>0||local.is_some()&&refs.historical>0{return Err(CodecError::Json);}}
     }
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(CodecError::Json)?;
     let mut stock=HashMap::<u64,u32>::new();
@@ -2767,13 +2787,19 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
+    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
         if !destinations.contains_key(&key){destinations.insert(key.clone(),resolve_plain_grid_destination(profile,witness)?);}
         let d=destinations.get(&key).ok_or(bad)?;
         let row_free=free||o.get("freePlacement").and_then(Value::as_bool)==Some(true);
-        if row_free&&checked_world_grids.insert(key.clone()){
+        let underwater=is_underwater_grid(&grids[&d.grid_id]);
+        if underwater{
+            if !row_free||ordinary_grid||underwater_grid.as_ref().is_some_and(|id|id!=&d.grid_id){return Err(bad);}
+            underwater_grid=Some(d.grid_id.clone());
+        }else{if underwater_grid.is_some(){return Err(bad);}ordinary_grid=true;}
+        if row_free&&!underwater&&checked_world_grids.insert(key.clone()){
             let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
             if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
         }
@@ -2781,6 +2807,13 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let int=|k:&str|o.get(k).and_then(Value::as_i64).and_then(|n|i32::try_from(n).ok()).ok_or(bad);
         let (x,y)=(int("x")?,int("y")?);
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
+        if underwater{
+            if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+            let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
+            if !ids.contains(&item){return Err(bad);}
+            let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
+            if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
+        }
         if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
         if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!row_free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
@@ -2844,16 +2877,22 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
  let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let o=v.as_object().filter(|o|o.len()==3&&o.keys().all(|k|matches!(k.as_str(),"destination"|"remove"|"add"))).ok_or(bad)?;
  let witness=o.get("destination").ok_or(bad)?;
- // Only the eight original Valley biome root layouts.
+ // Exact original Valley biome or calibrated single independent scene.
  let layout=witness.get("layoutId").and_then(Value::as_str).ok_or(bad)?;
- if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
  let d=resolve_plain_grid_destination(profile,witness)?;
+ let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+ let local=is_underwater_grid(&root["World"]["GridCollection"]["Grids"][&d.grid_id]);
+ if local{
+  let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
+  if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
+ }else if !["Beach","Cliff","DarkMountains","Forest","Meadow","Savannah","Urban","Wetland"].iter().any(|key|layout==format!("SceneLayouts/Village04/DefaultVillageLayout01-{key}Grids.json")){return Err(bad);}
  let remove=o.get("remove").and_then(Value::as_array).ok_or(bad)?;
  let add=o.get("add").and_then(Value::as_array).ok_or(bad)?;
  if remove.len()+add.len()==0||remove.len()+add.len()>MAX_AREA_FURNITURE_CHANGES{return Err(CodecError::Bounds);}
  // Every new pose must target exactly the selected original grid. The
  // plain writer rejects unsupported state, stock and occupied anchors.
  if add.iter().any(|p|p.get("destination")!=Some(witness)){return Err(bad);}
+ if local&&add.iter().any(|p|p.get("freePlacement").and_then(Value::as_bool)!=Some(true)){return Err(bad);}
  let mut working=Zeroizing::new(std::str::from_utf8(profile).map_err(|_|bad)?.to_owned());
  if !remove.is_empty(){
   let r=group_pickup_bounded(profile,&serde_json::to_string(remove).map_err(|_|bad)?,1,Some(&d.grid_id),MAX_AREA_FURNITURE_CHANGES)?;
@@ -3083,6 +3122,11 @@ fn island_area_candidate(profile:&[u8],plan:&str,decoration:bool)->Result<String
  if plan.len()>if decoration{6_000_000}else{2_000_000}{return Err(CodecError::Bounds);}
  let value:Value=serde_json::from_str(plan).map_err(|_|bad)?;
  let rows=value.as_array().filter(|a|!a.is_empty()&&a.len()<=if decoration{64}else{16}).ok_or(bad)?;
+ // A calibrated independent scene uses the same single-grid replacement
+ // transaction, not the multi-grid floating-island identity contract.
+ if !decoration&&rows.len()==1&&rows[0]["destination"]["layoutId"].as_str().is_some_and(|s|s.starts_with("SceneLayouts/VillageExpansion04UnderwaterAreas/")){
+  return biome_furniture_candidate(profile,&rows[0].to_string());
+ }
  let (scan,_)=scan_grid_instances(profile)?;
  if scan.sampled||scan.invalid>0{return Err(bad);}
  let mut layout_id=None::<String>;let mut world_mode=None::<bool>;let mut expected_grids=0;let mut grids=HashSet::new();let mut ordinals=HashSet::new();
@@ -3264,6 +3308,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let mut same=Vec::new();
     let mut cross=Vec::new();
     let mut same_trees=Vec::new();
+    let mut local_items=None::<HashSet<u64>>;
     for ((((target,selection),(key,xy,orientation)),factor),&storage) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy).zip(&storage_flags){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
         let raw_layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
@@ -3279,6 +3324,39 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
         let old=source.get("Objects").and_then(|v|v.get(&target.object_id)).and_then(Value::as_object).ok_or(bad)?;
         if !matches!(old.len(),5|6)||old.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))||
            old.get("ID").and_then(Value::as_u64)!=key_id(&target.object_id){return Err(bad);}
+        if is_underwater_grid(source)||is_underwater_grid(&grids[&d.grid_id]){
+            if !free||storage||factor.is_some()||target.item_id/100_000!=400{return Err(bad);}
+            let same_grid=target.grid_id==d.grid_id;
+            // The existing pose writer preserves the native identity and State.
+            // Only relocation that changes identity requires the plain-stock census.
+            if !same_grid{
+                if old.get("State").is_some_and(|v|!v.is_null()){
+                    if crate::storage_source::is_storage(target.item_id)||!old.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state){return Err(bad);}
+                }else{
+                    let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
+                    if !ids.contains(&target.item_id){return Err(bad);}
+                }
+            }
+            let from=plain_scene_identity(&root,&target.grid_id)?;
+            let to=plain_scene_identity(&root,&d.grid_id)?;
+            let before=selection.4.as_ref().ok_or(bad)?;
+            let valid=|p:(i32,i32),f:u64,sx:u64,sy:u64|p.0>=0&&p.1>=0&&(p.0 as u64)<f*sx&&(p.1 as u64)<f*sy;
+            if to.1!=d.layout_path||to.2!=u64::from(d.tessellation)||to.3!=u64::from(d.size.0)||to.4!=u64::from(d.size.1)||
+               !valid(selection.2,from.2,from.3,from.4)||!valid(*xy,to.2,to.3,to.4)||
+               !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&before.as_str())||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str()){return Err(bad);}
+            let refs=grid_identity_dependencies(profile,target)?;
+            if refs.blocking()>0||target.grid_id!=d.grid_id&&refs.historical>0{return Err(bad);}
+            if same_grid{
+                let edit=GridMixedEdit{target:target.clone(),expected:selection.2,position:(*xy!=selection.2).then_some(*xy),orientation:(before!=orientation).then(||(before.clone(),orientation.clone()))};
+                validate_underwater_transform(&root,&edit)?;
+                if edit.position.is_some()||edit.orientation.is_some(){same.push(edit);}
+            }else{
+                *new_counts.entry(d.grid_id.clone()).or_default()+=1;
+                old_refs.entry(target.grid_id.clone()).or_default().push(target.object_id.clone());
+                cross.push((target,selection.2,d,*xy,before,orientation,None,false));
+            }
+            continue;
+        }
         if free||storage{
             let from=house_exterior_identity(&root,&target.grid_id)?;
             let to=house_exterior_identity(&root,&d.grid_id)?;
@@ -3318,7 +3396,10 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
             }
             Some(subgrid_tree(collection.as_object().ok_or(bad)?,&target.grid_id,&target.object_id)?)
         }else{
-            if storage{if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if !building&&old.get("State").is_some_and(|v|!v.is_null()){return Err(bad);}
+            if storage{if !ddv_save_patch::storage_transform_pose(&root,&Value::Object(old.clone())){return Err(bad);}}else if !building&&old.get("State").is_some_and(|v|!v.is_null()){
+                let local=free&&native_class==400&&!crate::storage_source::is_storage(target.item_id)&&selection.4.as_deref().is_some_and(|o|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str());
+                if !local||if target.grid_id==d.grid_id{!old.get("State").is_some_and(|v|v.as_object().is_some_and(|m|m.is_empty())||local_interaction_transform_state(v))}else{!old.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state)}{return Err(bad);}
+            }
             None
         };
         let occupied=grids.get(&d.grid_id).and_then(|v|v.get("Objects")).and_then(Value::as_object).ok_or(bad)?;
@@ -3569,6 +3650,95 @@ mod tests{
     }
 
     #[test]
+    fn plain_scene_cut_preserves_state_and_inventory_across_original_grids(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let entries=catalog["entries"].as_array().unwrap();
+        let rows=entries.iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        let mainland=&entries.iter().find(|e|e["scope"]=="Village04").unwrap()["grids"][0];
+        let witness=|r:&Value|serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":r["factor"],"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+        for (index,a) in rows.iter().enumerate(){
+            for b in [&rows[(index+1)%rows.len()],mainland]{
+                let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":123},"World":{"GridCollection":{"Grids":{
+                 "42":{"ID":42,"GridDefaultLayoutPath":a["layoutId"],"GridDataPath":a["gridDataPath"],"TessellationFactor":a["factor"],"NextGridObjectID":4,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down","State":null}}},
+                 "43":{"ID":43,"GridDefaultLayoutPath":b["layoutId"],"GridDataPath":b["gridDataPath"],"TessellationFactor":b["factor"],"NextGridObjectID":7,"Objects":{"2":{"ID":2,"ItemID":40000002,"X":1,"Y":1,"Orientation":"GridOrientation_Left"}}}
+                }}}});
+                let raw=root.to_string();
+                let (scan,_)=scan_grid_instances(raw.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="42"&&t.object_id=="1").unwrap()+1;
+                let plan=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":witness(b),"x":2,"y":3,"orientation":"GridOrientation_Left"}]});
+                let moved=group_cut_candidate(raw.as_bytes(),&plan.to_string()).unwrap();
+                let v:Value=serde_json::from_str(&moved).unwrap();
+                assert_eq!(v["Player"],root["Player"]);
+                let grids=&v["World"]["GridCollection"]["Grids"];
+                assert!(grids["42"]["Objects"].as_object().unwrap().is_empty());
+                assert_eq!(grids["42"]["NextGridObjectID"],4);
+                assert_eq!(grids["43"]["NextGridObjectID"],8);
+                assert_eq!(grids["43"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["43"]["Objects"]["2"]);
+                assert_eq!(grids["43"]["Objects"]["7"],serde_json::json!({"ID":7,"ItemID":40000001,"X":2,"Y":3,"Orientation":"GridOrientation_Left","State":null}));
+                let (scan,_)=scan_grid_instances(moved.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="43"&&t.object_id=="7").unwrap()+1;
+                let back=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":2,"expectedY":3,"expectedOrientation":"GridOrientation_Left","destination":witness(a),"x":1,"y":1,"orientation":"GridOrientation_Down"}]});
+                let returned=group_cut_candidate(moved.as_bytes(),&back.to_string()).unwrap();
+                let v:Value=serde_json::from_str(&returned).unwrap();
+                assert_eq!(v["Player"],root["Player"]);
+                assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["State"],Value::Null);
+                let mut blocked=root.clone();
+                blocked["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
+                assert!(group_cut_candidate(blocked.to_string().as_bytes(),&plan.to_string()).is_err());
+                let mut wrong=plan.clone();wrong["rows"][0]["destination"]["sizeX"]=65536.into();
+                assert!(group_cut_candidate(raw.as_bytes(),&wrong.to_string()).is_err());
+                for state in [serde_json::json!({}),serde_json::json!({"Toggle":{"Value":true,"DesignID":null}}),serde_json::json!({"ItemList":{"Items":[]}})]{
+                    let mut local=root.clone();local["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=state.clone();
+                    let moved=group_cut_candidate(local.to_string().as_bytes(),&plan.to_string()).unwrap();
+                    let after:Value=serde_json::from_str(&moved).unwrap();
+                    assert_eq!(after["World"]["GridCollection"]["Grids"]["43"]["Objects"]["7"]["State"],state);
+                    assert_eq!(after["Player"],local["Player"]);
+                    let returned=group_cut_candidate(moved.as_bytes(),&back.to_string()).unwrap();
+                    assert_eq!(serde_json::from_str::<Value>(&returned).unwrap()["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["State"],state);
+                }
+                for state in [serde_json::json!({"Toggle":{"Value":true,"DesignID":7}}),serde_json::json!({"ItemList":{"Items":[40000001]}}),serde_json::json!({"Keyhole":{"KeyholeConfigDataGUID":"protected"}})]{
+                    let mut local=root.clone();local["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=state;
+                    assert!(group_cut_candidate(local.to_string().as_bytes(),&plan.to_string()).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn underwater_group_place_cut_and_pickup_share_stock_and_ids(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        for r in rows{
+            let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40000001":{"Amount":2}}}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40000001,"X":1,"Y":1,"Orientation":"GridOrientation_Down"}}}}}}});
+            let raw=root.to_string();
+            let w=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+            let plan=serde_json::json!({"freePlacement":true,"rows":[{"itemId":"40000001","destination":w,"x":1,"y":1,"orientation":"GridOrientation_Left"},{"itemId":"40000001","destination":w,"x":1,"y":1,"orientation":"GridOrientation_Down"}]});
+            let placed=group_paste_candidate(raw.as_bytes(),&plan.to_string()).unwrap();
+            let v:Value=serde_json::from_str(&placed).unwrap();
+            assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
+            let (scan,_)=scan_grid_instances(placed.as_bytes()).unwrap();
+            let ids=(2..=3).map(|n|scan.private_targets.iter().position(|(t,_)|t.object_id==n.to_string()).unwrap()+1).collect::<Vec<_>>();
+            let mut moves=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ids[0],"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Left","destination":w,"x":2,"y":2,"orientation":"GridOrientation_Down"},{"localOrdinal":ids[1],"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":w,"x":2,"y":2,"orientation":"GridOrientation_Left"}]});
+            let moved=group_cut_candidate(placed.as_bytes(),&moves.to_string()).unwrap();
+            let v:Value=serde_json::from_str(&moved).unwrap();assert_eq!(v["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"],4);
+            moves["rows"][1]["x"]=65536.into();assert!(group_cut_candidate(placed.as_bytes(),&moves.to_string()).is_err());
+            let pickup=serde_json::json!([{"localOrdinal":ids[0],"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":ids[1],"itemId":"40000001","expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Left"}]);
+            let removed=group_pickup_candidate(moved.as_bytes(),&pickup.to_string()).unwrap();
+            let result:Value=serde_json::from_str(&removed).unwrap();assert_eq!(result["Player"],root["Player"]);
+            assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]);
+            let replacement=serde_json::json!([{"destination":w,"remove":pickup,"add":[{"itemId":"40000001","destination":w,"x":3,"y":3,"orientation":"GridOrientation_Left","freePlacement":true}]}]);
+            let restored:Value=serde_json::from_str(&island_furniture_candidate(moved.as_bytes(),&replacement.to_string()).unwrap()).unwrap();
+            assert_eq!(restored["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],1);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["4"]["X"],3);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
+            let mut blocked:Value=serde_json::from_str(&moved).unwrap();
+            blocked["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Toggle":{"Value":true}});
+            assert!(island_furniture_candidate(blocked.to_string().as_bytes(),&replacement.to_string()).is_err());
+            assert!(group_pickup_candidate(blocked.to_string().as_bytes(),&pickup.to_string()).is_err());
+        }
+    }
+
+    #[test]
     fn underwater_stock_contract_reuses_plain_allocator_and_inventory(){
         use ddv_save_patch::{FurnitureStockAction,preview_furniture_stock_transaction};
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
@@ -3611,12 +3781,20 @@ mod tests{
                 let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
                 assert_eq!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"],state);
                 assert_eq!(result["Player"],root["Player"]);
+                let (scan,_)=scan_grid_instances(raw.as_bytes()).unwrap();
+                let ordinal=scan.private_targets.iter().position(|(t,_)|t.grid_id=="42"&&t.object_id=="1").unwrap()+1;
+                let witness=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+                let cut=serde_json::json!({"freePlacement":true,"rows":[{"localOrdinal":ordinal,"itemId":"40000001","expectedX":1,"expectedY":1,"expectedOrientation":"GridOrientation_Down","destination":witness,"x":2,"y":2,"orientation":"GridOrientation_Left"}]});
+                let moved=group_cut_candidate(raw.as_bytes(),&cut.to_string()).unwrap();
+                assert_eq!(serde_json::from_str::<Value>(&moved).unwrap(),result);
                 let mut invalid=e.clone();invalid.position=Some((65536,2));assert!(validate_oblique_grid_edits(raw.as_bytes(),&[invalid]).is_err());
                 root["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":42,"GridObjectID":1}]);
                 assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+                assert!(group_cut_candidate(root.to_string().as_bytes(),&cut.to_string()).is_err());
                 root["World"].as_object_mut().unwrap().remove("SpawnedObjects");
                 root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=serde_json::json!({"Keyhole":{"KeyholeConfigDataGUID":"protected"}});
                 assert!(validate_oblique_grid_edits(root.to_string().as_bytes(),std::slice::from_ref(&e)).is_err());
+                assert!(group_cut_candidate(root.to_string().as_bytes(),&cut.to_string()).is_err());
             }
         }
     }
