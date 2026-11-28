@@ -27,6 +27,7 @@
  $: clipRect=nativeFrameRect(view,view,hostWidth,hostHeight);
  $: rect=drawnView?nativeFrameRect(view,drawnView,hostWidth,hostHeight):null;
  let revision=0,busy=false;
+ let recoveryAttempted=false,recoveryTimer:ReturnType<typeof setTimeout>|undefined;
  type Job={id:number;layers:readonly Layer[];view:View;source:ImageSource;key:string;w:number;h:number};
  let pending:Job|null=null,activeJob:Job|null=null;
  let active:AbortController|null=null,currentKey='';
@@ -44,27 +45,35 @@
   try{renderer=new NativeMapRenderer(stage);error='';loading=true;}
   catch(e){failRender(e instanceof Error?e.message:'WebGL 2 unavailable');}
  }
+ function cancelRecovery(){
+  if(recoveryTimer!==undefined){clearTimeout(recoveryTimer);recoveryTimer=undefined;}
+ }
  function contextLost(event:Event){
   if(closed||event.currentTarget!==stage)return;
-  event.preventDefault();stopRender();failRender('WebGL context lost');
- }
- function contextRestored(event:Event){
-  if(closed||event.currentTarget!==stage)return;
-  startRenderer();
+  stopRender();
+  if(recoveryAttempted){failRender('WebGL context lost');return;}
+  recoveryAttempted=true;loading=true;error='';onStatus('drawing');
+  // Some browsers never restore a lost context. Use a new stage once instead.
+  recoveryTimer=setTimeout(()=>{
+   recoveryTimer=undefined;
+   if(closed)return;
+   detachStage();createStage();
+  },250);
  }
  function detachStage(){
   stage?.removeEventListener('webglcontextlost',contextLost);
-  stage?.removeEventListener('webglcontextrestored',contextRestored);
+  const gl=stage?.getContext('webgl2');
+  if(gl&&!gl.isContextLost())gl.getExtension('WEBGL_lose_context')?.loseContext();
   stage=null;
  }
  function createStage(){
   stage=document.createElement('canvas');
   stage.addEventListener('webglcontextlost',contextLost);
-  stage.addEventListener('webglcontextrestored',contextRestored);
   startRenderer();
  }
  export function retry(){
   if(closed)return;
+  cancelRecovery();recoveryAttempted=false;
   stopRender();detachStage();createStage();
  }
 
@@ -77,7 +86,7 @@
    pixelHeight=Math.max(1,Math.round(rect.height*ratio));
   };
   const observer=new ResizeObserver(resize);observer.observe(host);resize();ready=true;
-  return ()=>{closed=true;observer.disconnect();stopRender();detachStage();};
+  return ()=>{closed=true;cancelRecovery();observer.disconnect();stopRender();detachStage();};
  });
  $: if(ready&&renderer)queue(layers,view,source,activeKey,pixelWidth,pixelHeight);
  function queue(ls:readonly Layer[],v:View,src:ImageSource,key:string,w:number,h:number){
