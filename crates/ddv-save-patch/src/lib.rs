@@ -1893,6 +1893,26 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
  c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
  c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
 }
+/// Existing coordinate edits preserve a container, but a shared or
+/// unresolved native owner is not proof of a safe independently movable root.
+pub fn storage_transform_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
+ if !storage_pose(root,obj){return false;}
+ let Some(id)=obj["State"]["Storage"]["ContainerInventoryID"].as_u64()else{return false;};
+ let c=&root["World"]["GridCollection"];
+ let mut count=0usize;
+ for (scope,key) in [("Grids","Objects"),("DiffGrids","ModifiedObjects")]{
+  let Some(v)=c.get(scope)else{continue;};
+  let Some(grids)=v.as_object()else{return false;};
+  for grid in grids.values(){
+   let Some(v)=grid.get(key)else{continue;};
+   let Some(objects)=v.as_object()else{return false;};
+   for o in objects.values(){
+    if o["State"]["Storage"]["ContainerInventoryID"].as_u64()==Some(id){count+=1;if count>1{return false;}}
+   }
+  }
+ }
+ count==1
+}
 /// Cross-check the exact known standard template/capacity pair. The codec
 /// is responsible for authenticating the item binding and observed instance.
 pub fn standard_storage_capacity(template:&str,capacity:u32)->bool{
