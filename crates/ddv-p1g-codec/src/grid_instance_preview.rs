@@ -1947,11 +1947,12 @@ fn character_house_remove_candidate(profile:&[u8],root:&Value,target:&GridCoordi
 /// Move an exterior only when the existing removal contract still proves
 /// a surviving entrance after the copy. Never relocate CharacterStates,
 /// interior scenes, quests, or navigation pointers to force the move.
-pub(super) fn character_house_move_candidate(profile:&[u8],target:&GridCoordinateTarget,expected:(i32,i32),dest:&ddv_save_patch::PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
+pub(super) fn character_house_move_candidate(profile:&[u8],target:&GridCoordinateTarget,expected:(i32,i32),dest:&ddv_save_patch::PlainGridDestination,xy:(i32,i32),orientation:&str,cross:bool)->Result<ddv_save_patch::GridCoordinateDraft,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
+    if target.grid_id==dest.grid_id{return Err(CodecError::Json);}
     let refs=grid_identity_dependencies(profile,target)?;
     if refs.blocking()>0||refs.historical>0{return Err(CodecError::Patch);}
-    let mut copy=character_house_copy_candidate(profile,target,expected,dest,xy,orientation,orientation,true)?;
+    let mut copy=character_house_copy_candidate(profile,target,expected,dest,xy,orientation,orientation,cross)?;
     let candidate=Zeroizing::new(std::mem::take(&mut copy.patched_json));
     let root:Value=serde_json::from_str(&candidate).map_err(|_|CodecError::Json)?;
     let result=character_house_remove_candidate(candidate.as_bytes(),&root,target,expected,orientation);
@@ -4478,6 +4479,22 @@ mod terrain_session_tests{
         let remove=serde_json::json!({"buildingRemove":{"localOrdinal":1,"itemId":"20000016","expectedX":1,"expectedY":2,"orientation":"GridOrientation_Down"}});
         assert!(group_paste_candidate(json.as_bytes(),&remove.to_string()).is_err());
         assert!(group_paste_candidate(same_copy.as_bytes(),&remove.to_string()).is_ok());
+        // Same-world transfer may replace the original entrance because
+        // the destination stays in the same verified village scope.
+        let mut village=raw.clone();
+        village["World"]["GridCollection"]["Grids"]["12"]=serde_json::json!({"ID":12,"GridDefaultLayoutPath":"","GridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}});
+        let village_text=village.to_string();
+        let beach=resolve_plain_grid_destination(village_text.as_bytes(),&serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-BeachGrids.json","gridDataPath":"GridData/Villages/Village04-BeachLevel-GridData.json","factor":1,"sizeX":400,"sizeY":350})).unwrap();
+        let moved=character_house_move_candidate(village_text.as_bytes(),&t,(1,2),&beach,(20,21),"GridOrientation_Down",false).unwrap();
+        let after:Value=serde_json::from_str(&moved.patched_json).unwrap();
+        assert!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(after["World"]["GridCollection"]["Grids"]["12"]["Objects"]["3"]["State"],state);
+        assert_eq!(after["World"]["Villages"],village["World"]["Villages"]);
+        assert_eq!(after["Player"],village["Player"]);
+        assert!(character_house_move_candidate(village_text.as_bytes(),&t,(1,2),&beach,(20,21),"GridOrientation_Down",true).is_err());
+        let mut linked_village=village.clone();
+        linked_village["Player"]["LastUsedLinkedEnvironmentEnter"]=serde_json::json!({"1540000001":{"GridID":10,"GridObjectID":1}});
+        assert!(character_house_move_candidate(linked_village.to_string().as_bytes(),&t,(1,2),&beach,(20,21),"GridOrientation_Down",false).is_err());
         let mut visited=raw.clone();
         visited["Player"]["LastUsedLinkedEnvironmentEnter"]=serde_json::json!({"1540000001":{"GridID":10,"GridObjectID":1}});
         let before=visited.to_string();
@@ -4506,7 +4523,7 @@ mod terrain_session_tests{
         let home_witness=serde_json::json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100});
         let routed_text=routed.to_string();
         let home=resolve_plain_grid_destination(routed_text.as_bytes(),&home_witness).unwrap();
-        let moved=character_house_move_candidate(routed_text.as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right").unwrap();
+        let moved=character_house_move_candidate(routed_text.as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right",true).unwrap();
         let after:Value=serde_json::from_str(&moved.patched_json).unwrap();
         assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"],routed["World"]["GridCollection"]["Grids"]["10"]["Objects"]["1"]);
         assert_eq!(after["World"]["GridCollection"]["Grids"]["10"]["Objects"]["2"]["State"],state);
@@ -4514,10 +4531,10 @@ mod terrain_session_tests{
         assert_eq!(after["World"]["Villages"],routed["World"]["Villages"]);
         assert_eq!(after["World"]["FloatingIslands"],routed["World"]["FloatingIslands"]);
         assert_eq!(after["Player"],routed["Player"]);
-        assert!(character_house_move_candidate(json.as_bytes(),&t,(1,2),&d,(20,21),"GridOrientation_Down").is_err());
+        assert!(character_house_move_candidate(json.as_bytes(),&t,(1,2),&d,(20,21),"GridOrientation_Down",true).is_err());
         let mut local=routed.clone();local["World"]["FloatingIslands"]["1"]["CharacterStates"]["10000007"]=serde_json::json!({});
         assert!(group_paste_candidate(local.to_string().as_bytes(),&remove_island.to_string()).is_err());
-        assert!(character_house_move_candidate(local.to_string().as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right").is_err());
+        assert!(character_house_move_candidate(local.to_string().as_bytes(),&moved_target,(8,9),&home,(20,21),"GridOrientation_Right",true).is_err());
         let mut ambiguous=routed.clone();ambiguous["World"]["Villages"][0]["Areas"]["1"]["GridIDs"]=serde_json::json!([10,11]);
         assert!(group_paste_candidate(ambiguous.to_string().as_bytes(),&remove_island.to_string()).is_err());
         let mut unrelated=routed.clone();unrelated["World"]["Villages"][0]["CharacterStates"]=serde_json::json!({"10000001":{}});
