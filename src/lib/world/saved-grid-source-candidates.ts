@@ -45,6 +45,8 @@ export interface SavedNumericPoint {
   readonly storageEmpty?:true;
   readonly storageKnown?:true;
   readonly storageRestorable?:true;
+  /** Local Rust structural recovery candidate; not commit permission. */
+  readonly recoveryCandidate?:true;
 }
 export interface SavedGridSourceCandidates {
   readonly contract:typeof DB04_SAVED_SOURCE_CANDIDATE_CONTRACT;
