@@ -457,7 +457,7 @@ $: cutWords=groupCutWords[locale];
   if(roadSeed||networkOpen||supportOpen||pasteActive||groupPickupActive){gesture.begin(e,camera.zoom>1&&(e.button!==0||spacePan));return;}
   if(saveMode&&!furniturePlacing&&!furnitureGhost&&!moving&&!spacePan&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.button===0&&e.pointerType!=='touch'&&!pending.size&&!failed&&!saveLoading&&!saveFailed){
    const p=pointerPoint(e),hit=p?mainlandSavedAt(allObjects,p.x,p.y).find(o=>layerSelectable(layerState,o.object)):null,cell=hit?mainlandSavedCell(hit):null;
-   const support=!!hit&&testExport&&furnitureReady&&!furnitureBlocked&&!editAxis&&supportParentEligible(hit,freePlacement)&&!(groupSet.has(hit.object.localOrdinal)&&group.length>1);
+   const support=!!hit&&testExport&&furnitureReady&&!furnitureBlocked&&!editAxis&&supportParentEligible(hit,freePlacement)&&!(groupSet.has(hit.object.localOrdinal)&&group.length>1); // Single support drag retains the existing cross-grid transfer route; mixed groups use the common transaction.
    if(p&&hit&&cell&&(mainlandSavedMoveEligible(hit,freePlacement)||support)){
     const members=groupSet.has(hit.object.localOrdinal)?group:[hit];
     objectDrag={pointer:e.pointerId,target:hit,members,baseline:timeline,start:p,cell,clientX:e.clientX,clientY:e.clientY,end:cell,moved:false,support};return;
