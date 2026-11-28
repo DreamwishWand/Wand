@@ -20,3 +20,16 @@ export const furnitureStockWords={
  'zh-CN':['未放置库存','仅显示有库存的物品','正在读取库存…','无法读取库存。','普通家具的存档数量，不含未确认的变体。'],
  'pt-BR':['Estoque não colocado','Somente disponíveis','Carregando estoque…','Estoque indisponível.','Quantidades salvas de móveis comuns, sem variantes não verificadas.']
 } as const;
+
+/** The local WASM guard supplies the candidate set alongside exact counts.
+ * Do not recompute eligibility from display categories in the UI. */
+export function parseLocalPlainStock(value:unknown):Set<number>{
+ const counts=parseFurnitureStock(value);
+ if(!record(value)||!Array.isArray(value.localPlainItemIds)||value.localPlainItemIds.length>counts.size)throw Error('FURNITURE_PLAIN_STOCK_INVALID');
+ const ids=new Set<number>();
+ for(const id of value.localPlainItemIds){
+  if(typeof id!=='number'||!counts.has(id)||ids.has(id))throw Error('FURNITURE_PLAIN_STOCK_ID_INVALID');
+  ids.add(id);
+ }
+ return ids;
+}
