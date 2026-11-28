@@ -1,5 +1,6 @@
 import {openCurrentItemDatabase,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import {collectionSourceRoot,type CollectionTopCategory} from './category-hierarchy.ts';
+import {usableItemName} from '../items/display-name.ts';
 import {COLLECTION_DB01_FACETS,COLLECTION_DB01_SUBMENUS,type CollectionDb01Index,type CollectionDb01Pair,type CollectionDb01SubmenuCode,type CollectionDb01NativeSubtype,type CollectionDb01ActivityType} from './db01-native-facets.ts';
 
 export interface CollectionCatalogRow {
@@ -197,16 +198,24 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
     const [supplement,furnitureKindLabels]=await Promise.all([
       loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
     ]);
-    const projected=projectCompleteCollection(source,supplement);
-    const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
-    const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
-    const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
+    const names=new Map<number,Record<string,string>>();
+    for(const row of supplement)for(const [locale,name] of Object.entries(row.names)){
+      if(!usableItemName(name))continue;
+      const labels=names.get(row.itemId)??{};labels[locale]=name;names.set(row.itemId,labels);
+    }
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){
-        if(!index.rootsByItem!.has(id))continue;
+        if(!usableItemName(name))continue;
         const row=names.get(id)??{};row[locale]=name;names.set(id,row);
       }
     }));
+    // Localization coverage is not collectible membership. Some original
+    // collectible classes (notably MemoryShard and TouchOfMagic) have no
+    // standalone localized name. Keep their identity, art and saved progress.
+    // Only sanitize display labels; category and source evidence determine membership.
+    const projected=projectCompleteCollection(source,supplement);
+    const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
+    const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
     const rows:CollectionCatalogRow[]=[];
     for(const [id,root] of index.rootsByItem!){
       const labels=names.get(id)??{};

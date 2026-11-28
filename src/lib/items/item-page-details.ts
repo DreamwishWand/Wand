@@ -1,0 +1,47 @@
+import type {CompleteItemMasterRecord,PublicCompleteItemMaster,ItemMasterLocale} from './public-item-master.ts';
+import {createCanonicalRecipeReader} from '../acquisition/canonical-recipes.ts';
+import {usableItemName} from './display-name.ts';
+const positive=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
+const nonnegative=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
+export function itemPageNativeFacts(record:Pick<CompleteItemMasterRecord,'nativeCategory'|'sourceAttributes'>){
+  const grid=record.sourceAttributes?.GridAreaData;
+  const x=grid?.SizeX,y=grid?.SizeY;
+  // Source dimensions only; never establish occupancy or permission.
+  const footprint=(record.nativeCategory==='Furniture'||record.nativeCategory==='Building')&&positive(x)&&positive(y)?{x,y}:null;
+  const mana=record.sourceAttributes?.ManaRecovered;
+  return {footprint,energy:record.nativeCategory==='ActivityItem'&&nonnegative(mana)?mana:null};
+}
+export interface RelatedItemTile {readonly itemId:number;readonly name:string}
+export interface ItemPageRelations {
+  readonly series:readonly RelatedItemTile[];
+  readonly recipeResults:readonly RelatedItemTile[];
+  readonly partial:boolean;
+}
+export async function readItemPageRelations(db:PublicCompleteItemMaster,record:Pick<CompleteItemMasterRecord,'itemId'|'sourceSetItemId'|'nativeCategory'>,locale:ItemMasterLocale):Promise<ItemPageRelations>{
+  const id=record.itemId;
+  const sets=async()=>{
+    if(!positive(record.sourceSetItemId))return [];
+    const refs=await db.getItemReferences(record.sourceSetItemId,'incoming');
+    return [...new Set((refs??[]).filter(([other,path])=>other!==id&&path==='sourceSetItemId').map(([other])=>other))];
+  };
+  const uses=async()=>{
+    if(record.nativeCategory!=='ActivityItem')return [];
+    const [rows]=await createCanonicalRecipeReader(db).getIngredientUses([id]);
+    return [...new Set((rows??[]).map(r=>r.resultItemId).filter(other=>other!==id))];
+  };
+  const [series,recipes]=await Promise.allSettled([sets(),uses()]);
+  const seriesIds=series.status==='fulfilled'?series.value:[];
+  const recipeIds=recipes.status==='fulfilled'?recipes.value:[];
+  const ids=[...new Set([...seriesIds,...recipeIds])].sort((a,b)=>a-b);
+  const names=new Map<number,RelatedItemTile>();
+  for(let start=0;start<ids.length;start+=500){
+    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope','names.'+locale,'names.en'].filter((v,i,a)=>a.indexOf(v)===i))){
+      if(!row||row.values.definitionScope==='other_definition')continue;
+      const label=[row.values['names.'+locale],row.values['names.en']].find(usableItemName);
+      if(label)names.set(row.itemId,{itemId:row.itemId,name:label});
+    }
+  }
+  const tiles=(input:number[])=>input.flatMap(other=>{const tile=names.get(other);return tile?[tile]:[];})
+    .sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);
+  return {series:tiles(seriesIds),recipeResults:tiles(recipeIds),partial:series.status==='rejected'||recipes.status==='rejected'};
+}

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
+  import {itemEntityHref,itemPageCopy} from '$lib/items/entity-item-url';
+  import {isWandLanguage} from '$lib/ui/preferences';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
@@ -36,7 +38,6 @@
     from '$lib/acquisition/game-native-item-categories.ts';
   import {collectionDb01AcquisitionLabel,collectionDb01AcquisitionHeading}
     from '$lib/collection/db01-browse-labels.ts';
-  import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {editHistory,type HistoryDescription} from '$lib/ui/edit-history';
@@ -45,7 +46,7 @@
   import { collectionFamilyLabel } from '$lib/collection/copy';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy.ts';
   import {collectionScopeOptions,collectionItemScopeLabels,COLLECTION_WORLD_NAVIGATION,type CollectionScopeOption} from '$lib/collection/scope-options';
-  import {collectionItemHref,collectionItemFromLink}
+  import {collectionItemFromLink,collectionItemIdFromSearch}
     from '$lib/collection/item-permalink.ts';
 
   let memoryPreviewRequested=false;
@@ -104,6 +105,7 @@
   let busy=false;
   let locale='ja';
   $: copy=collectionInterfaceCopy(locale);
+  $: entityCopy=itemPageCopy(locale);
   type CollectionViewAxis='world'|'universe';
   let viewAxis:CollectionViewAxis='world';
   let universeSearch='';
@@ -162,6 +164,7 @@
   let selectionMode=false;
   let selectedIds:number[]=[];
   let selectedItemId:number|null=null;
+  let legacyLinkedItemId:number|null=null;
   let importInput:HTMLInputElement;
   let workspaceOptions:HTMLDetailsElement;
   let localCatalogInput:HTMLInputElement;
@@ -174,6 +177,37 @@
   let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
+  // SvelteKit history-entry snapshot, not a second Collection record store.
+  // Only browsing state is captured; the Rust/IndexedDB workspace is reloaded.
+  function captureBrowse(){
+    return {catalog:runtime?.metadata.snapshot??null,viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
+      browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
+      sourceChoices:{...sourceChoices},sourceTopCategory,sourceActivityType,sourceNativeSubtype,
+      sourceUniverseSelection,acquisitionFilter,selectedItemId,showMemoryPieces,
+      scrollY:typeof window==='undefined'?0:window.scrollY};
+  }
+  type BrowseSnapshot=ReturnType<typeof captureBrowse>;
+  let pendingBrowseRestore:BrowseSnapshot|null=null;
+  export const snapshot={
+    capture:captureBrowse,
+    restore:(value:BrowseSnapshot)=>{pendingBrowseRestore=value;if(runtime)void restoreBrowse();}
+  };
+  async function restoreBrowse(){
+    const value=pendingBrowseRestore,activeRuntime=runtime;
+    if(!value||!activeRuntime)return;
+    if(sourceLoad)await sourceLoad;
+    if(acquisitionLoad)await acquisitionLoad;
+    if(runtime!==activeRuntime||pendingBrowseRestore!==value)return;
+    pendingBrowseRestore=null;
+    // Never restore filters from a different verified catalog (including an owner-local catalog).
+    if(value.catalog!==activeRuntime.metadata.snapshot){restoreAddressSelection();return;}
+    ({viewAxis,universeSearch,bypassCategoryGroups,worldFilter,universeFilter,selected,
+      browsingAllItems,search,status,favoriteOnly,nameStatus,expansion,filtersOpen,visible,
+      sourceChoices,sourceTopCategory,sourceActivityType,sourceNativeSubtype,
+      sourceUniverseSelection,acquisitionFilter,selectedItemId,showMemoryPieces}=value);
+    refresh();await tick();
+    if(runtime===activeRuntime)window.scrollTo(0,value.scrollY);
+  }
 
   $: topCategoryCards=sourceIndex?.rootsByItem
     ?COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({id,icon,total:rootCounts.get(id)??0,owned:rootOwned.get(id)??0}))
@@ -844,7 +878,7 @@
   async function copySelectedItemLink():Promise<void>{
     if(selectedItemId===null)return;
     try{
-      const url=new URL(collectionItemHref(base,selectedItemId),window.location.href);
+      const url=new URL(itemEntityHref(base,selectedItemId),window.location.href);
       await navigator.clipboard.writeText(url.href);
       infoMessage='アイテムへのリンクをコピーしました。';
     }catch{
@@ -1107,6 +1141,7 @@
   }
   onMount(()=>{
     memoryPreviewRequested=new URLSearchParams(window.location.search).get('memoryPreview')==='1';
+    legacyLinkedItemId=collectionItemIdFromSearch(window.location.search);
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
       if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
@@ -1135,7 +1170,7 @@
         detachHistory=editHistory.attachCollection(loaded);
         refresh();
         ensureSourceIndex();
-        restoreAddressSelection();
+        if(pendingBrowseRestore)await restoreBrowse();else restoreAddressSelection();
         try{
           const response=await fetch(base+'/ddv/collection/item-images-r39.json');
           if(response.ok){
@@ -1147,7 +1182,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('popstate',onCollectionPopState);window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;pendingBrowseRestore=null;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('popstate',onCollectionPopState);window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -1732,6 +1767,7 @@
             <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
+            {#if runtime&&!runtime.isOwnerLocal&&!busy&&!saveReadInProgress}<a class="item-page-link" href={itemEntityHref(base,selectedItem.itemId,isWandLanguage(locale)?locale:undefined)}>{entityCopy.page}<WandIcon name="link" size={16}/></a>{/if}
             {#if selectedMemory}
               <div class="memory-piece-toolbar">
                 <strong>{selectedMemoryBits===null?'?':memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
@@ -1753,29 +1789,6 @@
                   {/if}
                 {/if}
               </div>
-            {/if}
-            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
-              {#key selectedItem.itemId}
-                <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
-                <CurrentItemFacts itemId={selectedItem.itemId} {locale}/>
-              {/key}
-            {/if}
-            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
-              <details class="inspector-details">
-                <summary>{copy.details}</summary>
-                <dl>
-                  {#if selectedScopeLabels.worlds.length}
-                    <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
-                  {/if}
-                  {#if selectedScopeLabels.universes.length}
-                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
-                  {/if}
-                </dl>
-              </details>
-            {/if}
-            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
-              <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
-              <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
             <div class="inspector-section">
               <h3>{copy.collectionRecord}</h3>
@@ -1801,6 +1814,29 @@
               <label class="check-row"><input type="checkbox" checked={selectedEntry.favorite===true}
                 disabled={Boolean(storeError)} on:change={(event)=>changeEntry({favorite:(event.currentTarget as HTMLInputElement).checked})}/> {copy.favorite}</label>
             </div>
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
+              {#key selectedItem.itemId}
+                <!-- Preserve existing pose permalinks during migration. -->
+                {#if legacyLinkedItemId===selectedItem.itemId}<ItemMasterDetails itemId={selectedItem.itemId} {locale}/>{/if}
+                <CurrentItemFacts itemId={selectedItem.itemId} {locale} compact/>
+              {/key}
+            {/if}
+            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
+              <section class="inspector-details">
+                <h3>{copy.details}</h3>
+                <dl>
+                  {#if selectedScopeLabels.worlds.length}
+                    <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
+                  {/if}
+                  {#if selectedScopeLabels.universes.length}
+                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
+                  {/if}
+                </dl>
+              </section>
+            {/if}
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
+              <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
+            {/if}
           </aside>
         {/if}
       </div>
@@ -1809,6 +1845,8 @@
 </section>
 
 <style>
+  .item-page-link{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;margin:8px 0;border:1px solid var(--wand-line);border-radius:7px;background:var(--wand-card);color:var(--wand-text);text-decoration:none;font-weight:600}
+  .inspector-details h3{font-size:14px;margin:0 0 8px}
   /* Image-first Collection tiles. Shared shell theme remains authoritative. */
   .memory-piece-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:6px 0;font-size:12px}
   .memory-piece-toolbar label{display:flex;align-items:center;gap:4px}
