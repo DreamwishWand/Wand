@@ -32,7 +32,7 @@ class SharedCdnResumeTests(unittest.TestCase):
     def test_reconnect_is_bounded_and_integrity_errors_never_retry(self):
         pending,expected,raws=self.fixture(2)
         for failure,retries in [
-            (URLError("curl exit=1; HTTP/connection result=000 1; curl: (35) reset"),3),
+            (URLError("curl exit=1; HTTP/connection result=000 1; curl: (35) reset"),5),
             (URLError("curl exit=22; HTTP/connection result=404 1; curl: (22) not found"),0),
             (URLError("curl exit=60; HTTP/connection result=000 1; curl: (60) certificate"),0),
             (None,0)]:
@@ -50,7 +50,7 @@ class SharedCdnResumeTests(unittest.TestCase):
                 self.assertEqual(count,0)
                 self.assertEqual(set(errors),{key(pending[0])})
                 self.assertEqual(len(calls),1+retries)
-                self.assertEqual(len(delays),retries)
+                self.assertEqual(delays,[2,5,10,30,60] if retries else [])
 
     def test_session_size_bounded(self):
         pending,expected,raws=self.fixture(260)
