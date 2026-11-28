@@ -97,7 +97,8 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
       identity:categoryForIndexed[e.kind]?identity(numeric(e.sourceId),categoryForIndexed[e.kind]):null}))),
     additional:Object.freeze(c.extras.map(e=>Object.freeze({evidence:e,
       identity:e.kind==='character_friendship_reward'&&id(e.sourceId)?identity(e.sourceId,['Character']):
-        e.kind==='pet_friendship_reward'&&id(e.sourceId)?identity(e.sourceId,['Companion']):null}))),
+        e.kind==='pet_friendship_reward'&&id(e.sourceId)?identity(e.sourceId,['Companion']):
+        e.kind==='configured_container_furniture_slot'&&id(e.sourceId)?identity(e.sourceId,['Furniture']):null}))),
     native:Object.freeze(c.native.map(e=>Object.freeze({evidence:e,identity:identity(e[0])}))),
     coverageComplete:false as const,currentAvailabilityVerified:false as const
   }):null));

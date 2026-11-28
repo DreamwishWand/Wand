@@ -100,6 +100,33 @@ export type AdditionalItemSource = Readonly<{
   sourcePosition?:number;
   sourceProtoDbSha256:string;
   currentAvailabilityVerified:false;
+}> | Readonly<{
+  kind:'configured_container_slot'|'configured_default_inventory_entry';
+  sourceId:string;
+  sourcePosition:number;
+  configuredAmount:number;
+  sourceInventoryType:'container'|'list';
+  sourceFieldNumber:number;
+  sourceGameVersion:string;
+  sourceProtoDbSha256:string;
+  sourceProjectionSha256:string;
+  currentAvailabilityVerified:false;
+  grantVerified:false;
+  playerOwnershipVerified:false;
+}> | Readonly<{
+  kind:'configured_container_furniture_slot';
+  sourceId:number;
+  templateKey:string;
+  sourcePosition:number;
+  configuredAmount:number;
+  sourceConfiguredSize:number;
+  sourceGameVersion:string;
+  sourceProtoDbSha256:string;
+  sourceProjectionSha256:string;
+  templateProjectionSha256:string;
+  currentAvailabilityVerified:false;
+  grantVerified:false;
+  playerOwnershipVerified:false;
 }>;
 export interface CatalogAcquisitionFacts {
   readonly generatorExcluded:boolean|null;

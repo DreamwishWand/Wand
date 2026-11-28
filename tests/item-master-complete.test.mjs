@@ -441,7 +441,10 @@ test('building skins retain exact target selectors separately from browse design
 test('original ProtoDB individual friendship rewards and configured store facts are selectable by Item ID',async()=>{
   const {fetcher,requests}=site();
   const master=await openCurrentItemDatabase('/Wand',fetcher);
-  const byItem=await master.getFieldRows('acquisition.additionalSources');
+  const byItem=(await master.getFieldRows('acquisition.additionalSources')).flatMap(([id,links])=>{
+    const existing=links.filter(l=>l.kind!=='configured_container_slot'&&l.kind!=='configured_default_inventory_entry'&&l.kind!=='configured_container_furniture_slot');
+    return existing.length?[[id,existing]]:[];
+  });
   const byOwner=await master.getFieldRows('acquisition.individualFriendshipRewards');
   assert.equal(byItem.length,867);
   assert.equal(byOwner.length,323);
