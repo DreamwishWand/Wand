@@ -8,7 +8,7 @@ test('explicit historical native content scope, AND-only gate and linked grant e
   const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
   const data=JSON.parse(await readFile('data/ddv/item-master/historical-content-scope-steam-1261.json','utf8'));
   const confirmed=await db.findItemIdsByContent({kind:'confirmed_release',releaseId:'dlc.the-keepsake-sea'});
-  assert.equal(confirmed.itemIds.length,565);
+  assert.equal(confirmed.itemIds.length,759);
   const nativeScope=await db.findItemIdsByField('history.nativeContentScope',{kind:'equals',value:'Expansion04Main'});
   assert.deepEqual(nativeScope,data.scopeRows.map(r=>r[0]));
   assert(nativeScope.every(id=>confirmed.itemIds.includes(id)));

@@ -164,10 +164,114 @@ export function loadNativeExpansionAffiliation(project,source,history){
     }
   }
   if(current)check(assigned===46,'ASSIGNED_CENSUS');
+  // Corroborate exact historical expansion tags using typed gameplay links,
+  // without inferring exclusivity of acquisition or runtime availability.
+  // These source projections have already been validated by the historical
+  // relation and scope builders. Load the same immutable evidence, not a
+  // newer game's potentially changed recipes or store pools.
+  const [relations,relationsSha]=load(project,'data/ddv/item-master/historical-content-relations-steam-1261.json');
+  check(relations.introducedSourceCorpusSha256===AFTER&&
+    relations.decodedSha256==='b2ba6018db5289be2ad23785b341db04fa7f2f6daaea91b8bff6777f593485c9','GAMEPLAY_RELATIONS_SOURCE');
+  const relationRaw=inflateSync(Buffer.from(relations.data,'base64'),{maxOutputLength:100000});
+  check(sha(relationRaw)===relations.decodedSha256,'GAMEPLAY_RELATIONS_DATA');
+  const links=JSON.parse(relationRaw);
+  const [recipes,recipeSha]=load(project,'static/acquisition/public/recipe-results-1.26.2.json',
+    'ee767b8808f9bef078234d978c3893b5a9649050c7ccf8ee460bd3a32ef02f0e');
+  const [activities,activitySha]=load(project,'static/acquisition/public/activity-result-paths-1.26.2.json',
+    '97d02a35dbe78dab637f4eda7d6fdf61cf528bb77aab6f684483a5cf542eebbb');
+  const scopeSha='b673e86dee51967645004b64bb05562c717cce386956e888b934ca3cfc3e0346';
+  const [stalls,stallSha]=load(project,'static/acquisition/public/native-stall-slots-1.26.2.json',
+    'ef18e94df460d7bd5c768ebc720c48425570ac549a49ebdac00ade34e5468d2a');
+  const [,lootSha]=load(project,'static/acquisition/public/native-loot-candidates-1.26.2.json',
+    'fba1d8163c30156941b108ce2ba37544f32e9c7d419f4c2b1f126b017c470a00');
+  check(recipes.source.sha256===d.sourceFiles.ActivityData&&
+    activities.sources.activityData.sha256===d.sourceFiles.ActivityData&&
+    activities.sources.activityItem.sha256===d.sourceFiles.ActivityItem&&
+    stalls.sources.building.sha256===d.sourceFiles.Building,'GAMEPLAY_SOURCE');
+  const recipeById=new Map(recipes.recipes.map(r=>[r[0],r]));
+  const activityById=new Map(activities.paths.map(r=>[r[0],r]));
+  const stallIds=new Set(stalls.stalls.map(r=>r[0]));
+  const gatedStalls=new Map();
+  const gameplay=new Map(),gameplayKinds=new Map();
+  const emit=(i,kind,sourceItemId,sourceSha256,extra={})=>{
+    if(freshTags.get(i)!=='Expansion04')return;
+    check(id(sourceItemId),'GAMEPLAY_SOURCE_ID');
+    const list=gameplay.get(i)??[];
+    const evidence={kind,sourceItemId,sourceSha256,...extra,
+      sourceGameVersion:'1.26.1',runtimeAvailabilityVerified:false,exclusiveAcquisitionVerified:false};
+    if(!list.some(e=>json(e)===json(evidence)))list.push(evidence);
+    gameplay.set(i,list);
+    const set=gameplayKinds.get(kind)??new Set();set.add(i);gameplayKinds.set(kind,set);
+  };
+  for(const [event,i,amount,role] of scopes.grantRows){
+    // The original conditional event has a verified mandatory positive
+    // expansion gate. A configured grant is not proof it has executed.
+    emit(i,'expansion_gated_grant',event,scopeSha,{configuredAmount:amount,grantRole:role});
+    if(role==='conditional_grant'&&stallIds.has(i)){
+      const list=gatedStalls.get(i)??[];list.push(event);gatedStalls.set(i,list);
+    }
+  }
+  for(const [i,refs] of links.recipe_dlc_result)for(const ref of refs){
+    const r=recipeById.get(ref);
+    check(r&&r[2]===i&&(r[1]===0||r[1]===1),'GAMEPLAY_RECIPE_RESULT');
+    // Only fixed mandatory Item IDs, never tag alternatives or optional
+    // ingredients. The ingredient and the result must both be new and have
+    // the exact native expansion tag at introduction.
+    const requiredIngredientItemIds=[...new Set(r[4].filter(x=>x[0]===0&&freshTags.get(x[1])==='Expansion04').map(x=>x[1]))].sort((a,b)=>a-b);
+    if(requiredIngredientItemIds.length)emit(i,r[1]===0?'cooking_fixed_expansion_ingredient':'crafting_fixed_expansion_ingredient',ref,recipeSha,
+      {requiredIngredientItemIds});
+  }
+  for(const [i,refs] of links.activity_dlc_result)for(const ref of refs){
+    const r=activityById.get(ref);
+    check(r&&r[2]===i&&(r[1]===0||r[1]===1),'GAMEPLAY_ACTIVITY_RESULT');
+    emit(i,r[1]===0?'fishing_expansion_area':'mining_expansion_area',ref,activitySha,
+      {historicalRelationSha256:relationsSha});
+  }
+  for(const [i,refs] of links.seed_dlc_crop)for(const ref of refs){
+    const r=activityById.get(i);
+    check(r&&r[1]===3&&r[2]===ref,'GAMEPLAY_SEED_RESULT');
+    if(freshTags.get(ref)==='Expansion04')emit(i,'growing_expansion_crop',i,activitySha,{cropItemId:ref});
+  }
+  for(const i of sceneIds)emit(i,'character_expansion_scene',1540000209,scenePin);
+  for(const [i,refs] of links.dlc_stall_pool)for(const ref of refs){
+    // Name prefix alone is insufficient. Require a typed, positive
+    // expansion-gated grant of the specific stall plus its original pool.
+    const events=gatedStalls.get(ref);
+    if(events?.length)emit(i,'expansion_gated_stall_pool',ref,stallSha,
+      {grantEventItemIds:[...new Set(events)].sort((a,b)=>a-b),gateProjectionSha256:scopeSha,lootProjectionSha256:lootSha});
+  }
+  const gameplayCoverage=Object.fromEntries([...gameplayKinds].map(([k,set])=>[k,set.size]));
+  check(gameplay.size===199&&compareCounts(gameplayCoverage,{
+    cooking_fixed_expansion_ingredient:37,crafting_fixed_expansion_ingredient:104,
+    fishing_expansion_area:17,mining_expansion_area:9,growing_expansion_crop:9,
+    character_expansion_scene:19,expansion_gated_grant:1,expansion_gated_stall_pool:42
+  }),'GAMEPLAY_CORROBORATED_CENSUS');
+  let gameplayAssigned=0;
+  for(const [i,evidence] of gameplay){
+    const h=history.get(i);
+    if(!fresh(h))continue;
+    h.corroboratedExpansionGameplayEvidence=evidence;
+    h.corroboratedExpansionGameplayKinds=[...new Set(evidence.map(e=>e.kind))].sort();
+    for(const e of evidence)addEvidence(h,e.kind,e.sourceItemId);
+    if(h.contentReleaseId!==null&&h.contentReleaseId!==RELEASE||
+      h.contentCandidateReleaseIds.some(x=>x!==RELEASE)){
+      h.contentOriginConflict=true;continue;
+    }
+    // Preserve stronger prior assignments, even if further evidence appears.
+    if(h.contentReleaseId===null){
+      h.contentReleaseId=RELEASE;h.contentReleaseKind='paid_dlc';h.contentDlcType='expansion';
+      h.contentAttributionEvidenceKind='verified_expansion_tag_and_gameplay_relation';
+      h.contentReleaseEvidenceSha256=sha(json([PIN,relationsSha,recipeSha,activitySha,scenePin,scopeSha,stallSha,lootSha]));
+      h.contentAssignmentSha256=sha(json([i,RELEASE,AFTER,TAG,evidence]));
+      gameplayAssigned++;
+    }
+  }
+  if(current)check(gameplayAssigned===194,'GAMEPLAY_ASSIGNED_CENSUS');
   const metadata=current?{sourceGameVersion:'1.26.1',compatibleGameVersion:'1.26.2',
     sourceProjectionSha256:PIN,sourceProtoDbSha256:PROTO,sourceRecords:d.sourceRecords,
     expansions:d.expansions,selectors:d.selectors,coverage:d.counts,
-    corroboratedHistoricalRewardCount:rewards.size,runtimeOwnershipVerified:false,
+    corroboratedHistoricalRewardCount:rewards.size,corroboratedHistoricalGameplayCount:gameplay.size,
+    corroboratedHistoricalGameplayCoverage:gameplayCoverage,newGameplayAssignmentCount:gameplayAssigned,runtimeOwnershipVerified:false,
     contentReleaseAttributionVerifiedByTagAlone:false}:null;
   return {byItem,metadata};
 }
