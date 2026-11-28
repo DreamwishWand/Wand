@@ -13,7 +13,7 @@
  import {supportPickupWords} from './group-pickup.ts';
  import {supportWords,parseSupportTree} from './subgrid-local.ts';
  import {captureSupportScene,mixedSceneCounts,type MixedScenePreset,type SupportScene} from './support-scene.ts';
- import {parseIndoorSupportParents,roomSupportPickupPlan,type IndoorSupportWitness} from './indoor-support.ts';
+ import {parseIndoorSupportParents,roomSupportPickupPlan,type IndoorSupportWitness,type SupportTransferTarget} from './indoor-support.ts';
  import {roomCameraBounds,roomCameraZoom,roomCameraPan,roomCameraArt,roomCameraWords,roomDragDraft,roomKeyDelta,type RoomCamera} from './indoor-map-camera.ts';
  import {base} from '$app/paths';
  import {browser} from '$app/environment';
@@ -52,6 +52,13 @@
  }
 
  $: supportNames=new Map([...records].map(([id,r])=>[id,r.names[locale]??r.names.en??String(id)]));
+ $: if(supportParent)loadItems(supportParents.map(p=>p.itemId),[]);
+ $: roomTransferTargets=supportParent?supportParents.flatMap((p):SupportTransferTarget[]=>{
+  const r=rooms[p.roomOrdinal-1],s=r?.surfaces[p.surfaceOrdinal-1];
+  if(!r||!s)return [];
+  const context=[name(r.houseItemId??null,records,locale,w[1]+' '+r.house),w[2]+' '+r.floor,r.name||w[3]+' '+(r.roomSlot===undefined?r.ordinal:r.roomSlot+1),s.kind==='floor'?w[4]:w[5]+' '+(s.wallPosition??s.ordinal)].join(' · ');
+  return [{localOrdinal:p.localOrdinal,itemId:p.itemId,x:p.x,y:p.y,context}];
+ }):[];
  $: roomSupports=supportParents.filter(p=>p.roomOrdinal===room?.ordinal&&p.surfaceOrdinal===face?.ordinal);
  $: supportText=supportWords[locale];
  $: roomPickupPlan=supportParent?roomSupportPickupPlan(face,roomSupports,[supportParent.index],shapes,freeEdit?new Set([...freeEligible,...removable]):removable):null;
@@ -457,7 +464,7 @@
   </div>
  </div>
  {/if}
- {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} initialFreePlacement={freeEdit} initialChildIndex={supportChild} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
+ {#if supportParent}<SubgridInspector open={true} roomParent={supportParent} roomTransferTargets={roomTransferTargets} initialFreePlacement={freeEdit} initialChildIndex={supportChild} {roomPickupPlan} roomDuplicateAllowed={supportCloneReady&&!linkedAxis} onRoomDuplicate={beginSupportDuplicate} {file} worker={terrainWorker} names={supportNames} {base} {locale} canMove={testExport&&!blocked} {nextRequest} onItems={ids=>loadItems(ids,ids)} onClose={closeSupport}/>{/if}
  {#if !testExport}<footer>{w[14]}</footer>{/if}
 {#if projectApplyOpen&&file&&room}<RoomProjectApply {file} {room} {stock} {owned} worker={terrainWorker} {locale} {nextRequest} {blocked} onClose={()=>projectApplyOpen=false}/>{/if}
 </div>

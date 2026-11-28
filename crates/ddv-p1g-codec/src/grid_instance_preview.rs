@@ -3973,6 +3973,34 @@ mod terrain_session_tests{
         plan["transfer"]["orientation"]="GridOrientation_DownLeft".into();assert!(support_child_candidate(&raw,&plan).is_err());
     }
     #[test]
+    fn support_transfer_resolves_distinct_room_grids_and_preserves_inventory(){
+        let mut save=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":100},"World":{"GridCollection":{"Grids":{
+            "7":{"ID":7,"GridDataPath":"GridData/Rooms/Room10x10-GridData.json","TessellationFactor":1,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+            "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}},
+            "9":{"ID":9,"GridDataPath":"GridData/Rooms/Room10x10-GridData.json","TessellationFactor":2,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":10}}}}},
+            "10":{"ID":10,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"NextGridObjectID":4,"Objects":{}}
+        }}}});
+        let raw=serde_json::to_vec(&save).unwrap();
+        let ordinals=room_support_ordinals(&raw).unwrap();
+        let from=ordinals[&("7".to_owned(),"1".to_owned())];
+        let to=ordinals[&("9".to_owned(),"1".to_owned())];
+        assert_ne!(from,to);
+        let mut plan=serde_json::json!({"localOrdinal":from,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"freePlacement":true,
+            "transfer":{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down",
+                "destination":{"localOrdinal":to,"itemId":40005160,"expectedX":4,"expectedY":6,"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json"},
+                "x":2,"y":2,"orientation":"GridOrientation_Left"}});
+        let draft=support_child_candidate(&raw,&plan).unwrap();
+        let result:Value=serde_json::from_str(&draft.patched_json).unwrap();
+        assert_eq!(result["Player"],save["Player"]);
+        for g in ["7","9"]{assert_eq!(result["World"]["GridCollection"]["Grids"][g],save["World"]["GridCollection"]["Grids"][g]);}
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["8"]["Objects"],serde_json::json!({}));
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["10"]["Objects"]["4"],serde_json::json!({"ID":4,"ItemID":40005161,"X":2,"Y":2,"Orientation":"GridOrientation_Left"}));
+        plan["transfer"]["destination"]["localOrdinal"]=from.into();assert!(support_child_candidate(&raw,&plan).is_err());
+        plan["transfer"]["destination"]["localOrdinal"]=to.into();
+        save["World"]["MissionSlots"]=serde_json::json!({"owner":{"Slots":[{"SpawnedObjects":[{"GridID":8,"GridObjectID":1}]}]}});
+        assert!(support_child_candidate(&serde_json::to_vec(&save).unwrap(),&plan).is_err());
+    }
+    #[test]
     fn child_rotation_and_swap_change_only_selected_scalars(){
         let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
           "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
