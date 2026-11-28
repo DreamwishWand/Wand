@@ -552,7 +552,7 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
                 }
                 if object_values.iter().any(|v|v.is_some_and(|id|objects.contains(&id))){
                     if grid_values.iter().any(|v|*v==Some(grid)){
-                        if flags.0||flags.3{out.active+=1;}else if flags.4{out.unknown+=1;}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else{out.unknown+=1;}
+                        if flags.0{out.active+=1;}else if flags.4{if flags.3{out.active+=1;}else{out.unknown+=1;}}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
                     }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){out.unknown+=1;}
                 }
                 for (key,value) in o{
