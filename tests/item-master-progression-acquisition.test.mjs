@@ -43,6 +43,18 @@ test('ordinary progression reward evidence matches every positive original rewar
     assert.equal(l.sourceGameVersion,db.release.target.gameVersion);
     assert.equal(l.sourceFileSha256,db.release.sourceFilesSha256[categories.get(l.sourceItemId)]);
     assert.equal(l.currentAvailabilityVerified,false);assert.equal(l.guaranteedGrantVerified,false);
+    if(l.kind==='figurine_rank_reward'||l.kind==='figurine_additional_reward'&&ranked.has(l.sourceItemId)){
+      const g=l.rankActivity;
+      assert.equal(g.requiredExpansion,'Expansion01');
+      assert.equal(g.preConditionItemId,2130001296);
+      assert.equal(g.unlockMissionItemId,2070000996);
+      assert.equal(g.unlockMissionState,8);assert.equal(g.unlockMissionOperator,0);
+      assert.equal(categories.get(g.preConditionItemId),'Condition');assert.equal(categories.get(g.unlockMissionItemId),'Mission');
+      assert.equal(g.sourceConditionSha256,db.release.sourceFilesSha256.Condition);
+      assert.equal(g.sourceMissionSha256,db.release.sourceFilesSha256.Mission);
+      assert.deepEqual(g.configuredRankPointRewards,{victory:{normal:3,eager:6},loss:{normal:1,eager:2},draw:{normal:2,eager:4}});
+      assert.deepEqual(g.configuredFriendshipRewards,{normal:200,eager:1000});
+    }else assert.equal(l.rankActivity,undefined);
     if(l.kind==='figurine_rank_reward'){
       assert.equal(l.sourceItemId,id);
       assert.equal(l.configuredTier,ranked.get(id));

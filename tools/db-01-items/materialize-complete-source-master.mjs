@@ -1192,6 +1192,28 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
   // at the lowest eligible Tier; no fixed figurine-to-rank assignment.
   const rankEnabled=source.sourceFilesSha256.BoardGame==='acfe0a3f5dea075afabe1685563b22fca928f02e6c225a0e509e00c45bcb2a1e';
   const rankPoints=[3,9,15,24,33,45,57,69,84,99,114,129,147,165,183,201,219,237,258,279,300,350,400,450,500,550];
+  // Original protoDb Activities.PlayBoardGame record 16. Keep the two
+  // configured predicates separate; this is not an evaluated player gate.
+  const rankActivity={
+    requiredExpansion:'Expansion01',preConditionItemId:2130001296,
+    unlockMissionItemId:2070000996,unlockMissionState:8,unlockMissionOperator:0,
+    sourceConditionSha256:'9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c',
+    sourceMissionSha256:'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24',
+    sourceProtoDbSha256:'dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623',
+    sourceActivityRecordIndex:16,
+    sourceActivityRecordSha256:'243b5021740968b2d84eebc08a207862d115eef90b7d03dd31f24ad2268a577a',
+    sourceActivityPayloadSha256:'212e2e5dfb6b22f87c921bf3a3c42c7feeeba4cc3b7428f9975a4771b1c376f0',
+    configuredRankPointRewards:{victory:{normal:3,eager:6},loss:{normal:1,eager:2},draw:{normal:2,eager:4}},
+    configuredFriendshipRewards:{normal:200,eager:1000}
+  };
+  if(rankEnabled){
+    check(source.sourceFilesSha256.Condition===rankActivity.sourceConditionSha256&&
+      source.sourceFilesSha256.Mission===rankActivity.sourceMissionSha256&&
+      byId.get(rankActivity.preConditionItemId)?.nativeCategory==='Condition'&&
+      byId.get(rankActivity.preConditionItemId)?.nativeKey==='Expansions!BoughtExpansion01'&&
+      byId.get(rankActivity.unlockMissionItemId)?.nativeCategory==='Mission'&&
+      byId.get(rankActivity.unlockMissionItemId)?.nativeKey==='Story!Expansion01!ORQS_E01_010_BoardGame','BOARD_GAME_ACTIVITY_GATE');
+  }
   const tiers=new Map(rows.filter(r=>r.nativeCategory==='BoardGame'&&r.sourceClass==='FigurineItemData')
     .map(r=>[r.itemId,({...r.nativeProperties,...r.sourceAttributes}).Tier??0]));
   if(rankEnabled){
@@ -1225,7 +1247,7 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
     if(row.nativeCategory==='BoardGame'&&row.sourceClass==='FigurineItemData'&&ordinary(row.itemId)){
       if(ranked(row.itemId)){
         emit(row,row.itemId,'figurine_rank_reward','source.Tier',1,null,{
-          configuredTier:tiers.get(row.itemId),rankRewardPoints:rankPoints,
+          configuredTier:tiers.get(row.itemId),rankRewardPoints:rankPoints,rankActivity,
           selectionRule:'minimum_positive_unowned_tier_random',
           rankGate:'level_increased_and_unlocks_figurine',
           sourceProtoDbSha256:'dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623',
@@ -1237,7 +1259,7 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
       }
       for(const [i,target] of (p.AdditionalRewardItemIDs??[]).entries()){
         if(byId.get(target)?.nativeCategory!=='Furniture')continue;
-        emit(row,target,'figurine_additional_reward','source.AdditionalRewardItemIDs['+i+']',null);
+        emit(row,target,'figurine_additional_reward','source.AdditionalRewardItemIDs['+i+']',null,null,ranked(row.itemId)?{rankActivity}:{});
       }
     }
   }

@@ -108,7 +108,7 @@ test('all classification extensions preserve original evidence and localized sou
       if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
-      const related=ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
+      const related=ext.family==='progression'&&ev.rankActivity?[ev.rankActivity.preConditionItemId,ev.rankActivity.unlockMissionItemId]:ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
           ...(ev.boundedLocalDateGate?[ev.boundedLocalDateGate.conditionItemId,ev.boundedLocalDateGate.missionItemId]:[]),...(ev.orbItemId?[ev.orbItemId]:[])]:ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:

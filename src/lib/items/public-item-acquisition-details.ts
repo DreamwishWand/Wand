@@ -263,6 +263,20 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
             evidence.sourceRankingRecordSha256==='3204625406f5a3317e534e65dc411fe95afdc79ad6f4425a4b9ab999414e9da9'&&
             evidence.sourceRankingPayloadSha256==='4c3cfea78603697bd8be1808905ef7daaba3d4cfac5018a0582e1c51c7a3a136'&&
             evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653','EXTENSION_PROGRESS');
+          const gate=evidence.rankActivity;
+          if(kind==='figurine_rank_reward'||gate!==undefined){
+            check((kind==='figurine_rank_reward'||kind==='figurine_additional_reward')&&object(gate)&&
+              gate.requiredExpansion==='Expansion01'&&gate.preConditionItemId===2130001296&&gate.unlockMissionItemId===2070000996&&
+              gate.unlockMissionState===8&&gate.unlockMissionOperator===0&&gate.sourceConditionSha256===sha?.Condition&&
+              gate.sourceMissionSha256===sha?.Mission&&gate.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+              gate.sourceActivityRecordIndex===16&&gate.sourceActivityRecordSha256==='243b5021740968b2d84eebc08a207862d115eef90b7d03dd31f24ad2268a577a'&&
+              gate.sourceActivityPayloadSha256==='212e2e5dfb6b22f87c921bf3a3c42c7feeeba4cc3b7428f9975a4771b1c376f0','EXTENSION_RANK_ACTIVITY');
+            const points=gate.configuredRankPointRewards,friendship=gate.configuredFriendshipRewards;
+            check(object(points)&&object(points.victory)&&points.victory.normal===3&&points.victory.eager===6&&
+              object(points.loss)&&points.loss.normal===1&&points.loss.eager===2&&object(points.draw)&&points.draw.normal===2&&points.draw.eager===4&&
+              object(friendship)&&friendship.normal===200&&friendship.eager===1000,'EXTENSION_RANK_REWARDS');
+            relatedIds.push(2130001296,2070000996);
+          }
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
