@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {nativeDesignViewport} from '../src/lib/world/native-design-viewport.ts';
 import {readFileSync} from 'node:fs';
-import {bindNativeCalibrationGrids,nativeCalibrationScope,nativeUnderwaterDesignGrid} from '../src/lib/world/native-calibration-grids.ts';
+import {bindNativeCalibrationGrids,nativeCalibrationScope,nativeUnderwaterDesignGrid,bindIndependentEditorGrid} from '../src/lib/world/native-calibration-grids.ts';
 const {grids}=JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/villageexpansion04underwaterareas.json',import.meta.url),'utf8'));
 test('all twelve source grids bind to exactly three separate native map planes',()=>{
  const cases=[
@@ -43,4 +43,12 @@ test('individual underwater design area maps only to its own scene and original 
  }
  assert.equal(nativeUnderwaterDesignGrid(null),null);
  assert.equal(nativeUnderwaterDesignGrid({...grids[0],layoutId:'SceneLayouts/OffGridBuildings/Expansion04/UnderwaterTutorial/UnderwaterTutorial-DefaultLayout.json'}),null);
+});
+
+test('all exact underwater grids can open the existing independent Save overview without merging planes',()=>{
+ for(const g of grids){
+  assert.deepEqual(bindIndependentEditorGrid(g),nativeUnderwaterDesignGrid(g).grid);
+  assert.equal(bindIndependentEditorGrid({...g,sizeX:g.sizeX+1}),null);
+  assert.equal(bindIndependentEditorGrid({...g,layoutId:'SceneLayouts/OffGridBuildings/Expansion04/UnderwaterTutorial/UnderwaterTutorial-DefaultLayout.json'}),null);
+ }
 });
