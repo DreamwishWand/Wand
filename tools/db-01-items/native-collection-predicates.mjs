@@ -14,7 +14,8 @@ const flags={
  MineralItemData:['IsMissionItem',11,0x3B8FFD0],
  FishItemData:['IsMissionItem',12,0x3B8FFD0],
  FlowerItemData:['IsMissionItem',10,0x3D532D0],
- IngredientItemData:['IsMissionItem',11,0x3D532D0]
+ IngredientItemData:['IsMissionItem',11,0x3D532D0],
+ MealItemData:['IsMissionItem',12,0x3E1D580]
 };
 const unconditional=new Set(['BuffElixirItemData','MemoryShardItemData','ManualItemData',
  'FurnitureAncientMachineItemData','TrimmingItemData','FigurineItemData','StoryItemData',
@@ -28,8 +29,22 @@ export function nativeCollectionPredicate(row,source){
   runtimeMembershipVerified:false,currentAvailabilityVerified:false};
  if(unconditional.has(cls))return {...base,predicate:'always_true',nativeRva:0x680390,
   sourceField:null,sourceFieldNumber:null,sourceFieldPresent:null,sourceValue:null,eligible:true};
+ // FenceAndRoadItemData.get_CanBeCollected invokes String.Contains at
+ // RVA 50C4100 and negates the result. The literal slot RVA 9A35730
+ // resolves to "Ext!" in the matching IL2CPP stringliteral.json.
+ if(cls==='FenceAndRoadItemData'){
+   const field='Name',number=2;
+   if(source.sourceFieldDeclarations?.[cls]?.[field]!==number||!Array.isArray(row.observedFields))return null;
+   const present=row.observedFields.some(([n])=>n===number);
+   const value=typeof row.nativeKey==='string'&&row.nativeKey.length>0?row.nativeKey:null;
+   return {...base,predicate:'name_not_contains_literal',nativeRva:0x3BE9B20,
+     sourceField:field,sourceFieldNumber:number,sourceFieldPresent:present,sourceValue:value,
+     excludedNameSubstring:'Ext!',nativeLiteralRva:0x9A35730,
+     sourceStringLiteralSha256:'95ea2f3134d29d73df8a5abd558c75378079b642103fd9ab00720eccdd31406e',
+     eligible:value===null?null:!value.includes('Ext!')};
+ }
  const rule=flags[cls]??(cls==='FurnitureSnippetTrapItemData'?['Level',11,0x3C082F0]:null);
- if(!rule)return null; // FenceAndRoad and Meal require additional native conditions.
+ if(!rule)return null;
  const [field,number,rva]=rule;
  const decl=source.sourceFieldDeclarations?.[cls];
  if(decl?.[field]!==number||!Array.isArray(row.observedFields))return null;
@@ -38,7 +53,11 @@ export function nativeCollectionPredicate(row,source){
  let value=p[field];
  if(value===undefined&&!present&&field!=='Level')value=false;
  const known=field==='Level'?Number.isSafeInteger(value):typeof value==='boolean';
- const eligible=known?(field==='Level'?value===1:!value):null;
- return {...base,predicate:field==='Level'?'level_equals_one':'not_'+field,nativeRva:rva,
-  sourceField:field,sourceFieldNumber:number,sourceFieldPresent:present,sourceValue:known?value:null,eligible};
+ // MealItemData .cctor writes the exact RubbishItem ID to static +0x14
+ // at RVA 3E1FBE6. The getter returns false for mission items or this ID.
+ const meal=cls==='MealItemData',excludedItemId=30300494;
+ const eligible=meal&&row.itemId===excludedItemId?false:known?(field==='Level'?value===1:!value):null;
+ return {...base,predicate:meal?'not_mission_or_rubbish':field==='Level'?'level_equals_one':'not_'+field,nativeRva:rva,
+  sourceField:field,sourceFieldNumber:number,sourceFieldPresent:present,sourceValue:known?value:null,
+  ...(meal?{excludedItemId,nativeConstantWriteRva:0x3E1FBE6}:{}),eligible};
 }
