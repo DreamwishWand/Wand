@@ -3551,7 +3551,7 @@ fn activity_item_id(item:u64)->bool{
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
- Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(crate::storage_source::is_storage)).collect())
+ Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(|item|crate::storage_source::is_storage(item)&&(r.owner.is_some()||crate::storage_source::placement_storage_template(root,item).is_some_and(|(_,size)|size==r.capacity)))).collect())
 }
 pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,CodecError>{
  let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
@@ -3562,7 +3562,7 @@ pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,Code
    let g=&root["World"]["GridCollection"]["Grids"][&t.grid_id];let o=&g["Objects"][&t.object_id];
    serde_json::json!({"itemId":t.item_id,"gridDataPath":g["GridDataPath"],"x":o["X"],"y":o["Y"]})
   });
-  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else{"chest"},"capacity":r.capacity,"used":r.used,"owner":owner})
+  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"parentItemId":r.parent_item,"owner":owner})
  }).collect::<Vec<_>>();
  Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@1","rows":out}).to_string())
 }
