@@ -1571,7 +1571,7 @@ mod browser_amount_preview {
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||backup.len()>4*1024*1024{return Err(invalid());}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
-            if scope_value["kind"]!="outdoor"{return Err(invalid());}
+            if !matches!(scope_value["kind"].as_str(),Some("outdoor"|"room"|"floor"|"building")){return Err(invalid());}
             let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?;
             let patched=crate::private_storage_transfer::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
