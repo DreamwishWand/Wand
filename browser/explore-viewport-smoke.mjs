@@ -36,6 +36,16 @@ try{
  assert.ok(Math.abs(endHeight-initialHeight)<2,'scroll extent unchanged by card mounting');
  await first.scrollIntoViewIfNeeded();
  await page.waitForFunction(()=>document.querySelector('[data-explore-chunk]')?.getAttribute('data-mounted')==='true');
+ // Quick View uses separate art and action rows, and leaves the list present.
+ await cards.first().locator('.item').click();
+ const quick=page.locator('[data-quick-view]');
+ await quick.waitFor();
+ assert.equal(await quick.locator('details').count(),0);
+ assert.ok(await catalog.isVisible());
+ const contained=await quick.locator('.quick-art').evaluate(el=>{const art=el.getBoundingClientRect(),header=el.previousElementSibling.getBoundingClientRect(),actions=el.nextElementSibling.getBoundingClientRect();return art.top>=header.bottom-1&&art.bottom<=actions.top+1;});
+ assert.ok(contained);
+ await quick.getByRole('button',{name:/閉じる|Close/,exact:true}).click();
+ await quick.waitFor({state:'detached'});
  const firstColumns=Number(await page.locator('[data-explore-grid]').first().getAttribute('data-columns'));
  await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).click();
  await page.waitForFunction(n=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<n,firstColumns);
@@ -59,6 +69,28 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2));
   await page.setViewportSize({width:1280,height:720});
  }
+ // In-app navigation + browser Back restores filters, scope, selection and catalog.
+ await page.locator('[data-scope="all"]').click();
+ const searchBox=page.getByRole('searchbox');
+ const query=await cards.first().locator('.item').getAttribute('aria-label');
+ assert.ok(query);
+ await searchBox.fill(query);
+ await cards.first().waitFor();
+ await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).click();
+ await cards.first().locator('.item').click();
+ await quick.waitFor();
+ const selectedId=await quick.getAttribute('data-item-id');
+ await page.locator('.explore-service-toolbar .back').click();
+ await page.waitForURL('**/decorate/');
+ await page.goBack();
+ await quick.waitFor({timeout:30000});
+ assert.equal(await searchBox.inputValue(),query);
+ assert.equal(await quick.getAttribute('data-item-id'),selectedId);
+ assert.equal(await page.locator('[data-scope="all"]').getAttribute('aria-pressed'),'true');
+ assert.equal(await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).getAttribute('aria-expanded'),'true');
+ await quick.getByRole('button',{name:/閉じる|Close/,exact:true}).click();
+ await page.locator('.boards').getByRole('button',{name:/閉じる|Close/,exact:true}).click();
+ await searchBox.fill('');
  await page.locator('[data-scope="indoor"]').click();
  await page.reload();
  await page.locator('.site-header .explore-service-toolbar').waitFor();

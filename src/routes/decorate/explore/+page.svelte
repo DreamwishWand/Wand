@@ -1,5 +1,9 @@
 <script lang="ts">
   import {onMount,tick,untrack} from 'svelte';
+  import ExploreQuickView from '$lib/explore/ExploreQuickView.svelte';
+  import {loadExploreCatalog,loadExploreHistoricalArtwork} from '$lib/explore/catalog-cache';
+  import {readExploreBrowseSnapshot,type ExploreBrowseSnapshot} from '$lib/explore/browse-snapshot';
+  import {beforeNavigate} from '$app/navigation';
   import {registerServiceToolbar} from '$lib/ui/service-toolbar';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
@@ -40,6 +44,47 @@
   let sourceUniverses=$state.raw<{tagId:number;key:string;names:Record<string,string|null>}[]>([]);
   let sourceWorlds=$state.raw<readonly ItemMasterTagLabel[]>([]);
   let selectionMode=$state(false),selectedIds=$state<number[]>([]);
+  let ownershipSettled=$state(false),restoreOwned=false;
+  let pendingRestore=$state.raw<ExploreBrowseSnapshot|null>(null);
+  let restoring=false,disposed=false;
+  let focusReturnId:number|null=null;
+  let navigationSnapshot:ExploreBrowseSnapshot|null=null;
+  function captureBrowse():ExploreBrowseSnapshot{
+    return {schema:1,scope,search,filters:$state.snapshot(filters),favorites,ownedOnly,boardsOpen,filtersOpen,
+      selectionMode,selectedIds:[...selectedIds],selectedId:selected?.itemId??null,
+      variantKey:reviewDesign?.key??null,variantIds:variantReview.map(i=>i.itemId),variantChoices:{...variantChoices},
+      scrollY:window.scrollY,anchor:catalogNode?captureCatalogAnchor(catalogNode):null};
+  }
+  function applyBrowse(raw:unknown){
+    const saved=readExploreBrowseSnapshot(raw);if(!saved)return;
+    restoring=true;pendingRestore=saved;scope=saved.scope;search=saved.search;filters=saved.filters;
+    favorites=saved.favorites;restoreOwned=saved.ownedOnly;ownedOnly=ownershipAvailable&&restoreOwned;
+    boardsOpen=saved.boardsOpen;filtersOpen=saved.filtersOpen;selectionMode=saved.selectionMode;
+    selectedIds=saved.selectedIds;variantChoices=saved.variantChoices;
+  }
+  beforeNavigate(()=>{navigationSnapshot=captureBrowse();});
+  export const snapshot={capture:()=>navigationSnapshot??captureBrowse(),restore:applyBrowse};
+  $effect(()=>{
+    const saved=pendingRestore;
+    if(!saved||loading||!catalogWidth||saved.ownedOnly&&!ownershipSettled)return;
+    const node=catalogNode;if(!node)return;
+    untrack(()=>{
+      const item=saved.selectedId===null?undefined:byId.get(saved.selectedId);
+      if(item){
+        const members=saved.variantIds.flatMap(id=>{const member=byId.get(id);return member?[member]:[];});
+        const design=saved.variantKey&&members.some(i=>i.itemId===item.itemId)?{key:saved.variantKey,items:members}:undefined;
+        showReview(item,design);
+      }
+      pendingRestore=null;
+      const epoch=++layoutEpoch;
+      void tick().then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        if(disposed||epoch!==layoutEpoch||!node.isConnected){restoring=false;return;}
+        window.scrollTo({top:saved.scrollY,behavior:'instant'});
+        if(saved.anchor)restoreCatalogAnchor(node,saved.anchor);
+        restoring=false;
+      })));
+    });
+  });
   const nameOf=(i:ExploreItem)=>i.names[locale]??i.names.en??t('名称未確認','Unnamed item');
   const byId=$derived(new Map(items.map(i=>[i.itemId,i])));
   const active=$derived(boards.boards.find(b=>b.id===boards.active)??null);
@@ -102,7 +147,7 @@
     const width=catalogWidth;
     const before=previousWidth;
     previousWidth=width;
-    if(!width||!before||width===before)return;
+    if(!width||!before||width===before||restoring)return;
     untrack(()=>{
       const node=catalogNode;
       const anchor=node?captureCatalogAnchor(node):null;
@@ -113,11 +158,29 @@
     });
   });
   function displayed(d:DesignTile){return d.items.find(i=>i.itemId===variantChoices[d.key])??d.items[0];}
-  function showReview(i:ExploreItem,design?:DesignTile){selected=i;reviewDesign=design??null;variantReview=design?.items??[i];}
+  function showReview(i:ExploreItem,design?:DesignTile){
+    focusReturnId=i.itemId;selected=i;reviewDesign=design??null;variantReview=design?.items??[i];
+  }
+  function closeReview(){
+    selected=null;reviewDesign=null;variantReview=[];
+    const id=focusReturnId;
+    void tick().then(()=>{if(id!==null)catalogNode?.querySelector<HTMLButtonElement>('[data-item-id="'+id+'"] .item')?.focus({preventScroll:true});});
+  }
+  function reviewAttributes(i:ExploreItem){
+    const tags=(facet:Facet)=>[...new Set(i.tags.filter(([key])=>key===facet).map(([,key])=>collectionDb01TagLabel(locale,key)))];
+    const hint=i.sourcePlacement?.ordinaryScope?.scopeHint;
+    return [
+      {label:label('universe'),values:i.universes.map(id=>universeName(String(id)))},
+      {label:collectionDb01FacetLabel(locale,'color'),values:tags('color')},
+      {label:collectionDb01FacetLabel(locale,'furnitureStyle'),values:tags('furnitureStyle')},
+      {label:label('category'),values:categoriesOf(i).map(key=>label(key))},
+      {label:label('placementHint'),values:hint&&hint!=='unknown'?[label(hint)]:[]}
+    ].filter(row=>row.values.length);
+  }
   function pickVariant(d:DesignTile,i:ExploreItem){variantChoices={...variantChoices,[d.key]:i.itemId};showReview(i,d);}
 
   const filterCount=$derived((filters.categories?.length??0)+(filters.worlds?.length??0)+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
-  function resetBrowse(){layoutEpoch++;window.scrollTo({top:0,behavior:'instant'});}
+  function resetBrowse(){restoring=false;pendingRestore=null;layoutEpoch++;window.scrollTo({top:0,behavior:'instant'});}
   function setScope(next:DecorationScope){scope=next;try{localStorage.setItem(DECORATION_SCOPE_KEY,next);}catch{}resetBrowse();}
   function toggleCategory(key:ExploreCategory){const list=filters.categories??[];filters.categories=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
   function toggleWorld(key:string){const list=filters.worlds??[];filters.worlds=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
@@ -148,25 +211,25 @@
   onMount(()=>{
     const unwatch=watchWandLanguage(v=>locale=v);
     const unregister=registerServiceToolbar(exploreToolbar);
-    try{scope=readDecorationScope(localStorage.getItem(DECORATION_SCOPE_KEY));}catch{}
+    if(!pendingRestore)try{scope=readDecorationScope(localStorage.getItem(DECORATION_SCOPE_KEY));}catch{}
     let ownershipAbort:AbortController|undefined,ownershipRevision=-1;
     const unsubscribeSave=localSaveSession.subscribe(session=>{
       if(session.revision===ownershipRevision)return;
       ownershipRevision=session.revision;
       ownershipAbort?.abort();const controller=new AbortController();ownershipAbort=controller;
-      ownershipAvailable=false;ownedOnly=false;ownedIds=new Set();
+      ownershipAvailable=false;ownedOnly=false;ownedIds=new Set();ownershipSettled=false;
       const task=session.file?readSelectedOwnership(session.file,controller.signal):readRecordedOwnership();
-      void task.then(result=>{if(!controller.signal.aborted){ownershipAvailable=result.available;ownedIds=result.ids;}}).catch(()=>{});
+      void task.then(result=>{if(!controller.signal.aborted){ownershipAvailable=result.available;ownedIds=result.ids;ownedOnly=result.available&&restoreOwned;restoreOwned=false;}}).catch(()=>{}).finally(()=>{if(!controller.signal.aborted)ownershipSettled=true;});
     });
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
-    const w=new Worker(new URL('../../../lib/explore/catalog.worker.ts',import.meta.url),{type:'module'});
-    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];releases=e.data.releases??[];}else failed=true;loading=false;};
-    w.onerror=()=>{failed=true;loading=false;};
-    w.postMessage({base});
-    void fetch(base+'/ddv/collection/item-images-r39.json').then(r=>r.ok?r.json():null).then(d=>{if(d?.schema==='wand.collection.item-images.r39@1'&&d.items)images=d.items;}).catch(()=>{});
+    void loadExploreCatalog(base).then(d=>{
+      if(disposed)return;
+      items=d.items;sourceUniverses=d.universeTags;sourceWorlds=d.worldTags;releases=d.releases;loading=false;
+    },()=>{if(!disposed){failed=true;loading=false;}});
+    void loadExploreHistoricalArtwork(base).then(d=>{if(!disposed)images=d;}).catch(()=>{});
     const storageListener=(e:StorageEvent)=>{if(e.key===STORAGE_KEY){try{storageRaw=e.newValue;boards=readBoards(storageRaw);}catch{storageFailed=true;}}};
     window.addEventListener('storage',storageListener);
-    return()=>{w.terminate();unwatch();unregister();unsubscribeSave();ownershipAbort?.abort();window.removeEventListener('storage',storageListener);};
+    return()=>{disposed=true;unwatch();unregister();unsubscribeSave();ownershipAbort?.abort();window.removeEventListener('storage',storageListener);};
   });
 </script>
 {#snippet exploreToolbar()}
@@ -203,7 +266,7 @@
 <svelte:head><title>Explore · Dreamwish Wand</title></svelte:head>
 <section class="decorate">
   {#if storageFailed}<p role="alert">{t('保存できません。再読み込みしてください。','Storage unavailable. Reload before editing.')}</p>{/if}
-  <div class="workspace" class:withBoards={boardsOpen}>
+  <div class="workspace" class:withBoards={boardsOpen} class:withReview={Boolean(selected)}>
   <div class="catalog" bind:this={catalogNode} bind:clientWidth={catalogWidth} data-explore-total={total}>
     {#if filterCount}
       <div class="active-filters">
@@ -224,6 +287,20 @@
       {#if filtered.length===0}<p>{t('該当するアイテムがありません','No matching items')}</p>{/if}
     {/if}
   </div>
+  {#if boardsOpen||selected}
+  <div class="right-rail" class:hasReview={Boolean(selected)} class:hasBoards={boardsOpen}>
+    {#if selected}
+      {@const item=selected}
+      {#snippet reviewActions()}
+        <button disabled={!ready||storageFailed} aria-pressed={activeIds.has(item.itemId)} onclick={()=>chooseItem(item.itemId)}><WandIcon name={activeIds.has(item.itemId)?'check':'plus'} size={17}/>{label(activeIds.has(item.itemId)?'removeBoard':'addBoard')}</button>
+        <button aria-label={label('favorites')} title={label('favorites')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={17}/></button>
+        {#if catalogPlacementCandidate(item)}<button onclick={()=>sendCandidates([item])}><WandIcon name="world" size={17}/>{incomingWords[0]}</button>{/if}
+      {/snippet}
+      {#snippet reviewVariants()}
+        {#if variantReview.length>1}<div class="variant-grid">{#each variantReview as variant (variant.itemId)}<button aria-label={nameOf(variant)} title={nameOf(variant)} aria-pressed={item.itemId===variant.itemId} onclick={()=>{if(reviewDesign)pickVariant(reviewDesign,variant);}}><ItemArtwork itemId={variant.itemId} sourcePath={images[String(variant.itemId)]??null}/></button>{/each}</div>{/if}
+      {/snippet}
+      <ExploreQuickView {item} name={nameOf(item)} {locale} sourcePath={images[String(item.itemId)]??null} attributes={reviewAttributes(item)} owned={ownedIds.has(item.itemId)} actions={reviewActions} variants={reviewVariants} close={closeReview}/>
+    {/if}
   {#if boardsOpen}
   <aside class="boards" aria-label="Moodboards">
     <div class="bar board-header"><h2>Moodboards</h2><button aria-label={t('閉じる','Close')} onclick={()=>boardsOpen=false}><WandIcon name="close" size={18}/></button></div>
@@ -260,6 +337,8 @@
   </aside>
   {/if}
   </div>
+  {/if}
+  </div>
   {#snippet designTile(design:DesignTile)}
     {@const item=displayed(design)}
     {@render itemTile(item,design)}
@@ -267,33 +346,30 @@
   {#snippet itemTile(item:ExploreItem,design?:DesignTile)}
     <article class="catalog-tile" data-item-id={item.itemId} class:inBoard={activeIds.has(item.itemId)}>
       <button class="item" aria-label={nameOf(item)} title={nameOf(item)} aria-pressed={selectionMode?selectedIds.includes(item.itemId):undefined} onclick={()=>selectionMode?selectItem(item.itemId):showReview(item,design)}><span class="art"><ItemArtwork itemId={item.itemId} sourcePath={images[String(item.itemId)]??null}/></span><span class="visually-hidden">{nameOf(item)}</span></button>
+      <div class="tile-controls">
       <button class="tile-favorite" aria-label={t('お気に入り','Favorite')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={16}/></button>
       {#if design&&design.items.length>1}
         <button class="variants-button" aria-label={t('色違いを選択','Choose variant')} title={t('色違いを選択','Choose variant')} onclick={()=>showReview(item,design)}><WandIcon name="palette" size={14}/>{design.items.length}</button>
       {/if}
       <button class="tile-add" aria-label={activeIds.has(item.itemId)?t('ボードから削除','Remove from board'):t('ボードに追加','Add to board')} aria-pressed={activeIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>chooseItem(item.itemId)}><WandIcon name={activeIds.has(item.itemId)?'check':'plus'} size={17}/></button>
+      </div>
     </article>
   {/snippet}
-  {#if selected}
-    <aside class="review" aria-label={t('アイテム詳細','Item details')}>
-      <button onclick={()=>selected=null}>{t('閉じる','Close')}</button>
-      <div class="large"><ItemArtwork itemId={selected.itemId} sourcePath={images[String(selected.itemId)]??null} large/></div>
-      <h2>{nameOf(selected)}</h2>{#if catalogPlacementCandidate(selected)}<button onclick={()=>selected&&sendCandidates([selected])}>{incomingWords[0]}</button>{/if}
-      {#if variantReview.length>1}<div class="variant-grid">{#each variantReview as variant (variant.itemId)}<button aria-label={nameOf(variant)} title={nameOf(variant)} aria-pressed={selected.itemId===variant.itemId} onclick={()=>{if(reviewDesign)pickVariant(reviewDesign,variant);}}><ItemArtwork itemId={variant.itemId} sourcePath={images[String(variant.itemId)]??null}/></button>{/each}</div>{/if}
-      <button disabled={!active||storageFailed} onclick={()=>selected&&toggle(selected.itemId)}>{active?.entries.some(e=>e.itemId===selected?.itemId)?t('ボードから削除','Remove from board'):t('ボードへ追加','Add to board')}</button>
-    </aside>
-  {/if}
+
 </section>
 <style>
   .decorate{padding:12px 16px;min-width:0;position:relative}
   .workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
-  .workspace.withBoards{grid-template-columns:minmax(0,1fr) minmax(300px,35%)}
+  .workspace.withBoards,.workspace.withReview{grid-template-columns:minmax(0,1fr) minmax(310px,35%)}
+  .right-rail{min-width:0;position:sticky;top:calc(var(--shell-height,60px) + 12px);max-height:calc(100dvh - var(--shell-height,60px) - 24px);display:flex;flex-direction:column;gap:8px;overflow:hidden}
+  .right-rail :global(.quick-view){flex:1 1 auto;min-height:0}
+  .right-rail.hasReview.hasBoards :global(.quick-view){flex:0 1 62%;max-height:62%}
+  .right-rail.hasReview.hasBoards .boards{flex:1 1 38%;min-height:0;overflow:auto}
   .catalog{min-width:0;overflow-anchor:none}
-  .boards{min-width:0;position:sticky;top:calc(var(--shell-height,60px) + 12px);max-height:calc(100dvh - var(--shell-height,60px) - 24px);overflow:auto;border-left:1px solid var(--wand-line);padding-left:12px}
+  .boards{min-width:0;max-height:calc(100dvh - var(--shell-height,60px) - 24px);overflow:auto;border-left:1px solid var(--wand-line);padding-left:12px}
   .boards .tiles{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
   .board-header{justify-content:space-between}
   .back{font-size:12px;text-decoration:none}
-  @media(max-width:780px){.workspace.withBoards{grid-template-columns:minmax(0,1fr)}.boards{position:fixed;z-index:42;right:0;top:var(--shell-height,60px);bottom:0;width:min(420px,100vw);max-height:none;background:var(--wand-menu);padding:12px;box-shadow:0 0 24px #0008}}
 
   .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   h1,h2,h3{font-size:1rem;margin:0 8px 0 0}
@@ -306,8 +382,6 @@
   .board-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px;margin-bottom:16px}
   .board-card{display:grid;gap:6px;overflow-wrap:anywhere}.cover{display:grid;grid-template-columns:repeat(2,1fr);min-height:94px;grid-auto-rows:47px}
   .cover span{min-height:0}.note{display:grid;gap:4px;margin:10px 0}.note textarea{min-height:70px;resize:vertical}
-  .review{position:fixed;right:12px;bottom:12px;z-index:40;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:12px;max-width:min(310px,95vw);box-shadow:0 8px 30px #0008}
-  .large{height:170px}
   .spacer{flex:1}.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:36px;min-height:36px;padding:5px;border:0;background:transparent;color:var(--wand-text);text-decoration:none;cursor:pointer}
   .icon-button:hover,.icon-button[aria-pressed=true],.icon-button[aria-expanded=true],.icon-button.activeTab{background:var(--wand-pill-bg);color:var(--wand-accent-strong)}
   .back :global(svg){transform:rotate(180deg)}
@@ -335,17 +409,25 @@
   .swatch{width:16px;height:16px;border-radius:50%;border:1px solid var(--wand-line)}
   .shelf{margin:0 0 14px;min-width:0}
   .universe-heading{margin:0 0 4px;padding:4px 0;font-size:1rem;font-weight:650}
-  .catalog-tile{box-sizing:border-box;height:100%;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
+  .catalog-tile{box-sizing:border-box;height:100%;display:grid;grid-template-rows:minmax(0,1fr) 25px;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
-  .catalog-tile .item{width:100%;height:100%;padding:6px}.catalog-tile .art{height:100%;min-height:0}
-  .variants-button{position:absolute;right:3px;bottom:3px;display:flex;align-items:center;gap:2px;font-size:10px;background:var(--wand-menu);padding:3px;border:0;border-radius:5px;cursor:pointer}
+  .catalog-tile .item{width:100%;height:100%;min-height:0;padding:3px;grid-template-rows:minmax(0,1fr);overflow:hidden}.catalog-tile .art{height:100%;min-height:0;overflow:hidden}
+  .tile-controls{display:flex;align-items:center;justify-content:space-between;gap:1px;min-width:0;padding:0 2px;box-sizing:border-box}
+  .variants-button{display:flex;align-items:center;justify-content:center;gap:1px;font-size:10px;background:var(--wand-menu);padding:1px;border:0;border-radius:5px;cursor:pointer;min-width:0;max-width:34px;height:23px}
   .variant-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:8px 0;max-height:180px;overflow:auto}.variant-grid button{height:46px;padding:2px}.variant-grid button[aria-pressed=true]{outline:2px solid var(--wand-accent)}
-  .tile-add,.tile-favorite{position:absolute;display:grid;place-items:center;width:27px;height:27px;padding:2px;border:0;background:var(--wand-menu);border-radius:6px;cursor:pointer}
-  .tile-add{right:3px;top:3px}.tile-favorite{left:3px;bottom:3px;opacity:0}
+  .tile-add,.tile-favorite{display:grid;place-items:center;width:23px;height:23px;flex:0 0 23px;padding:1px;border:0;background:var(--wand-menu);border-radius:5px;cursor:pointer}
+  .tile-add{margin-left:auto}.tile-favorite{opacity:0}
   .tile-add[aria-pressed=true],.tile-favorite[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast);opacity:1}
   .catalog-tile:hover .tile-favorite,.catalog-tile:focus-within .tile-favorite{opacity:1}
   .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(pointer:coarse){.tile-favorite{opacity:1}}
-  @media(max-width:780px){.boards{top:auto;bottom:0;left:0;right:0;width:100%;box-sizing:border-box;max-height:58dvh;border-left:0;border-top:1px solid var(--wand-line);border-radius:12px 12px 0 0}.workspace.withBoards{padding-bottom:58dvh}.active-name{display:none}}
+  @media(max-width:780px){
+    .workspace.withBoards,.workspace.withReview{grid-template-columns:minmax(0,1fr);padding-bottom:58dvh}
+    .right-rail{position:fixed;z-index:42;inset:auto 0 0;max-height:58dvh;width:100%;background:var(--wand-menu);box-shadow:0 -4px 24px #0005;border-radius:12px 12px 0 0;overflow:auto;gap:0}
+    .right-rail.hasReview :global(.quick-view){max-height:58dvh;flex:1 1 auto;border-radius:12px 12px 0 0}
+    .right-rail.hasReview.hasBoards .boards{display:none}
+    .boards{padding:12px;max-height:58dvh;border-left:0;box-sizing:border-box}
+    .active-name{display:none}
+  }
   @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}}
 </style>

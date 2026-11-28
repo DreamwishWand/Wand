@@ -1,6 +1,15 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  quickView:['クイックビュー','Quick view','Aperçu','Anteprima','Schnellansicht','Vista rápida','快速查看','Visualização rápida'],
+  itemPage:['アイテムページ','Item page','Page de l’objet','Pagina oggetto','Objektseite','Página del objeto','物品详情','Página do item'],
+  itemPagePending:['個別ページは準備中','Item page not yet available','Page en préparation','Pagina in preparazione','Objektseite noch nicht verfügbar','Página en preparación','详情页尚未开放','Página em preparação'],
+  ownedConfirmed:['所有確認済み','Ownership confirmed','Possession confirmée','Possesso confermato','Besitz bestätigt','Posesión confirmada','已确认拥有','Posse confirmada'],
+  placement:['装飾場所','Placement','Placement','Posizionamento','Platzierung','Colocación','摆放位置','Posicionamento'],
+  placementHint:['配置候補','Placement context','Contexte de placement','Contesto di posizionamento','Platzierungskontext','Contexto de colocación','摆放候选','Contexto de posicionamento'],
+  both:['屋内・屋外','Indoor & outdoor','Intérieur et extérieur','Interno ed esterno','Innen und außen','Interior y exterior','室内外','Interior e exterior'],
+  addBoard:['ボードに追加','Add to board','Ajouter au tableau','Aggiungi alla bacheca','Zur Pinnwand hinzufügen','Añadir al panel','添加到灵感板','Adicionar ao painel'],
+  removeBoard:['ボードから削除','Remove from board','Retirer du tableau','Rimuovi dalla bacheca','Von Pinnwand entfernen','Quitar del panel','从灵感板移除','Remover do painel'],
   outdoor:['屋外','Outdoors','Extérieur','Esterno','Draußen','Exterior','室外','Exterior'],
   indoor:['屋内','Indoors','Intérieur','Interno','Drinnen','Interior','室内','Interior'],
   all:['すべて','All','Tout','Tutto','Alle','Todo','全部','Todos'],

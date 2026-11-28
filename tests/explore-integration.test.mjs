@@ -34,3 +34,14 @@ test('Explore uses the shared toolbar, flat filters, and noninteractive headings
  assert.match(explore,/<h2 class="universe-heading">/);
  assert.doesNotMatch(explore,/<details|showUniverse|searchOpen|allGrid/);
 });
+
+test('Quick View preserves the browse workspace and uses shared media and entity link contract',()=>{
+  const view=readFileSync(new URL('../src/lib/explore/ExploreQuickView.svelte',import.meta.url),'utf8');
+  assert.match(explore,/<ExploreQuickView /);
+  assert.match(explore,/export const snapshot=/);
+  assert.match(explore,/loadExploreCatalog\(base\)/);
+  assert.match(view,/itemEntityHref/);
+  assert.match(view,/ItemArtwork/);
+  assert.doesNotMatch(view,/<details|<summary/);
+  assert.match(explore,/class="tile-controls"/);
+});
