@@ -52,15 +52,18 @@
           </div>
         {/if}
         {#if inspection && revision}
-          <p>LightLayout: {String(revision.artwork?.lightLayout??'未指定')} / Layout: {String(revision.artwork?.layout??'未指定')}</p>
+          <p>LightLayout: {inspection.native?.layout??String(revision.artwork?.lightLayout??'未指定')}{inspection.native?.layoutDefaulted?' (原本既定値)':''} / Layout: {String(revision.artwork?.layout??'未指定')}</p>
           <label>比較用 group width <input type="number" min="541" max="16384" bind:value={groupWidth}/></label>
           {#if inspection.template}
             {@const t=inspection.template}
-            <p>配置候補（背景・調整・Icon選択未確定）</p>
+            <p>配置候補（カテゴリ・背景・Icon選択および既定の描画調整は未確定）</p>
             <div class="candidate" style:aspect-ratio={t.artworkWidth+' / '+t.artworkHeight}>
               {#each inspection.slots as slot (slot.binding)}
                 <div class="slot" style:left={100*slot.x/t.artworkWidth+'%'} style:width={100*slot.width/t.artworkWidth+'%'}>
-                  {#if slot.image}<img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async"/>
+                  {#if slot.image}
+                    <div class="image-frame" style:inset={slot.adjustment?slot.adjustment.margins.map(n=>100*n/t.artworkWidth+'cqw').join(' '):undefined}>
+                      <img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async" style:object-fit={slot.adjustment?.fill??'contain'}/>
+                    </div>
                   {:else}<span>{slot.binding}<br/>未確定</span>{/if}
                 </div>
               {/each}
@@ -100,8 +103,9 @@
   input:not([type=checkbox]){max-width:100%;box-sizing:border-box}
   .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
   small{display:block;color:var(--wand-muted);overflow-wrap:anywhere}
-  .candidate{position:relative;max-width:100%;background:var(--wand-card);border:1px solid var(--wand-line);margin:8px 0}
+  .candidate{container-type:inline-size;position:relative;max-width:100%;background:var(--wand-card);border:1px solid var(--wand-line);margin:8px 0}
   .slot{position:absolute;top:0;height:100%;box-sizing:border-box;border:1px dashed var(--wand-line);display:grid;place-items:center;text-align:center;overflow:hidden}
+  .image-frame{position:absolute;inset:0;overflow:hidden}
   .slot img{width:100%;height:100%;object-fit:contain}
   article{background:var(--wand-card);border:1px solid var(--wand-line);padding:8px;margin-bottom:8px}
   .images{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
