@@ -56,3 +56,10 @@ export function sanitizeSavedAvatarAppearance(x:unknown):SavedAvatarAppearance{
 export function savedBodyPreference(x:SavedAvatarAppearance|undefined):'male'|'female'|undefined{
  return x?.activeIsMale===true?'male':x?.activeIsMale===false?'female':undefined
 }
+
+/** A new explicit native body preference wins; otherwise retain the comparison body. */
+export function selectAppearanceOption<T extends {id:string}>(options:readonly T[],selected:string,previousPreferred:string|undefined,preferred:string|undefined):T|undefined{
+ const current=options.find(o=>o.id===selected);
+ const native=preferred===undefined?undefined:options.find(o=>o.id===preferred);
+ return (preferred!==previousPreferred?native:undefined)??current??native??options[0];
+}

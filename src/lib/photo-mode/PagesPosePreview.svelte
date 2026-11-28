@@ -53,8 +53,8 @@
           {/each}
         </div>
       {/if}
-      {#key itemId+':'+poseIndex+':'+$localSaveSession.revision+':'+skinKey+':'+(savedBodyPreference(appearance)??'-')}
-        <PosePreview {options} {copy} preferredBody={savedBodyPreference($localSaveSession.avatarAppearance)}/>
+      {#key itemId+':'+poseIndex}
+        <PosePreview {options} {copy} preferredBody={savedBodyPreference(appearance)} appearanceKey={$localSaveSession.revision+':'+skinKey}/>
       {/key}
       {#await names then items}
         {@const found=items.filter(x=>x.name)}
