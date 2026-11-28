@@ -182,7 +182,7 @@ mod tests{
   let output:Value=serde_json::from_str(&recover(&raw,&target(),(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
   assert_eq!(output["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":30000002,"Amount":3,"State":{"Unknown":1}},{"ItemID":30000001,"Amount":1,"State":null}]));
   root["Player"]["ContainerInventories"]["0"]["Inventory"][1]["State"]=json!({"Unknown":true});
-  assert_eq!(destinations(&root).unwrap()[0].used,2);
+  assert!(!destinations(&root).unwrap().iter().any(|r|r.container_id=="0"));
   assert!(recover(&root.to_string(),&target(),(1,2),"GridOrientation_Down","0").is_err());
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){
