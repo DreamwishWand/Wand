@@ -2105,6 +2105,43 @@ pub fn preview_furniture_stock_transaction(source:&str,expected_stock:u32,action
     Ok(draft)
 }
 
+/// Clone the exact observed local payload, rather than reconstructing it from
+/// ItemID. Codec authenticates the source and destination catalog, and checks
+/// source/fresh-ID dependencies. Never accept a caller-provided State.
+pub fn preview_local_state_stock_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),expected_orientation:&str,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+    let bad=PatchError::InvalidTarget;
+    validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;
+    if target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&expected_orientation)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+    let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let grid=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
+    let obj=&grid["Objects"][&target.object_id];
+    if grid["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||target.object_id.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=target.object_id||obj["ID"].as_u64()!=Some(u64::from(n)))||
+       root["World"]["GridCollection"].get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|m|m.contains_key(&target.grid_id)))||
+       obj.as_object().is_none_or(|m|m.len()!=6||m.keys().any(|k|!matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))||
+       obj["ItemID"].as_u64()!=Some(target.item_id)||obj["X"].as_i64()!=Some(i64::from(expected.0))||obj["Y"].as_i64()!=Some(i64::from(expected.1))||obj["Orientation"].as_str()!=Some(expected_orientation)||
+       !obj.get("State").is_some_and(transferable_local_grid_state){return Err(bad);}
+    let mut locator=JsonLocator::grid_axis(source,target,"X")?;
+    locator.signed_path=None;locator.item_path=None;
+    let path=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects"),k(&target.object_id),k("State")];
+    locator.capture.insert(path.clone(),None);locator.walk_complete()?;
+    let state=locator.capture.get(&path).and_then(|v|v.clone()).map(|r|&source[r]).ok_or(bad)?;
+    let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,-1)?;
+    insert_grid_record(&amount.patched_json,d,target.item_id,xy,orientation,Some(state))
+}
+
+/// Only payloads with no meaningful stored contents may be discarded on
+/// pickup by this contract. Toggle and other nonempty states remain protected.
+pub fn empty_local_grid_state(state:&serde_json::Value)->bool{
+    state.as_object().is_some_and(|m|m.is_empty()||m.len()==1&&m.get("ItemList").and_then(serde_json::Value::as_object).is_some_and(|v|v.len()==1&&v.get("Items").and_then(serde_json::Value::as_array).is_some_and(|a|a.is_empty())))
+}
+pub fn preview_empty_local_state_stock_pickup(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+    let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let obj=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
+    if target.item_id/100_000!=400||!obj.get("State").is_some_and(empty_local_grid_state){return Err(PatchError::InvalidTarget);}
+    let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,1)?;
+    preview_grid_structure_checked(&amount.patched_json,target,expected,PlainGridStructureAction::Remove,false,false,true)
+}
+
 /// Bounded native room finish contract inherited from Switch 1.25 runtime
 /// acceptance (Flooring and All Walls). Current-build acceptance and the
 /// item definition witness are caller responsibilities, not implied here.
