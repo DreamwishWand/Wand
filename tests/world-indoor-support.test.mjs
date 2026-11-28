@@ -90,3 +90,57 @@ test('single room floor cut can be reused by support paste without stock or nati
  for(const r of [{...row,storage:true},{...row,supportFactor:2},{...row,expectedOrientation:'GridOrientation_DownLeft'},{...row,itemId:'40100001'}])assert.equal(supportFloorCut({...cut,rows:[r]},file),null);
  assert.equal(supportFloorCut({...cut,rows:[row,row]},file),null);
 });
+
+test('support cut uses a parent witness and enters outdoor paste only in free mode',async()=>{
+ const {indoorGroupTransfer}=await import('../src/lib/world/indoor-room-view.ts');
+ const {groupCutPlan,cutClipboardMatches}=await import('../src/lib/world/group-paste.ts');
+ const id=40000002,orientation='GridOrientation_Down',supportSource={parentItemId:40000003,parentX:1,parentY:2,path:[0],index:0};
+ const row={localOrdinal:7,supportSource,area:'indoor',itemId:String(id),expectedX:0,expectedY:0,expectedOrientation:orientation};
+ const floor={...face,positions:[],items:[],sourcePath:'GridData/Rooms/Room8x8-GridData.json',terrain:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,4,4])}};
+ const shapes={[id+':8']:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''}};
+ const clip=[{itemId:id,dx:0,dy:0,orientation:2}],allowed=new Set([id]);
+ assert.equal(indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,false),null);
+ const moves=indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,true);
+ assert.equal(moves?.[0].localOrdinal,7);assert.deepEqual(moves?.[0].supportSource,supportSource);
+ const file=new File(['save'],'local.json');
+ assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],true),true);
+ assert.equal(cutClipboardMatches({file,scope:'indoor',rows:[row]},file,'Village04',[],false),false);
+ assert.equal(groupCutPlan([row],{rows:[]},true),null);
+});
+
+test('support paste accepts ordinary outdoor and support leaf cuts on the same file',async()=>{
+ const {supportFloorCut}=await import('../src/lib/world/indoor-support.ts');
+ const file=new File(['save'],'local.json'),row={localOrdinal:7,itemId:'40000002',expectedX:3,expectedY:4,expectedOrientation:'GridOrientation_Down',area:'Village04'},cut={file,scope:'Village04',rows:[row]};
+ assert.equal(supportFloorCut(cut,file)?.localOrdinal,7);
+ const supportSource={parentItemId:40000003,parentX:0,parentY:0,path:[],index:1};
+ assert.deepEqual(supportFloorCut({...cut,rows:[{...row,supportSource}]},file)?.supportSource,supportSource);
+ assert.equal(supportFloorCut({...cut,rows:[{...row,supportFactor:1}]},file),null);
+});
+
+test('free support group transforms all selected ordinary leaves or rejects the whole group',async()=>{
+ const {supportFreeGroupTransform}=await import('../src/lib/world/subgrid-local.ts');
+ const a=40000002,b=40000003,down='GridOrientation_Down',left='GridOrientation_Left';
+ const tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:a,x:1,y:1,orientation:down,child:null},{itemId:b,x:2,y:1,orientation:down,child:null}]};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''};
+ const shapes={[a+':8']:shape,[a+':12']:shape,[b+':8']:shape,[b+':12']:shape},raster={sizeX:4,sizeY:4,nativeFloorValues:new Uint32Array(16)},allowed=new Set([a,b]);
+ const move=supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,2,2,0);
+ assert.deepEqual(move?.map(p=>[p.x,p.y,p.orientation]),[[2,2,down],[3,2,down]]);
+ const rotate=supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,1,1,1);
+ assert.deepEqual(rotate?.map(p=>[p.x,p.y,p.orientation]),[[1,1,left],[1,2,left]]);
+ assert.equal(supportFreeGroupTransform(tree,shapes,allowed,raster,[0,1],0,3,3,0),null);
+ assert.equal(supportFreeGroupTransform(tree,shapes,new Set([a]),raster,[0,1],0,2,2,0),null);
+ assert.equal(supportFreeGroupTransform(tree,shapes,allowed,raster,[0,0],0,2,2,0),null);
+});
+
+test('support batch stock plan uses sequential amounts per item and rejects insufficient stock',async()=>{
+ const {supportGroupStockPlan}=await import('../src/lib/world/subgrid-local.ts');
+ const id=40000002,orientation='GridOrientation_Down',tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:id,x:0,y:0,orientation,child:null},{itemId:id,x:1,y:0,orientation,child:null}]};
+ const shapes={[id+':8']:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''}},raster={sizeX:4,sizeY:4,nativeFloorValues:new Uint32Array(16)},allowed=new Set([id]),counts=new Map([[id,2]]);
+ const duplicate=supportGroupStockPlan(tree,shapes,allowed,raster,[0,1],counts,{anchor:0,x:2,y:2});
+ assert.deepEqual(duplicate?.map(p=>[p.action,p.expectedStock,p.x,p.y]),[['place',2,2,2],['place',1,3,2]]);
+ const pickup=supportGroupStockPlan(tree,shapes,allowed,raster,[0,1],counts,null);
+ assert.deepEqual(pickup?.map(p=>[p.action,p.expectedStock,p.index]),[['pickup',2,0],['pickup',3,1]]);
+ assert.equal(supportGroupStockPlan(tree,shapes,allowed,raster,[0,1],new Map([[id,1]]),{anchor:0,x:2,y:2}),null);
+ assert.equal(supportGroupStockPlan(tree,shapes,allowed,raster,[0,1],counts,{anchor:0,x:3,y:2}),null);
+ assert.equal(counts.get(id),2);
+});
