@@ -155,18 +155,18 @@ try{
   const facial=expressionDetail.locator('.pose-faces select'),faceControls=expressionDetail.locator('.body-options button'),faceTime=expressionDetail.locator('input.seek');
   await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
   assert.equal(await facial.locator('option').count(),8);
-  const ready=()=>page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
-  await faceControls.nth(0).click();await ready();
+  const faceReady=()=>page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
+  await faceControls.nth(0).click();await faceReady();
   await faceTime.evaluate(e=>{e.value=String(Number(e.max)*.3);e.dispatchEvent(new Event('input',{bubbles:true}))});
   const position=await faceTime.inputValue();
   for(const [b,number] of [['male',5],['female',3]]){
-    if(b==='female'){await faceControls.nth(1).click();await ready()}
+    if(b==='female'){await faceControls.nth(1).click();await faceReady()}
     const previous=await faceTime.inputValue(),url=base+'/photo-mode-preview/'+index.faceLayers[b][number].asset.sha256+'.wfl';
     const received=page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
-    await facial.selectOption(String(number));await received;await ready();
+    await facial.selectOption(String(number));await received;await faceReady();
     assert.equal(await faceTime.inputValue(),previous);
     assert.equal(await faceControls.nth(b==='male'?0:1).getAttribute('aria-pressed'),'true');
-    await facial.selectOption('pose');await ready();assert.equal(await faceTime.inputValue(),previous);
+    await facial.selectOption('pose');await faceReady();assert.equal(await faceTime.inputValue(),previous);
   }
   assert.ok(Number(position)>0);
   console.log('Native normal facial layers ready on both body rigs; seek retained');
