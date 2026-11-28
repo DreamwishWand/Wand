@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {chromium} from 'playwright';
 import {checkLinearSceneComposite} from './photo-mode-linear-composite-smoke.mjs';
 import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
@@ -8,6 +9,10 @@ import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.m
 
 const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
 assert.equal(index.schema,'wand.photo-mode.pages-test@2');
+assert.equal(index.studioAssets.lightingParityVerified,false);
+for(const [key,ext,bytes,sha] of [['reflection','.wlc',786420,'8c77ed0eddb2a7ee856d6480eaf293a735df7600c2c3be540f3378c8a85feec2'],['lut','.wlt',98304,'63becd39f68846f7d4f9b3ac570bfb909b07628534ebd42f36d38e1fe8cd0dc8']]){
+ const entry=index.studioAssets[key];assert.deepEqual(entry,{sha256:sha,bytes});const raw=await readFile('build/photo-mode-preview/'+sha+ext);assert.equal(raw.length,bytes);assert.equal(createHash('sha256').update(raw).digest('hex'),sha);
+}
 const byKind=kind=>Object.entries(index.items).find(([,row])=>row.male?.kind===kind&&row.female?.kind===kind)?.[0];
 
 const lucky='120000167';
@@ -105,6 +110,7 @@ try{
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
       const mask=index.eyePalette.items['70000001'].texture;const eyeMap=index.eyeMouthMaterials?.eyes[mask.sha256];assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+(eyeMap?eyeMap.asset.sha256+'.wem2':mask.sha256+'.png')),'source eye mask requested');if(index.eyeMouthMaterials)for(const map of Object.values(index.eyeMouthMaterials.teeth))assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+map.asset.sha256+'.wem2'),'source tooth map requested');
+      for(const [key,ext] of [['reflection','.wlc'],['lut','.wlt']])assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+index.studioAssets[key].sha256+ext),'native studio '+key+' requested');
       const duration=Number(await seek.getAttribute('max'));
       assert.ok(duration>0);
       await seek.evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))},duration*.5);
