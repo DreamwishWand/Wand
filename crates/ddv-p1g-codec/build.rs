@@ -32,6 +32,19 @@ fn main(){
  // GridAreaData and no reviewed interaction/special-state definition qualify.
  // A new unrecognized Furniture field is conservatively treated as special.
  let fields=source["fields"].as_object().unwrap();
+ // Native ActivityItem membership from the existing pinned DB01 source.
+ // GridAreaData is present for all 4050 ActivityItem definitions in 1.26.2.
+ // This proves category membership, not safe pickup or state conversion.
+ let activity=&fields["ActivityItem.GridAreaData"];
+ assert_eq!(activity["category"],"ActivityItem");
+ let mut raw=Vec::new();
+ ZlibDecoder::new(decode64(activity["packed"].as_str().unwrap()).as_slice()).take(32*1024*1024).read_to_end(&mut raw).unwrap();
+ let decoded:Value=serde_json::from_slice(&raw).unwrap();
+ let pairs=decoded.as_array().unwrap();assert_eq!(pairs.len() as u64,activity["count"].as_u64().unwrap());
+ let mut activity_ids=Vec::with_capacity(pairs.len());let mut id=0u64;
+ for pair in pairs{id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();activity_ids.push(id);}
+ fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("activity-item-source.json"),serde_json::to_vec(&activity_ids).unwrap()).unwrap();
+
  let mut geometry=std::collections::BTreeSet::<u64>::new();
  let mut special=std::collections::BTreeSet::<u64>::new();let mut support_extra=std::collections::BTreeSet::<u64>::new();
  for (key,entry) in fields{
