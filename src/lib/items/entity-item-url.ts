@@ -35,5 +35,38 @@ export function itemPageCopy(locale:string){
     'pt-BR':['Dimensões originais da grade','Energia recuperada (configurada)','Mesma série','Usado em receitas','Alguns dados relacionados estão indisponíveis']
   };
   const [dimensions,energy,series,recipeUses,incomplete]=extra[locale]??extra.en;
-  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete};
+  const entity:Record<string,readonly [string,string,string,string]>={
+    ja:['本体','ドリームスタイル','マウントスキン','マウント装備'],
+    en:['Base item','Dream Styles','Mount skins','Mount gear'],
+    fr:['Élément de base','Styles de rêve','Apparences de monture','Équipement de monture'],
+    it:['Elemento base','Stili da sogno','Aspetti cavalcatura','Equipaggiamento cavalcatura'],
+    de:['Basisobjekt','Traumstile','Reittier-Skins','Reittierausrüstung'],
+    'es-ES':['Elemento base','Estilos de ensueño','Aspectos de montura','Equipo de montura'],
+    'zh-CN':['本体','梦幻装扮','坐骑外观','坐骑装备'],
+    'pt-BR':['Item base','Estilos dos sonhos','Visuais de montaria','Equipamento de montaria']
+  };
+  const [baseEntity,dreamStyles,mountStyles,mountGear]=entity[locale]??entity.en;
+  const context:Record<string,readonly [string,string,string,string,string,string,string]>={
+    ja:['通常の設置区分（原本）','屋内','屋外','屋内・屋外','外接寸法。占有マスや設置可否を示すものではありません。','プレミアムショップの関連バンドル','原本のバンドル構成。販売実績や現在の販売可否は未確認。'],
+    en:['Ordinary placement (source)','Indoor','Outdoor','Indoor & outdoor','Bounding dimensions only; not occupied cells or placement permission.','Related Premium Shop bundles','Source bundle composition; sale history and current availability are not verified.'],
+    fr:['Placement ordinaire (source)','Intérieur','Extérieur','Intérieur et extérieur','Dimensions hors tout, sans garantie de cases occupées ou de placement.','Lots Premium Shop associés','Composition source ; historique de vente et disponibilité non vérifiés.'],
+    it:['Posizionamento ordinario (fonte)','Interno','Esterno','Interno ed esterno','Solo ingombro, non celle occupate né permessi di posizionamento.','Pacchetti Premium Shop correlati','Composizione originale; vendite e disponibilità non verificate.'],
+    de:['Übliche Platzierung (Quelle)','Innen','Außen','Innen und außen','Nur Außenmaße, keine belegten Felder oder Platzierungsfreigabe.','Zugehörige Premium-Shop-Pakete','Originale Paketbestandteile; Verkauf und Verfügbarkeit nicht verifiziert.'],
+    'es-ES':['Colocación habitual (origen)','Interior','Exterior','Interior y exterior','Solo dimensiones exteriores, no ocupación ni permiso de colocación.','Lotes relacionados de la tienda prémium','Composición original; ventas y disponibilidad sin verificar.'],
+    'zh-CN':['常规放置范围（原始数据）','室内','室外','室内及室外','仅外接尺寸，不代表占用格或允许放置。','相关高级商店礼包','原始礼包组成，销售记录及当前可购状态未经确认。'],
+    'pt-BR':['Posicionamento habitual (fonte)','Interior','Exterior','Interior e exterior','Apenas dimensões externas, não células ocupadas nem permissão de posicionamento.','Pacotes relacionados da loja premium','Composição original; vendas e disponibilidade não verificadas.']
+  };
+  const [placement,indoor,outdoor,both,boundsOnly,bundleTitle,bundleNote]=context[locale]??context.en;
+  const origin:Record<string,readonly [string,string,string,string,string,string,string]>={
+    ja:['追加定義の確認版','原本での初回確認版（初出未確定）','追加コンテンツ種別','無料アップデート','エキスパンション','アドベンチャーパック','有料DLC'],
+    en:['Definition introduced in version','First observed source version (introduction unknown)','Content release type','Free update','Expansion','Adventure Pack','Paid DLC'],
+    fr:['Version d’apparition de la définition','Première version source observée (apparition inconnue)','Type de contenu','Mise à jour gratuite','Extension','Pack aventure','DLC payant'],
+    it:['Versione di introduzione della definizione','Prima versione osservata (introduzione ignota)','Tipo di contenuto','Aggiornamento gratuito','Espansione','Pacchetto avventura','DLC a pagamento'],
+    de:['Version der erstmals hinzugefügten Definition','Erste beobachtete Quellversion (Einführung unbekannt)','Inhaltstyp','Kostenloses Update','Erweiterung','Abenteuerpaket','Kostenpflichtiger DLC'],
+    'es-ES':['Versión de introducción de la definición','Primera versión observada (introducción desconocida)','Tipo de contenido','Actualización gratuita','Expansión','Paquete de aventura','DLC de pago'],
+    'zh-CN':['定义新增版本','首次确认的原始版本（初次加入未确认）','追加内容类型','免费更新','扩展包','冒险包','付费DLC'],
+    'pt-BR':['Versão de introdução da definição','Primeira versão observada (introdução desconhecida)','Tipo de conteúdo','Atualização gratuita','Expansão','Pacote de aventura','DLC pago']
+  };
+  const [introduced,observed,releaseType,free_update,expansion,adventure_pack,paid_dlc]=origin[locale]??origin.en;
+  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete,baseEntity,dreamStyles,mountStyles,mountGear,placement,indoor,outdoor,both,boundsOnly,bundleTitle,bundleNote,introduced,observed,releaseType,free_update,expansion,adventure_pack,paid_dlc};
 }

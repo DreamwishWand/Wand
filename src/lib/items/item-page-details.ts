@@ -1,6 +1,7 @@
-import type {CompleteItemMasterRecord,PublicCompleteItemMaster,ItemMasterLocale} from './public-item-master.ts';
+import {ITEM_MASTER_LOCALES,type CompleteItemMasterRecord,type PublicCompleteItemMaster,type ItemMasterLocale} from './public-item-master.ts';
 import {createCanonicalRecipeReader} from '../acquisition/canonical-recipes.ts';
 import {usableItemName} from './display-name.ts';
+import {readNativeEntityRelations} from './native-entity-parent.ts';
 const positive=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 const nonnegative=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 export function itemPageNativeFacts(record:Pick<CompleteItemMasterRecord,'nativeCategory'|'sourceAttributes'>){
@@ -15,9 +16,12 @@ export interface RelatedItemTile {readonly itemId:number;readonly name:string}
 export interface ItemPageRelations {
   readonly series:readonly RelatedItemTile[];
   readonly recipeResults:readonly RelatedItemTile[];
+  readonly parent:readonly RelatedItemTile[];
+  readonly styles:readonly RelatedItemTile[];
+  readonly gear:readonly RelatedItemTile[];
   readonly partial:boolean;
 }
-export async function readItemPageRelations(db:PublicCompleteItemMaster,record:Pick<CompleteItemMasterRecord,'itemId'|'sourceSetItemId'|'nativeCategory'>,locale:ItemMasterLocale):Promise<ItemPageRelations>{
+export async function readItemPageRelations(db:PublicCompleteItemMaster,record:Pick<CompleteItemMasterRecord,'itemId'|'sourceSetItemId'|'nativeCategory'>&Partial<Pick<CompleteItemMasterRecord,'itemType'>>,locale:ItemMasterLocale):Promise<ItemPageRelations>{
   const id=record.itemId;
   const sets=async()=>{
     if(!positive(record.sourceSetItemId))return [];
@@ -29,19 +33,22 @@ export async function readItemPageRelations(db:PublicCompleteItemMaster,record:P
     const [rows]=await createCanonicalRecipeReader(db).getIngredientUses([id]);
     return [...new Set((rows??[]).map(r=>r.resultItemId).filter(other=>other!==id))];
   };
-  const [series,recipes]=await Promise.allSettled([sets(),uses()]);
+  const [series,recipes,entities]=await Promise.allSettled([sets(),uses(),readNativeEntityRelations(db,id,record.itemType?{nativeType:record.nativeCategory,code:record.itemType.subtypeCode}:undefined)]);
   const seriesIds=series.status==='fulfilled'?series.value:[];
   const recipeIds=recipes.status==='fulfilled'?recipes.value:[];
-  const ids=[...new Set([...seriesIds,...recipeIds])].sort((a,b)=>a-b);
+  const entity=entities.status==='fulfilled'?entities.value:{parent:null,styles:[],gear:[]};
+  const parentIds=entity.parent===null?[]:[entity.parent];
+  const ids=[...new Set([...seriesIds,...recipeIds,...parentIds,...entity.styles,...entity.gear])].sort((a,b)=>a-b);
   const names=new Map<number,RelatedItemTile>();
+  const labelFields=[...new Set([locale,'en',...ITEM_MASTER_LOCALES])].map(l=>'names.'+l);
   for(let start=0;start<ids.length;start+=500){
-    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope','names.'+locale,'names.en'].filter((v,i,a)=>a.indexOf(v)===i))){
+    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope',...labelFields])){
       if(!row||row.values.definitionScope==='other_definition')continue;
-      const label=[row.values['names.'+locale],row.values['names.en']].find(usableItemName);
+      const label=labelFields.map(field=>row.values[field]).find(usableItemName);
       if(label)names.set(row.itemId,{itemId:row.itemId,name:label});
     }
   }
   const tiles=(input:number[])=>input.flatMap(other=>{const tile=names.get(other);return tile?[tile]:[];})
     .sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);
-  return {series:tiles(seriesIds),recipeResults:tiles(recipeIds),partial:series.status==='rejected'||recipes.status==='rejected'};
+  return {series:tiles(seriesIds),recipeResults:tiles(recipeIds),parent:tiles(parentIds),styles:tiles(entity.styles),gear:tiles(entity.gear),partial:series.status==='rejected'||recipes.status==='rejected'||entities.status==='rejected'};
 }

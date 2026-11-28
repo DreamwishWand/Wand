@@ -1,6 +1,7 @@
 import {openCurrentItemDatabase,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import {collectionSourceRoot,type CollectionTopCategory} from './category-hierarchy.ts';
 import {usableItemName} from '../items/display-name.ts';
+import {childEntityKind,parentFields,resolveNativeParent} from '../items/native-entity-parent.ts';
 import {COLLECTION_DB01_FACETS,COLLECTION_DB01_SUBMENUS,type CollectionDb01Index,type CollectionDb01Pair,type CollectionDb01SubmenuCode,type CollectionDb01NativeSubtype,type CollectionDb01ActivityType} from './db01-native-facets.ts';
 
 export interface CollectionCatalogRow {
@@ -152,24 +153,15 @@ Promise<ReadonlyMap<string,Readonly<Record<string,string>>>>{
  * entity are used. A skin's universe or similar name is never a parent link. */
 async function loadParentEntities(master:PublicCompleteItemMaster,index:CollectionDb01Index):Promise<ReadonlyMap<number,number>>{
   const ids=[...index.nativeSubtypeByItem].filter(([,r])=>
-    (r.nativeType==='Skin'&&(r.code===0||r.code===4))||r.nativeType==='MountGear').map(([id])=>id);
+    childEntityKind(r)!==null).map(([id])=>id);
   const fields=(await master.getFieldCatalog()).map(r=>r.field);
-  const selected=['source.CharacterItemID','source.MountItemID','source.BaseItemID'].filter(f=>fields.includes(f));
+  const selected=parentFields.filter(f=>fields.includes(f));
   const parents=new Map<number,number>();
   if(!ids.length||!selected.length)return parents;
   for(const row of await master.getItemFields(ids,selected)){
     if(!row)continue;
-    const native=index.nativeSubtypeByItem.get(row.itemId);
-    const character=native?.nativeType==='Skin'&&native.code===0;
-    const candidates=new Set<number>();
-    for(const field of selected){
-      const id=row.values[field];
-      if(typeof id!=='number')continue;
-      const target=index.nativeSubtypeByItem.get(id);
-      if(character?target?.nativeType==='Character':
-        target?.nativeType==='Companion'&&target.code===3)candidates.add(id);
-    }
-    if(candidates.size===1)parents.set(row.itemId,[...candidates][0]);
+    const parent=resolveNativeParent(index.nativeSubtypeByItem.get(row.itemId),row.values,index.nativeSubtypeByItem);
+    if(parent!==null)parents.set(row.itemId,parent);
   }
   return parents;
 }
