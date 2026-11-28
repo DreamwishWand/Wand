@@ -51,3 +51,20 @@ test('free support leaf eligibility ignores floor acceptance but excludes native
  assert.ok(supportFreeEdit(tree,{[source.shapeKey]:shape},free,raster,0,1,0,'GridOrientation_Down',true));
  assert.equal(supportFreeEdit({...tree,objects:[{...tree.objects[0],child:{...tree,objects:[]}}]},{[source.shapeKey]:shape},free,raster,0,1,0,'GridOrientation_Down',true),null);
 });
+
+test('free support swap exchanges different shapes atomically while retaining orientations',async()=>{
+ const {supportFreeSwap,supportChildEdits}=await import('../src/lib/world/subgrid-local.ts');
+ const a=40000002,b=40000003,left='GridOrientation_Left',down='GridOrientation_Down';
+ const tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:a,x:0,y:0,orientation:left,child:null},{itemId:b,x:1,y:1,orientation:down,child:null}]};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''};
+ const shapes={[a+':12']:shape,[a+':4']:shape,[b+':8']:{...shape,width:2,cellCount:2,runs:[{x:0,y:0,width:2}]}};
+ const raster={sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,0,0])},eligible=new Set([a,b]);
+ assert.equal(supportChildEdits(tree,shapes,eligible,0,1,1),null);
+ const edits=supportFreeSwap(tree,shapes,eligible,raster,0,1);
+ assert.deepEqual(edits,[{index:0,itemId:a,expectedX:0,expectedY:0,expectedOrientation:left,x:1,y:1,orientation:left},{index:1,itemId:b,expectedX:1,expectedY:1,expectedOrientation:down,x:0,y:0,orientation:down}]);
+ assert.equal(supportFreeSwap(tree,shapes,new Set([a]),raster,0,1),null);
+ assert.equal(supportFreeSwap(tree,shapes,eligible,raster,0,0),null);
+ assert.equal(supportFreeSwap({...tree,objects:[tree.objects[0],{...tree.objects[1],x:2}]},shapes,eligible,raster,0,1),null);
+ assert.equal(supportFreeSwap({...tree,objects:[tree.objects[0],{...tree.objects[1],child:{...tree,objects:[]}}]},shapes,eligible,raster,0,1),null);
+ assert.equal(supportFreeSwap(tree,{},eligible,raster,0,1),null);
+});
