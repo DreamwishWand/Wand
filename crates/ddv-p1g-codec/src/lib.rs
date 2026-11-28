@@ -12,6 +12,8 @@ use zeroize::Zeroize;
 
 #[cfg(feature="wasm")]
 mod mission_slot_audit;
+#[cfg(any(feature="wasm",test))]
+mod progression_guard;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
 mod storage_source;
@@ -2577,6 +2579,13 @@ mod browser_amount_preview {
                 if !changed{return Err(fail("DB05_COPY_NO_CHANGE"));}
                 validate_profile(patched_json.as_bytes())
                     .map_err(|_|fail("DB05_COPY_INVALID_RESULT"))?;
+                let original=match self.kind{
+                    InputKind::PlainJson=>self.pending.as_slice(),
+                    InputKind::EncryptedP1g=>self.p1g.as_ref()
+                        .ok_or(fail("DB05_COPY_SESSION_INVALID"))?.profile.as_slice()
+                };
+                super::progression_guard::preserve_progression(original,patched_json.as_bytes())
+                    .map_err(|_|fail("DB05_COPY_PROGRESSION_DEPENDENCY_BLOCKED"))?;
                 let copy=match self.kind{
                     InputKind::PlainJson=>patched_json.as_bytes().to_vec(),
                     InputKind::EncryptedP1g=>{

@@ -531,8 +531,40 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
     let mut out=GridIdentityDependencies::default();
     // Iterative scan with explicit depth and node bounds. No private path,
     // identifier or arbitrary field name leaves the Worker.
-    type Flags=(bool,bool,bool,bool);
-    let mut stack=vec![(&root,(false,false,false,false),None::<u64>,0usize)];
+    // MissionSlots is an observed native container, but a positive MissionId
+    // alone does not establish active/completed status. A collected reference
+    // inside this container must not receive the achievement-history exemption.
+    let mission_slots=root.get("World").and_then(|w|w.get("MissionSlots"));
+    // Archived v1.25 objective read contract identifies the exact nested
+    // GridObjectIdsCollected numeric list as historical bookkeeping without
+    // a GridID. It is not a unique instance address. Do not turn every same
+    // local ordinal in unrelated grids into a blocking dependency.
+    let mut objective_history=HashSet::<*const Value>::new();
+    if let Some(groups)=mission_slots.and_then(Value::as_object){
+        for group in groups.values(){
+            if let Some(slots)=group.get("Slots").and_then(Value::as_array){
+                for slot in slots{
+                    if let Some(steps)=slot.get("MissionSteps").and_then(Value::as_array){
+                        for step in steps{
+                            if let Some(substeps)=step.get("SubSteps").and_then(Value::as_array){
+                                for substep in substeps{
+                                    if let Some(objectives)=substep.get("Objectives").and_then(Value::as_array){
+                                        for obj in objectives{
+                                            if let Some(list)=obj.get("GridObjectIdsCollected").filter(|v|v.as_array().is_some_and(|a|a.iter().all(|n|n.as_u64().is_some()))){
+                                                objective_history.insert(list as *const Value);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    type Flags=(bool,bool,bool,bool,bool);
+    let mut stack=vec![(&root,(false,false,false,false,false),None::<u64>,0usize)];
     let mut visited=0usize;
     while let Some((v,flags,owning,depth))=stack.pop(){
         visited+=1;
@@ -548,14 +580,21 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
                 }
                 if object_values.iter().any(|v|v.is_some_and(|id|objects.contains(&id))){
                     if grid_values.iter().any(|v|*v==Some(grid)){
-                        if flags.0{out.active+=1;}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
+                        if flags.0{out.active+=1;}else if flags.4{if flags.3{out.active+=1;}else{out.unknown+=1;}}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
                     }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){out.unknown+=1;}
                 }
                 for (key,value) in o{
                     let k=normal(key);
                     if k=="saplinggridobjectid"&&value.as_u64().is_some_and(|id|objects.contains(&id))&&owning.is_none_or(|g|g==grid){out.related+=1;}
                     else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64().is_some_and(|id|objects.contains(&id)){out.unknown+=1;}
-                    let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"));
+                    // Numeric identity lists with no exact GridID cannot prove
+                    // which native instance is referenced. Limit this extra
+                    // conservative protection to observed MissionSlots context.
+                    if flags.4&&k=="gridobjectidscollected"&&!objective_history.contains(&(value as *const Value))&&value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
+                        (grid_values.is_empty()||grid_values.iter().any(|v|v.is_none()||*v==Some(grid))){
+                        out.unknown+=1;
+                    }
+                    let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"),flags.4||mission_slots.is_some_and(|slot|std::ptr::eq(slot,value)));
                     // Owning Grid context is recognized only for exact
                     // full/diff map key+embedded ID. Do not infer from a generic ID.
                     if k=="grids"||k=="diffgrids"{
@@ -3560,6 +3599,38 @@ mod terrain_session_tests{
         let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40005160};
         let r=grid_identity_dependencies(profile,&target).unwrap();
         assert_eq!((r.active,r.historical,r.navigation,r.related,r.unknown),(1,1,1,1,1));assert_eq!(r.blocking(),4);
+    }
+    #[test]
+    fn mission_slot_identity_references_never_inherit_achievement_history_exemption(){
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40005160};
+        let mut save=serde_json::json!({
+            "World":{"MissionSlots":{"owner":{"Slots":[{"MissionId":2070000001,"GridObjectsCollected":[{"GridID":10,"GridObjectID":2},{"GridID":20,"GridObjectID":2}]}]}}},
+            "Player":{"Achievements":{"GridObjectsCollected":[{"GridID":10,"GridObjectID":2}]}}
+        });
+        let scan=|v:&Value|grid_identity_dependencies(&serde_json::to_vec(v).unwrap(),&target).unwrap();
+        let refs=scan(&save);assert_eq!(refs.unknown,1);assert_eq!(refs.historical,1);assert_eq!(refs.blocking(),1);
+        let slot=&mut save["World"]["MissionSlots"]["owner"]["Slots"][0];
+        slot["GridObjectsCollected"]=serde_json::json!([{"GridID":20,"GridObjectID":2},{"GridID":10,"GridObjectID":9}]);
+        assert_eq!(scan(&save).blocking(),0);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["GridObjectIdsCollected"]=serde_json::json!([2,9]);
+        assert_eq!(scan(&save).blocking(),1);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["GridID"]=20.into();
+        assert_eq!(scan(&save).blocking(),0);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["GridID"]=10.into();
+        assert_eq!(scan(&save).blocking(),1);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["GridObjectIdsCollected"]=serde_json::json!([9]);
+        assert_eq!(scan(&save).blocking(),0);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["SpawnedObjects"]=serde_json::json!([{"GridID":10,"GridObjectID":2}]);
+        assert_eq!(scan(&save).active,1);
+        // A verified old objective history field is not an exact native address.
+        // Keep the list untouched, without blocking every matching local ID.
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]=serde_json::json!({
+            "MissionId":2070000001,"State":"MissionSlotState_OnGoing",
+            "MissionSteps":[{"SubSteps":[{"Objectives":[{"GridObjectIdsCollected":[2,9]}]}]}]
+        });
+        assert_eq!(scan(&save).blocking(),0);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["MissionSteps"][0]["SubSteps"][0]["Objectives"][0]["GridObjectIdsCollected"]=serde_json::json!([2,{"GridID":10,"GridObjectID":2}]);
+        assert!(scan(&save).blocking()>0);
     }
     #[test]
     fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
