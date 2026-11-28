@@ -18,6 +18,8 @@ export interface CurrentAcquisitionCoverage {
   readonly byNativeCategory:Readonly<Record<string,Readonly<AcquisitionCoverageCounts>>>;
   readonly collectionCandidatesByNativeCategory:Readonly<Record<string,Readonly<AcquisitionCoverageCounts>>>;
   readonly collectionSourceCandidates:Readonly<AcquisitionCoverageCounts>|null;
+  /** Only the verified CharacterItemData.CanBeCollected predicate, not full collection UI membership. */
+  readonly nativeCharacterCollectionPredicate:Readonly<{definitions:number;eligible:number;excluded:number;eligibleClassified:number;eligibleUnclassified:number}>|null;
   readonly unresolvedOnlineHintItemIds:number|null;
   readonly missingItemIdMeans:'unclassified_not_unobtainable';
   readonly runtimeMembershipVerified:false;
@@ -36,10 +38,11 @@ export async function readCurrentAcquisitionCoverage(db:PublicCompleteItemMaster
     missingItemIdMeans:'unclassified_not_unobtainable' as const,runtimeMembershipVerified:false as const,currentAvailabilityVerified:false as const};
   if(!required.every(f=>fields.has(f)))return Object.freeze({...base,status:'not_indexed' as const,all:null,
     byDefinitionScope:Object.freeze({}),byNativeCategory:Object.freeze({}),collectionCandidatesByNativeCategory:Object.freeze({}),
-    collectionSourceCandidates:null,unresolvedOnlineHintItemIds:null});
-  const [families,scopeRows,effectiveRows,legacyRows,hints]=await Promise.all([
+    collectionSourceCandidates:null,nativeCharacterCollectionPredicate:null,unresolvedOnlineHintItemIds:null});
+  const [families,scopeRows,effectiveRows,legacyRows,hints,characterModes]=await Promise.all([
     db.getFieldRows('nativeCategory'),db.getFieldRows('definitionScope'),db.getFieldRows('acquisition.effectiveCategories'),
-    db.getFieldRows('acquisition.categories'),fields.has('acquisition.onlineHints')?db.getFieldRows('acquisition.onlineHints'):[]]);
+    db.getFieldRows('acquisition.categories'),fields.has('acquisition.onlineHints')?db.getFieldRows('acquisition.onlineHints'):[],
+    fields.has('acquisition.characterUnlockMode')?db.getFieldRows('acquisition.characterUnlockMode'):[]]);
   const scopeById=new Map(scopeRows),effective=new Map(effectiveRows),legacy=new Map(legacyRows);
   const all=create(),collection=create(),byScope=new Map<string,Counts>(scopes.map(s=>[s,create()]));
   const byCategory=new Map<string,Counts>(),byCollectionCategory=new Map<string,Counts>();
@@ -61,9 +64,27 @@ export async function readCurrentAcquisitionCoverage(db:PublicCompleteItemMaster
     if(scope==='source_candidate'){bump(collection,categories,newly);bump(group(byCollectionCategory,family),categories,newly);}
   }
   check(scopeById.size===seen.size&&[...effective.keys(),...legacy.keys()].every(id=>seen.has(id)),'CENSUS');
+  let nativeCharacterCollectionPredicate:CurrentAcquisitionCoverage['nativeCharacterCollectionPredicate']=null;
+  const characterFamilies=families.filter(([,family])=>family==='Character');
+  if(characterModes.length&&characterModes.length===characterFamilies.length){
+    const characterIds=new Set(characterFamilies.map(([id])=>id));
+    let eligible=0,excluded=0,eligibleClassified=0,verified=0;
+    for(const [id,mode] of characterModes){
+      check(characterIds.has(id),'CHARACTER_MODE_ID');
+      if(!mode||typeof mode!=='object'||Array.isArray(mode))continue;
+      const value=mode as Readonly<Record<string,unknown>>;
+      if(value.nativeCollectionPredicateVerified!==true||value.nativeCollectionPredicate!=='not_is_debug'||typeof value.nativeCanBeCollected!=='boolean')continue;
+      check(typeof value.debug==='boolean'&&value.nativeCanBeCollected===!value.debug,'CHARACTER_PREDICATE');
+      verified++;
+      if(value.nativeCanBeCollected){eligible++;if(effective.has(id))eligibleClassified++;}
+      else excluded++;
+    }
+    if(verified===characterModes.length)nativeCharacterCollectionPredicate=Object.freeze({
+      definitions:verified,eligible,excluded,eligibleClassified,eligibleUnclassified:eligible-eligibleClassified});
+  }
   const freezeMap=(m:Map<string,Counts>)=>Object.freeze(Object.fromEntries([...m].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,freeze(v)])));
   return Object.freeze({...base,status:'indexed' as const,all:freeze(all),byDefinitionScope:freezeMap(byScope),
     byNativeCategory:freezeMap(byCategory),collectionCandidatesByNativeCategory:freezeMap(byCollectionCategory),
-    collectionSourceCandidates:freeze(collection),
+    collectionSourceCandidates:freeze(collection),nativeCharacterCollectionPredicate,
     unresolvedOnlineHintItemIds:fields.has('acquisition.onlineHints')?hints.filter(([id,v])=>!effective.has(id)&&Array.isArray(v)&&v.length>0).length:null});
 }
