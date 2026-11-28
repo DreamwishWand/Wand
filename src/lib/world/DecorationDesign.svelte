@@ -32,6 +32,7 @@
  import {openNativePreviewPack} from '../media/native-cdn-preview.ts';
  import {nativeMapForEditor,editorViewToNativeCanvas,type LocalNativePreviewPack} from '../media/native-local-preview.ts';
  import {nativeDesignViewport} from './native-design-viewport.ts';
+ import {nativeUnderwaterDesignGrid} from './native-calibration-grids.ts';
  import WorldGridLines from './WorldGridLines.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,rotateDesignClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
@@ -133,8 +134,12 @@
   designNativeTicket++;designPack=pack;designNativeReady='';designNativeProgress=null;designNativeLoading=false;designNativeError=false;
  }):()=>{};
  onDestroy(()=>{designNativeTicket++;stopDesignNative();});
- $: designNativeMap=nativeDesignEnabled&&worldFrame&&!embedded?nativeMapForEditor(designPack,worldFrame.scope,false):null;
- $: designNativeView=designNativeMap&&worldFrame?editorViewToNativeCanvas(designNativeMap,nativeDesignViewport(worldFrame,displayViewport)):null;
+ $: nativeUnderwater=nativeDesignEnabled&&!worldFrame&&!embedded?nativeUnderwaterDesignGrid(grid):null;
+ $: northUp=Boolean(worldFrame||nativeUnderwater);
+ $: nativeDesignAvailable=nativeDesignEnabled&&!embedded&&Boolean(worldFrame||nativeUnderwater);
+ $: designNativeMap=nativeDesignAvailable?(worldFrame?nativeMapForEditor(designPack,worldFrame.scope,false):designPack?.maps.find(m=>m.id===nativeUnderwater?.mapId&&m.ticksToCanvas[0]===m.ticksToCanvas[3])??null):null;
+ $: nativeDesignExtent=worldFrame??(nativeUnderwater?{minX:nativeUnderwater.grid.bounds.x,minZ:-nativeUnderwater.grid.bounds.y-nativeUnderwater.grid.bounds.h,raster:{sizeX:nativeUnderwater.grid.sizeX,sizeY:nativeUnderwater.grid.sizeY}}:null);
+ $: designNativeView=designNativeMap&&nativeDesignExtent?editorViewToNativeCanvas(designNativeMap,nativeDesignViewport(nativeDesignExtent,displayViewport)):null;
  $: designNativeActive=!!designNativeMap&&designBackground&&designNativeReady===designNativeMap.id&&!designNativeError;
  $: if(!active||!designNativeMap||!designBackground){designNativeReady='';designNativeLoading=false;}
  $: if(designNativeReady&&designNativeReady!==designNativeMap?.id)designNativeReady='';
@@ -362,7 +367,7 @@
  $: if(focusedId!==null&&!editableIds.has(focusedId))focusedId=null;
  function focusPlaced(id:number,choose:boolean){
   const o=selectableObjects.find(p=>p.localOrdinal===id);if(!o||!map)return;
-  focusedId=id;const c=objectFocus(map,o,extent,maxZoom);camera=worldFrame?{...c,y:1-c.y}:c;
+  focusedId=id;const c=objectFocus(map,o,extent,maxZoom);camera=northUp?{...c,y:1-c.y}:c;
   if(choose){cancel();selected=id;groupIds=[];}
  }
  function cyclePlaced(delta:number){
@@ -658,7 +663,7 @@
  $: maxZoom=maxMapZoom(Math.max(width,height));
  $: viewBox=mapCameraViewBox(camera,extent);
  $: displayViewport=mapViewportBounds(camera,extent);
- $: viewport=worldFrame?{...displayViewport,y:height-displayViewport.y-displayViewport.h}:displayViewport;
+ $: viewport=northUp?{...displayViewport,y:height-displayViewport.y-displayViewport.h}:displayViewport;
  $: visible=map?visibleSavedObjects(objects.filter(o=>layerVisible(layerState,o)),map.shapes,viewport,selected):[];
  $: if(layerVisible(layerState,{layer:'surface'})&&cellPixels>=5)loadImages([...new Set(visible.flatMap(o=>placementById.get(o.localOrdinal)?.attachment?.scene.tree.objects.slice(0,4).map(c=>c.itemId)??[]))].map(itemId=>({itemId})));
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
@@ -750,7 +755,7 @@
  function setSymmetryFromPointer(e:MouseEvent){
   if(!symmetry||!svg)return;
   const m=svg.getScreenCTM();if(!m)return;
-  const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),y=worldFrame?height-p.y:p.y;
+  const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),y=northUp?height-p.y:p.y;
   if(p.x<0||y<0||p.x>width||y>height)return;
   symmetry={...symmetry,x2:Math.round(p.x*2),y2:Math.round(y*2)};symmetryPicking=false;
  }
@@ -763,7 +768,7 @@
 
  function cell(e:MouseEvent){
    const m=svg?.getScreenCTM();if(!m)return null;
-   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),x=Math.floor(p.x),y=Math.floor(worldFrame?height-p.y:p.y);
+   const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse()),x=Math.floor(p.x),y=Math.floor(northUp?height-p.y:p.y);
    return x>=0&&y>=0&&x<width&&y<height?{x,y}:null;
  }
  function pick(e:MouseEvent){
@@ -848,7 +853,7 @@
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
    if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing||pasting.length){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
    if(action==='delete'){if(selectedIds.size){e.preventDefault();remove();}return;}
-   const n=NUDGE[action];if(n&&selectedIds.size&&!placing&&!pasting.length){e.preventDefault();alignmentAction=null;translateSelection([...selectedIds],n[0],worldFrame?-n[1]:n[1]);}
+   const n=NUDGE[action];if(n&&selectedIds.size&&!placing&&!pasting.length){e.preventDefault();alignmentAction=null;translateSelection([...selectedIds],n[0],northUp?-n[1]:n[1]);}
  }
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
@@ -874,7 +879,7 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
-    {#if nativeDesignEnabled&&worldFrame&&!embedded}<button type="button" title={designNativeWords[0]} aria-label={designNativeWords[0]} aria-pressed={designBackground&&!!designNativeMap} on:click={toggleDesignNative}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 4 4 4-6 5 7"/></svg></button><input class="file-input" type="file" multiple accept=".json,.png,.webp" bind:this={nativeFileInput} aria-label={designNativeWords[1]} on:change={openDesignNative}/><button type="button" on:click={()=>nativeFileInput?.click()}>{designNativeWords[1]}</button>{/if}
+    {#if nativeDesignAvailable}<button type="button" title={designNativeWords[0]} aria-label={designNativeWords[0]} aria-pressed={designBackground&&!!designNativeMap} on:click={toggleDesignNative}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 16 5-5 4 4 4-6 5 7"/></svg></button><input class="file-input" type="file" multiple accept=".json,.png,.webp" bind:this={nativeFileInput} aria-label={designNativeWords[1]} on:change={openDesignNative}/><button type="button" on:click={()=>nativeFileInput?.click()}>{designNativeWords[1]}</button>{/if}
     <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){inspectorOpen=false;placedSearchOpen=false;symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <button type="button" aria-label={inspectionWords[1]} title={inspectionWords[1]} aria-pressed={placedSearchOpen} disabled={busyImport} on:click={togglePlacedSearch}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 6 6"/></svg></button>
@@ -940,7 +945,7 @@
     on:pointerdown={startDirect}
     on:pointermove={follow} on:pointerup={e=>endDirect(e,true)} on:pointercancel={e=>endDirect(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;if(direct&&!direct.moved)direct=null;}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
-     <g class="design-coordinate-space" transform={worldFrame?'translate(0 '+height+') scale(1 -1)':undefined}>
+     <g class="design-coordinate-space" transform={northUp?'translate(0 '+height+') scale(1 -1)':undefined}>
      <rect width={width} height={height} fill={designNativeActive?'transparent':'#27313a'}/>
      {#if terrainUrl}<image opacity={designNativeActive?.3:1} href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
      {#if showGrid}<WorldGridLines bounds={{x:0,y:0,w:width,h:height}} view={viewport} pixels={cellPixels} majorStep={grid?.factor??1} minorStep={1}/>{/if}
@@ -1001,7 +1006,7 @@
     </svg>
    </button><MapCameraControls zoom={camera.zoom} {maxZoom} {showGrid} onGrid={()=>showGrid=!showGrid} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
-    {#if designNativeActive}<small>{designNativeWords[3]}</small>{/if}{#if designNativeError&&nativeDesignEnabled&&worldFrame}<small role="alert">{designNativeWords[4]}</small>{#if designNativeCanvas}<button type="button" on:click={()=>designNativeCanvas?.retry()}>{nativeMapRetryLabels[locale]??nativeMapRetryLabels.en}</button>{/if}{/if}
+    {#if designNativeActive}<small>{designNativeWords[3]}</small>{/if}{#if designNativeError&&nativeDesignAvailable}<small role="alert">{designNativeWords[4]}</small>{#if designNativeCanvas}<button type="button" on:click={()=>designNativeCanvas?.retry()}>{nativeMapRetryLabels[locale]??nativeMapRetryLabels.en}</button>{/if}{/if}
 
     {#if pasting.length}<strong>{pasting.length} · 貼り付け先を選択</strong>{:else if groupIds.length}<strong>{groupIds.length}件選択</strong>{:else if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{#if chosenAttachment}<small>{adw[1]} · {[...attachmentCounts.values()].reduce((a,b)=>a+b,0)-1}</small><div class="attached-art">{#each [...attachmentCounts] as [id,n]}{@const count=n-(id===chosenAttachment.scene.ownerItemId?1:0)}{#if count>0}<span>{#if images.get(id)}<img src={images.get(id)} alt="" title={definitions.get(id)?.name??adw[1]}/>{/if}×{count}</span>{/if}{/each}</div>{#if chosenAttachment.designOnly}<small>{adw[3]}</small>{/if}{/if}{/if}
