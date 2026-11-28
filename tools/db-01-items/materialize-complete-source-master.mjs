@@ -1201,7 +1201,7 @@ function ordinaryProgressionRewards(rows,source,acquisition,protoAcquisition){
   };
   for(const row of rows){
     const p={...row.nativeProperties,...row.sourceAttributes};
-    if(row.nativeCategory==='Story'&&row.sourceClass==='StoryItemData'){
+    if(row.nativeCategory==='Story'&&row.sourceClass==='StoryItemData'&&!row.nativeKey?.startsWith('Event!')){
       emit(row,p.Reward?.ItemID,'story_progress_reward','source.Reward.ItemID',p.Reward?.Amount);
     }
     if(row.nativeCategory==='DutyAch'&&row.sourceClass==='AchievementItemData'){

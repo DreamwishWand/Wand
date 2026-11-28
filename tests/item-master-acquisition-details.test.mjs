@@ -93,7 +93,7 @@ test('all classification extensions preserve original evidence and localized sou
       if(list.length)expected.set(id,list);
     }
   }
-  assert.equal(counts.progression,126);assert.equal(counts.critterBefriending,100);
+  assert.equal(counts.progression,124);assert.equal(counts.critterBefriending,100);
   assert(counts.conditionalQuest>=5);assert.equal(counts.configuredStore,134);assert.equal(counts.lootPresent,24);
   const ids=[...expected.keys()].sort((a,b)=>a-b);
   const rows=await readItemAcquisitionSourceDetails(db,[...ids,99999999,ids[0]],'ja');

@@ -531,7 +531,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if((loot.has(id)||feeding.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     for(const link of characterUnlock.get(id)??[])if(link.category!==null&&!want.includes(link.category))want.push(link.category);
-    if(storyUnlock.has(id)&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
+    for(const link of storyUnlock.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     const memoryCategory=memory.get(id)?.category;
     if(memoryCategory&&!want.includes(memoryCategory))want.push(memoryCategory);
     for(const link of memorySpawn.get(id)??[])if(!want.includes(link.category))want.push(link.category);

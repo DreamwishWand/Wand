@@ -170,8 +170,13 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
         output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds});continue;
       }
       if(family==='storyUnlock'){
-        check(categories.includes('ordinary_gameplay')&&evidence.category==='ordinary_gameplay'&&
-          evidence.kind==='story_puzzle_unlock'&&id(evidence.sourceItemId)&&evidence.sourceItemId===evidence.targetItemId&&
+        const event=evidence.routeKind==='festival_puzzle',category=event?'in_game_limited_event':'ordinary_gameplay';
+        check(categories.includes(category)&&evidence.category===category&&
+          id(evidence.sourceItemId)&&id(evidence.targetItemId)&&
+          (evidence.kind==='story_puzzle_unlock'&&evidence.sourceItemId===evidence.targetItemId||
+           event&&evidence.kind==='story_event_completion_reward'&&evidence.targetItemId===evidence.rewardItemId&&
+           id(evidence.configuredAmount)&&object(evidence.originalReward)&&evidence.originalReward.ItemID===evidence.targetItemId&&
+           evidence.originalReward.Amount===evidence.configuredAmount&&evidence.sourcePath==='source.Reward.ItemID')&&
           evidence.sourceStorySha256===sha?.Story&&evidence.sourceMissionSha256===sha?.Mission&&
           evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
           evidence.sourceGameVersion===db.release.target.gameVersion&&
@@ -180,14 +185,19 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           object(evidence.visibilityConditions)&&object(evidence.unlockConditions)&&
           Array.isArray(evidence.unlockCosts)&&Array.isArray(evidence.missionItemIds)&&
           evidence.missionItemIds.every(id)&&Array.isArray(evidence.conditionItemIds)&&evidence.conditionItemIds.every(id)&&
-          ['snippet_cost','quest_conditions'].includes(String(evidence.routeKind))&&
-          (evidence.routeKind==='snippet_cost'?evidence.unlockCosts.length>0&&evidence.missionItemIds.length===0:evidence.missionItemIds.length>0),
+          (event?evidence.isMissionItem===true&&evidence.unlockCosts.length===0&&evidence.missionItemIds.length===0&&
+            id(evidence.rewardItemId)&&id(evidence.conditionItemId)&&evidence.conditionItemIds.includes(evidence.conditionItemId)&&
+            ['ParksFloatingFestival','HauntedFloatingFestival2026'].includes(String(evidence.eventName))&&
+            evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+            Array.isArray(evidence.resolvedConditions)&&evidence.resolvedConditions.length>0:
+            evidence.routeKind==='snippet_cost'?evidence.unlockCosts.length>0&&evidence.missionItemIds.length===0:
+            evidence.routeKind==='quest_conditions'&&evidence.missionItemIds.length>0),
           'EXTENSION_STORY_UNLOCK');
         const relatedIds:number[]=[...evidence.missionItemIds,...evidence.conditionItemIds];
         for(const cost of evidence.unlockCosts){
           check(object(cost)&&id(cost.Id)&&id(cost.Amount),'EXTENSION_STORY_COST');relatedIds.push(cost.Id);
         }
-        output.push({family,category:'ordinary_gameplay',evidence,sourceId:evidence.sourceItemId,relatedIds:[...new Set(relatedIds)]});continue;
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[...new Set(relatedIds)]});continue;
       }
       if(family==='questLoot'){
         const category=evidence.category;
