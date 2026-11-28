@@ -23,7 +23,8 @@
   'zh-CN':['回收并存储','存储位置','背包/物品栏','储物箱','验证回收','处理中…','无法安全回收或目标已满。','关闭'],
   'pt-BR':['Recolher e guardar','Destino','Inventário','Baú','Verificar','Processando…','Recolhimento inseguro ou destino cheio.','Fechar']
  } as const;
- interface Destination{ordinal:number;kind:'inventory'|'chest';capacity:number;used:number;owner:null|{itemId:number;gridDataPath:string;x:number;y:number}}
+ interface Destination{ordinal:number;kind:'inventory'|'home-storage'|'chest';capacity:number;used:number;owner:null|{itemId:number;gridDataPath:string;x:number;y:number}}
+ const homeStorageWords={ja:'自宅収納',en:'Home Storage',fr:'Rangement de la maison',it:'Deposito di casa',de:'Heimlager','es-ES':'Almacenamiento de casa','zh-CN':'家中储物箱','pt-BR':'Armazenamento de casa'} as const;
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,expected='',open=false,error=false;
  $: w=words[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
@@ -39,7 +40,7 @@
    try{if(list){
     if(d?.kind!=='activity-recovery-destinations'||d.result?.contract!=='wand.db05.field-recovery-destinations@1'||!Array.isArray(d.result.rows)||d.result.rows.length>8192)throw Error('destinations');
     const result=d.result.rows as Destination[];
-    if(result.some((r,i)=>r.ordinal!==i+1||!['inventory','chest'].includes(r.kind)||!Number.isSafeInteger(r.capacity)||r.capacity<1||r.capacity>8192||!Number.isSafeInteger(r.used)||r.used<0||r.used>8192||r.kind==='chest'&&(!r.owner||!Number.isSafeInteger(r.owner.itemId)||typeof r.owner.gridDataPath!=='string'||!Number.isSafeInteger(r.owner.x)||!Number.isSafeInteger(r.owner.y))))throw Error('destination');
+    if(result.some((r,i)=>r.ordinal!==i+1||!['inventory','home-storage','chest'].includes(r.kind)||!Number.isSafeInteger(r.capacity)||r.capacity<1||r.capacity>8192||!Number.isSafeInteger(r.used)||r.used<0||r.used>8192||r.kind==='chest'&&(!r.owner||!Number.isSafeInteger(r.owner.itemId)||typeof r.owner.gridDataPath!=='string'||!Number.isSafeInteger(r.owner.x)||!Number.isSafeInteger(r.owner.y))))throw Error('destination');
     rows=result;destination=rows[0]?.ordinal??0;if(!rows.length)error=true;
    }else{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}
    }catch{d?.bytes?.fill(0);error=true;}
@@ -48,7 +49,7 @@
   own.postMessage({command:list?'activity-recovery-destinations':'activity-recovery-export',allowExperimentalCopy:true,file:f,plan:list?{}:{destinationOrdinal:destination,rows:plan}});
  }
  function destinationLabel(r:Destination){
-  if(!r.owner)return w[2]+' '+rows.filter(x=>x.kind==='inventory'&&x.ordinal<=r.ordinal).length+' · '+r.used+'/'+r.capacity;
+  if(!r.owner)return (r.kind==='home-storage'?homeStorageWords[locale]:w[2])+' · '+r.used+'/'+r.capacity;
   const g=grids.find(g=>g.gridDataPath===r.owner?.gridDataPath);
   return w[3]+' '+rows.filter(x=>x.kind==='chest'&&x.ordinal<=r.ordinal).length+(g?' · '+label(g.key):'')+' ('+r.owner.x+', '+r.owner.y+') · '+r.used+'/'+r.capacity;
  }
