@@ -471,9 +471,20 @@ export interface ItemContentOrigin {
   /** null means the candidate column was not published; [] means no indexed evidence. */
   readonly candidateReleaseIds:readonly string[]|null;
 }
+/** Native ExpansionData tag association, not a release or ownership claim. */
+export interface NativeExpansionAffiliation {
+  readonly itemId:number;
+  readonly status:'tagged'|'no_matching_tag'|'unmapped_tag_field'|'not_indexed';
+  readonly expansionKey:string|null;
+  readonly tagItemId:number|null;
+  readonly mandatoryTagSelectorIndex:number|null;
+  readonly sourceVersion:string|null;
+  readonly expansionAtIntroduction:string|null;
+}
 export type ItemContentFilter=
   |{readonly kind:'confirmed_release'|'unconfirmed_candidate'|'source_release';readonly releaseId:string}
   |{readonly kind:'introduced_version'|'first_observed_version'|'switch_first_observed_version'|'switch_observed_version';readonly version:string}
+  |{readonly kind:'native_expansion'|'native_expansion_at_introduction';readonly expansionKey:string}
   |{readonly kind:'release_kind';readonly releaseKind:ItemContentReleaseKind}
   |{readonly kind:'unassigned_release'|'unknown_introduction'};
 export interface ItemContentQueryResult {
@@ -595,6 +606,7 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   getOriginalItemSaleFlags(itemIds:readonly number[]):Promise<readonly (Readonly<OriginalItemSaleFlags>|null)[]>;
   getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
   getItemContentOrigins(itemIds:readonly number[]):Promise<readonly (Readonly<ItemContentOrigin>|null)[]>;
+  getNativeExpansionAffiliations(itemIds:readonly number[]):Promise<readonly (Readonly<NativeExpansionAffiliation>|null)[]>;
   /** Additional canonical filters are ANDed with the explicit origin filter. */
   findItemIdsByContent(filter:ItemContentFilter,additionalFilters?:readonly ItemFieldFilter[]):Promise<Readonly<ItemContentQueryResult>>;
   /** Collection-only projection; fetch neither all shards nor all languages. */
@@ -1215,6 +1227,30 @@ export async function openPublicItemMaster(
   return Object.freeze({
     ...common,
     ...fieldReader,
+    async getNativeExpansionAffiliations(ids:readonly number[]){
+      const catalog=new Set((await fieldReader.getFieldCatalog()).map(f=>f.field));
+      const fields=['nativeExpansion.status','nativeExpansion.expansionKey','nativeExpansion.tagItemId',
+        'nativeExpansion.mandatoryTagSelectorIndex','nativeExpansion.sourceVersion','history.nativeExpansionAtIntroduction']
+        .filter(f=>catalog.has(f));
+      const rows=await fieldReader.getItemFields(ids,fields);
+      const keyPattern=/^[A-Za-z][A-Za-z0-9_]{0,127}$/;
+      return Object.freeze(rows.map(row=>{
+        if(!row)return null;
+        const value=(k:string)=>row.values['nativeExpansion.'+k];
+        const status=value('status')??'not_indexed';
+        assert(status==='tagged'||status==='no_matching_tag'||status==='unmapped_tag_field'||status==='not_indexed','INVALID_EXPANSION_STATUS');
+        const expansionKey=nullableText(value('expansionKey'),keyPattern);
+        const tagItemId=value('tagItemId')??null;
+        const mandatoryTagSelectorIndex=value('mandatoryTagSelectorIndex')??null;
+        assert(tagItemId===null||typeof tagItemId==='number'&&Number.isSafeInteger(tagItemId)&&tagItemId>0,'INVALID_EXPANSION_TAG');
+        assert(mandatoryTagSelectorIndex===null||typeof mandatoryTagSelectorIndex==='number'&&Number.isSafeInteger(mandatoryTagSelectorIndex)&&mandatoryTagSelectorIndex>=0,'INVALID_EXPANSION_SELECTOR');
+        assert(status==='tagged'?(expansionKey!==null&&tagItemId!==null):(expansionKey===null&&tagItemId===null),'INVALID_EXPANSION_ASSOCIATION');
+        const result:NativeExpansionAffiliation={itemId:row.itemId,status,expansionKey,tagItemId,mandatoryTagSelectorIndex,
+          sourceVersion:nullableText(value('sourceVersion'),GAME_VERSION),
+          expansionAtIntroduction:nullableText(row.values['history.nativeExpansionAtIntroduction'],keyPattern)};
+        return Object.freeze(result);
+      }));
+    },
     async getItemContentOrigins(ids:readonly number[]){
       const catalog=new Set((await fieldReader.getFieldCatalog()).map(f=>f.field));
       const fields=contentFields.filter(f=>catalog.has(f));
@@ -1267,6 +1303,11 @@ export async function openPublicItemMaster(
           assert(typeof filter.version==='string'&&GAME_VERSION.test(filter.version),'INVALID_CONTENT_VERSION');
           if(filter.kind==='switch_first_observed_version')equals('switchFirstObservedVersion',filter.version);
           else filters.push({field:'history.switchObservedVersions',anyOf:[{kind:'contains',value:filter.version}]});
+          break;
+        case 'native_expansion':
+        case 'native_expansion_at_introduction':
+          assert(typeof filter.expansionKey==='string'&&/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(filter.expansionKey),'INVALID_NATIVE_EXPANSION_KEY');
+          filters.push({field:filter.kind==='native_expansion'?'nativeExpansion.expansionKey':'history.nativeExpansionAtIntroduction',anyOf:[{kind:'equals',value:filter.expansionKey}]});
           break;
         case 'release_kind':
           assert(filter.releaseKind==='paid_dlc'||filter.releaseKind==='free_update','INVALID_CONTENT_KIND');

@@ -10,6 +10,7 @@ import {gunzipSync,inflateSync} from 'node:zlib';
 import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
 import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
 import {attachSwitchSourceObservations} from './switch-source-observations.mjs';
+import {loadNativeExpansionAffiliation} from './native-expansion-affiliation.mjs';
 import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 import {loadPremiumBundleColumns} from './premium-bundle-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
@@ -1080,7 +1081,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1325,6 +1326,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       }
     }
     for(const [key,value] of Object.entries(history.get(row.itemId)))add('history.'+key,row.itemId,value);
+    const expansion=nativeExpansion.byItem.get(row.itemId);
+    if(expansion)for(const [key,value] of Object.entries(expansion))add('nativeExpansion.'+key,row.itemId,value);
     for(const [key,value] of Object.entries(row)){
       if(!split.has(key)){add(key,row.itemId,value);continue;}
       const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
@@ -1635,7 +1638,9 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
   const history=attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows));
   const switchSourceHistory=attachSwitchSourceObservations(project,history);
+  const nativeExpansion=loadNativeExpansionAffiliation(project,source,history);
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,switchSourceHistory,
+    ...(nativeExpansion.metadata?{nativeExpansionAffiliation:nativeExpansion.metadata}:{}),
     ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
     ...(premiumBundles?{premiumBundleProjectionSha256:e.premiumBundleProjectionSha256,premiumBundleCoverage:premiumBundles.coverage}:{}),
     ...(originalPrices.metadata?{originalPriceProjection:originalPrices.metadata}:{}),
@@ -1700,7 +1705,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
