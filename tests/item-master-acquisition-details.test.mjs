@@ -111,7 +111,7 @@ test('all classification extensions preserve original evidence and localized sou
       const related=ext.family==='memoryDefaultContent'?[ev.orbItemId]:ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
-        ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:(ext.family==='storeGeneratedShelf'||ext.family==='storeGeneratedStage')?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[]),...(ev.catalogGate?.targetItemId?[ev.catalogGate.targetItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
+        ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId,...(ev.precursors?[ev.inventoryItemId,ev.blockerItemId,...ev.precursors.flatMap(p=>[p.sourceItemId,...(p.missionItemId?[p.missionItemId]:[])])]:[])])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:(ext.family==='storeGeneratedShelf'||ext.family==='storeGeneratedStage')?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[]),...(ev.catalogGate?.targetItemId?[ev.catalogGate.targetItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
       assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),related);
       assert(ext.relatedIdentities.every(i=>i.locale==='ja'));
     }
