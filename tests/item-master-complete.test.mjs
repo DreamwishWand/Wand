@@ -481,11 +481,14 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     (l.kind==='character_friendship_reward'||l.kind==='pet_friendship_reward')&&l.amount!==null)).map(([id])=>id));
   assert.equal(rewardIds.size,620);
   const premiumIds=new Set((await master.getFieldRows('acquisition.premiumCurrentBundleIds')).map(([id])=>id));
-  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds]);
+  const fields=new Set((await master.getFieldCatalog()).map(f=>f.field));
+  const production=fields.has('acquisition.ordinaryProductionSources')?
+    new Map(await master.getFieldRows('acquisition.ordinaryProductionSources')):new Map();
+  const expected=new Set([...previous.keys(),...rewardIds,...premiumIds,...production.keys()]);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){
     const old=previous.get(id)??[];
-    const want=rewardIds.has(id)&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
+    const want=(rewardIds.has(id)||production.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }
