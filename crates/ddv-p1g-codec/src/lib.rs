@@ -16,6 +16,8 @@ mod mission_slot_audit;
 mod progression_guard;
 #[cfg(feature="wasm")]
 mod grid_instance_preview;
+#[cfg(any(feature="wasm",test))]
+mod diffgrid_effective;
 mod storage_source;
 #[cfg(feature="wasm")]
 mod private_storage_scope;
