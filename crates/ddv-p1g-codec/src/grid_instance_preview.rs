@@ -3993,6 +3993,37 @@ mod terrain_session_tests{
         plan["edits"][0]["y"]=Value::from(0);plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/Table01-GridData.json");assert!(support_child_candidate(save,&plan).is_err());
     }
     #[test]
+    fn free_support_group_transform_is_atomic_and_preserves_ids(){
+        let mut save=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":100},"World":{"GridCollection":{"Grids":{
+            "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+            "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"Objects":{
+                "1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down"},
+                "2":{"ID":2,"ItemID":40005162,"X":2,"Y":0,"Orientation":"GridOrientation_Down"},
+                "3":{"ID":3,"ItemID":40005161,"X":0,"Y":2,"Orientation":"GridOrientation_Down"}
+            }}
+        }}}});
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"groupEdit":true,
+            "freePlacement":true,"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","edits":[
+                {"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":2,"y":0,"orientation":"GridOrientation_Left"},
+                {"index":1,"itemId":40005162,"expectedX":2,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":2,"y":2,"orientation":"GridOrientation_Left"},
+                {"index":2,"itemId":40005161,"expectedX":0,"expectedY":2,"expectedOrientation":"GridOrientation_Down","x":0,"y":0,"orientation":"GridOrientation_Left"}
+            ]});
+        let raw=serde_json::to_vec(&save).unwrap();
+        let d=support_child_candidate(&raw,&plan).unwrap();let after:Value=serde_json::from_str(&d.patched_json).unwrap();
+        let mut expected=save.clone();
+        for (id,x,y) in [("1",2,0),("2",2,2),("3",0,0)]{
+            let v=&mut expected["World"]["GridCollection"]["Grids"]["8"]["Objects"][id];
+            v["X"]=x.into();v["Y"]=y.into();v["Orientation"]="GridOrientation_Left".into();
+        }
+        assert_eq!(after,expected);assert!(d.untouched_bytes_preserved);
+        let mut strict=plan.clone();strict.as_object_mut().unwrap().remove("groupEdit");assert!(support_child_candidate(&raw,&strict).is_err());
+        let mut stale=plan.clone();stale["edits"][2]["index"]=0.into();assert!(support_child_candidate(&raw,&stale).is_err());
+        stale=plan.clone();stale["edits"][2]["x"]=999.into();assert!(support_child_candidate(&raw,&stale).is_err());
+        save["World"]["SpawnedObjects"]=serde_json::json!([{"GridID":8,"GridObjectID":3}]);
+        assert!(support_child_candidate(&serde_json::to_vec(&save).unwrap(),&plan).is_err());
+        plan.as_object_mut().unwrap().remove("freePlacement");assert!(support_child_candidate(&raw,&plan).is_err());
+    }
+    #[test]
     fn free_support_swap_preserves_ids_and_requires_exact_bounds_and_reference_closure(){
         let mut save=serde_json::json!({"GameInfo":{"Version":643},"Player":{"Marker":100},"World":{"GridCollection":{"Grids":{
             "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
