@@ -2787,7 +2787,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
-    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>();
+    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
@@ -3297,7 +3297,7 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     let mut same=Vec::new();
     let mut cross=Vec::new();
     let mut same_trees=Vec::new();
-    let mut local_items=None::<HashSet<u64>>();
+    let mut local_items=None::<HashSet<u64>>;
     for ((((target,selection),(key,xy,orientation)),factor),&storage) in targets.iter().zip(&selections).zip(&poses).zip(&hierarchy).zip(&storage_flags){
         let source=grids.get(&target.grid_id).ok_or(bad)?;
         let raw_layout=source.get("GridDefaultLayoutPath").and_then(Value::as_str).ok_or(bad)?;
