@@ -33,7 +33,7 @@ function gate(tree,known,questKinds){
     }
     // Only reviewed conjunctive predicates are admitted. Preserve indices.
     if(leaf.CommonConditions||leaf.SubConditions)return null;
-    const parsed=questGate({Conditions:[leaf]},new Map(),questKinds);
+    const parsed=questGate({Conditions:[leaf]},new Map(),questKinds,[],0,'source.Conditions',known);
     if(!parsed?.length)return null;
     questGates.push(...parsed.map(p=>({...p,sourcePath:p.sourcePath.replace('Conditions[0]','Conditions['+i+']')})));
   }
@@ -77,6 +77,20 @@ export function buildMemorySpawnSources(rows,source,memories,questKinds){
     source.sourceFilesSha256.Condition!=='9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c'||
     source.sourceFilesSha256.Mission!=='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24')return result;
   const known=new Map(rows.map(r=>[r.itemId,r]));
+  // The reviewed current Guide groups and event index establish that these
+  // three secret introductions are permanent quests. Restrict the addition
+  // to this explicit memory-spawn consumer and pinned original identities;
+  // never globally classify all Secret quests.
+  const memoryQuestKinds=new Map(questKinds);
+  for(const [questId,key] of [
+    [2070001133,'Secret!Ratatouille!Remy!SEC_Remy_020'],
+    [2070001461,'Secret!Moana!Moana!SEC_Moan_010'],
+    [2070001672,'Secret!Nightmare!OogieBoogie!SEC_Oogi_060']
+  ]){
+    const mission=known.get(questId);
+    if(mission?.nativeCategory==='Mission'&&mission.nativeKey===key&&!memoryQuestKinds.has(questId))
+      memoryQuestKinds.set(questId,'ordinary_gameplay');
+  }
   let occurrences=0,invalid=0,classifiedOccurrences=0;const classifiedIds=new Set();
   for(const row of rows){
     if(row.nativeCategory!=='ConditionalEvent')continue;
@@ -89,7 +103,7 @@ export function buildMemorySpawnSources(rows,source,memories,questKinds){
     const amount=s.AmountToSpawn?.Value?.Value;
     const shardIndexValid=Number.isSafeInteger(index)&&index>=0&&index<memory.configuredShardCount;
     const exactAmount=exact(s.AmountToSpawn,['Value'])&&exact(s.AmountToSpawn.Value,['Value'])&&id(amount);
-    const gateResult=shardIndexValid&&exactAmount&&exact(state,['MemoryShardIndex'])&&(direct||id(nested?.Amount))?(gate(p.Conditions,known,questKinds)??realmGate(p.Conditions,s,known,source)):null;
+    const gateResult=shardIndexValid&&exactAmount&&exact(state,['MemoryShardIndex'])&&(direct||id(nested?.Amount))?(gate(p.Conditions,known,memoryQuestKinds)??realmGate(p.Conditions,s,known,source)):null;
     const record={kind:gateResult?(gateResult.kind??'quest_gated_memory_spawn'):'configured_memory_spawn',sourceItemId:row.itemId,
       targetItemId:target,sourcePath:direct?'source.Spawn.RewardOverride.ItemID':'source.Spawn.RewardOverride.State.ConsummableData.ItemID',
       shardIndex:Number.isSafeInteger(index)?index:null,shardIndexValid,configuredShardCount:memory.configuredShardCount,

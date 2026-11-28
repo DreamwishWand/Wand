@@ -5,7 +5,26 @@ const id=v=>Number.isSafeInteger(v)&&v>0;
 const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const keys=(v,allowed)=>obj(v)&&Object.keys(v).every(k=>allowed.includes(k));
 const positive=v=>v===undefined||v===false;
-export function questGate(tree,common,questKinds,stack=[],depth=0,path='source.Conditions'){
+// Native ConditionMissionObjectiveStatus.Evaluate (RVA 39ED8E0) calls the
+// objective status getter with stable StepID/SubStepID/ObjectiveID, then
+// MissionStatusOperator's comparison at 3A2DDE0. Operator 4 admits
+// Completed (3) or Confirmed (4), not in-progress/negative states.
+// The three int32 IDs have protobuf default 0. Resolve against the actual
+// original definitions, never confuse a persistent ID with array position.
+function completedObjective(v,known){
+  if(!keys(v,['Mission','StepID','SubStepID','ObjectiveID','Status'])||v.Status!==4||!known)return false;
+  const ids=['StepID','SubStepID','ObjectiveID'].map(k=>v[k]===undefined?0:v[k]);
+  if(!ids.every(n=>Number.isSafeInteger(n)&&n>=0))return false;
+  const row=known.get(v.Mission);
+  if(row?.nativeCategory!=='Mission')return false;
+  const p={...row.nativeProperties,...row.sourceAttributes};
+  const byId=(a,key,n)=>Array.isArray(a)?a.filter(o=>obj(o)&&(o[key]===undefined?0:o[key])===n):[];
+  const steps=byId(p.Steps,'StepID',ids[0]);
+  if(steps.length!==1)return false;
+  const subs=byId(steps[0].SubSteps,'SubStepID',ids[1]);
+  return subs.length===1&&byId(subs[0].Objectives,'ObjectiveID',ids[2]).length===1;
+}
+export function questGate(tree,common,questKinds,stack=[],depth=0,path='source.Conditions',known=null){
   if(depth>16||!keys(tree,['Operator','Conditions'])||!(tree.Operator===undefined||tree.Operator===0)||
     !Array.isArray(tree.Conditions)||!tree.Conditions.length)return null;
   const result=[];
@@ -14,9 +33,9 @@ export function questGate(tree,common,questKinds,stack=[],depth=0,path='source.C
     const [kind]=Object.keys(leaf),v=leaf[kind],p=path+'.Conditions['+i+'].'+kind;
     if(kind==='SubConditions'||kind==='CommonConditions'){
       let nested=null;
-      if(kind==='SubConditions')nested=questGate(v,common,questKinds,stack,depth+1,p);
+      if(kind==='SubConditions')nested=questGate(v,common,questKinds,stack,depth+1,p,known);
       else if(keys(v,['Condition','Inversed'])&&id(v.Condition)&&positive(v.Inversed)&&!stack.includes(v.Condition)){
-        nested=questGate(common.get(v.Condition),common,questKinds,[...stack,v.Condition],depth+1,'source.Conditions');
+        nested=questGate(common.get(v.Condition),common,questKinds,[...stack,v.Condition],depth+1,'source.Conditions',known);
         if(nested)nested=nested.map(e=>({...e,commonChain:[{conditionItemId:v.Condition,sourcePath:p},...e.commonChain]}));
       }
       if(!nested)return null;
@@ -37,7 +56,8 @@ export function questGate(tree,common,questKinds,stack=[],depth=0,path='source.C
       (v.Operator===undefined||v.Operator===0)&&[2,4,8].includes(v.State);
     const isCompletedStep=kind==='MissionStepStatus'&&keys(v,['Mission','StepID','Status'])&&
       Number.isSafeInteger(v.StepID)&&v.StepID>=0&&v.Status===4;
-    if(!isSimple&&!isStep&&!isMissionState&&!isCompletedStep)return null;
+    const isCompletedObjective=kind==='MissionObjectiveStatus'&&completedObjective(v,known);
+    if(!isSimple&&!isStep&&!isMissionState&&!isCompletedStep&&!isCompletedObjective)return null;
     result.push({questId,category,kind,sourcePath:p,original:v,commonChain:[]});
   }
   return result;
@@ -54,7 +74,8 @@ export function conditionalQuestGrants(rows,source,questKinds){
   const stateItems=new Set(),stateEvents=new Set();
   for(const row of rows){
     if(row.nativeCategory!=='ConditionalEvent')continue;
-    const p=props(row),gate=questGate(p.Conditions,common,questKinds);
+    const p=props(row),gate=questGate(p.Conditions,common,questKinds,[],0,'source.Conditions',
+      source.sourceFilesSha256.Mission==='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24'?byId:null);
     if(!gate?.length)continue;
     const categories=new Set(gate.map(g=>g.category));
     // Do not collapse mixed event and permanent quest requirements.
@@ -74,7 +95,7 @@ export function conditionalQuestGrants(rows,source,questKinds){
         sourceConditionSha256:source.sourceFilesSha256.Condition,
         guaranteedGrantVerified:false,currentAvailabilityVerified:false});
       byItem.set(itemId,list);matched=true;
-      if(gate.some(g=>g.kind==='MissionStatus'||g.kind==='MissionStepStatus')){stateItems.add(itemId);stateEvents.add(row.itemId);}
+      if(gate.some(g=>g.kind==='MissionStatus'||g.kind==='MissionStepStatus'||g.kind==='MissionObjectiveStatus')){stateItems.add(itemId);stateEvents.add(row.itemId);}
     }
     if(matched)matchedEvents++;
   }

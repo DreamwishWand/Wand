@@ -13,6 +13,17 @@ test('quest gate classification rejects non-positive, mixed, cyclic and unrecogn
     const raw={MissionStatus:{Mission:1,State:state,Operator:0}};
     assert.deepEqual(questGate({Conditions:[raw]},common,kinds)?.[0]?.original,raw.MissionStatus);
   }
+  const known=new Map([[1,{nativeCategory:'Mission',sourceAttributes:{Steps:[
+    {StepID:9,SubSteps:[{Objectives:[{ObjectiveID:7}]}]},
+    {StepID:2,SubSteps:[{Objectives:[{}]},{SubStepID:3,Objectives:[{ObjectiveID:5}]}]}
+  ]}}]]);
+  const objective={MissionObjectiveStatus:{Mission:1,StepID:2,Status:4}};
+  const withKnown=raw=>questGate({Conditions:[raw]},common,kinds,[],0,'source.Conditions',known);
+  assert.deepEqual(withKnown(objective)?.[0]?.original,objective.MissionObjectiveStatus);
+  assert(withKnown({MissionObjectiveStatus:{Mission:1,StepID:2,SubStepID:3,ObjectiveID:5,Status:4}}));
+  assert.equal(questGate({Conditions:[objective]},common,kinds),null);
+  for(const patch of [{StepID:1},{SubStepID:2},{ObjectiveID:1},{Status:2},{Status:5},{StepID:-1},{Inversed:true}])
+    assert.equal(withKnown({MissionObjectiveStatus:{...objective.MissionObjectiveStatus,...patch}}),null);
   const step={MissionStepStatus:{Mission:1,StepID:2,Status:4}};
   assert.deepEqual(questGate({Conditions:[step]},common,kinds)?.[0]?.original,step.MissionStepStatus);
   for(const v of [{Operator:1,Conditions:[leaf]},{Operator:2,Conditions:[leaf]},
