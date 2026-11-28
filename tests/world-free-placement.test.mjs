@@ -194,3 +194,21 @@ test('bounded building backups preserve outside and ambiguous instances',()=>{
  const crossing=make(20100001,5,2,4);crossing.shape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}]};
  assert.deepEqual(regionBuildingPoses(region,g,[crossing]),[]);
 });
+
+test('common free coordinate transaction stages mixed plain, landscape, building, support and storage poses',()=>{
+ const support={...o,localOrdinal:2,itemId:'40005160',shapeKey:'40005160:8',subgrid:{status:'resolved_full',objectCount:1}};
+ const storage={...o,localOrdinal:3,itemId:'40001680',shapeKey:'40001680:8',storage:true,storageKnown:true};
+ const landscape={...o,localOrdinal:4,itemId:'40200001',shapeKey:'40200001:8',layer:'landscape'};
+ const building={...o,localOrdinal:5,itemId:'20500001',shapeKey:'20500001:8',nativeType:'Building',layer:'other'};
+ const objects=[o,support,storage,landscape,building];
+ const shape={width:1,height:1,runs:[{x:0,y:0,width:1}],cellCount:1};
+ const map={objects,shapes:Object.fromEntries(objects.flatMap(p=>[[p.shapeKey,shape],[p.itemId+':12',shape]]))};
+ assert.ok(objects.every(p=>worldMoveEligible(p,true)&&worldRotateEligible(p,true)));
+ const targets=objects.map(p=>({ordinal:p.localOrdinal,x:p.x+2,y:p.y+2,orientation:'GridOrientation_Left',shapeKey:p.itemId+':12'}));
+ const next=stageWorldTargets(map,emptyWorldTimeline(),targets,'test',true);
+ assert.ok(next);assert.equal(currentWorldEdits(next).length,5);
+ assert.equal(worldMoveEligible({...support,subgrid:{status:'unresolved',objectCount:null}},true),false);
+ assert.equal(worldMoveEligible({...storage,storage:false},true),false);
+ assert.equal(draftSavedMapTransform(storage,2,2,'GridOrientation_DownLeft',true),null);
+ assert.equal(draftSavedMapTransform(support,2,2,'GridOrientation_DownLeft',true),null);
+});
