@@ -23,3 +23,20 @@ test('source candidates, malformed pairs and unused images are rejected',()=>{
   }
   assert.equal(createShopSourceReader({state:'unpublished'}).get('guid:'+g),null);
 });
+
+test('typed Shop sources require explicit selection for dual references',()=>{
+  const c='c'.repeat(64),d='d'.repeat(64);
+  const r=createShopSourceReader({...doc,schema:'wand.media.shop-source-release@2',
+    references:{[g]:{Sprite:[a,b],Texture2D:[c,d]}},
+    images:{...doc.images,[c]:{width:1024,height:1024,bytes:2048},[d]:{width:512,height:512,bytes:800}}});
+  assert.equal(r.get('guid:'+g),null);
+  assert.equal(r.url('guid:'+g,'thumbnail','Sprite'),'https://media.dreamwishwand.com/images/'+b+'.webp');
+  const revision={revisionSha256:'e'.repeat(64),artwork:{image:'guid:'+g,background:'guid:'+g},
+    components:[{itemId:1,quantity:1,image:'guid:'+g}]};
+  const v=r.resolveRevision(revision);
+  assert.equal(v.image.original.sha256,a);
+  assert.equal(v.background.original.sha256,c);
+  assert.equal(v.components[0].explicitImage,null);
+  assert.equal(v.components[0].spriteImage.original.sha256,a);
+  assert.equal(v.components[0].textureImage.original.sha256,c);
+});
