@@ -10,7 +10,7 @@
  */
 import {createItemFieldReader,type ItemFieldReader,type ItemFieldFilter,type ItemFieldValue} from './item-field-reader.ts';
 import {DB02_SOURCE_KINDS,DB02_SOURCE_ROLES,type Db01SourceKind,type Db01SourceRole} from '../acquisition/db01-item-source-relations.ts';
-import {resolvePremiumBundleText,type PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
+import {resolvePremiumBundleText,singleComponentNameId,type PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
 export type {PremiumBundleLocalizedText} from './premium-bundle-localization.ts';
 export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch,ItemFieldFilter} from './item-field-reader.ts';
 
@@ -1397,10 +1397,16 @@ export async function openPublicItemMaster(
       assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(id=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id)),'INVALID_PREMIUM_BUNDLE_IDS');
       if(ids.length)await premiumCatalog();
-      return Object.freeze(ids.map(id=>{
-        const b=premiumIndex?.get(id);
-        return b?resolvePremiumBundleText(b,locale):null;
-      }));
+      const definitions=ids.map(id=>premiumIndex?.get(id));
+      const itemIds=[...new Set(definitions.flatMap(b=>b?[singleComponentNameId(b.current),singleComponentNameId(b.legacy)].filter(ID):[]))];
+      const names=new Map<number,string>(),field='names.'+locale;
+      if(itemIds.length&&(await fieldReader.getFieldCatalog()).some(f=>f.field===field)){
+        for(const row of await fieldReader.getItemFields(itemIds,[field])){
+          const name=row?.values[field];
+          if(row&&typeof name==='string'&&name.trim())names.set(row.itemId,name);
+        }
+      }
+      return Object.freeze(definitions.map(b=>b?resolvePremiumBundleText(b,locale,names):null));
     },
     async getPremiumBundleMembership(ids:readonly number[]){
       assert(Array.isArray(ids)&&ids.length<=10000&&ids.every(ID),'INVALID_ITEM_BATCH');
