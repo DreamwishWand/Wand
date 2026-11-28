@@ -82,23 +82,39 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
       if(family==='eventRecurringLoot'){
+        const bounded=evidence.boundedLocalDateGate,blocker=evidence.kind==='event_recurring_blocker_loot';
+        const spawned=blocker?evidence.blockerItemId:evidence.ephemeralItemId;
         check(categories.includes('in_game_limited_event')&&evidence.category==='in_game_limited_event'&&
-          evidence.kind==='event_recurring_ephemeral_loot'&&evidence.sourceGameVersion===db.release.target.gameVersion&&
+          (blocker?object(bounded)&&id(bounded.conditionItemId)&&id(bounded.missionItemId)&&
+            id(bounded.startLocalSeconds)&&id(bounded.endLocalSeconds)&&bounded.startLocalSeconds<bounded.endLocalSeconds&&
+            object(bounded.original)&&evidence.blockerSourcePath==='source.RewardLootTableItemID'&&
+            evidence.sourceFurnitureSha256===sha?.Furniture&&evidence.sourceMissionSha256===sha?.Mission:
+            evidence.kind==='event_recurring_ephemeral_loot'&&evidence.ephemeralSourcePath==='source.TreasureLootTable')&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&
           evidence.sourceRecurringEventSha256===sha?.RecurringEvent&&evidence.sourceEventSha256===sha?.ConditionalEvent&&
           evidence.sourceConditionSha256===sha?.Condition&&evidence.sourceActivityItemSha256===sha?.ActivityItem&&
           evidence.sourceLootTableSha256===sha?.LootTable&&evidence.sourceMemorySha256===sha?.MemoryShard&&
           evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
-          id(evidence.sourceItemId)&&id(evidence.recurringEventItemId)&&id(evidence.ephemeralItemId)&&
+          id(evidence.sourceItemId)&&id(evidence.recurringEventItemId)&&id(spawned)&&
           id(evidence.tableItemId)&&id(evidence.targetItemId)&&typeof evidence.eventName==='string'&&evidence.eventName.length>0&&
           evidence.sourcePath==='source.RecurringEvent.RecurringEventItemID'&&object(evidence.conditions)&&
           typeof evidence.recurringSourcePath==='string'&&/^source\.ItemList\.Items\[\d+\]\.ItemID$/.test(evidence.recurringSourcePath)&&
-          evidence.ephemeralSourcePath==='source.TreasureLootTable'&&typeof evidence.tableSourcePath==='string'&&
+          typeof evidence.tableSourcePath==='string'&&
           evidence.tableSourcePath.startsWith('source.Rewards.SubLootTables[')&&
           id(evidence.maximumRolls)&&typeof evidence.minimumRolls==='number'&&Number.isSafeInteger(evidence.minimumRolls)&&
           evidence.minimumRolls>=0&&evidence.minimumRolls<=evidence.maximumRolls&&
           evidence.guaranteedGrantVerified===false,'EXTENSION_EVENT_RECURRING_LOOT');
+        const relatedIds=[evidence.recurringEventItemId,spawned,evidence.tableItemId];
+        if(blocker&&object(bounded)&&id(bounded.conditionItemId)&&id(bounded.missionItemId))relatedIds.push(bounded.conditionItemId,bounded.missionItemId);
+        if(evidence.orbItemId!==undefined){
+          check(id(evidence.orbItemId)&&id(evidence.configuredConsumableAmount)&&id(evidence.configuredShardCount)&&
+            typeof evidence.shardIndex==='number'&&Number.isSafeInteger(evidence.shardIndex)&&evidence.shardIndex>=0&&
+            evidence.shardIndex<evidence.configuredShardCount&&typeof evidence.tableSourcePath==='string'&&
+            evidence.tableSourcePath.endsWith('.State.ConsummableData.ItemID'),'EXTENSION_RECURRING_MEMORY_PAYLOAD');
+          relatedIds.push(evidence.orbItemId);
+        }
         output.push({family,category:'in_game_limited_event',evidence,sourceId:evidence.sourceItemId,
-          relatedIds:[evidence.recurringEventItemId,evidence.ephemeralItemId,evidence.tableItemId]});continue;
+          relatedIds});continue;
       }
       if(family==='memoryDefaultContent'){
         const category=evidence.category;

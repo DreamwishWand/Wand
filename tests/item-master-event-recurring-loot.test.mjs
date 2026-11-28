@@ -13,14 +13,29 @@ test('explicit event-active recurring ephemeral memory loot joins original item 
   assert.equal(found.length,n);assert.deepEqual(found.map(l=>l.shardIndex).sort((a,b)=>a-b),Array.from({length:n},(_,i)=>i));
   for(const l of found){assert.deepEqual([l.recurringEventItemId,l.ephemeralItemId,l.tableItemId],[r,p,t]);assert.equal(l.eventName,'MemoryMania_UI_2026');}
  }
- assert(!links.some(l=>l.sourceItemId===1520001514));
- const ids=[...new Set(links.flatMap(l=>[l.sourceItemId,l.recurringEventItemId,l.ephemeralItemId,l.tableItemId]))];
- const data=new Map((await db.getItemFields(ids,['source.RecurringEvent','source.Conditions','source.ItemList','source.TreasureLootTable','source.Rewards'])).map(r=>[r.itemId,r.values]));
+ const cheshire=links.filter(l=>l.sourceItemId===1520001514),pieces=cheshire.filter(l=>l.targetItemId===130000375);
+ assert.equal(cheshire.length,20);assert.equal(pieces.length,10);
+ assert.deepEqual(pieces.map(l=>l.shardIndex).sort((a,b)=>a-b),Array.from({length:10},(_,i)=>i));
+ assert.equal(cheshire.filter(l=>l.targetItemId===31500362).length,10);
+ for(const l of cheshire){
+   assert.deepEqual([l.recurringEventItemId,l.blockerItemId,l.tableItemId],[2010000160,40600303,2090000596]);
+   assert.equal(l.eventName,'CheshireChaos');assert.equal(l.kind,'event_recurring_blocker_loot');
+   assert.deepEqual([l.boundedLocalDateGate.conditionItemId,l.boundedLocalDateGate.missionItemId,
+     l.boundedLocalDateGate.startLocalSeconds,l.boundedLocalDateGate.endLocalSeconds],
+     [2130003317,2070000620,1746576000,1747785540]);
+ }
+ assert(!links.some(l=>[1520001515,1520001516,1520001517].includes(l.sourceItemId)));
+ const ids=[...new Set(links.flatMap(l=>[l.sourceItemId,l.recurringEventItemId,l.ephemeralItemId??l.blockerItemId,l.tableItemId,
+   ...(l.boundedLocalDateGate?[l.boundedLocalDateGate.conditionItemId]:[])]))];
+ const data=new Map((await db.getItemFields(ids,['source.RecurringEvent','source.Conditions','source.ItemList','source.TreasureLootTable','source.RewardLootTableItemID','source.Rewards'])).map(r=>[r.itemId,r.values]));
  for(const l of links){
   assert.deepEqual(data.get(l.sourceItemId)['source.RecurringEvent'],l.recurringActivation);
   assert.deepEqual(data.get(l.sourceItemId)['source.Conditions'],l.conditions);
-  assert(data.get(l.recurringEventItemId)['source.ItemList'].Items.some(e=>e.ItemID===l.ephemeralItemId&&e.Weight===l.configuredSpawnWeight));
-  assert.equal(data.get(l.ephemeralItemId)['source.TreasureLootTable'],l.tableItemId);
+  const spawned=l.ephemeralItemId??l.blockerItemId;
+  assert(data.get(l.recurringEventItemId)['source.ItemList'].Items.some(e=>e.ItemID===spawned&&e.Weight===l.configuredSpawnWeight));
+  assert.equal(data.get(spawned)[l.blockerSourcePath??l.ephemeralSourcePath],l.tableItemId);
+  if(l.boundedLocalDateGate)assert.deepEqual(data.get(l.boundedLocalDateGate.conditionItemId)['source.Conditions'],l.boundedLocalDateGate.original);
+  if(l.orbItemId){assert.equal(l.orbItemId,31500362);assert.equal(l.configuredConsumableAmount,1);}
   const path=l.tableSourcePath.slice('source.Rewards'.length).match(/[A-Za-z_][A-Za-z0-9_]*|\d+/g);
   assert.equal(path.reduce((x,k)=>x[k],data.get(l.tableItemId)['source.Rewards']),l.targetItemId);
   assert.equal(l.guaranteedGrantVerified,false);assert.equal(l.currentAvailabilityVerified,false);
