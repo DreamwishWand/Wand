@@ -60,6 +60,17 @@ pub(super) fn placement_storage_template(root:&Value,item:u64)->Option<(&'static
  }
  Some((template,observed?))
 }
+/// Reuse the same source/template proof for all inventory candidates.
+ /// A template's witnessed capacity is shared only among items with the
+ /// identical unlocked original ContainerInteraction template.
+pub(super) fn placement_storage_items(root:&Value,ids:impl Iterator<Item=u64>)->Vec<u64>{
+ let mut observed=std::collections::HashMap::<&'static str,bool>::new();
+ ids.filter(|item|{
+  if initial_storage_template(*item).is_some(){return true;}
+  let Some(template)=unlocked_source_template(*item)else{return false;};
+  *observed.entry(template).or_insert_with(||placement_storage_template(root,*item).is_some())
+ }).collect()
+}
 /// An area decoration preset contains only a pose, not container payload.
 /// Only a canonical empty container that can be regenerated exactly is portable.
 pub(super) fn restorable_empty_storage(root:&Value,obj:&Value,item:u64)->bool{
