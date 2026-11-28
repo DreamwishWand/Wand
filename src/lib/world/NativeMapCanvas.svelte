@@ -29,10 +29,44 @@
  let active:AbortController|null=null,currentKey='';
  let currentSource:ImageSource|undefined;
  let requested:{layers:readonly Layer[];view:View;source:ImageSource;key:string;w:number;h:number}|null=null;
- onMount(()=>{
+ function stopRender(){
+  ++revision;pending=null;requested=null;active?.abort();
+  renderer?.dispose();renderer=null;reportProgress(null);
+ }
+ function failRender(message:string){
+  loading=false;error=message;if(!completeFrame)drawnView=null;onStatus('error');
+ }
+ function startRenderer(){
+  if(closed||!stage)return;
+  try{renderer=new NativeMapRenderer(stage);error='';loading=true;}
+  catch(e){failRender(e instanceof Error?e.message:'WebGL 2 unavailable');}
+ }
+ function contextLost(event:Event){
+  if(closed||event.currentTarget!==stage)return;
+  event.preventDefault();stopRender();failRender('WebGL context lost');
+ }
+ function contextRestored(event:Event){
+  if(closed||event.currentTarget!==stage)return;
+  startRenderer();
+ }
+ function detachStage(){
+  stage?.removeEventListener('webglcontextlost',contextLost);
+  stage?.removeEventListener('webglcontextrestored',contextRestored);
+  stage=null;
+ }
+ function createStage(){
   stage=document.createElement('canvas');
-  try{renderer=new NativeMapRenderer(stage);}
-  catch(e){loading=false;error=e instanceof Error?e.message:'WebGL 2 unavailable';onStatus('error');}
+  stage.addEventListener('webglcontextlost',contextLost);
+  stage.addEventListener('webglcontextrestored',contextRestored);
+  startRenderer();
+ }
+ function retry(){
+  if(closed)return;
+  stopRender();detachStage();createStage();
+ }
+ const retryLabels={ja:'再試行',en:'Retry',fr:'Réessayer',it:'Riprova',de:'Erneut versuchen','es-ES':'Reintentar','zh-CN':'重试','pt-BR':'Tentar novamente'} as const;
+ onMount(()=>{
+  createStage();
   const resize=()=>{
    const rect=host.getBoundingClientRect(),ratio=Math.min(2,devicePixelRatio||1);
    hostWidth=rect.width;hostHeight=rect.height;
@@ -40,7 +74,7 @@
    pixelHeight=Math.max(1,Math.round(rect.height*ratio));
   };
   const observer=new ResizeObserver(resize);observer.observe(host);resize();ready=true;
-  return ()=>{closed=true;pending=null;active?.abort();observer.disconnect();renderer?.dispose();renderer=null;stage=null;};
+  return ()=>{closed=true;observer.disconnect();stopRender();detachStage();};
  });
  $: if(ready&&renderer)queue(layers,view,source,activeKey,pixelWidth,pixelHeight);
  function queue(ls:readonly Layer[],v:View,src:ImageSource,key:string,w:number,h:number){
@@ -91,7 +125,7 @@
      if(!wanted())continue;
      present(buffer,job.view,job.w,job.h);completeFrame=true;completedPlan={view:job.view,w:job.w,h:job.h};completedLayers=job.layers;loading=false;onStatus('ready');
     }catch(e){
-     if(wanted()){loading=false;if(!completeFrame)drawnView=null;error=e instanceof Error?e.message:'Rendering failed';onStatus('error');}
+     if(wanted())failRender(e instanceof Error?e.message:'Rendering failed');
     }finally{if(active===controller){active=null;activeJob=null;}}
    }
   }finally{busy=false;}
@@ -105,11 +139,12 @@
   style:visibility={rect?'visible':'hidden'}></canvas>
  </div>
  {#if showLoading&&loading&&!error}<NativeMapLoading {locale} {progress} compact={completeFrame}/>{/if}
- {#if error}<div class="error" role="alert">{error}</div>{/if}
+ {#if error}<div class="error"><span role="alert">{error}</span><button type="button" on:click={retry}>{retryLabels[locale]??retryLabels.en}</button></div>{/if}
 </div>
 <style>
  .native-canvas{position:absolute;inset:0;overflow:hidden;pointer-events:none;min-width:0;min-height:0;contain:layout paint}
  .frame-clip{position:absolute;inset:0;pointer-events:none}
  canvas{position:absolute;display:block;max-width:none;max-height:none;min-width:0;min-height:0;pointer-events:none;user-select:none;-webkit-user-drag:none}
- .error{position:absolute;inset:auto 8px 8px;padding:8px;background:#181820;color:white;font-size:12px}
+ .error{position:absolute;inset:auto 8px 8px;padding:8px;background:#181820;color:white;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;pointer-events:auto;z-index:4}
+ .error button{flex:none;cursor:pointer}
 </style>
