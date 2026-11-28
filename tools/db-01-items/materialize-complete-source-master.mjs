@@ -34,6 +34,7 @@ import {buildStoreSequenceSources} from './store-sequence-sources.mjs';
 import {buildInstalledShelfCandidates} from './store-installed-shelf-candidates.mjs';
 import {ordinaryLootPresentLinks,ordinaryCritterFeedingLinks} from './ordinary-loot-present.mjs';
 import {eventLootPresentLinks} from './event-loot-present.mjs';
+import {eventRecurringLootLinks} from './event-recurring-loot.mjs';
 import {buildMemorySpawnSources} from './memory-spawn-sources.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -1381,6 +1382,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     (protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||
     ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)||(questFlows.conditionalQuest.get(id)??[]).some(l=>l.category==='ordinary_gameplay');
   const eventLoot=eventLootPresentLinks(rows,source,memoryAppearance);
+  const eventRecurringLoot=eventRecurringLootLinks(rows,source,memoryAppearance);
   const ordinaryLoot=ordinaryLootPresentLinks(rows,source,priorOrdinary);
   const memoryLoot=buildMemoryLootSources(rows,source,memoryAppearance);
   const ordinaryFeeding=ordinaryCritterFeedingLinks(rows,source,ordinaryCritters);
@@ -1630,6 +1632,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    const recurringLoot=eventRecurringLoot.get(row.itemId);
+    if(recurringLoot?.length){
+      add('acquisition.eventRecurringLootSources',row.itemId,recurringLoot);
+      categorySet.add('in_game_limited_event');
+    }
     const eventLootSources=eventLoot.get(row.itemId);
     if(eventLootSources?.length){
       add('acquisition.eventLootPresentSources',row.itemId,eventLootSources);

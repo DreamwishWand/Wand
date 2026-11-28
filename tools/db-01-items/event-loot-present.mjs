@@ -7,7 +7,7 @@ const id=n=>Number.isSafeInteger(n)&&n>0;
 const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const exact=(v,keys)=>obj(v)&&Object.keys(v).every(k=>keys.includes(k));
 const positive=v=>v===undefined||v===false;
-function activeEvent(tree,known,stack=[]){
+export function activeEvent(tree,known,stack=[]){
   if(stack.length>8||!exact(tree,['Operator','Conditions'])||!(tree.Operator===undefined||tree.Operator===0)||
     !Array.isArray(tree.Conditions)||!tree.Conditions.length)return null;
   const events=[],resolved=[];
