@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {onDestroy} from 'svelte';
+  import {onMount,onDestroy} from 'svelte';
   import {base} from '$app/paths';
   import type {CollectionAcquisitionWithDistribution}
     from './distribution-evidence.ts';
@@ -16,6 +16,7 @@
   $: copy=collectionAcquisitionCopy(locale);
   $: distributionCopy=collectionDistributionCopy(locale);
   let expanded=false;
+  onMount(()=>{expanded=true;});
   let requestCounter=0;
   let requestedItemId:number|null=null;
   let loading=false;
@@ -82,12 +83,8 @@
   });
 </script>
 
-<details class="inspector-details collection-acquisition"
-  on:toggle={(event)=>{
-    expanded=(event.currentTarget as HTMLDetailsElement).open;
-    if(expanded&&requestedItemId!==itemId)load(itemId);
-  }}>
-  <summary>{copy.title}</summary>
+<section class="inspector-details collection-acquisition">
+  <h3 class="item-section-heading">{copy.title}</h3>
   {#if expanded}
     {#if loading}
       <p class="evidence-status" role="status">{copy.loading}</p>
@@ -149,9 +146,10 @@
       {/if}
     {/if}
   {/if}
-</details>
+</section>
 
 <style>
+  .item-section-heading{font-size:14px;margin:0 0 8px;color:var(--wand-text)}
   .collection-acquisition {margin:8px 0 12px}
   .concrete-sources{list-style:none;margin:5px 0 8px;padding:0;display:flex;flex-wrap:wrap;gap:5px;font-size:12px}
   .concrete-sources li{border:1px solid #ffffff30;border-radius:7px;padding:4px 7px}

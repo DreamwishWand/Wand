@@ -1,14 +1,17 @@
 <script lang="ts">
   import {base} from '$app/paths';
-  import {onDestroy} from 'svelte';
+  import {onMount,onDestroy} from 'svelte';
   import {ITEM_MASTER_LOCALES,type ItemMasterLocale} from '$lib/items/public-item-master.ts';
-  import {loadCompleteCollection} from './db01-complete-catalog.ts';
+  import {openCurrentItemDatabase} from '$lib/items/public-item-master';
+  import {readItemTaxonomyDetails} from '$lib/items/public-item-taxonomy-details';
   import {readCollectionItemFacts,type CollectionItemFacts} from './current-item-facts.ts';
   import {collectionDb01AcquisitionLabel} from './db01-browse-labels.ts';
   import ItemArtwork from './ItemArtwork.svelte';
   export let itemId:number;
   export let locale:string;
+  export let compact=false;
   let open=false;
+  onMount(()=>{open=true;});
   let facts:CollectionItemFacts|null=null;
   let error=false;
   let loading=false;
@@ -31,17 +34,17 @@
   ];
   function t(n:number,l:string){return labels[n][languages.indexOf(l)]??labels[n][1];}
   function fmt(n:number,l:string){return n.toLocaleString(l);}
-  async function load(id:number,l:string){
+  async function load(id:number,l:string,small:boolean){
     const request=++sequence;facts=null;error=false;loading=true;
     try{
-      const master=(await loadCompleteCollection(base)).master;
+      const master=await openCurrentItemDatabase(base,fetch);
       const lang=ITEM_MASTER_LOCALES.includes(l as ItemMasterLocale)?l as ItemMasterLocale:'en';
-      const result=await readCollectionItemFacts(master,id,lang);
+      const result:CollectionItemFacts=small?{taxonomy:(await readItemTaxonomyDetails(master,[id],lang))[0]??null,prices:null,sources:null,recipes:[],names:new Map(),partial:false}:await readCollectionItemFacts(master,id,lang);
       if(request===sequence)facts=result;
     }catch{if(request===sequence)error=true;}
     finally{if(request===sequence)loading=false;}
   }
-  $: if(open)void load(itemId,locale);
+  $: if(open)void load(itemId,locale,compact);
   $: tags=[...new Set(facts?.taxonomy?.tags.flatMap(row=>row.identity?.name?[row.identity.name]:[])??[])];
   $: sourceNames=[...new Set([
     ...(facts?.sources?.indexed.filter(row=>row.evidence.category!==null).map(row=>row.identity?.name)??[]),
@@ -51,11 +54,11 @@
   $: sell=facts?.prices?.sell.filter(row=>row.amount!==null&&row.amountFieldPresent&&row.currency?.name)??[];
   onDestroy(()=>{sequence++;});
 </script>
-<details class="inspector-details collection-current-facts" on:toggle={event=>open=event.currentTarget.open}>
-  <summary>{t(0,locale)}</summary>
+<section class="inspector-details collection-current-facts">
+  <h3>{compact?t(12,locale):t(0,locale)}</h3>
   {#if open}
     {#if loading}<p role="status">{t(10,locale)}</p>
-    {:else if error}<p role="alert">{t(6,locale)} <button type="button" on:click={()=>void load(itemId,locale)}>{t(11,locale)}</button></p>
+    {:else if error}<p role="alert">{t(6,locale)} <button type="button" on:click={()=>void load(itemId,locale,compact)}>{t(11,locale)}</button></p>
     {:else if facts}
       {#if facts.taxonomy?.sourceSet?.name}<p><strong>{t(5,locale)}:</strong> {facts.taxonomy.sourceSet.name}</p>{/if}
       {#if tags.length}<div class="fact-tags" aria-label={t(12,locale)}>{#each tags as tag}<span>{tag}</span>{/each}</div>{/if}
@@ -93,12 +96,13 @@
           </div>
         {/each}
       {/if}
-      <p class="fact-note">{t(8,locale)}{facts.partial?' '+t(6,locale):''}</p>
+      {#if !compact}<p class="fact-note">{t(8,locale)}{facts.partial?' '+t(6,locale):''}</p>{/if}
     {/if}
   {/if}
-</details>
+</section>
 <style>
   .collection-current-facts{font-size:12px;color:var(--wand-text)}
+  h3{font-size:14px;margin:0 0 8px;color:var(--wand-text)}
   h4{font-size:12px;margin:8px 0 4px}
   p{margin:4px 0}
   .fact-tags{display:flex;gap:4px;flex-wrap:wrap}

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
+  import {itemEntityHref,itemPageCopy} from '$lib/items/entity-item-url';
+  import {isWandLanguage} from '$lib/ui/preferences';
   import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import MemoryCandidateArtwork from '$lib/collection/MemoryCandidateArtwork.svelte';
@@ -36,7 +38,6 @@
     from '$lib/acquisition/game-native-item-categories.ts';
   import {collectionDb01AcquisitionLabel,collectionDb01AcquisitionHeading}
     from '$lib/collection/db01-browse-labels.ts';
-  import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {editHistory,type HistoryDescription} from '$lib/ui/edit-history';
@@ -45,7 +46,7 @@
   import { collectionFamilyLabel } from '$lib/collection/copy';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy.ts';
   import {collectionScopeOptions,collectionItemScopeLabels,COLLECTION_WORLD_NAVIGATION,type CollectionScopeOption} from '$lib/collection/scope-options';
-  import {collectionItemHref,collectionItemFromLink}
+  import {collectionItemFromLink}
     from '$lib/collection/item-permalink.ts';
 
   let memoryPreviewRequested=false;
@@ -104,6 +105,7 @@
   let busy=false;
   let locale='ja';
   $: copy=collectionInterfaceCopy(locale);
+  $: entityCopy=itemPageCopy(locale);
   type CollectionViewAxis='world'|'universe';
   let viewAxis:CollectionViewAxis='world';
   let universeSearch='';
@@ -844,7 +846,7 @@
   async function copySelectedItemLink():Promise<void>{
     if(selectedItemId===null)return;
     try{
-      const url=new URL(collectionItemHref(base,selectedItemId),window.location.href);
+      const url=new URL(itemEntityHref(base,selectedItemId),window.location.href);
       await navigator.clipboard.writeText(url.href);
       infoMessage='アイテムへのリンクをコピーしました。';
     }catch{
@@ -1732,6 +1734,7 @@
             <div class="inspector-art">{#if getMemorySources(selectedItem.itemId)!==null}<MemoryCandidateArtwork itemId={selectedItem.itemId} entry={selectedEntry} showPieces={showMemoryPieces} saveSelected={Boolean($localSaveSession.file)} unknownLabel={memoryCopy.unknown} unavailableLabel={memoryCopy.unavailable} editable={!memoryPreviewRequested} disabled={busy||Boolean(storeError)} onPiece={toggleMemoryPiece} flags={memoryPreviewRequested?$localSaveSession.memoryFlags:undefined} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large/>{:else}<ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large />{/if}</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
+            {#if runtime&&!runtime.isOwnerLocal}<a class="item-page-link" href={itemEntityHref(base,selectedItem.itemId,isWandLanguage(locale)?locale:undefined)}>{entityCopy.page}<WandIcon name="link" size={16}/></a>{/if}
             {#if selectedMemory}
               <div class="memory-piece-toolbar">
                 <strong>{selectedMemoryBits===null?'?':memoryPieceCount(selectedMemoryBits)} / {selectedMemory.numberOfShards}</strong>
@@ -1753,29 +1756,6 @@
                   {/if}
                 {/if}
               </div>
-            {/if}
-            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
-              {#key selectedItem.itemId}
-                <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
-                <CurrentItemFacts itemId={selectedItem.itemId} {locale}/>
-              {/key}
-            {/if}
-            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
-              <details class="inspector-details">
-                <summary>{copy.details}</summary>
-                <dl>
-                  {#if selectedScopeLabels.worlds.length}
-                    <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
-                  {/if}
-                  {#if selectedScopeLabels.universes.length}
-                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
-                  {/if}
-                </dl>
-              </details>
-            {/if}
-            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
-              <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
-              <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
             <div class="inspector-section">
               <h3>{copy.collectionRecord}</h3>
@@ -1801,6 +1781,29 @@
               <label class="check-row"><input type="checkbox" checked={selectedEntry.favorite===true}
                 disabled={Boolean(storeError)} on:change={(event)=>changeEntry({favorite:(event.currentTarget as HTMLInputElement).checked})}/> {copy.favorite}</label>
             </div>
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
+              {#key selectedItem.itemId}
+                <!-- Preserve existing pose permalinks during migration. -->
+                {#if typeof window!=='undefined'&&new URLSearchParams(window.location.search).has('pose')}<ItemMasterDetails itemId={selectedItem.itemId} {locale}/>{/if}
+                <CurrentItemFacts itemId={selectedItem.itemId} {locale} compact/>
+              {/key}
+            {/if}
+            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
+              <section class="inspector-details">
+                <h3>{copy.details}</h3>
+                <dl>
+                  {#if selectedScopeLabels.worlds.length}
+                    <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
+                  {/if}
+                  {#if selectedScopeLabels.universes.length}
+                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
+                  {/if}
+                </dl>
+              </section>
+            {/if}
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
+              <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
+            {/if}
           </aside>
         {/if}
       </div>
@@ -1809,6 +1812,8 @@
 </section>
 
 <style>
+  .item-page-link{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;margin:8px 0;border:1px solid var(--wand-line);border-radius:7px;background:var(--wand-card);color:var(--wand-text);text-decoration:none;font-weight:600}
+  .inspector-details h3{font-size:14px;margin:0 0 8px}
   /* Image-first Collection tiles. Shared shell theme remains authoritative. */
   .memory-piece-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:6px 0;font-size:12px}
   .memory-piece-toolbar label{display:flex;align-items:center;gap:4px}

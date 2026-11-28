@@ -24,6 +24,8 @@
 
   export let itemId:number;
   export let locale:string;
+  export let expert=false;
+  export let showPose=true;
 
   let record:CompleteItemMasterRecord|null=null;
   let requestSequence=0;
@@ -71,13 +73,13 @@
 </script>
 
 {#if record}
-  {#if base==='/Wand'}
+  {#if showPose&&base==='/Wand'}
     {#key itemId}<PagesPosePreview {itemId} {locale} {getRelatedName}/>{/key}
   {/if}
-  {#if import.meta.env.DEV && (record.sourceClass?.endsWith('AvatarEmotePoseItemData') || record.sourceClass?.endsWith('PetItemData'))}
+  {#if showPose&&import.meta.env.DEV && (record.sourceClass?.endsWith('AvatarEmotePoseItemData') || record.sourceClass?.endsWith('PetItemData'))}
     {#key itemId}<LocalPoseDiagnostic {itemId} {locale}/>{/key}
   {/if}
-  <div class="collection-item-master" data-item-id={itemId}>
+  {#if expert}<div class="collection-item-master" data-item-id={itemId}>
     {#if nativeType}
       <div class="master-type"><WandIcon name="info" size={13}/><span>{nativeType}</span></div>
     {/if}
@@ -89,8 +91,8 @@
       </div>
     {/if}
     {#if record.tags.length||otherNames.length}
-      <details class="master-more">
-        <summary><WandIcon name="chevron" size={14}/>{copy.more}</summary>
+      <section class="master-more">
+        <h3>{copy.more}</h3>
         {#if record.tags.length}
           <p class="master-note">{copy.source}</p>
           <div class="master-chips">
@@ -109,9 +111,9 @@
             </dl>
           </div>
         {/if}
-      </details>
+      </section>
     {/if}
-  </div>
+  </div>{/if}
 {:else if error}
   <!-- The optional DB-01 overlay must not block Collection or manual edits. -->
 {/if}
@@ -123,9 +125,7 @@
   .master-chips span{max-width:100%;overflow-wrap:anywhere;padding:5px 7px;
     border-radius:7px;border:1px solid #ffffff23;background:#ffffff09}
   .master-more{margin-top:9px}
-  .master-more summary{display:flex;align-items:center;gap:5px;cursor:pointer;
-    color:inherit;list-style:none;padding:3px 0}
-  .master-more summary::-webkit-details-marker{display:none}
+  .master-more h3{font-size:14px;margin:0 0 8px}
   .master-note{line-height:1.5;color:#a698b0;font-size:10px;margin:7px 0}
   .master-names{margin-top:12px}
   .master-names dl{display:grid;grid-template-columns:50px 1fr;gap:6px 9px;
