@@ -3,6 +3,13 @@
  * random generator output, conditional entry or unknown/zero roll group. */
 const id=v=>Number.isSafeInteger(v)&&v>0;
 const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+export function eligibleExplicitLootGroup(g){
+  return obj(g)&&id(g.Max)&&Number.isSafeInteger(g.Min)&&g.Min>=0&&g.Min<=g.Max&&
+    g.Empty!==true&&g.AvailableWhen===undefined&&!(g.Filters??[]).length&&
+    !(g.Types??g.Types_??[]).length&&!(g.Rarities??[]).length&&g.MinRarity===undefined&&
+    g.MaxRarity===undefined&&!(g.ItemsConditional??[]).length&&
+    (g.Weight===undefined||id(g.Weight));
+}
 export function ordinaryLootPresentLinks(rows,source,isOrdinary){
   const result=new Map();
   if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
@@ -21,11 +28,7 @@ export function ordinaryLootPresentLinks(rows,source,isOrdinary){
     ordinaryBags++;
     let emitted=false;
     for(const [groupIndex,g] of (props(table).Rewards?.SubLootTables??[]).entries()){
-      if(!obj(g)||!id(g.Max)||!Number.isSafeInteger(g.Min)||g.Min<0||g.Min>g.Max||
-        g.Empty===true||g.AvailableWhen!==undefined||(g.Filters??[]).length||
-        (g.Types??g.Types_??[]).length||(g.Rarities??[]).length||g.MinRarity!==undefined||
-        g.MaxRarity!==undefined||(g.ItemsConditional??[]).length||
-        (g.Weight!==undefined&&!id(g.Weight)))continue;
+      if(!eligibleExplicitLootGroup(g))continue;
       for(const [itemIndex,v] of (g.Items??[]).entries()){
         const target=v?.ItemID;
         if(!id(target)||!byId.has(target)||target===bag.itemId||byId.get(target).nativeCategory==='LootTable')continue;
@@ -42,5 +45,48 @@ export function ordinaryLootPresentLinks(rows,source,isOrdinary){
     if(emitted)usedBags++;
   }
   console.log('DB01_ORDINARY_LOOT_PRESENT '+JSON.stringify({bags,ordinaryBags,usedBags,items:result.size,occurrences}));
+  return result;
+}
+
+/** Reuse the independently verified ordinary village critter set. Do not
+ * equate a pet unlock with its feeding reward or infer an actual drop. */
+export function ordinaryCritterFeedingLinks(rows,source,ordinaryCritters){
+  const result=new Map();
+  if(source.target.platform!=='Steam'||source.target.gameVersion!=='1.26.2'||
+    source.sourceIl2cppDumpSha256!=='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'||
+    source.sourceFilesSha256.Companion!=='62008c61bf0b407c40d0adf417db043ab058f4ec0ca2764355e176a3532c2219'||
+    source.sourceFilesSha256.LootTable!=='580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c')return result;
+  const byId=new Map(rows.map(r=>[r.itemId,r]));
+  const props=r=>({...r.nativeProperties,...r.sourceAttributes});
+  const ordinaryIds=new Set([...ordinaryCritters.values()].flatMap(ls=>ls.map(l=>l.sourceItemId)));
+  const tableIds=new Set(),usedCritters=new Set();
+  let occurrences=0;
+  for(const critterId of ordinaryIds){
+    const row=byId.get(critterId);
+    if(row?.sourceClass!=='CritterItemData')continue;
+    const p=props(row);
+    if(!id(p.NumberOfFeedingBeforeRewards))continue;
+    for(const [preference,field] of [['like','LikeRewardLootTableItemID'],['favorite','FavoriteRewardLootTableItemID']]){
+      const tableId=p[field],table=byId.get(tableId);
+      if(!id(tableId)||table?.nativeCategory!=='LootTable')continue;
+      for(const [groupIndex,g] of (props(table).Rewards?.SubLootTables??[]).entries()){
+        if(!eligibleExplicitLootGroup(g))continue;
+        for(const [itemIndex,v] of (g.Items??[]).entries()){
+          const target=v?.ItemID;
+          if(!id(target)||!byId.has(target)||target===critterId||byId.get(target).nativeCategory==='LootTable')continue;
+          const list=result.get(target)??[];
+          list.push({sourceItemId:critterId,tableItemId:tableId,kind:'ordinary_critter_feeding_candidate',preference,
+            sourcePath:'source.'+field,tableSourcePath:'source.Rewards.SubLootTables['+groupIndex+'].Items['+itemIndex+'].ItemID',
+            configuredFeedingCount:p.NumberOfFeedingBeforeRewards,minimumRolls:g.Min,maximumRolls:g.Max,configuredWeight:g.Weight??null,
+            sourceGameVersion:source.target.gameVersion,sourceCompanionSha256:source.sourceFilesSha256.Companion,
+            sourceLootTableSha256:source.sourceFilesSha256.LootTable,
+            guaranteedGrantVerified:false,currentAvailabilityVerified:false});
+          result.set(target,list);usedCritters.add(critterId);tableIds.add(tableId);occurrences++;
+        }
+      }
+    }
+  }
+  console.log('DB01_ORDINARY_CRITTER_FEEDING '+JSON.stringify({eligibleCritters:ordinaryIds.size,usedCritters:usedCritters.size,
+    lootTables:tableIds.size,items:result.size,occurrences}));
   return result;
 }
