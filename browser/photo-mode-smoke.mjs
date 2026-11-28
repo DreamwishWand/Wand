@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import {checkLinearSceneComposite} from './photo-mode-linear-composite-smoke.mjs';
 import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
 import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.mjs';
 
@@ -86,6 +87,7 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
   await checkNativeMakeupBake(page);
+  await checkLinearSceneComposite(page);
   const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
