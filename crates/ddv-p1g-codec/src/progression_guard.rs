@@ -3,7 +3,7 @@
 //! completion, item requirements, or game-runtime compatibility.
 use super::CodecError;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 
 fn world_field<'a>(root:&'a Value,key:&str)->Option<&'a Value>{
     root.get("World").and_then(|w|w.get(key))
@@ -67,6 +67,42 @@ fn same_address(before:&Value,after:&Value,g:u64,o:u64)->bool{
     true
 }
 
+// The local pose of a quest object on a support can remain identical even
+// when its parent is moved. Protect its complete native ownership chain.
+type Address=(u64,u64);
+type Owners=HashMap<u64,HashSet<Address>>;
+fn support_owners(root:&Value)->Result<Owners,CodecError>{
+    let mut owners=Owners::new();let mut count=0usize;
+    for (kind,field) in [("Grids","Objects"),("DiffGrids","ModifiedObjects")]{
+        if let Some(grids)=world_field(root,"GridCollection").and_then(|c|c.get(kind)).and_then(Value::as_object){
+            for (gid,g) in grids{
+                let Ok(grid)=gid.parse::<u64>()else{continue;};
+                if let Some(objects)=g.get(field).and_then(Value::as_object){
+                    for (oid,o) in objects{
+                        count+=1;if count>2_000_000{return Err(CodecError::Bounds);}
+                        if let (Ok(object),Some(child))=(oid.parse::<u64>(),o.get("State").and_then(|s|s.get("SubGrid")).and_then(|s|s.get("GridID")).and_then(Value::as_u64)){
+                            owners.entry(child).or_default().insert((grid,object));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(owners)
+}
+fn preserve_address_hierarchies(before:&Value,after:&Value,mut addresses:HashSet<Address>)->Result<(),CodecError>{
+    if addresses.is_empty(){return Ok(());}
+    let old=support_owners(before)?;let new=support_owners(after)?;
+    let mut queue:Vec<_>=addresses.iter().copied().collect();
+    while let Some((grid,object))=queue.pop(){
+        if !same_address(before,after,grid,object)||old.get(&grid)!=new.get(&grid){return Err(CodecError::Patch);}
+        if let Some(parents)=old.get(&grid){
+            for &parent in parents{if addresses.insert(parent){if addresses.len()>100_000{return Err(CodecError::Bounds);}queue.push(parent);}}
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn preserve_progression(source:&[u8],candidate:&[u8])->Result<(),CodecError>{
     let before:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
     let after:Value=serde_json::from_slice(candidate).map_err(|_|CodecError::Json)?;
@@ -85,10 +121,7 @@ pub(super) fn preserve_progression(source:&[u8],candidate:&[u8])->Result<(),Code
             }
         }
     }
-    if addresses.into_iter().any(|(g,o)|!same_address(&before,&after,g,o)){
-        return Err(CodecError::Patch);
-    }
-    Ok(())
+    preserve_address_hierarchies(&before,&after,addresses)
 }
 
 #[cfg(test)]
@@ -129,6 +162,19 @@ mod tests{
         b=a.clone();b["World"]["GridCollection"]["DiffGrids"]["10"]["RemovedObjects"]=json!([2]);assert!(!check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["GridDataPath"]="other".into();assert!(!check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["10"]["NextGridObjectID"]=99.into();assert!(check(&a,&b));
+    }
+    #[test]
+    fn referenced_child_protects_all_support_ancestors_and_new_aliases(){
+        let mut a=fixture();
+        a["World"]["GridCollection"]["Grids"]["30"]=json!({"ID":30,"Objects":{"6":{"ID":6,"X":8,"State":{"SubGrid":{"GridID":10}}}}});
+        a["World"]["GridCollection"]["Grids"]["40"]=json!({"ID":40,"Objects":{"7":{"ID":7,"X":5,"State":{"SubGrid":{"GridID":30}}},"8":{"ID":8,"X":1}}});
+        let mut b=a.clone();
+        b["World"]["GridCollection"]["Grids"]["40"]["Objects"]["7"]["X"]=4.into();assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["30"]["Objects"]["6"]["Orientation"]="GridOrientation_Left".into();assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["40"]["Objects"]["8"]["State"]=json!({"SubGrid":{"GridID":10}});assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["30"]["Objects"].as_object_mut().unwrap().remove("6");assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["40"]["Objects"]["8"]["X"]=4.into();assert!(check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["Grids"]["50"]=json!({"ID":50,"Objects":{"1":{"ID":1,"State":{"SubGrid":{"GridID":60}}}}});assert!(check(&a,&b));
     }
     #[test]
     fn absent_progress_fields_do_not_disable_editing(){
