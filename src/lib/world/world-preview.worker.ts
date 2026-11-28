@@ -6,6 +6,10 @@
  * It is not a World Editor, collision solver, placement Writer or save Codec.
  */
 import { openLocalWorldZip } from './local-snapshot.ts';
+import {createDiffGridWitness,parseEffectiveDiffGridPreview} from './diffgrid-effective-preview.ts';
+import {detectLocalSaveFormat} from '../save/save-diagnostics-worker-core.mjs';
+import initSave,{WasmAmountPreview} from '../save/wasm/p1g-pkg/ddv_p1g_codec.js';
+import saveWasmUrl from '../save/wasm/p1g-pkg/ddv_p1g_codec_bg.wasm?url';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
 import {buildSavedShapeMap,parseSavedShapePoints} from './saved-shape-map.ts';
@@ -39,6 +43,7 @@ type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
+  | { command:'compare-diff';requestId:number;file:Blob;viewKey:string;gridIdNative:number;draftPlan?:unknown }
   | { command:'floor-items'; requestId:number; query:string }
   | { command:'floor-match';requestId:number;regionKey:string;
       viewKey:string;gridIdNative:number;itemId:number;orientationCode:number }
@@ -101,6 +106,10 @@ function parseRequest(data:unknown): Request {
       throw new TypeError('DB04_WORKER_SOURCE_FILE_REQUIRED');
     return {command:'load',requestId,file:data.file};
   }
+  if(data.command==='compare-diff'&&data.file instanceof Blob&&data.file.size>0&&data.file.size<=32*1024*1024&&
+     typeof data.viewKey==='string'&&data.viewKey.length>0&&data.viewKey.length<=2048&&
+     nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff)
+    return {command:'compare-diff',requestId,file:data.file,viewKey:data.viewKey,gridIdNative:data.gridIdNative,draftPlan:data.draftPlan};
   if(data.command==='gridarea-window'&&positive(data.itemId)&&
      nonnegative(data.orientationCode)&&data.orientationCode<=15&&
      (data.callerGridFactor===1||data.callerGridFactor===2)&&
@@ -199,6 +208,7 @@ function parseRequest(data:unknown): Request {
 let loaded:Awaited<ReturnType<typeof openLocalWorldZip>>|null=null;
 let catalog:WorldPreviewCatalog|null=null;
 let views:WorldPreviewView[]=[];
+let saveInitializing:Promise<unknown>|null=null;
 const worldLoadEpoch=new WorldSourceLoadEpoch();
 
 worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
@@ -254,6 +264,30 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     }
     if (catalog===null)
       throw new TypeError('No selected local World source');
+    if(message.command==='compare-diff'){
+      const current=loaded;
+      const view=views.find(v=>v.viewKey===message.viewKey);
+      const witness=current&&view?.grids.some(g=>g.gridIdNative===message.gridIdNative)
+        ?createDiffGridWitness(catalog,view.layoutId,message.gridIdNative,current.platform,current.gameVersion):null;
+      let result=null;
+      if(witness){
+        let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null;
+        try{
+          bytes=new Uint8Array(await message.file.arrayBuffer());
+          const format=detectLocalSaveFormat(bytes);
+          if(!saveInitializing)saveInitializing=initSave(saveWasmUrl).catch((error:unknown)=>{saveInitializing=null;throw error;});
+          await saveInitializing;
+          if(current!==loaded)return;
+          wasm=new WasmAmountPreview(format);
+          for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
+          wasm.finish_open();
+          const request=message.draftPlan===undefined?witness:{contract:'wand.db05.diffgrid-draft-request@1',source:witness,plan:message.draftPlan};
+          result=parseEffectiveDiffGridPreview(JSON.parse(wasm.match_db04_grid_object_sources(JSON.stringify(request))));
+        }finally{bytes?.fill(0);wasm?.close();wasm?.free();}
+      }
+      if(current===loaded)worker.postMessage({kind:message.draftPlan===undefined?'effective-diff':'effective-diff-draft',requestId,viewKey:message.viewKey,gridIdNative:message.gridIdNative,result});
+      return;
+    }
     if(message.command==='find-global-anchor'){
       const found=findOriginalItemAnchorAcrossGrids(
         catalog,message.itemId,message.matchIndex);

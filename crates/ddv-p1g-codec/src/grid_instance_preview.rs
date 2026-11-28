@@ -1455,6 +1455,12 @@ fn saved_db04_source_projection(
         return Err(CodecError::Bounds);
     }
     let verified:Value=serde_json::from_str(witness).map_err(|_|CodecError::Json)?;
+    if !terrain_session&&verified.get("contract").and_then(Value::as_str)==Some("wand.db05.diffgrid-draft-request@1"){
+        return crate::diffgrid_effective::draft_project(profile,&verified);
+    }
+    if !terrain_session&&verified.get("contract").and_then(Value::as_str)==Some("wand.db05.diffgrid-effective-witness@1"){
+        return crate::diffgrid_effective::project(profile,&verified);
+    }
     let contract=verified.as_object().ok_or(CodecError::Json)?;
     if contract.len()!=2||
        contract.get("contract").and_then(Value::as_str)
