@@ -1,7 +1,7 @@
 const captions = {
   "ja": {
     "faceDiagnostic": "保存された頭部・鼻・口・顎の形状を原本メッシュで表示します。",
-    "nativeNormalDiagnostic": "原本の顔法線を反映しています。照明・影・化粧の最終再現は未完了です。",
+    "nativeNormalDiagnostic": "原本の法線・肌材質を使用しています。ワールド固有の照明・環境反射は未再現です。",
     "bodyMorphDiagnostic": "通常形態の保存体型を原本ボディに反映します。衣装の体型補正とマーメイド体型は未対応です。",
     "eyeDiagnostic": "瞳の模様と色は原本データを使用したRGBマスクの簡易表示です。ゲームのシェーダーは未再現で、未記録の色はアイテム既定値を使用します。",
     "nativeLoops": "原本の異なる再生周期を個別に再現しています。ゲーム内の同期は未検証です。",
@@ -38,7 +38,7 @@ const captions = {
   },
   "en": {
     "faceDiagnostic": "Saved head, nose, mouth and jaw shapes use original meshes.",
-    "nativeNormalDiagnostic": "Native facial normals are applied; final lighting, shadows and makeup are not yet reproduced.",
+    "nativeNormalDiagnostic": "Uses original normal maps and skin materials. World-specific lighting and reflections are not yet reproduced.",
     "bodyMorphDiagnostic": "Saved land body shapes use native body morphs. Clothing fit and mermaid body shapes are not reproduced.",
     "eyeDiagnostic": "Eye patterns and colors use a diagnostic RGB mask projection of original data. Game shaders are not reproduced; missing colors use item reference defaults.",
     "nativeLoops": "Original unequal clip periods are sampled independently; in-game synchronization is unverified.",
@@ -75,7 +75,7 @@ const captions = {
   },
   "fr": {
     "faceDiagnostic": "La tête, le nez, la bouche et la mâchoire enregistrés utilisent les maillages originaux.",
-    "nativeNormalDiagnostic": "Les normales originales du visage sont appliquées ; éclairage, ombres et maquillage restent incomplets.",
+    "nativeNormalDiagnostic": "Normales et matériaux de peau d’origine. L’éclairage et les reflets propres au monde restent à reproduire.",
     "bodyMorphDiagnostic": "La morphologie terrestre enregistrée utilise les déformations du corps d’origine. Les vêtements et les morphologies de sirène ne sont pas reproduits.",
     "eyeDiagnostic": "Les motifs et couleurs des yeux utilisent une projection RGB de diagnostic des données originales. Les shaders du jeu ne sont pas reproduits ; les couleurs manquantes utilisent les valeurs de référence.",
     "nativeLoops": "Les cycles originaux de durées différentes sont lus indépendamment ; la synchronisation en jeu reste à vérifier.",
@@ -112,7 +112,7 @@ const captions = {
   },
   "it": {
     "faceDiagnostic": "Testa, naso, bocca e mascella salvati usano le mesh originali.",
-    "nativeNormalDiagnostic": "Normali originali del viso applicate; illuminazione, ombre e trucco non ancora riprodotti.",
+    "nativeNormalDiagnostic": "Normali e materiali della pelle originali. Illuminazione e riflessi specifici del mondo non ancora riprodotti.",
     "bodyMorphDiagnostic": "La corporatura terrestre salvata usa le deformazioni originali. Adattamento degli abiti e corporatura da sirena non riprodotti.",
     "eyeDiagnostic": "I motivi e i colori degli occhi usano una proiezione RGB diagnostica dei dati originali. Gli shader del gioco non sono riprodotti; i colori mancanti usano i valori di riferimento.",
     "nativeLoops": "I cicli originali di durata diversa sono riprodotti separatamente; la sincronizzazione in gioco non è verificata.",
@@ -149,7 +149,7 @@ const captions = {
   },
   "de": {
     "faceDiagnostic": "Gespeicherte Kopf-, Nasen-, Mund- und Kieferformen verwenden Originalmeshes.",
-    "nativeNormalDiagnostic": "Originale Gesichtsnormalen aktiv; Beleuchtung, Schatten und Make-up sind noch nicht vollständig reproduziert.",
+    "nativeNormalDiagnostic": "Originale Normalen und Hautmaterialien. Weltspezifische Beleuchtung und Reflexionen fehlen noch.",
     "bodyMorphDiagnostic": "Gespeicherte Land-Körperformen nutzen Originalverformungen. Kleidungsanpassung und Meerjungfrauen-Körperformen fehlen.",
     "eyeDiagnostic": "Augenmuster und -farben verwenden eine diagnostische RGB-Projektion der Originaldaten. Spielshader sind nicht nachgebildet; fehlende Farben nutzen die Referenzwerte.",
     "nativeLoops": "Unterschiedlich lange Originalzyklen werden unabhängig wiedergegeben; die Synchronisation im Spiel ist nicht verifiziert.",
@@ -186,7 +186,7 @@ const captions = {
   },
   "es-ES": {
     "faceDiagnostic": "La cabeza, nariz, boca y mandíbula guardadas usan mallas originales.",
-    "nativeNormalDiagnostic": "Normales faciales originales aplicadas; iluminación, sombras y maquillaje aún incompletos.",
+    "nativeNormalDiagnostic": "Usa las normales y los materiales de piel originales. La iluminación y los reflejos propios del mundo aún no se reproducen.",
     "bodyMorphDiagnostic": "La forma corporal terrestre guardada usa deformaciones originales. No se reproduce el ajuste de ropa ni el cuerpo de sirena.",
     "eyeDiagnostic": "Los patrones y colores de ojos usan una proyección RGB de diagnóstico de los datos originales. No se reproducen los shaders del juego; los colores ausentes usan valores de referencia.",
     "nativeLoops": "Los ciclos originales de distinta duración se reproducen de forma independiente; la sincronización en el juego no está verificada.",
@@ -223,7 +223,7 @@ const captions = {
   },
   "zh-CN": {
     "faceDiagnostic": "存档中的头部、鼻、嘴和下颌使用原始网格。",
-    "nativeNormalDiagnostic": "已应用原始面部法线；最终光照、阴影和妆容尚未复现。",
+    "nativeNormalDiagnostic": "使用原始法线和皮肤材质。尚未复现各世界特有的光照与环境反射。",
     "bodyMorphDiagnostic": "普通形态使用存档中的原始体型变形，尚未支持服装适配和人鱼体型。",
     "eyeDiagnostic": "眼睛图案和颜色使用原始数据的RGB遮罩诊断显示。尚未复现游戏着色器；缺失颜色使用物品参考默认值。",
     "nativeLoops": "独立播放原始的不同动画周期；尚未验证游戏内同步。",
@@ -260,7 +260,7 @@ const captions = {
   },
   "pt-BR": {
     "faceDiagnostic": "Cabeça, nariz, boca e maxilar salvos usam as malhas originais.",
-    "nativeNormalDiagnostic": "Normais faciais originais aplicadas; iluminação, sombras e maquiagem ainda incompletas.",
+    "nativeNormalDiagnostic": "Usa normais e materiais de pele originais. A iluminação e os reflexos específicos do mundo ainda não foram reproduzidos.",
     "bodyMorphDiagnostic": "O corpo terrestre salvo usa deformações originais. Ajuste de roupas e formas de sereia não são reproduzidos.",
     "eyeDiagnostic": "Os padrões e cores dos olhos usam uma projeção RGB de diagnóstico dos dados originais. Os shaders do jogo não são reproduzidos; cores ausentes usam os valores de referência.",
     "nativeLoops": "Os ciclos originais de durações diferentes são reproduzidos independentemente; a sincronização no jogo não foi verificada.",
