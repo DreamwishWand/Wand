@@ -157,13 +157,13 @@
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'inspect-subgrids',file:f,parents});return true;
  }
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null,localStorageSources:StorageDuplicateSource[]| (StorageDuplicateSource|null)[]|null=null){
-  if(plainLocalOnly&&duplicate&&items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400||p.object.storageKnown||p.object.storage||p.object.subgrid))return false;
-  const native=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?nativeDuplicateSelection(items,freePlacement):null;
+  if(plainLocalOnly&&duplicate&&items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400||p.object.storageKnown&&!p.object.storage||p.object.subgrid&&p.object.subgrid.status!=='resolved_full'))return false;
+  const native=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?nativeDuplicateSelection(items,freePlacement,plainLocalOnly):null;
   if(!native&&duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.subgrid))return beginLocalSupportDuplicate();
   const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(native?.clip??storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!areaDoc||data.some((p,i)=>!Number.isInteger(p.orientation)&&(!!cut?.rows[i]?.supportFactor||!!cut?.rows[i]?.storage||!!supportDoc?.items[i]?.support||!!localStorageSources?.[i]))))return false;
-  if(plainLocalOnly&&(!freePlacement||native?.sources.some(r=>r.roomSource||r.supportSource||r.supportFactor||r.storage)||!!storage||!!supportDoc||!!areaDoc||!!localStorageSources||data.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation))||cut?.rows.some(r=>r.roomSource||r.supportSource)))return false;
+  if(plainLocalOnly&&(!freePlacement||native?.sources.some(r=>r.roomSource||r.supportSource)||!!storage||!!supportDoc||!!areaDoc||!!localStorageSources||data.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation))||cut?.rows.some(r=>r.roomSource||r.supportSource)))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];nativeSources=native?.sources??null;storageSources=native?null:localStorageSources??storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
