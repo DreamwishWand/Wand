@@ -535,6 +535,34 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
     // alone does not establish active/completed status. A collected reference
     // inside this container must not receive the achievement-history exemption.
     let mission_slots=root.get("World").and_then(|w|w.get("MissionSlots"));
+    // Archived v1.25 objective read contract identifies the exact nested
+    // GridObjectIdsCollected numeric list as historical bookkeeping without
+    // a GridID. It is not a unique instance address. Do not turn every same
+    // local ordinal in unrelated grids into a blocking dependency.
+    let mut objective_history=HashSet::<*const Value>::new();
+    if let Some(groups)=mission_slots.and_then(Value::as_object){
+        for group in groups.values(){
+            if let Some(slots)=group.get("Slots").and_then(Value::as_array){
+                for slot in slots{
+                    if let Some(steps)=slot.get("MissionSteps").and_then(Value::as_array){
+                        for step in steps{
+                            if let Some(substeps)=step.get("SubSteps").and_then(Value::as_array){
+                                for substep in substeps{
+                                    if let Some(objectives)=substep.get("Objectives").and_then(Value::as_array){
+                                        for obj in objectives{
+                                            if let Some(list)=obj.get("GridObjectIdsCollected").filter(|v|v.as_array().is_some_and(|a|a.iter().all(|n|n.as_u64().is_some()))){
+                                                objective_history.insert(list as *const Value);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     type Flags=(bool,bool,bool,bool,bool);
     let mut stack=vec![(&root,(false,false,false,false,false),None::<u64>,0usize)];
     let mut visited=0usize;
@@ -562,7 +590,7 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
                     // Numeric identity lists with no exact GridID cannot prove
                     // which native instance is referenced. Limit this extra
                     // conservative protection to observed MissionSlots context.
-                    if flags.4&&k=="gridobjectidscollected"&&value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
+                    if flags.4&&k=="gridobjectidscollected"&&!objective_history.contains(&(value as *const Value))&&value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
                         (grid_values.is_empty()||grid_values.iter().any(|v|v.is_none()||*v==Some(grid))){
                         out.unknown+=1;
                     }
@@ -3594,6 +3622,15 @@ mod terrain_session_tests{
         assert_eq!(scan(&save).blocking(),0);
         save["World"]["MissionSlots"]["owner"]["Slots"][0]["SpawnedObjects"]=serde_json::json!([{"GridID":10,"GridObjectID":2}]);
         assert_eq!(scan(&save).active,1);
+        // A verified old objective history field is not an exact native address.
+        // Keep the list untouched, without blocking every matching local ID.
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]=serde_json::json!({
+            "MissionId":2070000001,"State":"MissionSlotState_OnGoing",
+            "MissionSteps":[{"SubSteps":[{"Objectives":[{"GridObjectIdsCollected":[2,9]}]}]}]
+        });
+        assert_eq!(scan(&save).blocking(),0);
+        save["World"]["MissionSlots"]["owner"]["Slots"][0]["MissionSteps"][0]["SubSteps"][0]["Objectives"][0]["GridObjectIdsCollected"]=serde_json::json!([2,{"GridID":10,"GridObjectID":2}]);
+        assert!(scan(&save).blocking()>0);
     }
     #[test]
     fn native_blank_floating_island_layout_is_resolved_without_rewriting_save(){
