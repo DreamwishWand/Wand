@@ -214,7 +214,7 @@ test('source-bound copy and cut reuse common placement geometry for buildings an
  const items=[saved(1,2,-3),land,building];
  assert.equal(captureFurnitureGroup(items,true,true),null);assert.equal(captureCutWitness(items),null);
  const captured=nativeDuplicateSelection(items,true);assert.ok(captured);assert.ok(cutWitnessMatches(captured.sources,items,true));
- const geometryFor=(id,layer,nativeType)=>({...geometry,itemId:id,layer,nativeType,shapes:{[id+':8']:shape}});
+ const geometryFor=(id,layer,nativeType)=>({...geometry,itemId:id,layer,nativeType,shapes:Object.fromEntries([0,4,8,12].map(code=>[id+':'+code,shape]))});
  const geo=new Map([...defs,[landId,new Map([[1,geometryFor(landId,'landscape')]])],[buildingId,new Map([[1,geometryFor(buildingId,'other','Building')]])]]);
  const g=bindMainlandGrid({key:'Meadow',layoutId:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',gridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',gridIdNative:0,factor:1,sizeX:196,sizeY:100});
  assert.ok(g);
@@ -222,5 +222,9 @@ test('source-bound copy and cut reuse common placement geometry for buildings an
  const q=groupPasteCandidate(captured.clip,[g],nativeRasters,geo,new Map([[item,1],[landId,1],[buildingId,1]]),[],0,2*g.origin.position[0]+8.1,-2*g.origin.position[2]-2.1,true,new Set(),true);
  assert.ok(q);assert.equal(q.rows.length,3);
  const plan=groupCutPlan(captured.sources,q,true);assert.deepEqual(plan.map(r=>r.localOrdinal),[1,2,3]);
- assert.equal(groupCutPlan(captured.sources,{...q,rows:q.rows.map((r,i)=>i===2?{...r,orientation:'GridOrientation_Left'}:r)},true),null);
+ const turned=rotateFurnitureGroup(captured.clip,geo,1,true);assert.ok(turned);
+ const rotated=groupPasteCandidate(turned,[g],nativeRasters,geo,new Map([[item,1],[landId,1],[buildingId,1]]),[],0,2*g.origin.position[0]+8.1,-2*g.origin.position[2]-2.1,true,new Set(),true);
+ assert.ok(rotated);assert.equal(groupCutPlan(captured.sources,rotated,true).length,3);
+ assert.ok(rotated.rows.every(r=>r.orientation!=='GridOrientation_Down'));
+ assert.equal(groupCutPlan(captured.sources,{...q,rows:q.rows.map((r,i)=>i===2?{...r,orientation:'GridOrientation_DownLeft'}:r)},true),null);
 });
