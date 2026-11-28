@@ -139,7 +139,7 @@
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  function beginLocalSupportDuplicate(){
-  const captured=localSupportDuplicateSelection(items),f=file;
+  const captured=localSupportDuplicateSelection(items,freePlacement),f=file;
   if(!captured||!f||!allowed||blocked||!worker||captureWorker)return false;
   const selected=[...items],parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
   if(!parents.length)return false;

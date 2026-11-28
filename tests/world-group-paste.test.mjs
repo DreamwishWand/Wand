@@ -195,6 +195,6 @@ test('local support duplication accepts a table alone or with ordinary furniture
 
 test('free cut capture accepts fixed support parents only with resolved hierarchy',()=>{
  const table=saved(1,2,-2);table.object.surfaceCapable=true;table.object.subgrid={status:'resolved_full',objectCount:2};table.object.editRestrictions={select:'denied',move:'denied',rotate:'denied',switchGrid:'denied'};
- assert.equal(captureCutWitness([table]),null);assert.ok(captureCutWitness([table],true));
+ assert.equal(captureCutWitness([table]),null);const rows=captureCutWitness([table],true);assert.ok(rows);assert.equal(cutWitnessMatches(rows,[table],true),true);assert.equal(cutWitnessMatches(rows,[table],false),false);assert.ok(localSupportDuplicateSelection([table],true));assert.equal(localSupportDuplicateSelection([table]),null);
  table.object.subgrid={status:'unresolved',objectCount:null};assert.equal(captureCutWitness([table],true),null);
 });
