@@ -20,6 +20,20 @@ def extract(doc):
         raise ValueError("Bundle count mismatch")
     rows = {}
     refs = set()
+    def legacy_reference(bid,bundle):
+        row=doc['legacyDefinitions'][bid]
+        rev=row['revisionSha256']
+        if bundle.get('legacyRevisionSha256')!=rev or not SHA.fullmatch(rev):
+            raise ValueError('Legacy revision mismatch')
+        fields={};unsupported=[]
+        def add(field,value):
+            if value is None or value=='':return
+            m=GUID.fullmatch(value) if isinstance(value,str) else None
+            if m:fields[field]=m[1];refs.add(m[1])
+            else:unsupported.append(field)
+        for field in ('image','background'):add(field,row['artwork'].get(field))
+        for i,part in enumerate(row['components']):add(f'Contents.{i}.Image',part.get('image'))
+        return {'platform':'Switch','revisionSha256':rev,'refs':fields,'lightLayout':None,'legacyLayout':None,'unsupportedFields':unsupported}
     for bid, bundle in sorted(bundles.items()):
         fields = {}
         unsupported = []
@@ -52,20 +66,18 @@ def extract(doc):
                 add(f"MegaBundleAdjustment.{field}", (v.get("MegaBundleAdjustment") or {}).get(field))
             layout, legacy = v.get("LightLayout"), v.get("Layout")
         else:
-            row = doc["legacyDefinitions"][bid]
-            rev = row["revisionSha256"]
-            if bundle.get("legacyOnly") is not True or bundle["legacyRevisionSha256"] != rev:
-                raise ValueError("Legacy revision mismatch")
-            platform = "Switch"
-            for field in ("image","background"):
-                add(field, row["artwork"].get(field))
-            for i, part in enumerate(row["components"]):
-                add(f"Contents.{i}.Image", part.get("image"))
-            layout = legacy = None
+            if bundle.get("legacyOnly") is not True:
+                raise ValueError("Missing selected revision")
+            rows[bid]=legacy_reference(bid,bundle)
+            continue
         if not SHA.fullmatch(rev):
             raise ValueError("Invalid revision")
         rows[bid] = {"platform": platform, "revisionSha256": rev, "refs": fields,
                      "lightLayout": layout, "legacyLayout": legacy, "unsupportedFields": unsupported}
+        # Keep the historical revision separate even when a Steam revision is
+        # available. Its distinct GUIDs also belong to the extraction census.
+        if bundle.get("legacyRevisionSha256") is not None:
+            rows[bid]["historicalRevision"]=legacy_reference(bid,bundle)
     if sum(r["platform"] == "Steam" for r in rows.values()) != doc["counts"]["steam"]:
         raise ValueError("Steam source count mismatch")
     return rows, refs
@@ -82,14 +94,11 @@ def project(raw, aa):
     # Addresses are confirmed, not necessarily visible in the selected native layout.
     # Extraction must still resolve each typed serialized object and verify pixel bytes.
     sources = doc["steamSources"]
-    if isinstance(sources, dict):
-        latest = sources.get(doc["latestSteamSource"])
-        if latest is None:
-            raise ValueError("Latest Steam source mismatch")
-    else:
-        if len(sources) != 1:
-            raise ValueError("Ambiguous Steam source version")
-        latest = sources[0]
+    latest = doc["latestSteamSource"]
+    if not isinstance(sources,list) or not isinstance(latest,dict) or latest not in sources:
+        raise ValueError("Latest Steam source mismatch")
+    if latest.get("platform")!="Steam" or not re.fullmatch(r"\d+\.\d+\.\d+",latest["gameVersion"]):
+        raise ValueError("Invalid latest Steam source")
     targets = {"schema":"wand.media.confirmed-shared-image-targets@1",
                "gameVersion":latest["gameVersion"],
                "targets":{g:"shop-512" for g in sorted(refs) if locs[g]}}
@@ -111,6 +120,8 @@ def main():
     print(json.dumps({"bundles":len(report["bundles"]),"guids":len(report["locations"]),
                       "unresolvedGuids":len(report["unresolvedGuids"]),
                       "withoutExplicitImage":sum(not r["refs"] for r in report["bundles"].values()),
+                      "historicalRevisions":sum("historicalRevision" in r for r in report["bundles"].values()),
+                      "historicalOnlyGuids":len({g for r in report["bundles"].values() for g in r.get("historicalRevision",{}).get("refs",{}).values()}-{g for r in report["bundles"].values() for g in r["refs"].values()}),
                       "unsupportedFields":sum(len(r["unsupportedFields"]) for r in report["bundles"].values()),
                       "publicationAuthorized":False},indent=2))
 
