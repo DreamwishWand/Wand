@@ -1715,6 +1715,8 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.eventRecurringLootSources',row.itemId,recurringLoot);
       categorySet.add('in_game_limited_event');
     }
+    const keyholeTransforms=protoAcquisition.keyholeTransforms.get(row.itemId);
+    if(keyholeTransforms?.length)add('acquisition.keyholeTransformSources',row.itemId,keyholeTransforms);
     const miniEventRewards=protoAcquisition.miniEventRewards.get(row.itemId);
     if(miniEventRewards?.length){
       add('acquisition.miniEventRewardSources',row.itemId,miniEventRewards);
