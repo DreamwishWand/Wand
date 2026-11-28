@@ -254,7 +254,15 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           const kind=evidence.kind;
           check(kind==='story_progress_reward'&&evidence.sourceFileSha256===sha?.Story&&evidence.sourcePath==='source.Reward.ItemID'&&id(evidence.configuredAmount)||
             kind==='achievement_milestone_reward'&&evidence.sourceFileSha256===sha?.DutyAch&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.Milestones[')&&id(evidence.configuredAmount)&&id(evidence.configuredMilestone)||
-            kind==='figurine_additional_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.AdditionalRewardItemIDs[')&&evidence.configuredAmount===null,'EXTENSION_PROGRESS');
+            kind==='figurine_additional_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.AdditionalRewardItemIDs[')&&evidence.configuredAmount===null||
+            kind==='figurine_rank_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&evidence.sourcePath==='source.Tier'&&
+            evidence.configuredAmount===1&&evidence.configuredMilestone===null&&typeof evidence.configuredTier==='number'&&[1,2,3].includes(evidence.configuredTier)&&
+            evidence.selectionRule==='minimum_positive_unowned_tier_random'&&evidence.rankGate==='level_increased_and_unlocks_figurine'&&
+            Array.isArray(evidence.rankRewardPoints)&&evidence.rankRewardPoints.length===26&&evidence.rankRewardPoints.every((n,i)=>n===[3,9,15,24,33,45,57,69,84,99,114,129,147,165,183,201,219,237,258,279,300,350,400,450,500,550][i])&&
+            evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.sourceRankingRecordIndex===394&&
+            evidence.sourceRankingRecordSha256==='3204625406f5a3317e534e65dc411fe95afdc79ad6f4425a4b9ab999414e9da9'&&
+            evidence.sourceRankingPayloadSha256==='4c3cfea78603697bd8be1808905ef7daaba3d4cfac5018a0582e1c51c7a3a136'&&
+            evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653','EXTENSION_PROGRESS');
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');

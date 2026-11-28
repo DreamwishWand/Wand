@@ -7,12 +7,16 @@ test('ordinary progression reward evidence matches every positive original rewar
   const legacy=new Map(await db.getFieldRows('acquisition.categories'));
   const rewards=await db.getFieldRows('acquisition.individualFriendshipRewards');
   const friendIds=new Set(rewards.flatMap(([,links])=>links.filter(l=>l.amount!==null).map(l=>l.itemId)));
-  const ordinary=id=>legacy.get(id)?.includes('ordinary_gameplay')||friendIds.has(id);
+  const ordinary=id=>legacy.get(id)?.includes('ordinary_gameplay')||friendIds.has(id)||ranked.has(id);
   const expected=[];
   const classes=new Map(await db.getFieldRows('sourceClass'));
   const key=(target,source,kind,path,amount,threshold)=>JSON.stringify([target,source,kind,path,amount,threshold]);
   const positive=v=>Number.isSafeInteger(v)&&v>0;
   const categories=new Map(await db.getFieldRows('nativeCategory'));
+  const ranked=new Map((await db.getFieldRows('source.Tier')).filter(([id,tier])=>classes.get(id)==='FigurineItemData'&&positive(tier)));
+  assert.equal(ranked.size,26);
+  assert.deepEqual([1,2,3].map(t=>[...ranked.values()].filter(v=>v===t).length),[6,10,10]);
+  for(const [id] of ranked)expected.push(key(id,id,'figurine_rank_reward','source.Tier',1,null));
   for(const [source,r] of await db.getFieldRows('source.Reward')){
     if(classes.get(source)==='StoryItemData'&&![200000049,200000058].includes(source)&&positive(r?.ItemID)&&positive(r?.Amount)&&categories.has(r.ItemID)&&r.ItemID!==source)
       expected.push(key(r.ItemID,source,'story_progress_reward','source.Reward.ItemID',r.Amount,null));
@@ -39,9 +43,15 @@ test('ordinary progression reward evidence matches every positive original rewar
     assert.equal(l.sourceGameVersion,db.release.target.gameVersion);
     assert.equal(l.sourceFileSha256,db.release.sourceFilesSha256[categories.get(l.sourceItemId)]);
     assert.equal(l.currentAvailabilityVerified,false);assert.equal(l.guaranteedGrantVerified,false);
-    assert(candidates[i].some(e=>e[0]===l.sourceItemId&&e[1]===roles[l.kind]&&e[2]===l.sourcePath));
+    if(l.kind==='figurine_rank_reward'){
+      assert.equal(l.sourceItemId,id);
+      assert.equal(l.configuredTier,ranked.get(id));
+      assert.deepEqual(l.rankRewardPoints,[3,9,15,24,33,45,57,69,84,99,114,129,147,165,183,201,219,237,258,279,300,350,400,450,500,550]);
+      assert.equal(l.selectionRule,'minimum_positive_unowned_tier_random');
+      assert.equal(l.rankGate,'level_increased_and_unlocks_figurine');
+    }else assert(candidates[i].some(e=>e[0]===l.sourceItemId&&e[1]===roles[l.kind]&&e[2]===l.sourcePath));
     return key(id,l.sourceItemId,l.kind,l.sourcePath,l.configuredAmount,l.configuredMilestone);
   }));
   assert.deepEqual(actual.sort(),expected.sort());
-  assert.equal(actual.filter(x=>JSON.parse(x)[2]==='figurine_additional_reward').length,8);
+  assert.equal(actual.filter(x=>JSON.parse(x)[2]==='figurine_additional_reward').length,60);
 });
