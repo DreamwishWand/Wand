@@ -25,7 +25,8 @@
  export let roomParent:SupportParentWitness|null=null,onItems:(ids:number[])=>void=()=>{};
  export let roomPickupPlan:readonly GroupPickupRow[]|null=null,onRoomDuplicate:(needs:ReadonlyMap<number,number>)=>void=()=>{};
  export let roomDuplicateAllowed=false;
- let roomPickupActive=false;
+ let roomPickupActive=false,nonstandard=false;
+ const nonstandardWords={ja:'自由配置（重複・床制限解除）',en:'Free placement (allow overlap)',fr:'Placement libre (superposition)',it:'Posizionamento libero (sovrapposizione)',de:'Freie Platzierung (Überlappung)','es-ES':'Colocación libre (superposición)','zh-CN':'自由放置（允许重叠）','pt-BR':'Posicionamento livre (sobreposição)'} as const;
  $: identity=parent?{localOrdinal:parent.object.localOrdinal,itemId:Number(parent.object.itemId),x:parent.object.x,y:parent.object.y}:roomParent;
  export let grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map();
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
@@ -51,7 +52,7 @@
  let hoverCell:{x:number;y:number}|null=null;
  type ChildDrag={pointer:number;tree:SupportTree;file:File;index:number;start:{x:number;y:number};clientX:number;clientY:number;destination:{x:number;y:number};moved:boolean};
  let childDrag:ChildDrag|null=null,suppressChildClick=false;
- $: dragPreview=childDrag?.moved&&mapInteractive&&canMove&&tree===childDrag.tree&&file===childDrag.file&&terrain?previewAt(tree,shapes,editable,terrain,childDrag.destination,true,childDrag.index,false,0,stockOrientation,counts,false,removable):null;
+ $: dragPreview=childDrag?.moved&&mapInteractive&&canMove&&tree===childDrag.tree&&file===childDrag.file&&terrain?previewAt(tree,shapes,editable,terrain,childDrag.destination,true,childDrag.index,false,0,stockOrientation,counts,false,removable,nonstandard):null;
  $: childPreview=dragPreview??hoverPreview;
  type TransferSource={index:number;object:SupportObject;path:number[]};
  type TransferDraft={index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;destination:{localOrdinal:number;itemId:number;expectedX:number;expectedY:number;terrainPath:string};x:number;y:number;orientation:string};
@@ -71,13 +72,13 @@
  $: words=supportWords[locale];
  $: cw=childEditWords[locale];
  $: sw=supportFreeWords[locale];
- $: left=tree&&selected>=0?turnCandidate(tree,shapes,editable,terrain,selected,-1):null;
- $: right=tree&&selected>=0?turnCandidate(tree,shapes,editable,terrain,selected,1):null;
+ $: left=tree&&selected>=0?turnCandidate(tree,shapes,editable,terrain,selected,-1,nonstandard):null;
+ $: right=tree&&selected>=0?turnCandidate(tree,shapes,editable,terrain,selected,1,nonstandard):null;
  $: freeEligible=!!terrain&&!!tree&&selected>=0&&!!tree.objects[selected]&&!tree.objects[selected].child&&editable.has(tree.objects[selected].itemId)&&isCardinal(tree.objects[selected].orientation);
  $: partners=tree&&selected>=0?tree.objects.map((_,i)=>supportChildEdits(tree!,shapes,editable,selected,i,1)?i:-1).filter(i=>i>=0):[];
  $: mapInteractive=!roomPickupActive&&!!tree&&!loading&&!copy&&!placing&&!ghost&&!edits&&!stockDraft&&!stockOpen&&!transferDraft&&(!transferSource||!!transferTarget);
  $: mapKeyboard=!roomPickupActive&&(mapInteractive||!!tree&&!loading&&!copy&&!placing&&!ghost&&(!!edits||!!stockDraft||!!transferDraft));
- $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,editable,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts,!!transferSource,removable):null;
+ $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,editable,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts,!!transferSource,removable,nonstandard):null;
  $: extent=tree&&terrain?{x:-.5,y:-.5,w:terrain.sizeX*tree.factor+1,h:terrain.sizeY*tree.factor+1}:tree?supportExtent(tree,shapes):{x:0,y:0,w:1,h:1};
  $: if(open!==activeOpen||file!==activeFile||(identity?.localOrdinal??0)!==activeOrdinal)refresh(open,file,parent,identity);
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);if(tree){requestShapes(tree);requestCatalog(tree);}}
@@ -85,7 +86,7 @@
  function clearCopy(){if(copy)URL.revokeObjectURL(copy.url);copy=null;}
  export function cancel(){sceneOpen=false;duplicating=false;duplicateScene=null;childDrag=null;suppressChildClick=false;parentPoint=null;parentOrientation=null;transferSource=null;transferTarget=null;transferDraft=null;hoverCell=null;placing=false;ghost=null;edits=null;swap=false;free=false;freeDraft=false;stockDraft=null;stockPlacing=false;stockOpen=false;stockId=0;stopOwn();clearCopy();loading=false;error=false;}
  function refresh(show:boolean,source:File|null,p:MainlandSavedObject|null,witness:SupportParentWitness|null){
-  cancel();request=0;activeOpen=show;activeFile=source;activeOrdinal=witness?.localOrdinal??0;stack=[];path=[];owners=[];selected=-1;tree=null;terrain=null;shapes={};editable=new Set();removable=new Set();counts=new Map();stockCatalog=[];catalogRequest=0;images=new Map();imageEpoch++;
+  cancel();nonstandard=false;request=0;activeOpen=show;activeFile=source;activeOrdinal=witness?.localOrdinal??0;stack=[];path=[];owners=[];selected=-1;tree=null;terrain=null;shapes={};editable=new Set();removable=new Set();counts=new Map();stockCatalog=[];catalogRequest=0;images=new Map();imageEpoch++;
   if(!show||!source||!witness||p&&!p.object.subgrid)return;
   loading=true;
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
@@ -121,18 +122,18 @@
  function descend(t:SupportTree,index:number){if(!mapInteractive||free||swap||stockPlacing)return;path=[...path,index];owners=[...owners,tree!.objects[index].itemId];stack=[...stack,t];showTree(t);}
  function back(){if(stack.length<2||!mapInteractive||free||swap||stockPlacing)return;path=path.slice(0,-1);owners=owners.slice(0,-1);stack=stack.slice(0,-1);showTree(stack[stack.length-1]);}
  function selectChild(index:number){if(!mapInteractive||stockPlacing||free)return;if(swap&&tree){const next=supportChildEdits(tree,shapes,editable,selected,index,1);if(next){edits=next;swap=false;}return;}selected=index;edits=null;free=false;freeDraft=false;}
- function turnCandidate(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,e:ReadonlySet<number>,r:TerrainRaster|null,i:number,turn:-1|1){const exact=supportChildEdits(t,s,e,i,null,turn);if(exact)return exact;const o=t.objects[i];if(!r||!o||!isCardinal(o.orientation))return null;return supportFreeEdit(t,s,e,r,i,o.x,o.y,CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4]);}
- function beginChild(next:SupportChildEdit[]|null){if(!canMove||!next||loading||copy||placing||ghost)return;freeDraft=!!terrain&&!!tree&&next.length===1&&!supportChildEdits(tree,shapes,editable,selected,null,-1)?.some(e=>e.orientation===next[0].orientation)&&!supportChildEdits(tree,shapes,editable,selected,null,1)?.some(e=>e.orientation===next[0].orientation);edits=next;swap=false;free=false;error=false;}
+ function turnCandidate(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,e:ReadonlySet<number>,r:TerrainRaster|null,i:number,turn:-1|1,nonstandard=false){const exact=supportChildEdits(t,s,e,i,null,turn);if(exact&&!nonstandard)return exact;const o=t.objects[i];if(!r||!o||!isCardinal(o.orientation))return null;return supportFreeEdit(t,s,e,r,i,o.x,o.y,CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(o.orientation)+turn+4)%4],nonstandard);}
+ function beginChild(next:SupportChildEdit[]|null){if(!canMove||!next||loading||copy||placing||ghost)return;freeDraft=!!terrain&&!!tree&&next.length===1&&(nonstandard||!supportChildEdits(tree,shapes,editable,selected,null,-1)?.some(e=>e.orientation===next[0].orientation)&&!supportChildEdits(tree,shapes,editable,selected,null,1)?.some(e=>e.orientation===next[0].orientation));edits=next;swap=false;free=false;error=false;}
  function pointerCell(e:MouseEvent,unbounded=false){
   const m=supportSvg?.getScreenCTM();if(!m)return null;
   const q=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
   if(!Number.isFinite(q.x)||!Number.isFinite(q.y)||!unbounded&&(q.x<extent.x||q.y<extent.y||q.x>=extent.x+extent.w||q.y>=extent.y+extent.h))return null;
   return {x:Math.floor(q.x),y:Math.floor(q.y)};
  }
- function previewAt(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,r:TerrainRaster,p:{x:number;y:number},moving:boolean,index:number,placingStock:boolean,id:number,orientation:typeof CARDINAL_ORIENTATIONS[number],stock:ReadonlyMap<number,number>,transferring:boolean,canRemove:ReadonlySet<number>){
+ function previewAt(t:SupportTree,s:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,r:TerrainRaster,p:{x:number;y:number},moving:boolean,index:number,placingStock:boolean,id:number,orientation:typeof CARDINAL_ORIENTATIONS[number],stock:ReadonlyMap<number,number>,transferring:boolean,canRemove:ReadonlySet<number>,nonstandard=false){
   const o=t.objects[index],key=placingStock?id+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4:moving&&o?supportShapeKey(o):null;
   const shape=key?s[key]:null;if(!shape)return null;
-  const valid=placingStock?(transferring?allowed.has(id)&&canRemove.has(id)&&supportPlacementFits(t,s,r,id,p.x,p.y,orientation):!!supportStockPlacement(t,s,r,id,stock.get(id)??0,p.x,p.y,orientation)):moving&&!!o&&!!supportFreeEdit(t,s,allowed,r,index,p.x,p.y,o.orientation);
+  const valid=placingStock?(transferring?allowed.has(id)&&canRemove.has(id)&&supportPlacementFits(t,s,r,id,p.x,p.y,orientation,nonstandard):!!supportStockPlacement(t,s,r,id,stock.get(id)??0,p.x,p.y,orientation,nonstandard)):moving&&!!o&&!!supportFreeEdit(t,s,allowed,r,index,p.x,p.y,o.orientation,nonstandard);
   return {...p,shape,itemId:placingStock?id:o.itemId,valid};
  }
  function startChildDrag(e:PointerEvent){
@@ -162,7 +163,7 @@
   if(!commit||!mapInteractive||!canMove||!tree||!terrain||tree!==d.tree||file!==d.file)return;
   const o=tree.objects[d.index];
   if(d.destination.x===o.x&&d.destination.y===o.y)return;
-  const next=supportFreeEdit(tree,shapes,editable,terrain,d.index,d.destination.x,d.destination.y,o.orientation);
+  const next=supportFreeEdit(tree,shapes,editable,terrain,d.index,d.destination.x,d.destination.y,o.orientation,nonstandard);
   error=!next;if(next){edits=next;freeDraft=true;free=false;hoverCell=null;}
  }
  function hoverChild(e:PointerEvent){if(updateChildDrag(e))return;hoverCell=mapInteractive&&(free||stockPlacing)?pointerCell(e):null;}
@@ -177,12 +178,12 @@
   if(!terrain||!canMove)return;
   if(stockPlacing&&transferSource){
    const from=transferSource,d=transferTarget;
-   if(!d||!tree.sourcePath||!editable.has(stockId)||!removable.has(stockId)||!supportPlacementFits(tree,shapes,terrain,stockId,q.x,q.y,stockOrientation)){error=true;return;}
+   if(!d||!tree.sourcePath||!editable.has(stockId)||!removable.has(stockId)||!supportPlacementFits(tree,shapes,terrain,stockId,q.x,q.y,stockOrientation,nonstandard)){error=true;return;}
    transferDraft={index:from.index,itemId:from.object.itemId,expectedX:from.object.x,expectedY:from.object.y,expectedOrientation:from.object.orientation,destination:{localOrdinal:d.object.localOrdinal,itemId:Number(d.object.itemId),expectedX:d.object.x,expectedY:d.object.y,terrainPath:tree.sourcePath},x:q.x,y:q.y,orientation:stockOrientation};
    stockPlacing=false;hoverCell=null;error=false;return;
   }
-  if(stockPlacing){const plan=supportStockPlacement(tree,shapes,terrain,stockId,counts.get(stockId)??0,q.x,q.y,stockOrientation);error=!plan;if(plan){stockDraft=plan;stockPlacing=false;hoverCell=null;}return;}
-  if(selected<0)return;const o=tree.objects[selected];const next=supportFreeEdit(tree,shapes,editable,terrain,selected,q.x,q.y,o.orientation);error=!next;if(next){edits=next;freeDraft=true;free=false;hoverCell=null;}
+  if(stockPlacing){const plan=supportStockPlacement(tree,shapes,terrain,stockId,counts.get(stockId)??0,q.x,q.y,stockOrientation,nonstandard);error=!plan;if(plan){stockDraft=plan;stockPlacing=false;hoverCell=null;}return;}
+  if(selected<0)return;const o=tree.objects[selected];const next=supportFreeEdit(tree,shapes,editable,terrain,selected,q.x,q.y,o.orientation,nonstandard);error=!next;if(next){edits=next;freeDraft=true;free=false;hoverCell=null;}
  }
  function mapKeys(e:KeyboardEvent){
   if(!mapKeyboard||!tree||e.isComposing)return;
@@ -209,7 +210,7 @@
   const current=previous?.orientation??o.orientation;if(!isCardinal(current))return;
   const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(current)+turn+4)%4];
   if(x===o.x&&y===o.y&&orientation===o.orientation){edits=null;freeDraft=false;error=false;return;}
-  const next=supportFreeEdit(tree,shapes,editable,terrain,selected,x,y,orientation);
+  const next=supportFreeEdit(tree,shapes,editable,terrain,selected,x,y,orientation,nonstandard);
   error=!next;if(next){edits=next;freeDraft=true;free=false;}
  }
  function validateChild(){
@@ -217,7 +218,7 @@
   const source=file,chosen=edits,stock=stockDraft,transfer=transferDraft,from=transferSource;loading=true;error=false;clearCopy();
   const session=new Worker(new URL('./subgrid-local.worker.ts',import.meta.url),{type:'module'});own=session;
   const finish=(d:any)=>{session.terminate();if(own!==session||activeFile!==source||edits!==chosen||stockDraft!==stock||transferDraft!==transfer){d?.bytes?.fill(0);return;}own=null;loading=false;try{if(d?.kind!=='support-child-copy')throw Error('copy');copy=experimentalCopyDownload(d,source);}catch{error=true;}};
-  session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-child-copy',file:source,allowExperimentalCopy:true,plan:{localOrdinal:identity.localOrdinal,itemId:identity.itemId,expectedX:identity.x,expectedY:identity.y,path:transfer?from!.path:path,...(transfer?{transfer}:stock?{stock,...(stock.action==='place'&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})}:{edits:chosen,...(freeDraft&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})})}});
+  session.onmessage=e=>finish(e.data);session.onerror=()=>finish(null);session.onmessageerror=()=>finish(null);session.postMessage({command:'support-child-copy',file:source,allowExperimentalCopy:true,plan:{localOrdinal:identity.localOrdinal,itemId:identity.itemId,expectedX:identity.x,expectedY:identity.y,path:transfer?from!.path:path,...(nonstandard&&(transfer||stock?.action==='place'||freeDraft&&chosen?.length===1)?{freePlacement:true}:{}),...(transfer?{transfer}:stock?{stock,...(stock.action==='place'&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})}:{edits:chosen,...(freeDraft&&tree?.sourcePath?{terrainPath:tree.sourcePath}:{})})}});
  }
  function begin(duplicate=false,scene:SupportScene|null=null){if(duplicate&&!scene&&!duplicateReady)return;if(scene&&(!parent||!stack[0]||!supportSceneTemplateCompatible(scene,Number(parent.object.itemId),stack[0])||![...supportSceneRootCounts(scene)].every(([id,n])=>(counts.get(id)??0)>=n)))return;if(!canMove||!supportParentEligible(parent)||!tree||loading)return;clearCopy();cancelStock();edits=null;swap=false;free=false;freeDraft=false;ghost=null;error=false;parentOrientation=parent.object.orientation;parentPoint=null;duplicating=duplicate;duplicateScene=scene;sceneOpen=false;placing=true;}
  function beginScene(scene:SupportScene){begin(true,scene);}
@@ -281,6 +282,7 @@
     {/each}</div>
    {:else}<small>{words[9]}</small>{/if}
    <small>{words[10]}</small>
+   {#if canMove&&terrain&&!loading&&!copy&&!edits&&!stockDraft&&!stockPlacing&&!transferSource&&!transferDraft&&!placing&&!ghost&&!free&&!swap}<label><input type="checkbox" bind:checked={nonstandard}/>{nonstandardWords[locale]}</label>{/if}
    {#if canMove&&!transferSource&&selected>=0&&!placing&&!ghost&&!copy&&!stockPlacing&&!stockDraft&&!stockOpen}<div class="child-actions"><button type="button" disabled={!left||loading||!!edits||swap} on:click={()=>beginChild(left)}>{cw[0]}</button><button type="button" disabled={!right||loading||!!edits||swap} on:click={()=>beginChild(right)}>{cw[1]}</button><button type="button" disabled={!partners.length||loading||!!edits||swap} on:click={()=>{swap=true;edits=null;}}>{cw[2]}</button>{#if transferEligible&&targets.length}<button type="button" disabled={loading||!!edits||free||swap} on:click={beginTransfer}>{trw[0]}</button>{/if}{#if pickup}<button type="button" disabled={loading||!!edits||free||swap} on:click={beginPickup}>{stw[2]}</button>{/if}{#if terrain&&stockCatalog.some(o=>o.itemId===tree?.objects[selected]?.itemId)&&isCardinal(tree.objects[selected].orientation)}<button type="button" disabled={loading||!!edits||free||swap} on:click={()=>chooseStock(tree!.objects[selected].itemId,tree!.objects[selected].orientation as typeof CARDINAL_ORIENTATIONS[number])}>{stw[3]}</button>{/if}{#if terrain}<button type="button" disabled={!freeEligible||loading||!!edits||swap||free} on:click={()=>{free=true;freeDraft=false;error=false;}}>{sw[0]}</button>{/if}</div><small>{free?sw[1]:swap?cw[3]:terrain?sw[2]:sw[3]}</small>{#if edits}<button type="button" disabled={loading} on:click={validateChild}>{cw[5]}</button>{/if}{#if edits||swap||free}<button type="button" disabled={loading} on:click={()=>{edits=null;swap=false;free=false;freeDraft=false;}}>{words[11]}</button>{/if}{/if}
    {#if canMove&&!transferSource&&terrain&&!placing&&!ghost&&!copy&&!free&&!edits&&!swap&&!stockDraft&&!stockPlacing}<button type="button" disabled={loading||!stockCatalog.length} on:click={()=>{stockOpen=!stockOpen;stockQuery='';}}>{stw[0]}</button>{/if}
    {#if stockOpen&&canMove}<input type="search" bind:value={stockQuery} placeholder={stw[6]} aria-label={stw[6]}/><div class="support-list">{#each stockOptions as item}<button type="button" on:click={()=>chooseStock(item.itemId)}>{item.name} · {counts.get(item.itemId)}</button>{/each}</div>{/if}
