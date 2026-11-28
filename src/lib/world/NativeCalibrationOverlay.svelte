@@ -1,10 +1,12 @@
 <script lang="ts">
  import {onMount} from 'svelte';
  import {base} from '$app/paths';
- import {bindMainland,type MainlandGrid} from './mainland-world-coordinates.ts';
+ import {type MainlandGrid} from './mainland-world-coordinates.ts';
+ import {bindNativeCalibrationGrids} from './native-calibration-grids.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import {nativeCalibrationGridTransform,nativeCalibrationPixels} from './native-map-calibration-overlay.ts';
  export let scope:string;
+ export let mapId:string;
  export let opacity=.35;
  export let onStatus:(s:'loading'|'ready'|'error')=>void=()=>{};
  let grids:MainlandGrid[]=[];
@@ -21,7 +23,7 @@
     if(data.requestId===1){
      if(data.kind!=='index'||!Array.isArray(data.grids))throw Error('terrain index');
      const source=(data.grids as (PublicTerrainGridRef&{scope:string})[]).filter(g=>g.scope===scope);
-     const bound=bindMainland(source);if(!bound)throw Error('source world unavailable');
+     const bound=bindNativeCalibrationGrids(mapId,source);if(!bound)throw Error('source world unavailable');
      grids=bound;
      for(const g of bound){const id=++sequence;pending.set(id,g);worker.postMessage({command:'terrain',key:g.key,requestId:id});}
      return;
