@@ -59,7 +59,14 @@ pub(super) fn resolve(source:&[u8],scope:&str)->Result<Option<HashSet<String>>,C
   let mut grids=HashSet::new();
   for w in rows{
    let d=crate::grid_instance_preview::resolve_plain_grid_destination(source,w)?;
-   let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+   let g=&root["World"]["GridCollection"]["Grids"][&d.grid_id];
+   let (layout,factor,sx,sy)=if crate::grid_instance_preview::is_underwater_grid(g){
+    let (sx,sy)=crate::grid_instance_preview::underwater_transform_identity(&root,&d.grid_id)?;
+    (g["GridDefaultLayoutPath"].as_str().ok_or(bad)?.to_owned(),1,sx,sy)
+   }else{
+    let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;
+    (layout,factor,sx,sy)
+   };
    if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1)||!grids.insert(d.grid_id){return Err(bad);}
   }
   return Ok(Some(grids));
