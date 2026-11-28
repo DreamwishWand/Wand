@@ -36,7 +36,7 @@ def build(paths,out):
             for cls,raw in obs.values():
                 if cls==142:
                     for g,(f,p) in container_entries(raw).items():
-                        if f==0:require(p not in address,"duplicate local address");address[p]=g
+                        if f==0 and obs.get(p,(None,None))[0]==21:require(p not in address,"duplicate local material address");address[p]=g
             def target(ref):
                 f,p=ref["fileId"],ref["pathId"];require(0<=f<=len(ext) and p!="0","material reference")
                 return (cab if f==0 else ext[f-1].rsplit("/",1)[-1])+"/"+p
