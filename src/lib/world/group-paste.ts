@@ -68,7 +68,7 @@ export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string
   if(free)outdoor.push('FloatingIslands');
   if(!outdoor.includes(cut.scope)||!outdoor.includes(scope))return false;
  }
- if(cut.scope===scope&&!(free&&scope==='FloatingIslands'&&cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal))))return cutWitnessMatches(cut.rows,objects,free);
+ if(cut.scope===scope&&!(free&&['FloatingIslands','VillageExpansion04UnderwaterAreas'].includes(scope)&&cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal))))return cutWitnessMatches(cut.rows,objects,free);
  return cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal));
 }
 /** Compare exact occupied cells after normalization to half-map-unit cells.
