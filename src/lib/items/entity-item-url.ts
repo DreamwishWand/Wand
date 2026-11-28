@@ -35,5 +35,16 @@ export function itemPageCopy(locale:string){
     'pt-BR':['Dimensões originais da grade','Energia recuperada (configurada)','Mesma série','Usado em receitas','Alguns dados relacionados estão indisponíveis']
   };
   const [dimensions,energy,series,recipeUses,incomplete]=extra[locale]??extra.en;
-  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete};
+  const entity:Record<string,readonly [string,string,string,string]>={
+    ja:['本体','ドリームスタイル','マウントスキン','マウント装備'],
+    en:['Base item','Dream Styles','Mount skins','Mount gear'],
+    fr:['Élément de base','Styles de rêve','Apparences de monture','Équipement de monture'],
+    it:['Elemento base','Stili da sogno','Aspetti cavalcatura','Equipaggiamento cavalcatura'],
+    de:['Basisobjekt','Traumstile','Reittier-Skins','Reittierausrüstung'],
+    'es-ES':['Elemento base','Estilos de ensueño','Aspectos de montura','Equipo de montura'],
+    'zh-CN':['本体','梦幻装扮','坐骑外观','坐骑装备'],
+    'pt-BR':['Item base','Estilos dos sonhos','Visuais de montaria','Equipamento de montaria']
+  };
+  const [baseEntity,dreamStyles,mountStyles,mountGear]=entity[locale]??entity.en;
+  return {page,back,missing,expert,attributes,dimensions,energy,series,recipeUses,incomplete,baseEntity,dreamStyles,mountStyles,mountGear};
 }

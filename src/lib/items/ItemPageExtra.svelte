@@ -44,7 +44,7 @@
 {/if}
 {#if loading}<p role="status" class="optional-state">{interfaceCopy.loading}</p>{/if}
 {#if failed}<p role="status" class="optional-state">{copy.incomplete}</p>{/if}
-{#each [{title:copy.series,rows:relations?.series??[]},{title:copy.recipeUses,rows:relations?.recipeResults??[]}] as section}
+{#each [{title:copy.baseEntity,rows:relations?.parent??[]},{title:record.nativeCategory==='Character'?copy.dreamStyles:copy.mountStyles,rows:relations?.styles??[]},{title:copy.mountGear,rows:relations?.gear??[]},{title:copy.series,rows:relations?.series??[]},{title:copy.recipeUses,rows:relations?.recipeResults??[]}] as section}
   {#if section.rows.length}
     <section class="related-item-section">
       <h2>{section.title} <small>{section.rows.length}</small></h2>
