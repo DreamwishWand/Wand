@@ -79,7 +79,7 @@ test('all classification extensions preserve original evidence and localized sou
   const db=await openCurrentItemDatabase('',fetcher);
   const fields={initialInventory:'acquisition.ordinaryInitialInventorySources',storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
-    eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+    miniEventReward:'acquisition.miniEventRewardSources',eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
     lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',questLoot:'acquisition.questAdditionalLootSources',evolutionAcquisition:'acquisition.evolutionAcquisitionSources',profileLevel:'acquisition.profileLevelRewardSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
@@ -105,7 +105,7 @@ test('all classification extensions preserve original evidence and localized sou
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
-      if(ext.family==='initialInventory'||ext.family==='configuredStore'||ext.family==='historicalStarpath'||ext.family==='profileLevel')assert.equal(ext.identity,null);
+      if(ext.family==='miniEventReward'||ext.family==='initialInventory'||ext.family==='configuredStore'||ext.family==='historicalStarpath'||ext.family==='profileLevel')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
       const related=ext.family==='progression'&&ev.rankActivity?[ev.rankActivity.preConditionItemId,ev.rankActivity.unlockMissionItemId]:ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,
