@@ -1,6 +1,12 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  configuredPurchase:['購入価格（原本設定）','Configured purchase price','Prix d’achat configuré','Prezzo d’acquisto configurato','Konfigurierter Kaufpreis','Precio de compra configurado','原始购买价格','Preço de compra configurado'],
+  configuredSell:['売却価格（原本設定）','Configured sell price','Prix de vente configuré','Prezzo di vendita configurato','Konfigurierter Verkaufspreis','Precio de venta configurado','原始出售价格','Preço de venda configurado'],
+  cachedPrice:['キャッシュ値','Cached value','Valeur en cache','Valore in cache','Cachewert','Valor en caché','缓存值','Valor em cache'],
+  notLivePrice:['現在の取引価格・販売可否ではありません。','Not a current transaction price or sale availability.','Ni prix de transaction actuel ni disponibilité confirmée.','Non indica il prezzo attuale né la disponibilità.','Kein aktueller Handelspreis oder bestätigte Verfügbarkeit.','No indica el precio actual ni la disponibilidad.','不代表当前交易价格或可购买状态。','Não indica o preço atual nem a disponibilidade.'],
+  priceLoading:['価格を読み込み中…','Loading prices…','Chargement des prix…','Caricamento prezzi…','Preise werden geladen…','Cargando precios…','正在加载价格…','Carregando preços…'],
+  priceUnavailable:['価格情報を取得できませんでした。','Could not load price data.','Impossible de charger les prix.','Impossibile caricare i prezzi.','Preise konnten nicht geladen werden.','No se pudieron cargar los precios.','无法加载价格信息。','Não foi possível carregar os preços.'],
   series:['シリーズ','Series','Série','Serie','Serie','Serie','系列','Série'],
   quickView:['クイックビュー','Quick view','Aperçu','Anteprima','Schnellansicht','Vista rápida','快速查看','Visualização rápida'],
   itemPage:['アイテムページ','Item page','Page de l’objet','Pagina oggetto','Objektseite','Página del objeto','物品详情','Página do item'],
