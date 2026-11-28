@@ -77,7 +77,7 @@ test('ordinary category extensions resolve every quest and production source usi
 test('all classification extensions preserve original evidence and localized source and related identities',async()=>{
   const requests=[],fetcher=async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});};
   const db=await openCurrentItemDatabase('',fetcher);
-  const fields={storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
+  const fields={initialInventory:'acquisition.ordinaryInitialInventorySources',storyUnlock:'acquisition.storyUnlockSources',characterUnlock:'acquisition.characterUnlockSources',progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',memoryDefaultContent:'acquisition.memoryDefaultContentSources',
     eventRecurringLoot:'acquisition.eventRecurringLootSources',eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
     storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',storeGeneratedStage:'acquisition.ordinaryGeneratedStoreStageSources',
@@ -105,7 +105,7 @@ test('all classification extensions preserve original evidence and localized sou
     for(const ext of row.classificationExtensions){
       assert(row.effectiveCategories.includes(ext.category));
       assert.equal(ext.evidence.currentAvailabilityVerified,false);
-      if(ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
+      if(ext.family==='initialInventory'||ext.family==='configuredStore'||ext.family==='historicalStarpath')assert.equal(ext.identity,null);
       else {assert.equal(ext.identity.itemId,ext.evidence.sourceItemId);assert.equal(ext.identity.locale,'ja');}
       const ev=ext.evidence;
       const related=ext.family==='characterUnlock'&&ev.kind==='character_secret_condition_unlock'?[ev.missionItemId]:ext.family==='eventRecurringLoot'?[ev.recurringEventItemId,ev.ephemeralItemId??ev.blockerItemId,ev.tableItemId,

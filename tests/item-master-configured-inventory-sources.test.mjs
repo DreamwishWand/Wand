@@ -45,3 +45,28 @@ test('configured inventory source joins preserve occurrences and inverse lookup 
   assert.equal(sample.additional.filter(x=>x.evidence.kind==='configured_default_inventory_entry'&&x.evidence.sourceId==='HomeStorage').length,2);
   assert(!requests.some(u=>u.includes('/acquisition/public/')));
 });
+
+
+test('native initial list inventory routes match all canonical positive list defaults and exclude container slots',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const d=JSON.parse(await readFile('static/acquisition/public/default-inventories-1.26.2.json','utf8'));
+  const ids=new Set((await db.getFieldRows('nativeCategory')).map(([id])=>id));
+  const expected=[];
+  for(const [name,field,type,rows] of d.groups){
+    if(type!=='list')continue;
+    for(const [position,raw,amount] of rows)if(ids.has(Number(raw)))expected.push(JSON.stringify([Number(raw),name,field,position,amount]));
+  }
+  const actual=await db.getFieldRows('acquisition.ordinaryInitialInventorySources');
+  const categories=new Map(await db.getFieldRows('acquisition.effectiveCategories'));
+  assert(expected.length>0);
+  assert.deepEqual(actual.flatMap(([id,links])=>links.map(e=>{
+    assert(categories.get(id).includes('ordinary_gameplay'));
+    assert.equal(e.targetItemId,id);
+    assert.equal(e.nativeInitializationVerified,true);
+    assert.equal(e.currentAvailabilityVerified,false);
+    assert.equal(e.guaranteedGrantVerified,false);
+    assert.equal(e.playerOwnershipVerified,false);
+    return JSON.stringify([id,e.sourceId,e.sourceFieldNumber,e.sourcePosition,e.configuredAmount]);
+  })).sort(),expected.sort());
+  console.log('DB01_INITIAL_LIST_INVENTORIES '+JSON.stringify({canonicalItems:actual.length,canonicalOccurrences:expected.length}));
+});
