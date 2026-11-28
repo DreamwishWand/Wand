@@ -5312,6 +5312,46 @@ mod terrain_session_tests{
 
     }
     #[test]
+    fn underwater_initial_owned_stock_and_empty_storage_area_restore(){
+        let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
+        let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
+        let owner=40006574u64;
+        let path=crate::storage_source::support_source_path(owner).unwrap();
+        assert_eq!(path,"GridData/Furniture/NonIP_Update25/WitchyTable-GridData.json");
+        for r in rows{
+            let root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"NextContainerInventoryID":10,"ContainerInventories":{},"ListInventories":{"0":{"ID":0,"CompatibleItemType":"ItemType_Furniture","CompatibleFurnitureTypes":{"List":["FurnitureItemType_Default"]},"Inventory":{"40006574":{"Amount":1},"40001680":{"Amount":1},"40000001":{"Amount":1}}}}},"World":{"GridCollection":{"NextGridID":20,"Grids":{
+              "7":{"ID":7,"GridDefaultLayoutPath":r["layoutId"],"GridDataPath":r["gridDataPath"],"TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":owner,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8,"DesignID":null}}}}},
+              "8":{"ID":8,"GridDataPath":path,"TessellationFactor":2,"NextGridObjectID":1,"Objects":{}}
+            }}}});
+            let w=serde_json::json!({"layoutId":r["layoutId"],"gridDataPath":r["gridDataPath"],"factor":1,"sizeX":r["sizeX"],"sizeY":r["sizeY"]});
+            let plan=serde_json::json!({"freePlacement":true,"rows":[
+              {"itemId":owner.to_string(),"destination":w,"x":2,"y":3,"orientation":"GridOrientation_Left"},
+              {"itemId":"40001680","destination":w,"x":3,"y":3,"orientation":"GridOrientation_Left"},
+              {"itemId":"40000001","destination":w,"x":4,"y":3,"orientation":"GridOrientation_Left"}]});
+            let placed=group_paste_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap();
+            let v:Value=serde_json::from_str(&placed).unwrap();
+            let g=&v["World"]["GridCollection"]["Grids"];
+            assert_eq!(g["7"]["Objects"]["2"]["State"]["SubGrid"]["GridID"],20);
+            assert_eq!(g["20"]["GridDataPath"],path);assert_eq!(g["20"]["TessellationFactor"],2);assert_eq!(g["20"]["Objects"],serde_json::json!({}));
+            assert_eq!(g["8"],root["World"]["GridCollection"]["Grids"]["8"]);
+            assert_eq!(g["7"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);
+            assert_eq!(v["Player"]["ContainerInventories"]["10"]["Inventory"],serde_json::json!([]));
+            for id in ["40006574","40001680","40000001"]{assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"][id]["Amount"],0);}
+            let (scan,_)=scan_grid_instances(placed.as_bytes()).unwrap();
+            let ord=scan.private_targets.iter().position(|(t,_)|t.grid_id=="7"&&t.object_id=="3").unwrap()+1;
+            let replacement=serde_json::json!([{"destination":w,"remove":[{"localOrdinal":ord,"itemId":"40001680","expectedX":3,"expectedY":3,"expectedOrientation":"GridOrientation_Left","includeStorage":true}],"add":[{"itemId":"40001680","destination":w,"x":5,"y":3,"orientation":"GridOrientation_Down","freePlacement":true}]}]);
+            let restored:Value=serde_json::from_str(&island_furniture_candidate(placed.as_bytes(),&replacement.to_string()).unwrap()).unwrap();
+            assert!(restored["Player"]["ContainerInventories"].get("10").is_none());
+            assert_eq!(restored["Player"]["ContainerInventories"]["11"]["Inventory"],serde_json::json!([]));
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["7"]["Objects"]["5"]["State"]["Storage"]["ContainerInventoryID"],11);
+            assert_eq!(restored["World"]["GridCollection"]["Grids"]["20"],g["20"]);
+            let mut full=v.clone();full["Player"]["ContainerInventories"]["10"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
+            assert!(island_furniture_candidate(full.to_string().as_bytes(),&replacement.to_string()).is_err());
+            let mut no_witness=root.clone();no_witness["World"]["GridCollection"]["Grids"]["8"].as_object_mut().unwrap().remove("TessellationFactor");
+            assert!(group_paste_candidate(no_witness.to_string().as_bytes(),&plan.to_string()).is_err());
+        }
+    }
+    #[test]
     fn underwater_owned_root_pose_batch_preserves_storage_and_support_tree(){
         let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
         let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
