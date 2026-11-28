@@ -1,6 +1,11 @@
 import type {ExploreCategory} from './scope.ts';
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const words:Record<string,readonly string[]>={
+  exportBoards:['全ボードを保存','Export all boards','Exporter toutes les planches','Esporta tutte le bacheche','Alle Pinnwände exportieren','Exportar todos los paneles','导出全部灵感板','Exportar todos os painéis'],
+  exportBoard:['このボードを保存','Export this board','Exporter cette planche','Esporta questa bacheca','Diese Pinnwand exportieren','Exportar este panel','导出当前灵感板','Exportar este painel'],
+  importBoards:['ボードを読み込む','Import boards','Importer des planches','Importa bacheche','Pinnwände importieren','Importar paneles','导入灵感板','Importar painéis'],
+  boardBackupFailed:['ボードを保存・読み込みできませんでした。','Could not export or import boards.','Impossible d’exporter ou d’importer les planches.','Impossibile esportare o importare le bacheche.','Pinnwände konnten nicht exportiert oder importiert werden.','No se pudieron exportar o importar los paneles.','无法导出或导入灵感板。','Não foi possível exportar ou importar os painéis.'],
+
   favoriteFailed:['お気に入りを同期できませんでした。','Could not synchronize favorites.','Impossible de synchroniser les favoris.','Impossibile sincronizzare i preferiti.','Favoriten konnten nicht synchronisiert werden.','No se pudieron sincronizar los favoritos.','无法同步收藏。','Não foi possível sincronizar os favoritos.'],
   legacyFavorites:['旧Explorerのお気に入りが残っています。取り込むプロフィールを選択してください。','Legacy Explorer favorites remain. Choose the destination profile.','Des favoris Explorer restent à importer. Choisissez le profil.','Sono presenti preferiti precedenti. Scegli il profilo di destinazione.','Alte Explorer-Favoriten vorhanden. Zielprofil wählen.','Hay favoritos antiguos de Explorer. Elige el perfil de destino.','仍有旧版收藏。请选择目标档案。','Há favoritos antigos do Explorer. Escolha o perfil de destino.'],
   importFavorites:['このプロフィールへ取り込む','Import into this profile','Importer dans ce profil','Importa in questo profilo','In dieses Profil importieren','Importar a este perfil','导入此档案','Importar neste perfil'],
