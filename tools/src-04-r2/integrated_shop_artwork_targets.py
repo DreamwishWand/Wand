@@ -81,9 +81,17 @@ def project(raw, aa):
               "bundles":rows,"locations":locs,"unresolvedGuids":unresolved}
     # Addresses are confirmed, not necessarily visible in the selected native layout.
     # Extraction must still resolve each typed serialized object and verify pixel bytes.
+    sources = doc["steamSources"]
+    if isinstance(sources, dict):
+        latest = sources.get(doc["latestSteamSource"])
+        if latest is None:
+            raise ValueError("Latest Steam source mismatch")
+    else:
+        if len(sources) != 1:
+            raise ValueError("Ambiguous Steam source version")
+        latest = sources[0]
     targets = {"schema":"wand.media.confirmed-shared-image-targets@1",
-               "gameVersion":doc["steamSources"][-1]["gameVersion"] if isinstance(doc["steamSources"],list)
-               else next(iter(doc["steamSources"].values()))["gameVersion"],
+               "gameVersion":latest["gameVersion"],
                "targets":{g:"shop-512" for g in sorted(refs) if locs[g]}}
     return report, targets
 
