@@ -5,7 +5,7 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {groupPickupPlan,groupPickupWords,supportPickupWords,type GroupPickupRow} from './group-pickup.ts';
+ import {groupPickupPlan,groupPickupWords,supportPickupWords,mixedPickupWords,type GroupPickupRow} from './group-pickup.ts';
  import type {MainlandSavedObject} from './mainland-saved-objects.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  export let items:readonly MainlandSavedObject[]=[],file:File|null=null,locale:WandLanguage='ja',blocked=false,active=false;
@@ -16,7 +16,7 @@
  let worker:Worker|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,error=false,source:File|null=null,expected='';
  $: plan=roomPlan??groupPickupPlan(items,freePlacement);
  $: key=JSON.stringify(plan);
- $: w=groupPickupWords[locale];$: sw=supportPickupWords[locale];$: includesSupport=!!plan?.some(p=>p.includeSupport);
+ $: w=groupPickupWords[locale];$: sw=supportPickupWords[locale];$: includesSupport=!!plan?.some(p=>p.includeSupport);$: mixed=!!plan?.some(p=>Math.floor(Number(p.itemId)/100000)!==400);$: mw=mixedPickupWords[locale];
  $: cw=checkpointWords[locale];
  $: tw=testSaveWords[locale];
  $: active=!!worker||!!copy;
@@ -35,9 +35,9 @@
 </script>
 {#if allowed}
  <div class="group-pickup">
-  {#if !active}<button type="button" title={includesSupport?sw[1]:w[1]} disabled={blocked||!plan} on:click={prepare}>{includesSupport?sw[0]:w[0]}</button>{/if}
+  {#if !active}<button type="button" title={mixed?mw[1]:includesSupport?sw[1]:w[1]} disabled={blocked||!plan} on:click={prepare}>{mixed?mw[0]:includesSupport?sw[0]:w[0]}</button>{/if}
   {#if worker}<small role="status">{w[2]}</small>{/if}
-  {#if copy}{#if includesSupport}<small>{sw[1]}</small>{/if}<small role="status">{w[3]} · {plan?.length??0}</small><small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
+  {#if copy}{#if mixed}<small>{mw[1]}</small>{:else if includesSupport}<small>{sw[1]}</small>{/if}<small role="status">{w[3]} · {plan?.length??0}</small><small>{tw[1]}</small><button type="button" disabled={blocked} on:click={apply}>{cw[0]}</button><a href={copy.url} download={copy.name}>{tw[2]}</a>{/if}
   {#if active}<button type="button" on:click={cancel}>{w[5]}</button>{/if}
   {#if error}<small role="alert">{w[4]}</small>{/if}
  </div>
