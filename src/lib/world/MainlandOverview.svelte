@@ -515,7 +515,7 @@ $: cutWords=groupCutWords[locale];
   if(furnitureOpen&&(furniturePlacing||furnitureGhost)){if(action==='cancel'){e.preventDefault();furnitureTools?.cancel();return;}if(action==='rotate-left'||action==='rotate-right'){e.preventDefault();furnitureTools?.turn(action==='rotate-left'?-1:1);return;}if(action==='confirm'&&mapFocused){e.preventDefault();furnitureTools?.validate();return;}if(action==='undo'||action==='redo'){furnitureTools?.cancel();}else return;}
   if(groupPickupActive){if(action==='cancel'){e.preventDefault();groupPickup?.cancel();}return;}
   if(pasteActive){if(action==='cancel'){e.preventDefault();pasteTools?.cancel();}else if(action==='rotate-left'||action==='rotate-right'){e.preventDefault();pasteTools?.turn(action==='rotate-left'?1:-1);}else if(action==='confirm'&&mapFocused){e.preventDefault();pasteTools?.validate();}return;}
-  if(action==='delete'&&group.length>1&&testExport){if(groupPickupPlan(group)&&furnitureReady&&!furnitureBlocked){e.preventDefault();groupPickup?.prepare();}return;}
+  if(action==='delete'&&group.length>1&&testExport){if(groupPickupPlan(group,freePlacement)&&furnitureReady&&!furnitureBlocked){e.preventDefault();groupPickup?.prepare();}return;}
   if(action==='cut'&&canCutFurniture){if(pasteTools?.capture(true))e.preventDefault();return;}
   if(action==='copy'&&canCopyFurniture){if(pasteTools?.capture())e.preventDefault();return;}
   if(action==='paste'&&testExport&&furnitureReady&&!furnitureBlocked){if(pasteTools?.begin())e.preventDefault();return;}
