@@ -1869,7 +1869,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
     let local=targets.iter().find(|t|is_underwater_grid(&grids[&t.grid_id])).map(|t|t.grid_id.as_str());
     if let Some(gid)=local{
-        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&(scope!=Some(gid)||support_flags.iter().any(|v|*v))||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
+        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&scope!=Some(gid)||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
         let (sx,sy)=underwater_transform_identity(&root,gid)?;
         let checked=underwater_plain_items(&root);
         for (((target,selection),support),storage) in targets.iter().zip(&selections).zip(&support_flags).zip(&storage_flags){
@@ -2704,6 +2704,9 @@ fn mixed_scene_bounded(profile:&[u8],value:&Value,limit:usize)->Result<String,Co
     mixed_scene_bounded_mode(profile,value,limit,false)
 }
 fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:bool)->Result<String,CodecError>{
+    mixed_scene_with_native_witness(profile,value,limit,free_mode,None)
+}
+fn mixed_scene_with_native_witness(profile:&[u8],value:&Value,limit:usize,free_mode:bool,original:Option<&Value>)->Result<String,CodecError>{
     use zeroize::{Zeroize,Zeroizing};
     let bad=CodecError::Json;
     let rows=value.as_array().filter(|r|!r.is_empty()&&r.len()<=limit).ok_or(bad)?;
@@ -2740,6 +2743,10 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
         if root.get("GameInfo").and_then(|v|v.get("Version")).and_then(Value::as_u64)!=Some(643){return Err(bad);}
         let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(Value::as_object).ok_or(bad)?;
         let mut checked_world_grids=HashSet::new();let mut places=Vec::new();let mut allocated=HashMap::<String,Vec<String>>::new();let mut templates=HashMap::new();
+        let native=original.unwrap_or(&root);let mut local_plain=None;let mut local_support=None;
+        fn verified_tree(item:u64,tree:&Value,support:&HashMap<u64,Value>,plain:&HashSet<u64>)->bool{
+            support.get(&item).is_some_and(|t|t["sourcePath"]==tree["sourcePath"]&&t["factor"]==tree["factor"])&&tree["objects"].as_array().is_some_and(|rows|rows.iter().all(|o|o["itemId"].as_u64().is_some_and(|id|if o["child"].is_null(){plain.contains(&id)}else{verified_tree(id,&o["child"],support,plain)})))
+        }
         for row in rows{
             let witness=&row["destination"];let d=destinations.get(&witness.to_string()).ok_or(bad)?;
             let item=row["itemId"].as_str().ok_or(bad)?.parse::<u64>().map_err(|_|bad)?;
@@ -2747,8 +2754,10 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
             let y=row["y"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?;
             let orientation=row["orientation"].as_str().ok_or(bad)?;
             let free_placement=row.get("freePlacement").and_then(Value::as_bool)==Some(true);
+            let local=is_underwater_grid(&grids[&d.grid_id]);
+            if local&&(!free_placement||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)){return Err(bad);}
             if free_placement&&checked_world_grids.insert(witness.to_string()){
-                let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+                let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&d.grid_id)?;
                 if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
             }
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){
@@ -2757,13 +2766,20 @@ fn mixed_scene_bounded_mode(profile:&[u8],value:&Value,limit:usize,free_mode:boo
             }
             let tree=if let Some(scene)=row.get("scene"){
                 let scope=d.layout_path.strip_prefix("SceneLayouts/").and_then(|s|s.split('/').next()).ok_or(bad)?;
-                if !matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
+                if !local&&!matches!(scope,"Village04"|"VillageExpansion01"|"VillageExpansion02"|"VillageExpansion03"|"VillageExpansion04"|"VillageWinnieDLC"){island_scope(witness)?;}
                 Some(checked_support_scene(item,scene)?)
             }else{None};
+            if local{
+                let plain=local_plain.get_or_insert_with(||underwater_plain_items(native));
+                if let Some(t)=tree{
+                    let support=local_support.get_or_insert_with(||crate::storage_source::initial_support_trees(native,native["Player"]["ListInventories"]["0"]["Inventory"].as_object().into_iter().flat_map(|m|m.keys()).filter_map(|k|k.parse::<u64>().ok())));
+                    if !verified_tree(item,t,support,plain){return Err(bad);}
+                }else if !crate::storage_source::is_storage(item)&&!plain.contains(&item){return Err(bad);}
+            }
             if crate::storage_source::is_storage(item){
                 if tree.is_some(){return Err(bad);}
-                let (template,capacity)=if let Some(t)=templates.get(&item){*t}else{crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?};
-                let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&d.grid_id)?;
+                let (template,capacity)=if let Some(t)=templates.get(&item){*t}else if local{crate::storage_source::initial_storage_template(item).ok_or(bad)?}else{crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?};
+                let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&d.grid_id)?;
                 if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
                 templates.insert(item,(template,capacity));
             }
@@ -2935,7 +2951,7 @@ pub(super) fn biome_furniture_candidate(profile:&[u8],plan:&str)->Result<String,
   working.zeroize();*working=r;
  }
  if !add.is_empty(){
-  let r=plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)?;
+  let r=if local&&add.iter().any(|p|p.get("scene").is_some()){mixed_scene_with_native_witness(working.as_bytes(),&Value::Array(add.clone()),MAX_AREA_FURNITURE_CHANGES,true,Some(&root))?}else{plain_group_paste_bounded(working.as_bytes(),&serde_json::to_string(add).map_err(|_|bad)?,MAX_AREA_FURNITURE_CHANGES)?};
   working.zeroize();*working=r;
  }
  Ok(std::mem::take(&mut *working))
