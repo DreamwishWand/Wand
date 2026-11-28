@@ -27,7 +27,7 @@
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
- export let items:readonly MainlandSavedObject[]=[],file:File|null=null,worker:Worker|null=null,grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map(),objects:readonly MainlandSavedObject[]=[],omitted=0,locale:WandLanguage='ja',blocked=false,nextRequest:()=>number,onBegin:()=>void=()=>{},active=false,ghost:GroupPasteCandidate|null=null,axis:WorldSymmetryAxis|null=null,freePlacement=false;
+ export let items:readonly MainlandSavedObject[]=[],file:File|null=null,worker:Worker|null=null,grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map(),objects:readonly MainlandSavedObject[]=[],omitted=0,locale:WandLanguage='ja',blocked=false,nextRequest:()=>number,onBegin:()=>void=()=>{},active=false,ghost:GroupPasteCandidate|null=null,axis:WorldSymmetryAxis|null=null,freePlacement=false,plainLocalOnly=false;
  const areaTransformWords={ja:['左右反転','上下反転'],en:['Flip horizontally','Flip vertically'],fr:['Miroir horizontal','Miroir vertical'],it:['Rifletti orizzontalmente','Rifletti verticalmente'],de:['Horizontal spiegeln','Vertikal spiegeln'],'es-ES':['Voltear horizontalmente','Voltear verticalmente'],'zh-CN':['水平翻转','垂直翻转'],'pt-BR':['Inverter horizontalmente','Inverter verticalmente']} as const;
  const allowed=browser&&testSaveExportEnabled(window.location);
  let clip:readonly DesignClipItem[]=[],defs=new Map<number,Map<number,DesignItemGeometry>>(),pending=new Map<number,{key:string;factor:1|2}>(),counts:Map<number,number>|null=null;
@@ -138,7 +138,7 @@
   }catch{if(epoch===sceneEpoch)sceneError=gs[2];}finally{if(epoch===sceneEpoch)sceneReading=false;}
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
- export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
+ export function capture(cut=false){if(plainLocalOnly&&items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400||p.object.storageKnown||p.object.storage||p.object.subgrid||!['GridOrientation_Up','GridOrientation_Right','GridOrientation_Down','GridOrientation_Left'].includes(p.object.orientation??'')))return false;const captured=cut?captureFurnitureGroup(items,true,freePlacement,true):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
  function beginLocalSupportDuplicate(){
   const captured=localSupportDuplicateSelection(items,freePlacement),f=file;
   if(!captured||!f||!allowed||blocked||!worker||captureWorker)return false;
@@ -157,11 +157,13 @@
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'inspect-subgrids',file:f,parents});return true;
  }
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null,localStorageSources:StorageDuplicateSource[]| (StorageDuplicateSource|null)[]|null=null){
+  if(plainLocalOnly&&duplicate&&items.some(p=>Math.floor(Number(p.object.itemId)/100000)!==400||p.object.storageKnown||p.object.storage||p.object.subgrid))return false;
   const native=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?nativeDuplicateSelection(items,freePlacement):null;
   if(!native&&duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.subgrid))return beginLocalSupportDuplicate();
   const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(native?.clip??storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!areaDoc||data.some((p,i)=>!Number.isInteger(p.orientation)&&(!!cut?.rows[i]?.supportFactor||!!cut?.rows[i]?.storage||!!supportDoc?.items[i]?.support||!!localStorageSources?.[i]))))return false;
+  if(plainLocalOnly&&(!freePlacement||!!native||!!storage||!!supportDoc||!!areaDoc||!!localStorageSources||data.some(p=>Math.floor(p.itemId/100000)!==400||!Number.isInteger(p.orientation))||cut?.rows.some(r=>r.roomSource||r.supportSource||r.supportFactor||r.storage)))return false;
   if(cut&&!cutClipboardMatches(cut,file,scope,objects,freePlacement)){error=true;return false;}
   cancel();onBegin();source=file;active=true;clip=[...data];nativeSources=native?.sources??null;storageSources=native?null:localStorageSources??storage?.sources??null;copied=false;cutRows=cut?.rows??null;activeCut=cut;scene=sceneDoc;supportScene=supportDoc;areaScene=areaDoc;sceneAnchor=areaDoc?.anchor??supportDoc?.anchor??sceneDoc?.anchor??'corner';
   if(supportDoc||areaDoc){supportRequest=nextRequest();worker.postMessage({command:areaDoc?'area-scene-geometry':'mixed-scene-geometry',requestId:supportRequest,scene:areaDoc??supportDoc,locale});}
@@ -177,7 +179,7 @@
  function receive(e:MessageEvent){const d=e.data;if(supportRequest&&d?.requestId===supportRequest){supportRequest=0;supportValid=d.kind===(areaScene?'area-scene-geometry':'mixed-scene-geometry')&&d.valid===true;if(!supportValid)error=true;else if(Array.isArray(d.names))sceneNames=new Map([...sceneNames,...d.names.filter((v:unknown)=>Array.isArray(v)&&v.length===2&&Number.isSafeInteger(v[0])&&typeof v[1]==='string')]);return;}const req=pending.get(d?.requestId);if(!req)return;pending.delete(d.requestId);pending=new Map(pending);
   if(d.kind!=='design-shapes'||d.key!==req.key||!Array.isArray(d.result)){error=true;return;}
   const expected=new Set(clip.map(p=>p.itemId));
-  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||(g.layer!=='furniture'&&!(freeGroup&&g.layer==='surface'&&Math.floor(g.itemId/100000)===400)&&!(nativeOperation&&(g.layer==='landscape'||g.nativeType==='Building'))&&!areaScene?.items.some(p=>p.itemId===g.itemId&&p.network?.kind===(g.layer==='ground'?'road':g.layer==='fence'?'fence':null)))||g.surfaceCapable&&!areaScene?.items.some(p=>p.itemId===g.itemId&&p.support)&&!supportScene?.items.some(p=>p.itemId===g.itemId&&p.support)&&!(nativeSources??cutRows)?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
+  if(d.result.length!==expected.size||d.result.some((g:DesignItemGeometry)=>!expected.has(g.itemId)||(g.layer!=='furniture'&&!(freeGroup&&g.layer==='surface'&&Math.floor(g.itemId/100000)===400)&&!(nativeOperation&&(g.layer==='landscape'||g.nativeType==='Building'))&&!areaScene?.items.some(p=>p.itemId===g.itemId&&p.network?.kind===(g.layer==='ground'?'road':g.layer==='fence'?'fence':null)))||g.surfaceCapable&&!(freeGroup&&g.layer==='surface')&&!areaScene?.items.some(p=>p.itemId===g.itemId&&p.support)&&!supportScene?.items.some(p=>p.itemId===g.itemId&&p.support)&&!(nativeSources??cutRows)?.some(r=>r.supportFactor&&Number(r.itemId)===g.itemId)||!g.shapes)){error=true;return;}
   const next=new Map(defs);for(const g of d.result as DesignItemGeometry[]){if(g.name)sceneNames=new Map(sceneNames).set(g.itemId,g.name);const factors=new Map(next.get(g.itemId));factors.set(req.factor,g);next.set(g.itemId,factors);}defs=next;
  }
  export function hover(p:{x:number;y:number}|null){if(active&&!candidate&&!writing&&!copy&&!symmetryPicking&&!mirrorOnly)point=p;}
@@ -195,7 +197,7 @@
   const next=transformAreaScene(areaScene,defs,mode);if(!next){error=true;return;}
   areaScene=next;clip=next.items.map(({support,network,...p})=>p);candidate=null;error=false;
  }
- export function turn(delta:number){if(!geometryReady||writing||copy||mirrorOnly)return;if(areaScene){transformArea(delta>0?'right':'left');return;}const q=rotateFurnitureGroup(clip,defs,delta,nativeOperation&&freeGroup);if(!q||supportScene&&q.some((p,i)=>p.itemId!==supportScene!.items[i]?.itemId)){error=true;return;}clip=q;candidate=null;error=false;}
+ export function turn(delta:number){if(!geometryReady||writing||copy||mirrorOnly)return;if(areaScene){transformArea(delta>0?'right':'left');return;}const q=rotateFurnitureGroup(clip,defs,delta,freeGroup);if(!q||supportScene&&q.some((p,i)=>p.itemId!==supportScene!.items[i]?.itemId)){error=true;return;}clip=q;candidate=null;error=false;}
  export function validate(){
   if(!active||!allowed||blocked||!ready||!file||source!==file||!candidate||writing||copy)return;
   const f=file,q=candidate,plan=nativeSources?groupCutPlan(nativeSources,q,freeGroup):cutRows?groupCutPlan(cutRows,q,freeGroup):q.rows;
