@@ -1,5 +1,6 @@
 import type {CompleteItemMasterRecord,PublicCompleteItemMaster,ItemMasterLocale} from './public-item-master.ts';
 import {createCanonicalRecipeReader} from '../acquisition/canonical-recipes.ts';
+import {usableItemName} from './display-name.ts';
 const positive=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 const nonnegative=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 export function itemPageNativeFacts(record:Pick<CompleteItemMasterRecord,'nativeCategory'|'sourceAttributes'>){
@@ -34,10 +35,10 @@ export async function readItemPageRelations(db:PublicCompleteItemMaster,record:P
   const ids=[...new Set([...seriesIds,...recipeIds])].sort((a,b)=>a-b);
   const names=new Map<number,RelatedItemTile>();
   for(let start=0;start<ids.length;start+=500){
-    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope','nameVerified','names.'+locale,'names.en'].filter((v,i,a)=>a.indexOf(v)===i))){
-      if(!row||row.values.definitionScope==='other_definition'||row.values.nameVerified!==true)continue;
-      const label=row.values['names.'+locale]??row.values['names.en'];
-      if(typeof label==='string'&&label.trim())names.set(row.itemId,{itemId:row.itemId,name:label});
+    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope','names.'+locale,'names.en'].filter((v,i,a)=>a.indexOf(v)===i))){
+      if(!row||row.values.definitionScope==='other_definition')continue;
+      const label=[row.values['names.'+locale],row.values['names.en']].find(usableItemName);
+      if(label)names.set(row.itemId,{itemId:row.itemId,name:label});
     }
   }
   const tiles=(input:number[])=>input.flatMap(other=>{const tile=names.get(other);return tile?[tile]:[];})

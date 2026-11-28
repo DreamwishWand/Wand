@@ -6,6 +6,7 @@
   import {itemEntityHref,itemPageCopy} from './entity-item-url';
   import type {CompleteItemMasterRecord} from './public-item-master';
   import {currentItemViewMaster} from './item-view-master';
+  import {displayItemName} from './display-name';
   import {collectionFamilyLabel} from '$lib/collection/copy';
   import {CollectionRuntime,type CollectionItem,type CollectionEntry} from '$lib/collection/runtime';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy';
@@ -37,7 +38,7 @@
   $: copy=collectionInterfaceCopy(locale);
   $: labels=itemPageCopy(locale);
   $: memoryCopy=memoryPieceCopy(locale);
-  $: name=record?.names[locale]??record?.names.en??'';
+  $: name=record?displayItemName(record.names,locale)??'':'';
   $: memory=getMemorySources(itemId);
   $: bits=memory?knownMemoryBits(entry,memory.numberOfShards,Boolean($localSaveSession.file)):null;
   $: eligible=memory?maskPreviewEligible(memory.mask.sha256,memory.numberOfShards):false;
@@ -52,8 +53,8 @@
     try{
       const found=await (await currentItemViewMaster(base)).getItem(itemId);
       if(!alive)return;
-      record=found?.itemId===itemId&&found.definitionScope!=='other_definition'&&found.nameVerified&&
-        Object.values(found.names).some(Boolean)?found:null;
+      record=found?.itemId===itemId&&found.definitionScope!=='other_definition'&&
+        displayItemName(found.names,locale)!==null?found:null;
     }catch{if(alive)failed=true;}
     finally{if(alive)loading=false;}
     if(!alive||!record)return;

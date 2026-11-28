@@ -1,5 +1,6 @@
 import {openCurrentItemDatabase,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import {collectionSourceRoot,type CollectionTopCategory} from './category-hierarchy.ts';
+import {usableItemName} from '../items/display-name.ts';
 import {COLLECTION_DB01_FACETS,COLLECTION_DB01_SUBMENUS,type CollectionDb01Index,type CollectionDb01Pair,type CollectionDb01SubmenuCode,type CollectionDb01NativeSubtype,type CollectionDb01ActivityType} from './db01-native-facets.ts';
 
 export interface CollectionCatalogRow {
@@ -57,7 +58,7 @@ export async function loadCollectionSupplement(master:PublicCompleteItemMaster,s
 }
 /** Only item-like definitions with a known Collection destination enter the
  * user-facing catalog. Source relations retain their original native types. */
-export function projectCompleteCollection(source:CompleteItemMasterFacets,supplement:readonly CollectionSupplement[]=[]):CollectionDb01Index{
+export function projectCompleteCollection(source:CompleteItemMasterFacets,supplement:readonly CollectionSupplement[]=[],displayIds?:ReadonlySet<number>):CollectionDb01Index{
   const nativeSubtypeByItem=new Map<number,CollectionDb01NativeSubtype>();
   const itemsByNativeSubtype=new Map<string,number[]>();
   const nativeSubtypeNames=new Map<string,string|null>();
@@ -80,6 +81,7 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
   const candidateMenus=new Map(source.categoryItems);
   const recipeResults=new Set(source.craftingRecipeResultItems.map(row=>row[0]));
   for(const [id,type,code,name] of source.nativeSubtypeItems){
+    if(displayIds&&!displayIds.has(id))continue;
     const row=allowed.get(id);const supplemental=extra.get(id);
     if(!row&&!(supplemental&&supplementalFamilies.has(type)))continue;
     const codes=(candidateMenus.get(id)??[]).filter(x=>menus.has(x)) as CollectionDb01SubmenuCode[];
@@ -197,16 +199,23 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
     const [supplement,furnitureKindLabels]=await Promise.all([
       loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
     ]);
-    const projected=projectCompleteCollection(source,supplement);
-    const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
-    const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
-    const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
+    const names=new Map<number,Record<string,string>>();
+    for(const row of supplement)for(const [locale,name] of Object.entries(row.names)){
+      if(!usableItemName(name))continue;
+      const labels=names.get(row.itemId)??{};labels[locale]=name;names.set(row.itemId,labels);
+    }
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){
-        if(!index.rootsByItem!.has(id))continue;
+        if(!usableItemName(name))continue;
         const row=names.get(id)??{};row[locale]=name;names.set(id,row);
       }
     }));
+    // Exclude rows without any usable original localized label from the
+    // public browsing projection and denominator, not from the source DB.
+    // Partially translated records remain visible; no icon/name guessing.
+    const projected=projectCompleteCollection(source,supplement,new Set(names.keys()));
+    const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
+    const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
     const rows:CollectionCatalogRow[]=[];
     for(const [id,root] of index.rootsByItem!){
       const labels=names.get(id)??{};
