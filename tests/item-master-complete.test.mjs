@@ -612,3 +612,14 @@ test('Shop bundle fallback names and components resolve from current Item DB',as
   assert.equal(view.records.length,111);
   assert.equal(view.historicalCoverageComplete,false);
 });
+
+test('earlier original census extends first-observed and introduction versions without release claims',async()=>{
+  const {fetcher}=site();
+  const db=await openCurrentItemDatabase('/Wand',fetcher);
+  const fields=['history.firstObservedVersion','history.introducedVersion','history.introducedAfterVersion','history.contentReleaseId'];
+  const rows=await db.getItemFields([40000531,40006096,31400246],fields);
+  assert.deepEqual(rows.map(r=>r?.values['history.firstObservedVersion']),['1.24.13','1.25.0','1.25.3']);
+  assert.deepEqual(rows.map(r=>r?.values['history.introducedVersion']??null),[null,'1.25.0','1.25.3']);
+  assert.deepEqual(rows.map(r=>r?.values['history.introducedAfterVersion']??null),[null,'1.24.13','1.25.0']);
+  assert.deepEqual(rows.map(r=>r?.values['history.contentReleaseId']??null),[null,null,null]);
+});
