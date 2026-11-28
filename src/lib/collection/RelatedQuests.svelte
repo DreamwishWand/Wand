@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {onDestroy} from 'svelte';
+  import {onMount,onDestroy} from 'svelte';
   import {base} from '$app/paths';
   import {collectionQuestCopy} from './quest-copy.ts';
   import type {CollectionQuestSummary,CollectionRelatedQuest}
@@ -13,6 +13,7 @@
   export let locale:string='ja';
   $: copy=collectionQuestCopy(locale);
   let expanded=false;
+  onMount(()=>{expanded=true;});
   let requestCounter=0;
   let requestedItemId:number|null=null;
   let loading=false;
@@ -69,12 +70,8 @@
   });
 </script>
 
-<details class="inspector-details collection-related-quests"
-  on:toggle={(event)=>{
-    expanded=(event.currentTarget as HTMLDetailsElement).open;
-    if(expanded&&requestedItemId!==itemId)load(itemId);
-  }}>
-  <summary>{copy.title}</summary>
+<section class="inspector-details collection-related-quests">
+  <h3 class="item-section-heading">{copy.title}</h3>
   {#if expanded}
     {#if loading}
       <p class="quest-evidence-status" role="status">{copy.loading}</p>
@@ -115,9 +112,10 @@
       {/if}
     {/if}
   {/if}
-</details>
+</section>
 
 <style>
+  .item-section-heading{font-size:14px;margin:0 0 8px;color:var(--wand-text)}
   .collection-related-quests{margin:0 0 12px}
   .quest-evidence-section{margin:9px 0}
   .quest-evidence-section p{font-size:12px;font-weight:600;margin:0 0 6px}

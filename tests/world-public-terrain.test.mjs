@@ -19,6 +19,17 @@ test('public DB01 geometry uses canonical fields and no fallback shape for missi
 });
 
 import {terrainFloorAt,terrainWarnings,projectTerrainSession} from '../src/lib/world/terrain-binding.ts';
+test('structural recovery flags survive terrain projection and shape point parsing without edit authorization',()=>{
+ const scopes=[{key:'A',witness:{nativeGridId:0,nativeSizeX:10,nativeSizeY:10,tessellationFactor:1}}];
+ const rows=[{localOrdinal:1,localGridOrdinal:1,itemId:'30000001',recordKind:'full',x:1,y:2,orientation:'GridOrientation_Down',coordinatesObserved:true},{localOrdinal:2,localGridOrdinal:1,itemId:'30000002',recordKind:'full',x:2,y:2,orientation:'GridOrientation_Down',coordinatesObserved:true}];
+ const raw={contract:'wand.db05.db04-terrain-session@1',rows,bindings:[{localOrdinal:1,sourceRefIndex:0,savedFactor:1,sourceLocalCoordinateMappingVerified:true,recoveryCandidate:true},{localOrdinal:2,sourceRefIndex:0,savedFactor:1,sourceLocalCoordinateMappingVerified:true,recoveryCandidate:false}],sourceCoverageComplete:false,effectivePlacementVerified:false,worldCoordinatesVerified:false,placementLegalityVerified:false,saveWritingAuthorized:false};
+ const [result]=projectTerrainSession(raw,scopes);
+ assert.equal(result.receipt.points[0].recoveryCandidate,true);
+ assert.equal(result.receipt.points[1].recoveryCandidate,undefined);
+ assert.equal(result.receipt.saveWritingAuthorized,false);
+ assert.throws(()=>projectTerrainSession({...raw,bindings:[{...raw.bindings[0],sourceLocalCoordinateMappingVerified:false}]},scopes));
+ assert.throws(()=>projectTerrainSession({...raw,bindings:[{...raw.bindings[0],recoveryCandidate:'true'}]},scopes));
+});
 test('native factor mapping and per-cell outside/mismatched floor evidence',()=>{
  const t={raster:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,512,4,4])},factor:2,verifiedGridOrdinals:[1]};
  assert.equal(terrainFloorAt(t,1,0),4);assert.equal(terrainFloorAt(t,2,0),512);

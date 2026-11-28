@@ -23,6 +23,7 @@ import {buildCharacterUnlockSources} from './character-unlock-sources.mjs';
 import {buildStoryUnlockSources} from './story-unlock-sources.mjs';
 import {loadHistoricalStarpathRewards,loadStarpathRewardFilters} from './historical-starpath-rewards.mjs';
 import {loadEvolutionSources} from './evolution-sources.mjs';
+import {buildProfileLevelRewards} from './profile-level-rewards.mjs';
 import {buildMemoryNativeReferences} from './memory-native-references.mjs';
 import {buildMemoryLootSources} from './memory-loot-sources.mjs';
 import {buildMemoryDefaultContent} from './memory-default-content.mjs';
@@ -1387,7 +1388,7 @@ function memoryAppearanceSources(rows,source){
     ordinary:[...result.values()].filter(e=>e.category==='ordinary_gameplay').length}));
   return result;
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels){
   const characterUnlock=buildCharacterUnlockSources(rows,source,questFlows.characterUnlockQuestKinds);
   const storyUnlock=buildStoryUnlockSources(rows,source,questFlows.questKinds,questFlows.characterUnlockQuestKinds);
   const memoryAppearance=memoryAppearanceSources(rows,source);
@@ -1447,6 +1448,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   // Evolution is a dependent acquisition path, never an independent sale.
   // Do not infer a base route or transfer its categories to the evolved item.
   const columns=new Map();
+  const directCategories=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
     check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){0,16}$/.test(field)&&!field.split('.').some(k=>['__proto__','constructor','prototype'].includes(k)),'COLUMN_NAME');
@@ -1666,7 +1668,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(container.upgradedFurnitureItemId!==null)add('storage.upgradedFurnitureItemId',row.itemId,container.upgradedFurnitureItemId);
       if(container.configuredContentItemIds.length)add('storage.configuredContentItemIds',row.itemId,container.configuredContentItemIds);
     }
-    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[])];
+    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[]),...(protoAcquisition.profileUpdateGrants.get(row.itemId)??[])];
     if(extraSources.length){
       add('acquisition.additionalSources',row.itemId,extraSources);
       sourceKeys(row.itemId,'additional',extraSources,l=>[l.kind,l.sourceId]);
@@ -1713,12 +1715,24 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.eventRecurringLootSources',row.itemId,recurringLoot);
       categorySet.add('in_game_limited_event');
     }
+    const keyholeTransforms=protoAcquisition.keyholeTransforms.get(row.itemId);
+    if(keyholeTransforms?.length)add('acquisition.keyholeTransformSources',row.itemId,keyholeTransforms);
+    const miniEventRewards=protoAcquisition.miniEventRewards.get(row.itemId);
+    if(miniEventRewards?.length){
+      add('acquisition.miniEventRewardSources',row.itemId,miniEventRewards);
+      categorySet.add('in_game_limited_event');
+    }
     const eventLootSources=eventLoot.get(row.itemId);
     if(eventLootSources?.length){
       add('acquisition.eventLootPresentSources',row.itemId,eventLootSources);
       categorySet.add('in_game_limited_event');
     }
     if(rewardLinks.some(link=>link.amount!==null))categorySet.add('ordinary_gameplay');
+    const levelRewards=profileLevels.get(row.itemId);
+    if(levelRewards?.length){
+      add('acquisition.profileLevelRewardSources',row.itemId,levelRewards);
+      categorySet.add('ordinary_gameplay');
+    }
     const critters=ordinaryCritters.get(row.itemId);
     if(critters?.length){
       add('acquisition.ordinaryCritterSources',row.itemId,critters);
@@ -1849,7 +1863,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('acquisition.evolutionBaseItemId',row.itemId,evolved.baseItemId);
     }
     const effective=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>categorySet.has(c));
-    if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
+    if(effective.length)directCategories.set(row.itemId,effective);
     if(acquisition){
       const summary=acquisition.summary.get(row.itemId);
       const relations=acquisition.relations.get(row.itemId);
@@ -1875,6 +1889,30 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       }
     }
   }
+  // Resolve the full direct-source union first: an evolution target can
+  // have a lower Item ID than its base. OnCompleted (RVA 4193730)
+  // selects EvolvingConditions[level-1] and calls AddItem(target,1)
+  // at 419393E. Inherit only verified base acquisition categories,
+  // never invent an independent free or live sale route.
+  const categoryOrder=['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'];
+  let classifiedEvolutions=0,newlyClassifiedEvolutions=0;
+  for(const row of rows){
+    const direct=directCategories.get(row.itemId)??[];
+    const e=evolution.byTarget.get(row.itemId);
+    const inherited=e?directCategories.get(e.baseItemId)??[]:[];
+    if(e&&inherited.length){
+      classifiedEvolutions++;
+      if(!direct.length)newlyClassifiedEvolutions++;
+      add('acquisition.evolutionAcquisitionSources',row.itemId,inherited.map(category=>({
+        ...e,kind:'item_evolution_acquisition',category,sourceItemId:e.baseItemId,configuredGrantAmount:1,
+        nativeCompletionVerified:true,nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
+        sourceCategoryInherited:true,directAcquisitionVerified:false
+      })));
+    }
+    const effective=categoryOrder.filter(c=>direct.includes(c)||inherited.includes(c));
+    if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
+  }
+  console.log('DB01_EVOLUTION_ACQUISITION '+JSON.stringify({targets:evolution.byTarget.size,classifiedTargets:classifiedEvolutions,newlyClassifiedTargets:newlyClassifiedEvolutions}));
   const memoryReferences=buildMemoryNativeReferences(source,rows,memoryAppearance);
   for(const row of rows){
     const links=memoryReferences.get(row.itemId);
@@ -2173,6 +2211,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const questFlows=loadQuestFlowColumns(project,source,rows);
   const historicalStarpath=loadHistoricalStarpathRewards(project,source,rows);
   const evolution=loadEvolutionSources(project,source,rows);
+  const profileLevels=buildProfileLevelRewards(project,source,rows,"dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623");
   const starpathFilters=loadStarpathRewardFilters(project,source,rows,historicalStarpath);
   const catalogFacts=buildCatalogFacts(source,rows);
   const storeLayout=buildStoreLayoutFacts(source,rows,catalogFacts.storeScreens);
@@ -2227,7 +2266,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
       index.shards[path]=write(path,{schema:'wand.item-master.shard@1',bucket:key,items:buckets[i]},buckets[i].length);
     }
-    write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
+    index.assets['explore.json']=write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
       universeTags:source.universeTags},explore.length);
     index.assets['collection-facets.json']=write('collection-facets.json',f,f.sourceItemCount);
     if(premiumBundles)index.assets['premium-bundles.json']=write('premium-bundles.json',{...premiumBundles.catalog,release:e.release},premiumBundles.catalog.definitions.length);
@@ -2254,7 +2293,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution);
+    writeFieldColumns(rows,e.release,write,index.assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule,storeLayout,originalPrices,questFlows,placementContexts,premiumBundles,nativeExpansion,source,historicalStarpath,starpathFilters,evolution,profileLevels);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));

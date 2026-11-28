@@ -6,9 +6,19 @@ import {chromium} from 'playwright';
 import {checkLinearSceneComposite} from './photo-mode-linear-composite-smoke.mjs';
 import {checkNativeMakeupBake} from './photo-mode-native-makeup-smoke.mjs';
 import {checkNativeFaceNormalBake} from './photo-mode-native-face-normal-smoke.mjs';
+import {checkNativeHairSurface} from './photo-mode-native-hair-smoke.mjs';
 
 const index=JSON.parse(await readFile('build/photo-mode-preview/index.json','utf8'));
 assert.equal(index.schema,'wand.photo-mode.pages-test@2');
+assert.equal(index.nativeHair?.schema,'wand.photo-mode.hair-assets@1','required hair package must be published');
+assert.equal(Object.keys(index.nativeHair.items).length,24);
+assert.equal(Object.keys(index.nativeHair.textures).length,72);
+const hairMembers=new Map();
+for(const variants of Object.values(index.nativeHair.items))for(const row of Object.values(variants))for(const p of row.parts)hairMembers.set(p.asset.sha256+'.wha',p.asset);
+for(const t of Object.values(index.nativeHair.textures))hairMembers.set(t.asset.sha256+'.wht',t.asset);
+assert.equal(hairMembers.size,120);
+for(const [name,e] of hairMembers){const raw=await readFile('build/photo-mode-preview/'+name);assert.equal(raw.length,e.bytes);assert.equal(createHash('sha256').update(raw).digest('hex'),e.sha256)}
+console.log('Required native hair package: 120 assets verified');
 assert.equal(index.studioAssets.lightingParityVerified,false);
 for(const [key,ext,bytes,sha] of [['reflection','.wlc',786420,'8c77ed0eddb2a7ee856d6480eaf293a735df7600c2c3be540f3378c8a85feec2'],['lut','.wlt',98304,'63becd39f68846f7d4f9b3ac570bfb909b07628534ebd42f36d38e1fe8cd0dc8']]){
  const entry=index.studioAssets[key];assert.deepEqual(entry,{sha256:sha,bytes});const raw=await readFile('build/photo-mode-preview/'+sha+ext);assert.equal(raw.length,bytes);assert.equal(createHash('sha256').update(raw).digest('hex'),sha);
@@ -93,6 +103,7 @@ try{
   await checkNativeFaceNormalBake(page);
   await checkNativeMakeupBake(page);
   await checkLinearSceneComposite(page);
+  await checkNativeHairSurface(page);
   const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
@@ -123,6 +134,14 @@ try{
         const model=option.kind==='pair'?option.asset:index.models.female;const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads.female[target.index];const prefix=base+'/photo-mode-preview/';
         assert.ok(eyeRequests.has(prefix+index.expressionWeights.clips[option.sourceSha256].sha256+'.wec'),'native curve asset requested');
         for(const role of ['skull','eyelash','teeth_lower','teeth_upper']){const m=index.expressionWeights.meshes[head.parts[role].asset.sha256];assert.ok(m&&eyeRequests.has(prefix+m.asset.sha256+'.wem'),'native head expression part '+role)}
+      }
+      if(option.kind!=='mermaid'){
+        const h=index.nativeHair,sex=b===0?'male':'female',selected=h.standard[sex],row=h.items[String(selected.itemId)][sex],prefix=base+'/photo-mode-preview/';
+        for(const part of row.parts){
+          assert.ok(eyeRequests.has(prefix+part.asset.sha256+'.wha'),'source hair geometry requested');
+          const m=h.materials[part.material];
+          for(const k of [m.mask,m.maps,m.normal])assert.ok(eyeRequests.has(prefix+h.textures[k].asset.sha256+'.wht'),'source hair mip chain requested');
+        }
       }
       if(option.kind!=='mermaid'){
         const sex=b===0?'male':'female',model=option.kind==='pair'?option.asset:index.models[sex],target=index.headGeometry.targets[model.sha256],head=index.headGeometry.heads[sex][target.index],norm=index.nativeFaceNormals,prefix=base+'/photo-mode-preview/';

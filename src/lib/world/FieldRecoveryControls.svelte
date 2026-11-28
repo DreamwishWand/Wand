@@ -41,7 +41,7 @@
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,quantity=0,expected='',open=false,error=false;
  $: w=words[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
- $: outdoorPlan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
+ $: outdoorPlan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.recoveryCandidate===true&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
  $: plan=selection===null?outdoorPlan:selection.length>0&&selection.length<=MAX_GRID_MIXED_EDITS&&new Set(selection.map(p=>p.localOrdinal)).size===selection.length&&selection.every(p=>isEightWay(p.expectedOrientation))?selection:null;
  $: key=JSON.stringify(plan);
  $: if(source&&(source!==file||expected!==key||blocked))cancel();
@@ -78,9 +78,9 @@
  function apply(){if(!allowed||blocked||!copy||!file||file!==source||key!==expected)return;if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}cancel();onApplied();}
  onDestroy(cancel);
 </script>
-{#if allowed&&plan}
+{#if allowed&&(plan||selection===null&&items.length>0&&items.every(p=>p.object.activityItem||p.object.recoveryCandidate))}
  <div class="field-recovery">
-  {#if !open}<button type="button" disabled={blocked} on:click={()=>request(true)}>{w[0]}</button>
+  {#if !open}<button type="button" disabled={blocked||!plan} title={!plan?w[6]:undefined} on:click={()=>request(true)}>{w[0]}</button>
   {:else}
    {#if worker}<small role="status">{w[5]}</small>{:else if rows.length&&!copy}<strong>{w[0]} × {quantity.toLocaleString(locale)}</strong><div class="destination-list" role="group" aria-label={w[1]}>{#each rows as r (r.ordinal)}<button type="button" class="destination-row" aria-pressed={destination===r.ordinal} disabled={r.afterUsed===null} on:click={()=>destination=r.ordinal}>
     {#if r.parentItemId!==null&&artwork.get(r.parentItemId)}<img src={artwork.get(r.parentItemId)} alt="" loading="lazy"/>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="3"/><path d="M8 6V4h8v2M3 12h18M10 11v3h4v-3"/></svg>{/if}

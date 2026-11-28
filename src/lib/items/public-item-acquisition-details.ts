@@ -49,6 +49,7 @@ const extensionFields={
   conditionalQuest:'acquisition.conditionalQuestSources',
   memorySpawn:'acquisition.classifiedMemorySpawnSources',
   memoryDefaultContent:'acquisition.memoryDefaultContentSources',
+  miniEventReward:'acquisition.miniEventRewardSources',
   eventLootPresent:'acquisition.eventLootPresentSources',
   eventRecurringLoot:'acquisition.eventRecurringLootSources',
   configuredStore:'acquisition.ordinaryConfiguredStoreSource',
@@ -58,6 +59,8 @@ const extensionFields={
   lootPresent:'acquisition.ordinaryLootPresentSources',
   critterFeeding:'acquisition.ordinaryCritterFeedingSources',
   questLoot:'acquisition.questAdditionalLootSources',
+  evolutionAcquisition:'acquisition.evolutionAcquisitionSources',
+  profileLevel:'acquisition.profileLevelRewardSources',
   historicalStarpath:'acquisition.historicalStarpathSources'
 } as const;
 export type ClassificationExtensionFamily=keyof typeof extensionFields;
@@ -100,6 +103,21 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           evidence.nativeInitializationVerified===true&&evidence.guaranteedGrantVerified===false&&
           evidence.grantVerified===false&&evidence.playerOwnershipVerified===false,'EXTENSION_INITIAL_INVENTORY');
         output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
+      }
+      if(family==='miniEventReward'){
+        check(categories.includes('in_game_limited_event')&&evidence.category==='in_game_limited_event'&&
+          evidence.kind==='mini_event_reward_association'&&id(evidence.targetItemId)&&
+          typeof evidence.eventId==='string'&&/^[A-Za-z][A-Za-z0-9_]+$/.test(evidence.eventId)&&evidence.eventId!=='TestEv'&&
+          (evidence.configuredAmount===null||id(evidence.configuredAmount))&&(evidence.featuringPriority===null||id(evidence.featuringPriority))&&
+          typeof evidence.sourcePosition==='number'&&Number.isSafeInteger(evidence.sourcePosition)&&evidence.sourcePosition>=0&&
+          evidence.sourcePath==='Rewards['+evidence.sourcePosition+'].ItemId'&&typeof evidence.sourceRecordIndex==='number'&&
+          Number.isSafeInteger(evidence.sourceRecordIndex)&&evidence.sourceRecordIndex>=1947&&evidence.sourceRecordIndex<=1965&&evidence.sourceRecordIndex!==1949&&
+          typeof evidence.sourceRecordSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourceRecordSha256)&&
+          typeof evidence.sourcePayloadSha256==='string'&&/^[a-f0-9]{64}$/.test(evidence.sourcePayloadSha256)&&
+          evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.nativeTimeLimitedMembershipVerified===true&&
+          evidence.exactGrantMechanismVerified===false&&evidence.guaranteedGrantVerified===false,'EXTENSION_MINI_EVENT_REWARD');
+        output.push({family,category:'in_game_limited_event',evidence,sourceId:null,relatedIds:[]});continue;
       }
       if(family==='eventRecurringLoot'){
         const bounded=evidence.boundedLocalDateGate,blocker=evidence.kind==='event_recurring_blocker_loot';
@@ -230,6 +248,38 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           typeof evidence.sourcePath==='string'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(evidence.sourcePath)&&
           evidence.guaranteedGrantVerified===false,'EXTENSION_QUEST_ADDITIONAL_LOOT');
         output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
+      if(family==='evolutionAcquisition'){
+        const category=categories.find(c=>c===evidence.category);
+        check(category!==undefined&&evidence.kind==='item_evolution_acquisition'&&id(evidence.sourceItemId)&&
+          evidence.baseItemId===evidence.sourceItemId&&id(evidence.targetItemId)&&evidence.targetItemId!==evidence.baseItemId&&
+          typeof evidence.stepIndex==='number'&&Number.isSafeInteger(evidence.stepIndex)&&evidence.stepIndex>=0&&
+          evidence.sourcePath==='source.EvolvingConditions['+evidence.stepIndex+']'&&id(evidence.configuredAmount)&&
+          (evidence.previousConfiguredTargetItemId===null||id(evidence.previousConfiguredTargetItemId))&&
+          ['GiftToCharacter','WaterPlant','MineMineral','CatchFish'].some(k=>k===evidence.objectiveKind)&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&evidence.sourceIl2cppDumpSha256===db.release.sourceIl2cppDumpSha256&&
+          (evidence.sourceFileSha256===sha?.Clothing||evidence.sourceFileSha256===sha?.Tool)&&
+          evidence.requiresBaseItem===true&&evidence.progressCounterSemanticsVerified===false&&
+          evidence.configuredGrantAmount===1&&evidence.nativeCompletionVerified===true&&
+          evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.sourceCategoryInherited===true&&evidence.directAcquisitionVerified===false&&
+          evidence.guaranteedGrantVerified===false,'EXTENSION_EVOLUTION_ACQUISITION');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
+      if(family==='profileLevel'){
+        const designer=evidence.kind==='designer_level_reward';
+        check(categories.includes('ordinary_gameplay')&&evidence.category==='ordinary_gameplay'&&
+          (designer||evidence.kind==='player_level_reward')&&id(evidence.targetItemId)&&id(evidence.configuredAmount)&&
+          typeof evidence.level==='number'&&Number.isSafeInteger(evidence.level)&&evidence.level>=2&&evidence.level<=(designer?10:49)&&
+          id(evidence.configuredPoints)&&evidence.pointKind===(designer?'pixel_dust':'xp')&&
+          evidence.sourceRecord===(designer?'DesignerLevelInfo':'PlayerInfo')&&evidence.sourceRecordIndex===(designer?230:401)&&
+          evidence.sourceRecordSha256===(designer?'200d4eec21f964b1746920771f371497245fd7ff3d3dd7d4a5d4c58af0ae56a6':'bc6f11a35b1bf3ca70c15a02ce1ae56981b2fcfbfdfc061b7852ed1ec925817a')&&
+          evidence.sourcePayloadSha256===(designer?'a4c350f1a891437e5b9c55c8b427502fb2d15d8952fe53372157786cb55f93b9':'47f95b74ada81d0a435b93b9636e3aa5105898ad3c5757816c7ffbb394471f7b')&&
+          evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+          evidence.sourceGameVersion===db.release.target.gameVersion&&typeof evidence.sourcePath==='string'&&
+          (designer?/^DesignerLevels\[\d+\]\.ItemReward$/:/^PlayerLevels\[\d+\]\.ItemRewards\[\d+\]$/).test(evidence.sourcePath)&&
+          evidence.selectionRule==='old_level_exclusive_new_level_inclusive'&&evidence.guaranteedGrantVerified===false,'EXTENSION_PROFILE_LEVEL');
+        output.push({family,category:'ordinary_gameplay',evidence,sourceId:null,relatedIds:[]});continue;
       }
       if(family==='historicalStarpath'){
         check(evidence.sourcePlatform==='Switch'&&(
@@ -456,6 +506,30 @@ export interface MemoryAppearanceEvidence {
   readonly guaranteedGrantVerified:false;
   readonly currentAvailabilityVerified:false;
 }
+export interface KeyholeTransformEvidence {
+  readonly kind:'keyhole_transform_target';
+  readonly keyholeId:string;
+  readonly targetItemId:number;
+  readonly sourceRecordIndex:number;
+  readonly sourcePath:'TransformInto';
+  readonly isBlueprint:number|null;
+  readonly keepItemsPlacement:number|null;
+  readonly transferToBackpack:number|null;
+  readonly trackOnlyBackpack:number|null;
+  readonly activeWhenPresent:boolean;
+  readonly activeWhenNonempty:boolean;
+  readonly requirementLevels:readonly Readonly<{
+    levelIndex:number;partialSize:number|null;partialNoRepeatSize:number|null;
+    neededItems:readonly Readonly<{itemId:number;configuredAmount:number;sourcePosition:number;statePresent:boolean;canonicalItemResolved:boolean}>[];
+  }>[];
+  readonly sourceGameVersion:string;
+  readonly sourceProtoDbSha256:string;
+  readonly sourceProjectionSha256:string;
+  readonly conditionsSemanticsVerified:false;
+  readonly requiredStateSemanticsVerified:false;
+  readonly inventoryGrantVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface ItemAcquisitionSourceDetails {
   readonly itemId:number;
   readonly sourceGameVersion:string;
@@ -471,6 +545,8 @@ export interface ItemAcquisitionSourceDetails {
   readonly ordinaryProductionStatus:'indexed'|'not_indexed';
   readonly ordinaryQuestIntro:readonly Readonly<{evidence:OrdinaryQuestIntroEvidence;identity:AcquisitionSourceIdentity|null}>[];
   readonly ordinaryProduction:readonly Readonly<{evidence:OrdinaryProductionEvidence;identity:AcquisitionSourceIdentity|null}>[];
+  readonly keyholeTransformStatus:'indexed'|'not_indexed';
+  readonly keyholeTransforms:readonly Readonly<{evidence:KeyholeTransformEvidence;materialIdentities:readonly Readonly<AcquisitionSourceIdentity>[]} >[];
   readonly evolutionStatus:'indexed'|'not_indexed';
   readonly evolutionSource:Readonly<{evidence:EvolutionEvidence;baseIdentity:AcquisitionSourceIdentity}>|null;
   readonly evolutionChain:readonly Readonly<{evidence:EvolutionEvidence;targetIdentity:AcquisitionSourceIdentity}>[];
@@ -502,9 +578,11 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   const classificationExtensionStatus=Object.freeze(Object.fromEntries(extensionFamilies.map(f=>[f,catalog.has(extensionFields[f])?'indexed':'not_indexed']))) as Readonly<Record<ClassificationExtensionFamily,'indexed'|'not_indexed'>>;
   const memoryField='acquisition.memoryAppearance';
   const memoryAppearanceStatus=catalog.has(memoryField)?'indexed':'not_indexed';
+  const keyholeField='acquisition.keyholeTransformSources';
+  const keyholeTransformStatus=catalog.has(keyholeField)?'indexed':'not_indexed';
   const evolutionSourceField='acquisition.evolutionSource',evolutionChainField='acquisition.evolutionChain';
   const evolutionStatus=catalog.has(evolutionSourceField)&&catalog.has(evolutionChainField)?'indexed':'not_indexed';
-  const fields=[...(evolutionStatus==='indexed'?[evolutionSourceField,evolutionChainField]:[]),...(memoryAppearanceStatus==='indexed'?[memoryField]:[]),...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
+  const fields=[...(keyholeTransformStatus==='indexed'?[keyholeField]:[]),...(evolutionStatus==='indexed'?[evolutionSourceField,evolutionChainField]:[]),...(memoryAppearanceStatus==='indexed'?[memoryField]:[]),...extensionFamilies.map(f=>extensionFields[f]).filter(f=>catalog.has(f)),...(indexedStatus==='current'?[relation]:[]),...(additionalStatus==='indexed'?[additional]:[]),
     ...(catalog.has(effective)?[effective]:[]),...(ordinaryQuestIntroStatus==='indexed'?[introField]:[]),
     ...(ordinaryProductionStatus==='indexed'?[productionField]:[])];
   const [rows,nativeRows]=await Promise.all([
@@ -513,6 +591,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
   ]);
   type Context={itemId:number;indexed:readonly Db01ItemSourceLink[];extras:readonly AdditionalItemSource[];
     native:readonly NativeAcquisitionCandidate[];categories:readonly GameNativeItemCategory[];
+    keyholeTransforms:readonly KeyholeTransformEvidence[];
     intro:readonly OrdinaryQuestIntroEvidence[];production:readonly OrdinaryProductionEvidence[];extensions:readonly ExtensionRow[];memory:MemoryAppearanceEvidence|null;evolutionSource:EvolutionEvidence|null;evolutionChain:readonly EvolutionEvidence[]};
   const contexts=rows.map((row,i):Context|null=>{
     if(!row)return null;
@@ -522,6 +601,14 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     check(indexed.every(l=>DB02_SOURCE_KINDS.includes(l.kind)&&DB02_SOURCE_ROLES.includes(l.role)&&typeof l.sourceId==='string'&&l.gameSourceOnly===true&&l.grantedVerified===false&&l.currentlyAvailableVerified===false),'RELATION');
     const extras=(row.values[additional]??[]) as unknown as readonly AdditionalItemSource[];
     check(Array.isArray(extras)&&extras.every(l=>l.currentAvailabilityVerified===false),'ADDITIONAL');
+    const keyholeTransforms=(row.values[keyholeField]??[]) as unknown as readonly KeyholeTransformEvidence[];
+    check(Array.isArray(keyholeTransforms)&&keyholeTransforms.every(e=>e.kind==='keyhole_transform_target'&&
+      e.targetItemId===row.itemId&&typeof e.keyholeId==='string'&&Number.isSafeInteger(e.sourceRecordIndex)&&e.sourceRecordIndex>=0&&
+      e.sourcePath==='TransformInto'&&e.sourceGameVersion===db.release.target.gameVersion&&
+      e.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&e.sourceProjectionSha256==='a30c153bd4769c36b0f3f881b5dc4a01d4f8b8b492794a440245afef47872082'&&
+      e.conditionsSemanticsVerified===false&&e.requiredStateSemanticsVerified===false&&e.inventoryGrantVerified===false&&
+      e.currentAvailabilityVerified===false&&Array.isArray(e.requirementLevels)&&e.requirementLevels.every((l:KeyholeTransformEvidence['requirementLevels'][number],i:number)=>l.levelIndex===i&&
+      Array.isArray(l.neededItems)&&l.neededItems.every((n:KeyholeTransformEvidence['requirementLevels'][number]['neededItems'][number],j:number)=>id(n.itemId)&&id(n.configuredAmount)&&n.sourcePosition===j&&typeof n.statePresent==='boolean'&&typeof n.canonicalItemResolved==='boolean'))),'KEYHOLE_TRANSFORMS');
     const native=nativeRows?.[i]??[];
     const categories=(row.values[effective]??[]) as unknown as readonly GameNativeItemCategory[];
     check(Array.isArray(categories),'CATEGORIES');
@@ -565,7 +652,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     check(!evolutionSource||validEvolution(evolutionSource)&&evolutionSource.targetItemId===row.itemId,'EVOLUTION_SOURCE');
     check(Array.isArray(evolutionChain)&&evolutionChain.every((e,i)=>validEvolution(e)&&e.baseItemId===row.itemId&&e.stepIndex===i&&
       e.previousConfiguredTargetItemId===(i?evolutionChain[i-1].targetItemId:null)),'EVOLUTION_CHAIN');
-    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,extensions:extensionRows(row.values,db,categories),memory,evolutionSource,evolutionChain};
+    return {itemId:row.itemId,indexed,extras,native,categories,intro,production,keyholeTransforms,extensions:extensionRows(row.values,db,categories),memory,evolutionSource,evolutionChain};
   });
   const resolveIds=new Set<number>();
   for(const context of contexts){
@@ -577,6 +664,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     for(const e of context.production)resolveIds.add(e.sourceItemId);
     if(context.memory?.consummableOverrideResolved&&id(context.memory.consummableOverrideItemId))resolveIds.add(context.memory.consummableOverrideItemId);
     if(context.evolutionSource)resolveIds.add(context.evolutionSource.baseItemId);
+    for(const e of context.keyholeTransforms)for(const l of e.requirementLevels)for(const n of l.neededItems)if(n.canonicalItemResolved)resolveIds.add(n.itemId);
     for(const e of context.evolutionChain)resolveIds.add(e.targetItemId);
     for(const e of context.extensions){if(e.sourceId!==null)resolveIds.add(e.sourceId);for(const n of e.relatedIds)resolveIds.add(n);}
   }
@@ -613,6 +701,9 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     ordinaryQuestIntro:Object.freeze(c.intro.map(e=>Object.freeze({evidence:e,identity:identity(e.questId,['Mission'])}))),
     ordinaryProduction:Object.freeze(c.production.map(e=>Object.freeze({evidence:e,
       identity:identity(e.sourceItemId,e.kind==='ordinary_seed_production'?['ActivityItem']:['Furniture'])}))),
+    keyholeTransformStatus,
+    keyholeTransforms:Object.freeze(c.keyholeTransforms.map(e=>Object.freeze({evidence:e,materialIdentities:Object.freeze(
+      [...new Set(e.requirementLevels.flatMap(l=>l.neededItems.filter(n=>n.canonicalItemResolved).map(n=>n.itemId)))].map(n=>{const r=identity(n);check(r,'KEYHOLE_MATERIAL');return r;}))}))),
     evolutionStatus,
     evolutionSource:c.evolutionSource?(()=>{const baseIdentity=identity(c.evolutionSource.baseItemId,['Clothing','Tool']);check(baseIdentity,'EVOLUTION_BASE');return Object.freeze({evidence:c.evolutionSource,baseIdentity});})():null,
     evolutionChain:Object.freeze(c.evolutionChain.map(e=>{const targetIdentity=identity(e.targetItemId,['Clothing','Tool']);check(targetIdentity,'EVOLUTION_TARGET');return Object.freeze({evidence:e,targetIdentity});})),
@@ -621,7 +712,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='storyUnlock'?['Story']:e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='evolutionAcquisition'?['Clothing','Tool']:e.family==='storyUnlock'?['Story']:e.family==='eventRecurringLoot'?['ConditionalEvent']:e.family==='memoryDefaultContent'?(e.evidence.routeKind==='conditional_grant'?['ConditionalEvent']:['Mission']):e.family==='characterUnlock'?(e.evidence.kind==='character_quest_unlock'?['Mission']:['Character']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf'||e.family==='storeGeneratedStage')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});

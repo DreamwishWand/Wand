@@ -95,7 +95,12 @@ def extract_attachment(raw, prefab_guid, body):
             r.take(28)
             require(mf == 0 and root[0] == 0 and bones and all(f==0 for f,_ in bones) and r.pos==len(r.data), 'unsupported renderer layout')
             m = decode_mesh(obj(mp,43))
-            require(len(materials)==len(m['indices']), 'material/submesh mismatch')
+            # Unity MeshRenderer: remaining material slots render the final
+            # submesh again. Preserve the ordered draws, including repeats.
+            # https://docs.unity3d.com/ja/2021.2/Manual/class-MeshRenderer.html
+            require(0<len(m['indices'])<=len(materials), 'material/submesh mismatch')
+            if len(materials)>len(m['indices']):
+                m['indices'] = m['indices'] + [m['indices'][-1]]*(len(materials)-len(m['indices']))
             matches = []
             a = i
             while a >= 0:
