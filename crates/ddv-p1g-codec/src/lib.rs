@@ -2122,7 +2122,7 @@ mod browser_amount_preview {
                 p.ordinal,p.item_id,p.expected,p.kind.clone(),
                 p.orientation.as_ref().map(|v|v.0.clone())
             )).collect::<Vec<_>>();
-            let targets=grid_instance_preview::resolve_grid_mixed_targets(
+            let targets=grid_instance_preview::resolve_grid_transform_targets(
                 original,&selectors
             ).map_err(|_|fail("DB05_GRID_MIXED_STALE_OR_AMBIGUOUS"))?;
             let json=std::str::from_utf8(original)
@@ -2197,7 +2197,7 @@ mod browser_amount_preview {
                 p.ordinal,p.item_id,p.expected,p.kind.clone(),
                 p.orientation.as_ref().map(|v|v.0.clone())
             )).collect::<Vec<_>>();
-            let targets=grid_instance_preview::resolve_grid_mixed_targets(
+            let targets=grid_instance_preview::resolve_grid_transform_targets(
                 original,&selectors
             ).map_err(|_|fail("DB05_GRID_QUANTITY_GRID_STALE"))?;
             let edits=grid_plans.iter().zip(targets).map(|(p,target)|
