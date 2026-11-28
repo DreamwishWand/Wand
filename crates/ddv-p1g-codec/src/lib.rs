@@ -1558,8 +1558,11 @@ mod browser_amount_preview {
             if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||backup.len()>4*1024*1024{return Err(invalid());}
             let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
             let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
-            if !matches!(scope_value["kind"].as_str(),Some("outdoor"|"room"|"floor"|"building")){return Err(invalid());}
-            let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?;
+            let grids=match scope_value["kind"].as_str(){
+                Some("region-poses")=>crate::private_storage_scope::resolve_region_stage(source,&scope_value,backup).map_err(|_|invalid())?,
+                Some("outdoor"|"room"|"floor"|"building")=>crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?,
+                _=>return Err(invalid())
+            };
             let (mut patched,normalized)=crate::private_storage_transfer::stage_decoration(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
             let normalized=zeroize::Zeroizing::new(normalized);
             let changed=patched.as_bytes()!=source;
