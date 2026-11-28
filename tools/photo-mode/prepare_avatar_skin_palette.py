@@ -3,8 +3,8 @@ import io,json,urllib.request,zipfile
 from prepare_release_preview import BODY_TYPES,entry,digest,require,valid_hash
 NAME="Dreamwish-Wand-avatar-skin-palette-20261128.zip"
 URL="https://github.com/DreamwishWand/Wand/releases/download/photo-mode-assets-20261127/"+NAME
-SIZE=153614162
-SHA="f4a7ec5d2741ba361db5c920bad7cf7130e44bbf56dcffb591259fb9a706ae17"
+SIZE=226903591
+SHA="ed025f3382407cdf87bb8961c16fb25bcd97a573e0fa8cffbf1d5be7b2f42f0c"
 CONFIG="18923c6262b91d46aeb5c40dd553bf10b89513b955fc13519cc2376c32170420"
 
 def download_skin_palette():
