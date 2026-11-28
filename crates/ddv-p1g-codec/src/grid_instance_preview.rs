@@ -3552,9 +3552,133 @@ pub(super) fn group_cut_candidate(profile:&[u8],plan:&str)->Result<String,CodecE
     Ok(std::mem::take(&mut *working))
 }
 
+/// Exact category membership, built from the shared DB01 source (not ID ranges).
+fn activity_item_id(item:u64)->bool{
+ static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
+ IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
+}
+fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
+ Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(|item|crate::storage_source::is_storage(item)&&(r.owner.is_some()||crate::storage_source::placement_storage_template(root,item).is_some_and(|(_,size)|size==r.capacity)))).collect())
+}
+pub(super) fn field_recovery_destinations_json(source:&[u8])->Result<String,CodecError>{
+ let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
+ if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(CodecError::Json);}
+ let rows=activity_recovery_destinations(&root)?;
+ let out=rows.iter().enumerate().map(|(i,r)|{
+  let owner=r.owner.as_ref().map(|t|{
+   let g=&root["World"]["GridCollection"]["Grids"][&t.grid_id];let o=&g["Objects"][&t.object_id];
+   serde_json::json!({"itemId":t.item_id,"gridDataPath":g["GridDataPath"],"x":o["X"],"y":o["Y"]})
+  });
+  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"parentItemId":r.parent_item,"owner":owner})
+ }).collect::<Vec<_>>();
+ Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@1","rows":out}).to_string())
+}
+/// Conservatively protect direct item references in the saved mission
+/// structures. Never infer completion from a MissionId or source category.
+/// Source objective candidates are protected when the corresponding save
+/// mission is ongoing or has an unrecognized state. Completion history
+/// alone cannot authorize recovery, since repeatable missions may recur.
+fn active_source_quest_items(root:&Value)->Result<HashSet<u64>,CodecError>{
+ let mut missions=HashSet::new();
+ if let Some(groups)=root["World"].get("MissionSlots"){
+  for group in groups.as_object().ok_or(CodecError::Json)?.values(){
+   let Some(slots)=group.get("Slots")else{continue;};
+   for slot in slots.as_array().ok_or(CodecError::Json)?{
+    if slot["State"].as_str()==Some("MissionSlotState_Available"){continue;}
+    if let Some(id)=slot["MissionId"].as_u64().filter(|id|*id>0){missions.insert(id);}
+   }
+  }
+ }
+ static INDEX:std::sync::OnceLock<std::collections::BTreeMap<u64,Vec<u64>>>=std::sync::OnceLock::new();
+ let index=INDEX.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/quest-target-items.json"))).expect("compiled quest target source"));
+ Ok(index.iter().filter(|(_,ids)|ids.iter().any(|id|missions.contains(id))).map(|(item,_)|*item).collect())
+}
+fn mission_item_referenced(root:&Value,item:u64)->Result<bool,CodecError>{
+ let mut stack=Vec::new();
+ for key in ["MissionSlots","Missions","QuestData","Quests"]{
+  for base in [&root["World"],&root["Player"]]{if let Some(v)=base.get(key){stack.push((v,0usize));}}
+ }
+ let mut seen=0usize;while let Some((v,depth))=stack.pop(){
+  seen+=1;if depth>128||seen>1_000_000{return Err(CodecError::Bounds);}
+  match v{Value::Object(m)=>{for(k,v)in m{if k.parse::<u64>().ok()==Some(item){return Ok(true);}stack.push((v,depth+1));}},Value::Array(a)=>stack.extend(a.iter().map(|v|(v,depth+1))),Value::Number(n)=>if n.as_u64()==Some(item){return Ok(true);},Value::String(s)=>if s.parse::<u64>().ok()==Some(item){return Ok(true);},_=>{}}
+ }
+ Ok(false)
+}
+pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String,CodecError>{
+ use zeroize::{Zeroize,Zeroizing};
+ let bad=CodecError::Json;
+ if plan.len()>128*1024{return Err(CodecError::Bounds);}
+ let root:Value=serde_json::from_slice(source).map_err(|_|bad)?;
+ let v:Value=serde_json::from_str(plan).map_err(|_|bad)?;
+ let o=v.as_object().filter(|m|m.len()==2&&m.contains_key("destinationOrdinal")&&m.contains_key("rows")).ok_or(bad)?;
+ let ordinal=o["destinationOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
+ let destinations=activity_recovery_destinations(&root)?;
+ let dest=destinations.get(ordinal-1).ok_or(bad)?;
+ if let Some(t)=&dest.owner{
+  let refs=grid_identity_dependencies(source,t)?;if refs.blocking()>0{return Err(bad);}
+ }
+ let rows=o["rows"].as_array().filter(|a|!a.is_empty()&&a.len()<=ddv_save_patch::MAX_GRID_MIXED_EDITS).ok_or(bad)?;
+ let mut selections=Vec::new();let mut checked=HashSet::new();
+ let active_items=active_source_quest_items(&root)?;
+ for row in rows{
+  let m=row.as_object().filter(|m|m.len()==5&&m.keys().all(|k|matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"))).ok_or(bad)?;
+  let ord=m["localOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).ok_or(bad)?;
+  let item=m["itemId"].as_str().and_then(|s|s.parse::<u64>().ok().filter(|n|n.to_string()==s&&activity_item_id(*n))).ok_or(bad)?;
+  if active_items.contains(&item)||checked.insert(item)&&mission_item_referenced(&root,item)?{return Err(bad);}
+  let xy=(m["expectedX"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?,m["expectedY"].as_i64().and_then(|n|i32::try_from(n).ok()).ok_or(bad)?);
+  let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)).ok_or(bad)?;
+  selections.push((ord,item,xy,"full".to_owned(),Some(ori.to_owned())));
+ }
+ let targets=resolve_grid_mixed_targets(source,&selections)?;
+ let mut groups=HashMap::<String,Vec<String>>::new();
+ for (t,s) in targets.iter().zip(&selections){
+  let (_,_,factor,sx,sy)=plain_scene_identity(&root,&t.grid_id)?;
+  let (x,y)=s.2;
+  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||!ddv_save_patch::field_recovery::stateless_field_object(&root,t,s.2,s.4.as_deref().ok_or(bad)?){return Err(bad);}
+  groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
+ }
+ for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+
+ let mut working=Zeroizing::new(std::str::from_utf8(source).map_err(|_|bad)?.to_owned());
+ for (t,s) in targets.iter().zip(&selections){
+  let next=ddv_save_patch::field_recovery::recover(&working,t,s.2,s.4.as_deref().ok_or(bad)?,&dest.container_id).map_err(|_|CodecError::Patch)?;
+  working.zeroize();*working=next;
+ }
+ Ok(std::mem::take(&mut *working))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn source_mission_targets_follow_current_slots_not_completion_history(){
+        let index:std::collections::BTreeMap<u64,Vec<u64>>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/quest-target-items.json"))).unwrap();
+        let (&item,ids)=index.iter().next().unwrap();let mission=ids[0];
+        let mut root=serde_json::json!({"World":{"QuestInfo":{"MissionsCompleted":[mission]},"MissionSlots":{"1":{"Slots":[{"MissionId":mission,"State":"MissionSlotState_OnGoing"}]}}}});
+        assert!(active_source_quest_items(&root).unwrap().contains(&item));
+        root["World"]["MissionSlots"]["1"]["Slots"][0]["State"]="MissionSlotState_Available".into();
+        assert!(!active_source_quest_items(&root).unwrap().contains(&item));
+        root["World"]["MissionSlots"]["1"]["Slots"][0]["State"]="FutureUnknownState".into();
+        assert!(active_source_quest_items(&root).unwrap().contains(&item));
+    }
+
+    #[test]
+    fn activity_recovery_batch_uses_original_catalog_and_rejects_mission_references(){
+        let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
+        assert_eq!(ids.len(),4050);
+        let item=*ids.iter().find(|n|**n/100_000==300).unwrap_or(&ids[0]);
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":null},"2":{"ID":2,"ItemID":item,"X":2,"Y":2,"Orientation":"GridOrientation_Down"}}}}}}});
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"},{"localOrdinal":2,"itemId":item.to_string(),"expectedX":2,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}]});
+        let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert!(result["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().is_empty());
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"],serde_json::json!([{"ItemID":item,"Amount":2,"State":null}]));
+        root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionId":80000001,"MissionSteps":[{"RequiredItemID":item}]}]}});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+        root["World"].as_object_mut().unwrap().remove("MissionSlots");
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]["State"]=serde_json::json!({"Unknown":true});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+    }
 
     #[test]
     fn landscape_copy_and_remove_keep_inventory_and_unknown_fields(){

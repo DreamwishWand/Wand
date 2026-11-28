@@ -12,7 +12,7 @@ const int32=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v
 import {worldOrientationCode,eightWayFurniture} from './saved-map-transform.ts';
 export interface SavedShapeObject extends SavedNumericPoint{
   readonly shapeKey:string|null;readonly name:string|null;
-  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;readonly nativeType?:'Building';
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;readonly nativeType?:'Building';readonly activityItem?:true;
   readonly orientationCode:number|null;
 }
 export interface SavedShapeMap {

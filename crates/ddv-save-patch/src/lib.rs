@@ -13,6 +13,7 @@ pub mod bulk_furniture;
 pub mod player_house_create;
 pub mod room_structure;
 pub mod storage_backup;
+pub mod field_recovery;
 
 pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;
@@ -115,7 +116,7 @@ impl<'a> JsonLocator<'a> {
                     k("Inventory"), k(&item_id), k("Amount")], None)
             }
             QuantityTarget::ChestSlot { container_id, slot_index, item_id } => {
-                if !valid_id(&container_id) || item_id == 0 ||
+                if (container_id != "0" && !valid_id(&container_id)) || item_id == 0 ||
                     item_id > MAX_SAFE_JSON_INTEGER || slot_index > 1_000_000 {
                     return Err(PatchError::InvalidTarget);
                 }

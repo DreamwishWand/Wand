@@ -17,6 +17,21 @@ fn decode64(s:&str)->Vec<u8>{
 fn main(){
  let manifest=PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
  let root=manifest.join("../..");
+ // Reuse the pinned public DB03 objective reverse index. Only direct/alternative
+ // candidate membership is compiled, never completion or mandatory status.
+ let quests=root.join("static/guide/public/quest-target-reverse-1.26.2.json");
+ println!("cargo:rerun-if-changed={}",quests.display());
+ let quest_bytes=fs::read(quests).expect("public quest objective source");
+ assert_eq!(format!("{:x}",Sha256::digest(&quest_bytes)),"967f1bc885a13ba5bdc99c4e965e1288b9227170f888e0ac85d944799cff6d20");
+ let quest_source:Value=serde_json::from_slice(&quest_bytes).unwrap();
+ assert_eq!(quest_source["schema"],"wand.db03.public-quest-target-reverse@1");
+ let mut quest_items=std::collections::BTreeMap::<u64,std::collections::BTreeSet<u64>>::new();
+ for (id,rows) in quest_source["items"].as_object().unwrap(){
+  let item=id.parse::<u64>().unwrap();
+  for row in rows.as_array().unwrap(){quest_items.entry(item).or_default().insert(row[0].as_str().unwrap().parse::<u64>().unwrap());}
+ }
+ assert_eq!(quest_items.len(),2551);
+ fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("quest-target-items.json"),serde_json::to_vec(&quest_items).unwrap()).unwrap();
  let catalog=root.join("static/ddv/item-master-releases.json");
  let attributes=root.join("data/ddv/item-master/reviewed-structure-steam-1.26.2.json");
  println!("cargo:rerun-if-changed={}",catalog.display());
@@ -32,6 +47,19 @@ fn main(){
  // GridAreaData and no reviewed interaction/special-state definition qualify.
  // A new unrecognized Furniture field is conservatively treated as special.
  let fields=source["fields"].as_object().unwrap();
+ // Native ActivityItem membership from the existing pinned DB01 source.
+ // GridAreaData is present for all 4050 ActivityItem definitions in 1.26.2.
+ // This proves category membership, not safe pickup or state conversion.
+ let activity=&fields["ActivityItem.GridAreaData"];
+ assert_eq!(activity["category"],"ActivityItem");
+ let mut raw=Vec::new();
+ ZlibDecoder::new(decode64(activity["packed"].as_str().unwrap()).as_slice()).take(32*1024*1024).read_to_end(&mut raw).unwrap();
+ let decoded:Value=serde_json::from_slice(&raw).unwrap();
+ let pairs=decoded.as_array().unwrap();assert_eq!(pairs.len() as u64,activity["count"].as_u64().unwrap());
+ let mut activity_ids=Vec::with_capacity(pairs.len());let mut id=0u64;
+ for pair in pairs{id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();activity_ids.push(id);}
+ fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("activity-item-source.json"),serde_json::to_vec(&activity_ids).unwrap()).unwrap();
+
  let mut geometry=std::collections::BTreeSet::<u64>::new();
  let mut special=std::collections::BTreeSet::<u64>::new();let mut support_extra=std::collections::BTreeSet::<u64>::new();
  for (key,entry) in fields{
