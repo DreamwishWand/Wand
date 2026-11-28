@@ -3,8 +3,19 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
 import {readItemAcquisitionSourceDetails} from '../src/lib/items/public-item-acquisition-details.ts';
+import {resolveStoreCatalogGate} from '../tools/db-01-items/store-catalog-gate.mjs';
+async function gateContext(db){
+ const q=JSON.parse(await readFile('static/guide/public/quest-index.json','utf8'));
+ const e=JSON.parse(await readFile('static/guide/public/event-quest-links-1.26.2.json','utf8'));
+ const event=new Set(Object.values(e.events).flat().map(Number));
+ const questKinds=new Map(q.quests.filter(r=>!event.has(Number(r.id))&&['Village','Story','Realm'].includes(r.internalName.split('!')[0])&&
+   q.groups[r.groupId]?.rawName.split('!')[0]===r.internalName.split('!')[0]).map(r=>[Number(r.id),'ordinary_gameplay']));
+ const known=new Map((await db.getFieldRows('nativeCategory')).map(([id,nativeCategory])=>[id,{nativeCategory}]));
+ return {known,questKinds,sha:db.release.sourceFilesSha256};
+}
 test('original furniture and clothing shelf routes preserve native price intervals and set unlock fallback',async()=>{
  const db=await openCurrentItemDatabase('',async u=>new Response(await readFile('static'+u),{status:200}));
+ const {known,questKinds,sha}=await gateContext(db);
  const actual=new Map(await db.getFieldRows('acquisition.ordinaryGeneratedStoreShelfSources'));
  assert(actual.size>0);
  const [candidates,prices,gates,sets,overrides,evolved,category,classes]=await Promise.all([
@@ -32,7 +43,7 @@ test('original furniture and clothing shelf routes preserve native price interva
  for(const [id,links] of candidates){
    const facts=prices.get(id),setId=gates.get(id),setGate=sets.get(setId);
    if(!Number.isInteger(setId)||setId<0||setId>0&&(!setGate||Object.keys(setGate).length)||
-      !facts?.flagsKnown||facts.exclusionFlags.length||facts.gateStatus!=='empty_source_gate'||
+      !facts?.flagsKnown||facts.exclusionFlags.length||!resolveStoreCatalogGate(facts.catalogVisibilityConditions,known,questKinds,sha)||
       evolved.get(id)===true||!effectivePrices.has(id))continue;
    if(links.some(l=>(l.sourceItemFileSha256===db.release.sourceFilesSha256.Clothing&&!l.gridReviewRequired&&!l.directTagReviewRequired||
        l.sourceItemFileSha256===db.release.sourceFilesSha256.Furniture&&l.gridReviewRequired&&l.nativeGrid?.status==='passed'&&l.nativeGrid.directTagPredicateVerified===true)&&
@@ -63,6 +74,8 @@ test('original furniture and clothing shelf routes preserve native price interva
      }
      assert(cost>=l.minimum&&cost<=l.maximum);
      assert.equal(l.setItemId,gates.get(id)||null);
+     assert.deepEqual(l.catalogGate,resolveStoreCatalogGate(prices.get(id).catalogVisibilityConditions,known,questKinds,sha));
+     assert.equal(l.itemCatalogGateEmpty,l.catalogGate.kind==='empty');
      assert.equal(l.inheritedSetGateEmpty,true);
      assert.equal(l.runtimeStockVerified,false);assert.equal(l.storeMembershipVerified,false);assert.equal(l.currentAvailabilityVerified,false);
    }

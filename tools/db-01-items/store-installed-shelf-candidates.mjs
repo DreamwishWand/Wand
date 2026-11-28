@@ -5,6 +5,7 @@
  * remain separate. Only fully evaluated original shelf routes add a category.
  */
 import {stageAreaSlots} from './store-native-stage-layout.mjs';
+import {resolveStoreCatalogGate} from './store-catalog-gate.mjs';
 const id=n=>Number.isSafeInteger(n)&&n>0;
 // Five exact original Display records have no field 10 (PricesTables).
 // StoreInfo refresh bypasses missing table setters, clamps min to 1 in
@@ -29,7 +30,7 @@ function priceBands(link,amount){
   return bands;
 }
 const props=r=>({...r?.nativeProperties,...r?.sourceAttributes});
-export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices){
+export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices,questKinds=new Map()){
   const out=new Map(),ordinary=new Map(),sha=source.sourceFilesSha256;
   const stageCandidates=new Map(),stageOrdinary=new Map();
   const result={candidates:out,ordinary,stageCandidates,stageOrdinary};
@@ -109,7 +110,9 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
     // then repeats with each positive inclusive price interval. Both furniture
     // and clothing use the same price and inherited unlock checks.
     if(!['Clothing','Furniture'].includes(row.nativeCategory))continue;
-    if(!f?.flagsKnown||f.exclusionFlags.length||f.gateStatus!=='empty_source_gate'){reject('item_gate');continue;}
+    if(!f?.flagsKnown||f.exclusionFlags.length){reject('item_flags');continue;}
+    const catalogGate=resolveStoreCatalogGate(f.catalogVisibilityConditions,known,questKinds,sha);
+    if(!catalogGate){reject('item_gate');continue;}
     const p=props(row),setId=p.SetItemID;
     if(!Number.isSafeInteger(setId)||setId<0){reject('set_unknown');continue;}
     const set=setId>0?known.get(setId):null;
@@ -167,7 +170,7 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
           nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
           purchaseCurrencyItemId:80000000,configuredPurchaseAmount:price.amount,priceSource,
           priceProviderRecordIndex,...band,
-          setItemId:setId||null,itemCatalogGateEmpty:true,inheritedSetGateEmpty:true,
+          setItemId:setId||null,itemCatalogGateEmpty:catalogGate.kind==='empty',catalogGate,inheritedSetGateEmpty:true,
           itemTypeCode:row.itemType.code,itemSubtypeCode:row.itemType.subtypeCode,
           configuredPoolRouteVerified:true,runtimeStockVerified:false,storeMembershipVerified:false,
           currentAvailabilityVerified:false,guaranteedGrantVerified:false});
@@ -183,6 +186,9 @@ export function buildInstalledShelfCandidates(rows,source,layout,catalog,prices)
   }
   console.log('DB01_INSTALLED_SHELF '+JSON.stringify({counts,items:out.size,occurrences:[...out.values()].flat().length,areas:[...slots.keys()],classificationCounts,classifiedItems:ordinary.size,classifiedOccurrences:[...ordinary.values()].flat().length,rejected}));
   console.log('DB01_INSTALLED_STAGE '+JSON.stringify({areas:[...stageSlots.keys()],items:stageCandidates.size,occurrences:[...stageCandidates.values()].flat().length,classifiedItems:stageOrdinary.size,classifiedOccurrences:[...stageOrdinary.values()].flat().length}));
+  const gated=new Map();
+  for(const [itemId,links] of [...ordinary,...stageOrdinary])if(links[0]?.catalogGate.kind!=='empty')gated.set(itemId,links[0].catalogGate.kind);
+  console.log('DB01_STORE_PROGRESSION_GATE '+JSON.stringify({items:gated.size,byKind:Object.fromEntries([...new Set(gated.values())].map(k=>[k,[...gated.values()].filter(v=>v===k).length]))}));
   const unbounded=[...ordinary,...stageOrdinary].flatMap(([itemId,ls])=>ls.filter(l=>l.priceBandKind==='native_unbounded_positive').map(l=>({itemId,displayItemId:l.sourceItemId})));
   console.log('DB01_NATIVE_UNBOUNDED_STORE_PRICE '+JSON.stringify({items:new Set(unbounded.map(l=>l.itemId)).size,occurrences:unbounded.length,byDisplay:Object.fromEntries([...new Set(unbounded.map(l=>l.displayItemId))].map(d=>[d,new Set(unbounded.filter(l=>l.displayItemId===d).map(l=>l.itemId)).size]))}));
   return result;

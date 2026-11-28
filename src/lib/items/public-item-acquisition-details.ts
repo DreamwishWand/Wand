@@ -163,11 +163,16 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
               evidence.tableIndex===null&&evidence.bandIndex===null&&evidence.minimum===1&&evidence.maximum===2147483647)&&
             id(evidence.minimum)&&id(evidence.maximum)&&evidence.configuredPurchaseAmount>=evidence.minimum&&
             evidence.configuredPurchaseAmount<=evidence.maximum&&
-            (evidence.setItemId===null||id(evidence.setItemId))&&evidence.itemCatalogGateEmpty===true&&
+            (evidence.setItemId===null||id(evidence.setItemId))&&
+            (evidence.itemCatalogGateEmpty===true&&(evidence.catalogGate===undefined||object(evidence.catalogGate)&&evidence.catalogGate.kind==='empty')||
+             evidence.itemCatalogGateEmpty===false&&object(evidence.catalogGate)&&object(evidence.catalogGate.original)&&
+             (evidence.catalogGate.kind==='player_level'&&evidence.catalogGate.targetItemId===null||
+              ['mission_completed','mission_step_completed','character_unlocked','character_friendship','realm_unlocked'].includes(String(evidence.catalogGate.kind))&&id(evidence.catalogGate.targetItemId)))&&
             evidence.inheritedSetGateEmpty===true&&evidence.configuredPoolRouteVerified===true&&
             evidence.runtimeStockVerified===false&&evidence.storeMembershipVerified===false,'EXTENSION_STORE_GENERATED');
           relatedIds.push(evidence.buildingItemId,80000000);
           if(id(evidence.setItemId))relatedIds.push(evidence.setItemId);
+          if(object(evidence.catalogGate)&&id(evidence.catalogGate.targetItemId))relatedIds.push(evidence.catalogGate.targetItemId);
         }else if(family==='storeSequence'){
           check(evidence.kind==='ordinary_store_display_sequence'&&evidence.sourceDisplaySha256===sha?.Display&&
             evidence.sourceBuildingSha256===sha?.Building&&

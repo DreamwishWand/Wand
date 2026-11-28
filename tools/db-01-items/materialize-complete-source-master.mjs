@@ -1346,7 +1346,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
   const ordinaryCritters=ordinaryCritterRewards(rows,source);
   const ordinaryStore=ordinaryExplicitStore(rows,source,protoAcquisition,catalogFacts,storeLayout,originalPrices);
   const storeSequences=buildStoreSequenceSources(rows,source,catalogFacts,storeLayout,originalPrices);
-  const installedShelves=buildInstalledShelfCandidates(rows,source,storeLayout,catalogFacts,originalPrices);
+  const installedShelves=buildInstalledShelfCandidates(rows,source,storeLayout,catalogFacts,originalPrices,questFlows.questKinds);
   const existingCategories=id=>new Set([...(acquisition?.summary.get(id)?.categories??[]),
     ...((protoAcquisition.byItem.get(id)??[]).some(l=>l.amount!==null)||ordinaryProduction.has(id)||progression.has(id)||ordinaryCritters.has(id)||questFlows.ordinaryIntro.has(id)?['ordinary_gameplay']:[]),
     ...(questFlows.conditionalQuest.get(id)??[]).map(l=>l.category),

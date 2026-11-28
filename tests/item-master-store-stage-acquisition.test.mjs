@@ -3,11 +3,22 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
 import {readItemAcquisitionSourceDetails} from '../src/lib/items/public-item-acquisition-details.ts';
+import {resolveStoreCatalogGate} from '../tools/db-01-items/store-catalog-gate.mjs';
+async function gateContext(db){
+ const q=JSON.parse(await readFile('static/guide/public/quest-index.json','utf8'));
+ const e=JSON.parse(await readFile('static/guide/public/event-quest-links-1.26.2.json','utf8'));
+ const event=new Set(Object.values(e.events).flat().map(Number));
+ const questKinds=new Map(q.quests.filter(r=>!event.has(Number(r.id))&&['Village','Story','Realm'].includes(r.internalName.split('!')[0])&&
+   q.groups[r.groupId]?.rawName.split('!')[0]===r.internalName.split('!')[0]).map(r=>[Number(r.id),'ordinary_gameplay']));
+ const known=new Map((await db.getFieldRows('nativeCategory')).map(([id,nativeCategory])=>[id,{nativeCategory}]));
+ return {known,questKinds,sha:db.release.sourceFilesSha256};
+}
 import {readStoreItemSourceEvidence} from '../src/lib/items/public-store-source-evidence.ts';
 import {stageAreaSlots} from '../tools/db-01-items/store-native-stage-layout.mjs';
 
 test('native stage layouts resolve exact original area keys with duplicate sizes preserved as slot positions',async()=>{
  const db=await openCurrentItemDatabase('',async u=>new Response(await readFile('static'+u),{status:200}));
+ const {known,questKinds,sha}=await gateContext(db);
  const [displayRows,layoutRows,gridRows,actualRows,classifiedRows,catalogRows,setRows,gates,overrides,evolved,categories,classes]=await Promise.all([
   'acquisition.storeDisplayDefinition','acquisition.storeLayoutCandidates','acquisition.storeLayoutDimensionComparisons',
   'acquisition.storeInstalledStageCandidates','acquisition.ordinaryGeneratedStoreStageSources','acquisition.catalogFacts',
@@ -56,7 +67,7 @@ test('native stage layouts resolve exact original area keys with duplicate sizes
      assert.equal(l.currentAvailabilityVerified,false);
    }
    const f=catalog.get(id),set=sets.get(id),gate=setGates.get(set),o=prices.get(id),p=providers.get(id);
-   if(!f?.flagsKnown||f.exclusionFlags.length||f.gateStatus!=='empty_source_gate'||!Number.isSafeInteger(set)||set<0||
+   if(!f?.flagsKnown||f.exclusionFlags.length||!resolveStoreCatalogGate(f.catalogVisibilityConditions,known,questKinds,sha)||!Number.isSafeInteger(set)||set<0||
      set>0&&(!gate||Object.keys(gate).length)||ev.get(id)===true||!o)continue;
    let amount=null;
    if(Object.keys(o).length===0&&p?.buy.length===1&&p.buy[0][0]===80000000)amount=p.buy[0][1];
@@ -71,6 +82,8 @@ test('native stage layouts resolve exact original area keys with duplicate sizes
    for(const l of ls){
      const c=actual.get(id).find(x=>x.displayItemId===l.sourceItemId&&x.stageLayoutIndex===l.stageLayoutIndex&&x.areaKey===l.areaKey&&x.buildingSourcePath===l.sourcePath);
      assert(c);assert.deepEqual(l.stageSlotIndices,c.stageSlotIndices);
+     assert.deepEqual(l.catalogGate,resolveStoreCatalogGate(catalog.get(id).catalogVisibilityConditions,known,questKinds,sha));
+     assert.equal(l.itemCatalogGateEmpty,l.catalogGate.kind==='empty');
      assert.equal(l.nativeGrid.status,'passed');assert.equal(l.storeMembershipVerified,false);
      assert.equal(l.runtimeStockVerified,false);assert.equal(l.currentAvailabilityVerified,false);
      if([2140000002,2140000015].includes(l.sourceItemId)){
