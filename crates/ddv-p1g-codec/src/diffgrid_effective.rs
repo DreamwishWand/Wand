@@ -122,6 +122,126 @@ pub(super) fn project(profile:&[u8],witness:&Value)->Result<String,CodecError>{
        "placementLegalityVerified":false})).map_err(|_|bad)
 }
 
+/// Draft request addresses only ephemeral grid and point ordinals. The
+/// current local profile is the authority for stock and dependency checks.
+/// Neither native keys nor candidate Save bytes leave Rust.
+#[cfg(feature="wasm")]
+pub(super) fn draft_project(profile:&[u8],request:&Value)->Result<String,CodecError>{
+    use ddv_save_patch::diffgrid::{DiffAction,DiffDefault,DiffIdentity,DiffPose,preview_diffgrid_stock_batch};
+    let bad=CodecError::Json;
+    if obj(request)?.len()!=3||request["contract"]!="wand.db05.diffgrid-draft-request@1"{return Err(bad);}
+    let source=&request["source"];
+    let receipt:Value=serde_json::from_str(&project(profile,source)?).map_err(|_|bad)?;
+    let plan=&request["plan"];
+    if obj(plan)?.len()!=2{return Err(bad);}
+    let ordinal=uint(&plan["gridOrdinal"]).filter(|n|*n>0).ok_or(bad)? as usize;
+    let expected_grid=receipt["grids"].as_array().and_then(|a|a.get(ordinal-1)).ok_or(bad)?;
+    let actions=plan["actions"].as_array().filter(|a|!a.is_empty()&&a.len()<=512).ok_or(bad)?;
+    let bounds=&source["gridBounds"];
+    let width=uint(&bounds["width"]).filter(|n|*n>0&&*n<=131072).ok_or(bad)?;
+    let height=uint(&bounds["height"]).filter(|n|*n>0&&*n<=131072).ok_or(bad)?;
+    let factor=uint(&bounds["factor"]).filter(|n|matches!(*n,1|2)).ok_or(bad)?;
+    let allowed_item=|id:u32|id/100_000==400&&!crate::storage_source::is_storage(u64::from(id));
+    let parse_pose=|v:&Value|->Result<DiffPose,CodecError>{
+        let item_id=v["itemId"].as_str().and_then(|s|s.parse::<u32>().ok().filter(|n|n.to_string()==s))
+            .filter(|n|allowed_item(*n)).ok_or(bad)?;
+        let x=signed(&v["x"]).ok_or(bad)?;let y=signed(&v["y"]).ok_or(bad)?;
+        let orientation=v["orientation"].as_str().filter(|o|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(o)||
+          factor==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(o)).ok_or(bad)?.to_owned();
+        Ok(DiffPose{item_id,x,y,orientation})
+    };
+    let destination=|p:&DiffPose|p.x>=0&&p.y>=0&&(p.x as u32)<width&&(p.y as u32)<height;
+    let root:Value=serde_json::from_slice(profile).map_err(|_|bad)?;
+    let collection=&root["World"]["GridCollection"];
+    let empty=Map::new();
+    let full=field_map(collection,"Grids",&empty)?;
+    let diff=field_map(collection,"DiffGrids",&empty)?;
+    let defaults=source["defaultObjects"].as_array().ok_or(bad)?.iter()
+        .map(|v|Ok((uint(&v["gridObjectIdNative"]).ok_or(bad)?,v))).collect::<Result<Vec<_>,CodecError>>()?;
+    let native_grid_id=uint(&source["nativeGridId"]).ok_or(bad)?;
+    let grid_hash=signed(&source["hashes"][0]).ok_or(bad)?;
+    let data_hash=signed(&source["hashes"][1]).ok_or(bad)?;
+    let layout=source["layoutId"].as_str().ok_or(bad)?;
+    let layout_type=source["layoutType"].as_str().ok_or(bad)?;
+    let mut selected=None;let mut seen=0;
+    for (key,grid) in diff{
+        if grid["GridDefaultLayoutPath"].as_str()!=Some(layout)||
+            grid["GridDefaultLayoutType"].as_str()!=Some(layout_type)||
+            uint(&grid["DefaultLayoutGridID"])!=Some(native_grid_id)||
+            signed(&grid["DefaultGridHashCode"])!=Some(grid_hash)||
+            signed(&grid["DefaultGridDataHashCode"])!=Some(data_hash)||
+            full.contains_key(key)||key_id(key).is_none()||
+            grid.get("ID").map_or(key!="0",|v|uint(v)!=key_id(key)){continue;}
+        if let Ok((points,ids,_))=reconstruct(&defaults,grid){
+            seen+=1;
+            if seen==ordinal{selected=Some((key,grid,points,ids));break;}
+        }
+    }
+    let (key,grid,points,ids)=selected.ok_or(bad)?;
+    if expected_grid["points"]!=json!(points){return Err(bad);}
+    let grid_id=key_id(key).filter(|n|*n>0).ok_or(bad)?;
+    let mut identity_defaults=Vec::with_capacity(defaults.len());
+    for (id,v) in &defaults{
+        let p=pose(v,"default",true)?;
+        let pose=DiffPose{item_id:uint(&v["itemId"]).ok_or(bad)?,x:signed(&p["x"]).ok_or(bad)?,y:signed(&p["y"]).ok_or(bad)?,
+            orientation:p["orientation"].as_str().ok_or(bad)?.to_owned()};
+        identity_defaults.push(DiffDefault{id:*id,pose,plain_source:v["plainSource"]==true});
+    }
+    let identity=DiffIdentity{grid_id,layout_path:layout.to_owned(),layout_type:layout_type.to_owned(),native_grid_id,
+        grid_hash,data_hash,default_count:defaults.len(),defaults:identity_defaults};
+    let default_ids:HashSet<u32>=defaults.iter().map(|(id,_)|*id).collect();
+    let mut guards=HashSet::<String>::new();
+    let mut stock=HashMap::<u32,u32>::new();
+    let mut changes=Vec::new();
+    let mut allocations=0u32;
+    let stock_amount=|item:u32|uint(&root["Player"]["ListInventories"]["0"]["Inventory"][item.to_string()]["Amount"]).ok_or(bad);
+    for action in actions{
+        let kind=action["action"].as_str().ok_or(bad)?;
+        if kind=="add"{
+            if obj(action)?.len()!=2{return Err(bad);}
+            let p=parse_pose(&action["pose"])?;
+            if !destination(&p){return Err(bad);}
+            stock.insert(p.item_id,stock_amount(p.item_id)?);
+            changes.push(DiffAction::Add{pose:p});allocations+=1;continue;
+        }
+        let i=uint(&action["pointOrdinal"]).filter(|n|*n>0).ok_or(bad)? as usize-1;
+        let id=*ids.get(i).ok_or(bad)?;
+        let p=parse_pose(points.get(i).ok_or(bad)?)?;
+        if parse_pose(&action["expected"])?!=p{return Err(bad);}
+        if !guards.insert(id.to_string()){return Err(bad);}
+        if matches!(kind,"transform"|"duplicate"){
+            if obj(action)?.len()!=4{return Err(bad);}
+            let new=parse_pose(&action["pose"])?;
+            if new.item_id!=p.item_id||!destination(&new){return Err(bad);}
+            if kind=="transform"{changes.push(DiffAction::Transform{id,expected:p,x:new.x,y:new.y,orientation:new.orientation});}
+            else{
+                stock.insert(p.item_id,stock_amount(p.item_id)?);allocations+=1;
+                changes.push(DiffAction::Duplicate{id,expected:p,x:new.x,y:new.y,orientation:new.orientation});
+            }
+        }else if kind=="remove"{
+            if obj(action)?.len()!=3{return Err(bad);}
+            if !default_ids.contains(&id){stock.insert(p.item_id,stock_amount(p.item_id)?);}
+            changes.push(DiffAction::Remove{id,expected:p});
+        }else{return Err(bad);}
+    }
+    let next=uint(&grid["NextGridObjectID"]).ok_or(bad)?;
+    for offset in 0..allocations{
+        if !guards.insert(next.checked_add(offset).ok_or(bad)?.to_string()){return Err(bad);}
+    }
+    let guards=guards.into_iter().collect::<Vec<_>>();
+    for group in guards.chunks(512){
+        let deps=crate::grid_instance_preview::grid_identity_dependencies_for_ids(profile,key,group)?;
+        if deps.blocking()>0||deps.historical>0{return Err(bad);}
+    }
+    let draft=preview_diffgrid_stock_batch(std::str::from_utf8(profile).map_err(|_|bad)?,&identity,&changes,&stock).map_err(|_|CodecError::Patch)?;
+    if !draft.draft.changed||!draft.draft.untouched_bytes_preserved||draft.draft.writer_authorized||draft.draft.export_authorized{return Err(bad);}
+    let result=project(draft.draft.patched_json.as_bytes(),source);
+    let mut bytes=draft.draft.patched_json.into_bytes();
+    use zeroize::Zeroize;
+    bytes.zeroize();
+    result
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
