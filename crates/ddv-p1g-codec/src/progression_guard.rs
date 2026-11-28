@@ -22,7 +22,9 @@ fn collect_addresses(value:&Value,addresses:&mut HashSet<(u64,u64)>)->Result<(),
                 let grid=o.get("GridID").or_else(||o.get("GridId")).and_then(Value::as_u64);
                 let object=o.get("GridObjectID").or_else(||o.get("GridObjectId")).and_then(Value::as_u64);
                 if let (Some(grid),Some(object))=(grid,object){
-                    if grid>0{
+                    // Grid ID 0 is a valid native map key; only the
+                    // all-zero address is the uninitialized sentinel.
+                    if grid>0||object>0{
                         addresses.insert((grid,object));
                         if addresses.len()>100_000{return Err(CodecError::Bounds);}
                     }
@@ -122,15 +124,14 @@ pub(super) fn preserve_progression(source:&[u8],candidate:&[u8])->Result<(),Code
     }
     if before.get("ConditionalEventHistory")!=after.get("ConditionalEventHistory"){return Err(CodecError::Patch);}
     let mut addresses=HashSet::new();
-    if let Some(slots)=world_field(&before,"MissionSlots"){collect_addresses(slots,&mut addresses)?;}
-    // Archived source/save contract identifies ActiveEvents.SpawnState.
-    // Protect exact addresses only; do not infer ownership from ItemID.
-    if let Some(events)=before.get("ConditionalEventHistory").and_then(|v|v.get("ActiveEvents")).and_then(Value::as_object){
-        for event in events.values(){
-            if let Some(spawned)=event.get("SpawnState").and_then(|v|v.get("SpawnedObjects")){
-                collect_addresses(spawned,&mut addresses)?;
-            }
-        }
+    for key in ["MissionSlots","QuestInfo"]{
+        if let Some(state)=world_field(&before,key){collect_addresses(state,&mut addresses)?;}
+    }
+    // Native ConditionalEventState has six action-state discriminants.
+    // Preserve explicit paired addresses anywhere in ActiveEvents, not only
+    // the SpawnState branch. Scalar completion history is not an address.
+    if let Some(events)=before.get("ConditionalEventHistory").and_then(|v|v.get("ActiveEvents")){
+        collect_addresses(events,&mut addresses)?;
     }
     preserve_address_hierarchies(&before,&after,addresses)
 }
@@ -186,6 +187,22 @@ mod tests{
         b=a.clone();b["World"]["GridCollection"]["Grids"]["30"]["Objects"].as_object_mut().unwrap().remove("6");assert!(!check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["40"]["Objects"]["8"]["X"]=4.into();assert!(check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["50"]=json!({"ID":50,"Objects":{"1":{"ID":1,"State":{"SubGrid":{"GridID":60}}}}});assert!(check(&a,&b));
+    }
+    #[test]
+    fn protects_explicit_active_addresses_in_grid_zero_and_all_event_states(){
+        let mut a=fixture();
+        a["World"]["GridCollection"]["Grids"]["0"]=json!({"ID":0,"Objects":{"5":{"ID":5,"X":1},"6":{"ID":6,"X":2}}});
+        a["ConditionalEventHistory"]["ActiveEvents"]["other"]=json!({"SpawnSnippetState":{"Address":{"GridID":0,"GridObjectID":5}}});
+        let mut b=a.clone();
+        b["World"]["GridCollection"]["Grids"]["0"]["Objects"]["5"]["X"]=9.into();
+        assert!(!check(&a,&b));
+        b=a.clone();
+        b["World"]["GridCollection"]["Grids"]["0"]["Objects"]["6"]["X"]=9.into();
+        assert!(check(&a,&b));
+        a["World"]["QuestInfo"]["FutureReference"]=json!({"GridID":0,"GridObjectID":6});
+        b=a.clone();
+        b["World"]["GridCollection"]["Grids"]["0"]["Objects"]["6"]["X"]=9.into();
+        assert!(!check(&a,&b));
     }
     #[test]
     fn referenced_default_diff_object_protects_complete_layout_identity(){
