@@ -62,7 +62,7 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
   if grids[&e.target.grid_id]["GridDataPath"].as_str().is_some_and(|p|p.starts_with("GridData/Rooms/Room")){
    let room=*room_ordinals.get(&e.target.grid_id).ok_or(bad)?;
    let objects=grids[&e.target.grid_id]["Objects"].as_object().ok_or(bad)?;
-   let index=objects.keys().position(|k|*k==e.target.object_id).ok_or(bad)?;
+   let index=objects.keys().position(|k|k==&e.target.object_id).ok_or(bad)?;
    let old=objects[&e.target.object_id]["Orientation"].as_str().ok_or(bad)?;
    let (x,y)=e.position.unwrap_or(e.expected);
    let to=e.orientation.as_ref().map_or(old,|(_,s)|s.as_str());
@@ -92,6 +92,61 @@ pub(super) fn restore(source:&str,backup:&str,scope:&HashSet<String>)->Result<St
 #[cfg(test)]
 mod tests{
  use super::*;
+ fn indoor_fixture()->Value{
+  use serde_json::json;
+  let mut root=json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{}},"World":{"PlayerHouses":[{"Floors":[{"Rooms":{"0":{"FloorGridID":42},"1":{"FloorGridID":43}}},{"Rooms":{"0":{"FloorGridID":44}}}]}],"GridCollection":{"Grids":{}}},"Marker":17});
+  for gid in 42..=44{
+   let g=gid.to_string();
+   root["World"]["GridCollection"]["Grids"][&g]=json!({"ID":gid,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{}});
+   for object in 1..=2{
+    let id=gid*10+object;
+    root["Player"]["ContainerInventories"][id.to_string()]=json!({"ID":id,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":object,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0});
+    root["World"]["GridCollection"]["Grids"][&g]["Objects"][object.to_string()]=json!({"ID":object,"ItemID":40001680,"X":object,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":id,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}});
+   }
+  }
+  root
+ }
+ #[test]fn indoor_private_pose_restore_all_scopes_and_independent_transforms(){
+  use serde_json::json;
+  let original=indoor_fixture();
+  for kind in ["room","floor","building"]{
+   let scope=crate::private_storage_scope::resolve(original.to_string().as_bytes(),&json!({"kind":kind,"roomOrdinal":1}).to_string()).unwrap().unwrap();
+   let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&scope)).unwrap();
+   let mut moved=original.clone();
+   for g in &scope{
+    let objects=&mut moved["World"]["GridCollection"]["Grids"][g]["Objects"];
+    objects["1"]["X"]=4.into();objects["1"]["Orientation"]="GridOrientation_Left".into();
+    objects["2"]["Y"]=5.into();objects["2"]["Orientation"]="GridOrientation_Right".into();
+    let id=(g.parse::<u64>().unwrap()*10+1).to_string();
+    moved["Player"]["ContainerInventories"][id]["Inventory"]=json!([]);
+   }
+   let output=restore(&moved.to_string(),&backup,&scope).unwrap();
+   assert_eq!(serde_json::from_str::<Value>(&output).unwrap(),original);
+   let mut wrong=moved.clone();wrong["World"]["SpawnedObjects"]=json!([{"GridID":42,"GridObjectID":1}]);
+   assert!(restore(&wrong.to_string(),&backup,&scope).is_err());
+   let mut wrong:Value=serde_json::from_str(&backup).unwrap();
+   wrong["rows"][0]["roots"][0]["pose"]["x"]=8.into();
+   assert!(restore(&moved.to_string(),&wrong.to_string(),&scope).is_err());
+  }
+ }
+ #[test]fn recreated_empty_storage_is_rebound_only_once(){
+  use serde_json::json;
+  let original=indoor_fixture();
+  let scope=HashSet::from(["42".to_owned()]);
+  let backup=ddv_save_patch::storage_backup::export_scoped(&original.to_string(),Some(&scope)).unwrap();
+  let mut changed=original.clone();
+  let mut row=changed["Player"]["ContainerInventories"].as_object_mut().unwrap().remove("421").unwrap();
+  row["ID"]=999.into();row["Inventory"]=json!([]);
+  changed["Player"]["ContainerInventories"]["999"]=row;
+  let grid=&mut changed["World"]["GridCollection"]["Grids"]["42"];
+  let mut object=grid["Objects"].as_object_mut().unwrap().remove("1").unwrap();
+  object["ID"]=3.into();object["State"]["Storage"]["ContainerInventoryID"]=999.into();
+  grid["Objects"]["3"]=object;grid["NextGridObjectID"]=4.into();
+  let mut expected=changed.clone();expected["Player"]["ContainerInventories"]["999"]["Inventory"]=original["Player"]["ContainerInventories"]["421"]["Inventory"].clone();
+  let output=restore(&changed.to_string(),&backup,&scope).unwrap();
+  assert_eq!(serde_json::from_str::<Value>(&output).unwrap(),expected);
+ }
+
  #[test]fn restore_existing_storage_pose_and_contents_in_all_calibrated_scenes(){
   let catalog:Value=serde_json::from_str(include_str!("../../../static/ddv/world/steam-1.26.2/index.json")).unwrap();
   let rows=catalog["entries"].as_array().unwrap().iter().find(|e|e["scope"]=="VillageExpansion04UnderwaterAreas").unwrap()["grids"].as_array().unwrap();
