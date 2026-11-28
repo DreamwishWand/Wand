@@ -254,7 +254,29 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
           const kind=evidence.kind;
           check(kind==='story_progress_reward'&&evidence.sourceFileSha256===sha?.Story&&evidence.sourcePath==='source.Reward.ItemID'&&id(evidence.configuredAmount)||
             kind==='achievement_milestone_reward'&&evidence.sourceFileSha256===sha?.DutyAch&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.Milestones[')&&id(evidence.configuredAmount)&&id(evidence.configuredMilestone)||
-            kind==='figurine_additional_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.AdditionalRewardItemIDs[')&&evidence.configuredAmount===null,'EXTENSION_PROGRESS');
+            kind==='figurine_additional_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&typeof evidence.sourcePath==='string'&&evidence.sourcePath.startsWith('source.AdditionalRewardItemIDs[')&&evidence.configuredAmount===null||
+            kind==='figurine_rank_reward'&&evidence.sourceFileSha256===sha?.BoardGame&&evidence.sourcePath==='source.Tier'&&
+            evidence.configuredAmount===1&&evidence.configuredMilestone===null&&typeof evidence.configuredTier==='number'&&[1,2,3].includes(evidence.configuredTier)&&
+            evidence.selectionRule==='minimum_positive_unowned_tier_random'&&evidence.rankGate==='level_increased_and_unlocks_figurine'&&
+            Array.isArray(evidence.rankRewardPoints)&&evidence.rankRewardPoints.length===26&&evidence.rankRewardPoints.every((n,i)=>n===[3,9,15,24,33,45,57,69,84,99,114,129,147,165,183,201,219,237,258,279,300,350,400,450,500,550][i])&&
+            evidence.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&evidence.sourceRankingRecordIndex===394&&
+            evidence.sourceRankingRecordSha256==='3204625406f5a3317e534e65dc411fe95afdc79ad6f4425a4b9ab999414e9da9'&&
+            evidence.sourceRankingPayloadSha256==='4c3cfea78603697bd8be1808905ef7daaba3d4cfac5018a0582e1c51c7a3a136'&&
+            evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653','EXTENSION_PROGRESS');
+          const gate=evidence.rankActivity;
+          if(kind==='figurine_rank_reward'||gate!==undefined){
+            check((kind==='figurine_rank_reward'||kind==='figurine_additional_reward')&&object(gate)&&
+              gate.requiredExpansion==='Expansion01'&&gate.preConditionItemId===2130001296&&gate.unlockMissionItemId===2070000996&&
+              gate.unlockMissionState===8&&gate.unlockMissionOperator===0&&gate.sourceConditionSha256===sha?.Condition&&
+              gate.sourceMissionSha256===sha?.Mission&&gate.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+              gate.sourceActivityRecordIndex===16&&gate.sourceActivityRecordSha256==='243b5021740968b2d84eebc08a207862d115eef90b7d03dd31f24ad2268a577a'&&
+              gate.sourceActivityPayloadSha256==='212e2e5dfb6b22f87c921bf3a3c42c7feeeba4cc3b7428f9975a4771b1c376f0','EXTENSION_RANK_ACTIVITY');
+            const points=gate.configuredRankPointRewards,friendship=gate.configuredFriendshipRewards;
+            check(object(points)&&object(points.victory)&&points.victory.normal===3&&points.victory.eager===6&&
+              object(points.loss)&&points.loss.normal===1&&points.loss.eager===2&&object(points.draw)&&points.draw.normal===2&&points.draw.eager===4&&
+              object(friendship)&&friendship.normal===200&&friendship.eager===1000,'EXTENSION_RANK_REWARDS');
+            relatedIds.push(2130001296,2070000996);
+          }
         }else if(family==='critterBefriending'){
           check(evidence.kind==='ordinary_critter_befriending'&&evidence.sourcePath==='source.BefriendingPetRewardItemID'&&id(evidence.configuredFeedingCount)&&
             evidence.sourceFileSha256===sha?.Companion,'EXTENSION_CRITTER');
