@@ -9,7 +9,7 @@ test('all original blocker definitions preserve direct rewards, loot and context
   const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
   const reader=createBlockerSourceReader(db);
   const ids=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'FurnitureBlockerItemData'});
-  assert.equal(ids.length,422);
+  assert.equal(ids.length,434); // current canonical sourceClass census, not historical subtype overlay
   const rows=await reader.getForBlockers(ids);
   assert(rows.every(r=>r.status==='indexed'));
   const defs=rows.map(r=>r.definition);
