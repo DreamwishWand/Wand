@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import {decodeNormalPixels,selectedNormalMaps} from '../src/lib/photo-mode/native-face-normal.ts';
-const hash=b=>createHash('sha256').update(b).digest('hex');
+const hash=b=>createHash('sha256').update(b instanceof ArrayBuffer?new Uint8Array(b):b).digest('hex');
 test('original eyes, nose, mouth, jaw and region mask are selected in native order',()=>{
  const male=Array.from({length:8},(_,i)=>({i,b:'m'})),female=Array.from({length:8},(_,i)=>({i,b:'f'})),mask={i:9};const index={bodies:{male,female},mask};
  assert.deepEqual(selectedNormalMaps(index,'female',4,[1,6,2]),[female[4],female[1],female[6],female[2],mask]);assert.throws(()=>selectedNormalMaps(index,'male',8));
