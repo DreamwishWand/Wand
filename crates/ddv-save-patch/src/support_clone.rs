@@ -128,22 +128,27 @@ pub(super) fn build_source_tree(grids:&Map<String,Value>,diff:Option<&Map<String
 /// Existing parent tree must already have been resolved and validated by
 /// the codec. The returned candidate is not runtime or writer authority.
 pub fn preview_support_tree_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
- duplicate(source,target,expected,d,xy,orientation,None,false)
+ duplicate(source,target,expected,d,xy,orientation,None,false,false)
 }
 pub fn preview_support_scene_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
- duplicate(source,target,expected,d,xy,orientation,Some(scene),false)
+ duplicate(source,target,expected,d,xy,orientation,Some(scene),false,false)
 }
 /// Same owned room surface, resolved by the codec; the same clone engine
 /// allocates child grids and consumes the exact aggregate inventory.
 pub fn preview_indoor_support_tree_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id!=d.grid_id{return Err(BAD);}
- duplicate(source,target,expected,d,xy,orientation,None,true)
+ preview_indoor_support_tree_duplicate_mode(source,target,expected,d,xy,orientation,false)
 }
-fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:Option<&Value>,room:bool)->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_indoor_support_tree_duplicate_mode(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id!=d.grid_id{return Err(BAD);}
+ duplicate(source,target,expected,d,xy,orientation,None,true,free)
+}
+fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:Option<&Value>,room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400{return Err(BAD);}
  // Rooms have shared template paths but their exact owner is resolved by
  // the codec. Keep the outdoor layout/path uniqueness contract unchanged.
- if room{validate_local_grid_destination(source,d,target.item_id,xy,orientation,"GridData/Rooms/")?;}
+ if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&!room{return Err(BAD);}
+ if room{validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
  else{let _=preview_plain_grid_place(source,d,target.item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
@@ -155,7 +160,7 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
  if object(src,&target.object_id)?!=target.item_id||(coord(src,"X")?,coord(src,"Y")?)!=expected{return Err(BAD);}
  if source_grid.get("TessellationFactor").map_or(Some(1),Value::as_u64)!=Some(u64::from(d.tessellation)){return Err(BAD);}
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
- if dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
+ if !free&&dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let child=state_child(src)?.ok_or(BAD)?;
  let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![target.item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:false};
  let cloned=tree.clone_grid(child,target.item_id,0)?;
@@ -169,14 +174,18 @@ fn duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&Plai
 /// Place a source-bound portable scene with no existing native template.
 /// The codec/UI must verify each owner/path and native terrain before calling.
 pub fn preview_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
- scene_place(source,item_id,d,xy,orientation,scene,false)
+ scene_place(source,item_id,d,xy,orientation,scene,false,false)
 }
 pub fn preview_indoor_support_scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value)->Result<GridCoordinateDraft,PatchError>{
- scene_place(source,item_id,d,xy,orientation,scene,true)
+ preview_indoor_support_scene_place_mode(source,item_id,d,xy,orientation,scene,false)
 }
-fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value,room:bool)->Result<GridCoordinateDraft,PatchError>{
+pub fn preview_indoor_support_scene_place_mode(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value,free:bool)->Result<GridCoordinateDraft,PatchError>{
+ scene_place(source,item_id,d,xy,orientation,scene,true,free)
+}
+fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orientation:&str,scene:&Value,room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  if source.is_empty()||source.len()>MAX_PROFILE_BYTES||item_id/100_000!=400{return Err(BAD);}
- if room{validate_local_grid_destination(source,d,item_id,xy,orientation,"GridData/Rooms/")?;}
+ if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&!room{return Err(BAD);}
+ if room{validate_local_grid_destination_mode(source,d,item_id,xy,orientation,"GridData/Rooms/",free)?;}
  else{let _=preview_plain_grid_place(source,d,item_id,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).and_then(Value::as_object).ok_or(BAD)?;
@@ -184,7 +193,7 @@ fn scene_place(source:&str,item_id:u64,d:&PlainGridDestination,xy:(i32,i32),orie
  let diff=c.get("DiffGrids").map(|v|v.as_object().ok_or(BAD)).transpose()?;
  let next=checked_grid_allocator(c)?;
  let dest=grids.get(&d.grid_id).and_then(|g|g.get("Objects")).and_then(Value::as_object).ok_or(BAD)?;
- if dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
+ if !free&&dest.values().any(|o|o.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&o.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&o.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(BAD);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:d.grid_id.clone(),object_id:"1".into(),item_id};
  let mut tree=CloneTree{grids,diff,seen:HashSet::new(),next,created:Vec::new(),stock:vec![item_id],templates:HashMap::new(),plain:HashSet::new(),source_only:true};
  let new_child=tree.scene_grid(item_id,scene,0)?;

@@ -23,3 +23,14 @@ test('room support pickup keeps exact ordinal and cardinal pose and rejects stal
  assert.equal(roomSupportPickupPlan(face,[{...w,x:3}],[0],shapes,allowed),null);
  assert.equal(roomSupportPickupPlan(face,[w],[0,0],shapes,allowed),null);
 });
+
+test('support free placement permits overlap and terrain holes but requires native bounds and known shape',async()=>{
+ const {supportFreeEdit,supportPlacementFits,supportStockPlacement}=await import('../src/lib/world/subgrid-local.ts');
+ const id=40000002,tree={factor:1,sourcePath:'GridData/Furniture/Test.json',objects:[{itemId:id,x:0,y:0,orientation:'GridOrientation_Down',child:null},{itemId:id,x:1,y:0,orientation:'GridOrientation_Down',child:null}]};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:'M0 0h1v1H0Z'},shapes={[id+':8']:shape},raster={sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,0,0])};
+ assert.equal(supportFreeEdit(tree,shapes,new Set([id]),raster,0,1,0,'GridOrientation_Down'),null);
+ assert.ok(supportFreeEdit(tree,shapes,new Set([id]),raster,0,1,0,'GridOrientation_Down',true));
+ assert.ok(supportStockPlacement(tree,shapes,raster,id,1,0,1,'GridOrientation_Down',true));
+ assert.equal(supportPlacementFits(tree,shapes,raster,id,2,1,'GridOrientation_Down',true),false);
+ assert.equal(supportPlacementFits(tree,{},raster,id,0,1,'GridOrientation_Down',true),false);
+});

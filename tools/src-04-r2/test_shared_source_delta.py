@@ -9,7 +9,7 @@ from PIL import Image
 from bundle_thumbnails import POLICY
 from publish_bundle_thumbnails import BUCKET, key
 from source_image_ledger import SCHEMA
-from shared_source_delta import extract,prepare,register,classify,targets,TARGET_SCHEMA
+from shared_source_delta import extract,prepare,register,classify,targets,stage_subset,TARGET_SCHEMA,REPORT_SCHEMA
 
 class SharedDeltaTests(unittest.TestCase):
     def test_confirmed_guid_reuse_changed_bundle_without_local_images(self):
@@ -66,6 +66,37 @@ class SharedDeltaTests(unittest.TestCase):
                     else:
                         with self.assertRaises(ValueError):extract(spec,Path(d),None,out,ledger)
                     self.assertEqual(encode.call_count,1)
+
+    def test_stage_verified_subset_without_reloading_or_reencoding(self):
+        g,h,x=("1"*32,"2"*32,"3"*32)
+        original={"sha256":"a"*64,"bytes":100,"width":800,"height":400}
+        thumb={"sha256":"b"*64,"bytes":50,"width":512,"height":256}
+        ledger={"schema":SCHEMA,"bucket":BUCKET,"thumbnailPolicy":POLICY,
+                "images":{original["sha256"]:original,thumb["sha256"]:thumb},
+                "originals":{},"thumbnails":{original["sha256"]:thumb["sha256"]}}
+        report={"schema":REPORT_SCHEMA,"gameVersion":"1.26.2","privateOnly":True,
+                "publicationAuthorized":False,"complete":False,
+                "targets":{i:"shop-512" for i in (g,h,x)},
+                "assets":{i:{"original":original} for i in (g,h)},
+                "errors":{h:["ambiguous"]},"unresolved":[h,x]}
+        spec={"schema":TARGET_SCHEMA,"gameVersion":"1.26.2","targets":{g:"shop-512"}}
+        with tempfile.TemporaryDirectory() as d:
+            source=Path(d)/"source";source.mkdir()
+            p=source/"shared-source-report.json"
+            raw=json.dumps(report).encode();p.write_bytes(raw)
+            with patch("shared_source_delta.exact_objects",side_effect=AssertionError("must not extract")),patch.object(Image.Image,"save",side_effect=AssertionError("must not encode")):
+                out=Path(d)/"out"
+                result=stage_subset(source,out,spec,ledger)
+                self.assertEqual(result["ledgerReused"],2)
+                child,index,cache,objects=prepare(out,ledger)
+                self.assertEqual(child["parentSourceReportSha256"],hashlib.sha256(raw).hexdigest())
+                self.assertEqual(set(index["references"]),{g})
+                self.assertEqual(index["references"][g]["thumbnail"],thumb["sha256"])
+                self.assertEqual(p.read_bytes(),raw)
+                for bad in (h,x):
+                    with self.assertRaisesRegex(ValueError,"Unresolved requested"):
+                        stage_subset(source,Path(d)/bad,{**spec,"targets":{bad:"shop-512"}},ledger)
+                    self.assertFalse((Path(d)/bad).exists())
 
     def test_reference_delta(self):
         self.assertEqual(classify({"a":1,"b":2,"c":3},{"a":1,"b":4,"d":5}),

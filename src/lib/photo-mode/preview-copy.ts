@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "faceDiagnostic": "保存された頭部・鼻・口・顎の形状を原本メッシュで表示します。顔の法線マップ・影用メッシュ・表情の完全再現は未対応です。",
     "eyeDiagnostic": "瞳の模様と色は原本データを使用したRGBマスクの簡易表示です。ゲームのシェーダーは未再現で、未記録の色はアイテム既定値を使用します。",
     "nativeLoops": "原本の異なる再生周期を個別に再現しています。ゲーム内の同期は未検証です。",
     "residualMotion": "一部のドラゴンの動作参照は未解決です。",
@@ -31,6 +32,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "faceDiagnostic": "Saved head, nose, mouth and jaw shapes use original meshes. Face normal maps, shadow meshes and full facial-expression fidelity remain incomplete.",
     "eyeDiagnostic": "Eye patterns and colors use a diagnostic RGB mask projection of original data. Game shaders are not reproduced; missing colors use item reference defaults.",
     "nativeLoops": "Original unequal clip periods are sampled independently; in-game synchronization is unverified.",
     "residualMotion": "Some dragon motion bindings remain unresolved.",
@@ -62,6 +64,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "faceDiagnostic": "La tête, le nez, la bouche et la mâchoire enregistrés utilisent les maillages originaux. Les cartes de normales, les ombres et les expressions faciales restent incomplets.",
     "eyeDiagnostic": "Les motifs et couleurs des yeux utilisent une projection RGB de diagnostic des données originales. Les shaders du jeu ne sont pas reproduits ; les couleurs manquantes utilisent les valeurs de référence.",
     "nativeLoops": "Les cycles originaux de durées différentes sont lus indépendamment ; la synchronisation en jeu reste à vérifier.",
     "residualMotion": "Certaines liaisons de mouvement du dragon restent non résolues.",
@@ -93,6 +96,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "faceDiagnostic": "Testa, naso, bocca e mascella salvati usano le mesh originali. Mappe normali, ombre ed espressioni facciali restano incomplete.",
     "eyeDiagnostic": "I motivi e i colori degli occhi usano una proiezione RGB diagnostica dei dati originali. Gli shader del gioco non sono riprodotti; i colori mancanti usano i valori di riferimento.",
     "nativeLoops": "I cicli originali di durata diversa sono riprodotti separatamente; la sincronizzazione in gioco non è verificata.",
     "residualMotion": "Alcuni riferimenti di movimento del drago non sono ancora risolti.",
@@ -124,6 +128,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "faceDiagnostic": "Gespeicherte Kopf-, Nasen-, Mund- und Kieferformen verwenden Originalmeshes. Normalmaps, Schatten und Mimik bleiben unvollständig.",
     "eyeDiagnostic": "Augenmuster und -farben verwenden eine diagnostische RGB-Projektion der Originaldaten. Spielshader sind nicht nachgebildet; fehlende Farben nutzen die Referenzwerte.",
     "nativeLoops": "Unterschiedlich lange Originalzyklen werden unabhängig wiedergegeben; die Synchronisation im Spiel ist nicht verifiziert.",
     "residualMotion": "Einige Bewegungsbindungen des Drachen sind noch nicht aufgelöst.",
@@ -155,6 +160,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "faceDiagnostic": "La cabeza, nariz, boca y mandíbula guardadas usan mallas originales. Los mapas de normales, las sombras y las expresiones faciales siguen incompletos.",
     "eyeDiagnostic": "Los patrones y colores de ojos usan una proyección RGB de diagnóstico de los datos originales. No se reproducen los shaders del juego; los colores ausentes usan valores de referencia.",
     "nativeLoops": "Los ciclos originales de distinta duración se reproducen de forma independiente; la sincronización en el juego no está verificada.",
     "residualMotion": "Algunas referencias de movimiento del dragón aún no se han resuelto.",
@@ -186,6 +192,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "faceDiagnostic": "存档中的头部、鼻、嘴和下颌使用原始网格。面部法线贴图、阴影网格和表情仍未完全复现。",
     "eyeDiagnostic": "眼睛图案和颜色使用原始数据的RGB遮罩诊断显示。尚未复现游戏着色器；缺失颜色使用物品参考默认值。",
     "nativeLoops": "独立播放原始的不同动画周期；尚未验证游戏内同步。",
     "residualMotion": "部分龙的动作绑定尚未解析。",
@@ -217,6 +224,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "faceDiagnostic": "Cabeça, nariz, boca e maxilar salvos usam as malhas originais. Mapas normais, sombras e expressões faciais ainda estão incompletos.",
     "eyeDiagnostic": "Os padrões e cores dos olhos usam uma projeção RGB de diagnóstico dos dados originais. Os shaders do jogo não são reproduzidos; cores ausentes usam os valores de referência.",
     "nativeLoops": "Os ciclos originais de durações diferentes são reproduzidos independentemente; a sincronização no jogo não foi verificada.",
     "residualMotion": "Algumas referências de movimento do dragão ainda não foram resolvidas.",

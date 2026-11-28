@@ -23,6 +23,13 @@ export function storageGroupSelection(items:readonly MainlandSavedObject[],free=
  const sources=items.map(p=>p.object.storage?{localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation as EightWay}:null);
  return {clip,sources};
 }
+/** A local duplicate preserves support trees, and uses storage witnesses
+ * only if the selection contains storage. No Scene file or clipboard needed. */
+export function localSupportDuplicateSelection(items:readonly MainlandSavedObject[]){
+ if(!items.some(p=>p.object.subgrid)||items.some(p=>p.object.storageKnown&&!p.object.storage||p.object.subgrid&&p.object.subgrid.status!=='resolved_full'))return null;
+ if(items.some(p=>p.object.storage))return storageGroupSelection(items,false,true);
+ const clip=captureFurnitureGroup(items,true,false);return clip?{clip,sources:null}:null;
+}
 export function storageGroupPlan(sources:readonly (StorageDuplicateSource|null)[],candidate:GroupPasteCandidate,copyContents:boolean,freePlacement:boolean){
  if(!sources.some(Boolean)||sources.length!==candidate.rows.length)return null;
  const supportRows='supportRows' in candidate?(candidate as import('./support-scene.ts').MixedScenePlacement).supportRows:null;

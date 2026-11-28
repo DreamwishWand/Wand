@@ -11,7 +11,7 @@
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveExportEnabled,testSaveWords} from './test-save-export.ts';
- import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutClipboardMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,groupSymmetryWords,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,storageGroupSelection,storageGroupPlan,storageGroupWords,type StorageDuplicateSource,type WorldGroupPose,type WorldSymmetryAxis,type GroupPasteCandidate,type CutWitness,type CutClipboard} from './group-paste.ts';
+ import {captureFurnitureGroup,worldFurnitureClipboard,worldFurnitureCut,groupPasteWords,groupCutWords,captureCutWitness,cutClipboardMatches,groupCutPlan,groupPasteCandidate,rotateFurnitureGroup,groupStockAvailable,groupSceneOrigin,groupSceneWords,groupSymmetryWords,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,localSupportDuplicateSelection,storageGroupSelection,storageGroupPlan,storageGroupWords,type StorageDuplicateSource,type WorldGroupPose,type WorldSymmetryAxis,type GroupPasteCandidate,type CutWitness,type CutClipboard} from './group-paste.ts';
  import {parseFurnitureStock} from './furniture-stock-view.ts';
  import {worldArtwork} from './world-artwork.ts';
  import {DESIGN_FILE_LIMIT,type DesignClipItem,type DesignItemGeometry} from './design-layout.ts';
@@ -138,8 +138,8 @@
  }
  function changeAnchor(a:ScenePreset['anchor']){if(writing||copy)return;sceneAnchor=a;candidate=null;}
  export function capture(cut=false){const captured=cut?captureFurnitureGroup(items,true,freePlacement):selection;if(!allowed||blocked||!captured||!file)return false;const rows=cut?captureCutWitness(items,freePlacement):null;if(cut&&!rows)return false;worldFurnitureCut.set(rows?{file,scope,rows}:null);worldFurnitureClipboard.set(captured);copied=true;return true;}
- function beginMixedStorage(){
-  const captured=storageGroupSelection(items,freePlacement,true),f=file;
+ function beginLocalSupportDuplicate(){
+  const captured=localSupportDuplicateSelection(items),f=file;
   if(!captured||!f||!allowed||blocked||!worker||captureWorker)return false;
   const selected=[...items],parents=selected.filter(p=>p.object.subgrid).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
   if(!parents.length)return false;
@@ -156,7 +156,7 @@
   own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'inspect-subgrids',file:f,parents});return true;
  }
  export function begin(duplicate=false,sceneDoc:ScenePreset|null=null,supportDoc:MixedScenePreset|null=null,areaDoc:AreaScene|null=null,localStorageSources:StorageDuplicateSource[]| (StorageDuplicateSource|null)[]|null=null){
-  if(duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.storage)&&items.some(p=>p.object.subgrid))return beginMixedStorage();
+  if(duplicate&&!sceneDoc&&!supportDoc&&!areaDoc&&items.some(p=>p.object.subgrid))return beginLocalSupportDuplicate();
   const storage=duplicate&&!sceneDoc&&!supportDoc&&!areaDoc?storageGroupSelection(items,freePlacement):null;
   const data=areaDoc?areaDoc.items.map(({support,network,...p})=>p):supportDoc?supportDoc.items.map(({support,...p})=>p):sceneDoc?sceneDoc.items:duplicate?(storage?.clip??selection):$worldFurnitureClipboard,cut=duplicate||sceneDoc||supportDoc||areaDoc?null:$worldFurnitureCut;
   if(!allowed||blocked||!file||!worker||!data?.length||!grids.length||sceneHasDiagonal(data)&&(!freePlacement||!!cut&&!cut.rows.every(r=>!r.supportFactor)||!!supportDoc||!!areaDoc))return false;

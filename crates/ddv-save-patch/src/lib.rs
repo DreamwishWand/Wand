@@ -1733,12 +1733,12 @@ fn validate_local_grid_destination(source:&str,d:&PlainGridDestination,item_id:u
  validate_local_grid_destination_mode(source,d,item_id,xy,orientation,prefix,false)
 }
 fn validate_local_grid_destination_mode(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,prefix:&str,free:bool)->Result<(),PatchError>{
- if free&&(!prefix.eq("GridData/Rooms/")||!d.data_path.starts_with("GridData/Rooms/Room")){return Err(PatchError::InvalidTarget);}
+ if free&&!(prefix=="GridData/Furniture/"||prefix=="GridData/Rooms/"&&d.data_path.starts_with("GridData/Rooms/Room")){return Err(PatchError::InvalidTarget);}
  if item_id/100_000!=400||!valid_id(&d.grid_id)||d.grid_id.starts_with('0')||
     !d.data_path.starts_with(prefix)||!d.data_path.ends_with(".json")||d.data_path.contains("..")||d.data_path.contains('\\')||
     !matches!(d.tessellation,1|2)||d.size.0==0||d.size.1==0||d.size.0>256||d.size.1>256||
     xy.0<0||xy.1<0||xy.0 as u32>=d.size.0*d.tessellation||xy.1 as u32>=d.size.1*d.tessellation||
-    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(PatchError::InvalidTarget);}
+    !(OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||free&&prefix=="GridData/Rooms/"&&d.tessellation==1&&EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)){return Err(PatchError::InvalidTarget);}
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let c=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
  let g=c.get("Grids").and_then(|v|v.get(&d.grid_id)).ok_or(PatchError::MissingTarget)?;
@@ -1752,6 +1752,12 @@ fn validate_local_grid_destination_mode(source:&str,d:&PlainGridDestination,item
 }
 pub fn preview_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
  validate_support_grid_destination(source,d,item_id,xy,orientation)?;
+ let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
+ insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
+}
+/// Explicit free placement on a codec-verified support surface; cardinal only.
+pub fn preview_free_support_grid_stock_place(source:&str,d:&PlainGridDestination,item_id:u64,xy:(i32,i32),orientation:&str,expected_stock:u32)->Result<GridCoordinateDraft,PatchError>{
+ validate_local_grid_destination_mode(source,d,item_id,xy,orientation,"GridData/Furniture/",true)?;
  let amount=preview_default_furniture_stock(source,item_id,expected_stock,-1)?;
  insert_plain_grid_record(&amount.patched_json,d,item_id,xy,orientation)
 }
@@ -1946,7 +1952,7 @@ pub fn preview_empty_storage_pickup(source:&str,target:&GridCoordinateTarget,exp
  draft.patched_json=amount.patched_json;Ok(draft)
 }
 /// Create an independent owned container using a proven placed storage
-/// record. Do not invent container defaults or copy stateful inventory items.
+/// record. Copy contents only when every item has verified independent state.
 pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,expected_stock:u32,copy_contents:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::{Value,json};
  let bad=PatchError::InvalidTarget;
@@ -1967,7 +1973,7 @@ pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expect
  let mut row=containers.get(&old).ok_or(bad)?.clone();
  if row.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize"))){return Err(bad);}
  if copy_contents{
-  if row["Inventory"].as_array().is_none_or(|a|a.len()>8192||a.iter().any(|v|v.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"ItemID"|"Amount"|"State")))||v["ItemID"].as_u64().is_none()||v["Amount"].as_u64().is_none()||v.get("State").is_some_and(|s|!s.is_null()))){return Err(bad);}
+  if !storage_backup::independent_inventory(&row["Inventory"]){return Err(bad);}
  }else{row["Inventory"]=json!([]);}
  row["ID"]=json!(fresh);st["ContainerInventoryID"]=json!(fresh);
  let amount=preview_default_furniture_stock(source,target.item_id,expected_stock,-1)?;
@@ -2009,6 +2015,14 @@ pub fn preview_storage_transfer(source:&str,target:&GridCoordinateTarget,expecte
 pub fn preview_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
  validate_support_grid_destination(source,d,target.item_id,xy,orientation)?;
+ let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+ insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
+}
+
+/// Explicit free transfer between codec-verified support surfaces; preserve stock.
+pub fn preview_free_support_grid_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str)->Result<GridCoordinateDraft,PatchError>{
+ if target.grid_id==d.grid_id{return Err(PatchError::InvalidTarget);}
+ validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Furniture/",true)?;
  let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
  insert_plain_grid_record(&removed.patched_json,d,target.item_id,xy,orientation)
 }
