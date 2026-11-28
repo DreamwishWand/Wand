@@ -4,7 +4,7 @@ No raw Unity bundle, private save or shader bytecode is exported.
 """
 import argparse,json,re,struct,zipfile,zlib
 from pathlib import Path
-from resolve_animation_bundle import digest,unityfs,serialized_objects
+from resolve_animation_bundle import Reader,digest,unityfs,serialized_objects
 from pose_material import decode_material,externals,read_streamed_texture
 from convert_native_makeup import decode_mip,source_color_space
 from pose_curves import require
@@ -23,6 +23,9 @@ def build(raw,out):
     def texture(pid,obs,files):
         cls,b=obs[int(pid)];require(cls==28,"native texture class")
         info,payload,lengths=read_streamed_texture(b,files);color=source_color_space(b)
+        # All pinned eye and teeth textures use the same native sampler.
+        r=Reader(b);r.string();r.take(32);group=r.string();r.take(16)
+        require(group in ('PBR Diffuse','PBR Normal Map','PBR Maps') and r.unpack('IIfIII')==(1,1,0.,0,0,0),'native repeat/bilinear sampler')
         w,h,mips,fmt=info["width"],info["height"],info["mips"],info["format"]
         require((w,h,mips)==(512,512,10) and fmt in (10,12,25),"native map layout")
         pixels=[];off=0
