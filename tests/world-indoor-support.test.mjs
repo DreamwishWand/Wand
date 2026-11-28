@@ -96,7 +96,7 @@ test('support cut uses a parent witness and enters outdoor paste only in free mo
  const {groupCutPlan,cutClipboardMatches}=await import('../src/lib/world/group-paste.ts');
  const id=40000002,orientation='GridOrientation_Down',supportSource={parentItemId:40000003,parentX:1,parentY:2,path:[0],index:0};
  const row={localOrdinal:7,supportSource,area:'indoor',itemId:String(id),expectedX:0,expectedY:0,expectedOrientation:orientation};
- const floor={...face,positions:[],items:[],terrain:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,4,4])}};
+ const floor={...face,positions:[],items:[],sourcePath:'GridData/Rooms/Room8x8-GridData.json',terrain:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,4,4,4])}};
  const shapes={[id+':8']:{width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:4,path:''}};
  const clip=[{itemId:id,dx:0,dy:0,orientation:2}],allowed=new Set([id]);
  assert.equal(indoorGroupTransfer(floor,shapes,allowed,[row],clip,0,0,false),null);
