@@ -1,4 +1,5 @@
 <script lang="ts">
+ import PrivateStorageBackup from './PrivateStorageBackup.svelte';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -70,6 +71,7 @@
  {#if snapshot}<small>{w[15]} {snapshot.editable.length} · {w[7]} {snapshot.protectedObjects.length}</small>{/if}
  <input class="biome-preset-input" type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/>
  <div><button type="button" disabled={!snapshot||blocked||busy||!!copy} on:click={exportPreset}>{w[2]}</button>{#if allowed}<PresetFilePicker {locale} schemas={['wand.preset.whole-area-design@1']} kinds={['biome']} disabled={!snapshot||blocked||busy||!!copy} label={w[3]} onPick={f=>void openFile(f)}/>{/if}</div>
+ {#if file&&grid}<PrivateStorageBackup {file} {locale} blocked={blocked||busy||!!copy} scopeJson={JSON.stringify({kind:'outdoor',destinations:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY}]})}/>{/if}
  {#if busy}<small role="status">{w[14]}</small>{/if}
  {#if result}
   <small>{w[4]} {result.retained.length} · {w[5]} {result.removed.length} · {w[6]} {result.plan.add.length} · {w[7]} {result.protectedObjects.length}</small>

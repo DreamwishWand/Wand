@@ -1,4 +1,5 @@
 <script lang="ts">
+ import PrivateStorageBackup from './PrivateStorageBackup.svelte';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -128,6 +129,7 @@
  <label>{bw[0]} <select bind:value={scope} disabled={busy||blocked||!!copy} on:change={reset}><option value="room">{bw[1]}</option><option value="floor">{bw[2]}</option><option value="building">{bw[3]}</option></select></label>
  <button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>run('backup')}>{bw[4]}</button>
  {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/>{/if}
+ {#if targets.length}<PrivateStorageBackup {file} {locale} blocked={busy||blocked||!!copy} scopeJson={JSON.stringify({kind:scope,roomOrdinal:room.ordinal})}/>{/if}
  {#if review}<section><small>{bw[14]}</small><small>{bw[6]} {review.removed} · {bw[7]} {review.added} · {bw[8]} {review.retained} · {bw[9]} {review.finishes}</small><RestoreStockReview rows={restoreStockRows([review],review.missing,review.finishItems)} {locale}/>{#if review.missing.length}<small role="alert">{bw[13]}</small>{/if}{#if !review.changed}<small>{bw[12]}</small>{:else}<button type="button" disabled={busy||blocked||!!copy||!review.plan||!!review.missing.length} on:click={validate}>{bw[10]}</button>{/if}{#if copy}<button type="button" disabled={busy||blocked} on:click={apply}>{bw[11]}</button><a href={copy.url} download={copy.name}>{bw[10]}</a>{/if}<button type="button" disabled={busy} on:click={reset}>{bw[15]}</button></section>{/if}
  {#if error}<small role="alert">{bw[13]}</small>{/if}
 </div>

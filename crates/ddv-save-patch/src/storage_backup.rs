@@ -16,19 +16,20 @@ fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
   _=>if marked{if let Some(n)=id(v){*counts.entry(n).or_default()+=1;}}
  }
 }
-fn snapshot(root:&Value)->Result<Value,PatchError>{
+fn snapshot(root:&Value,scope:Option<&HashSet<String>>)->Result<Value,PatchError>{
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(BAD);}
  let collection=&root["World"]["GridCollection"];
  let grids=collection["Grids"].as_object().filter(|m|m.len()<=100_000).ok_or(BAD)?;
  let diff=collection.get("DiffGrids");if diff.is_some_and(|v|!v.is_object()){return Err(BAD);}
  let containers=root["Player"]["ContainerInventories"].as_object().filter(|m|m.len()<=8192).ok_or(BAD)?;
  let mut refs=HashMap::new();count_refs(root,false,&mut refs);
- let mut roots=BTreeMap::<u32,Vec<Value>>::new();let mut rejected=HashSet::new();let mut total=0usize;
+ let mut roots=BTreeMap::<u32,Vec<Value>>::new();let mut rejected=HashSet::new();let mut scoped=HashSet::new();let mut total=0usize;
  for(gid,g)in grids{
   let Some(objects)=g["Objects"].as_object()else{continue;};
   total=total.checked_add(objects.len()).filter(|n|*n<=200_000).ok_or(BAD)?;
   for(oid,o)in objects{
    let Some(n)=id(&o["State"]["Storage"]["ContainerInventoryID"])else{continue;};
+   if scope.is_none_or(|s|s.contains(gid)){scoped.insert(n);}
    let st=&o["State"]["Storage"];
    let path=g["GridDataPath"].as_str().filter(|s|s.len()<=1024);
    let item=id(&o["ItemID"]);
@@ -44,7 +45,8 @@ fn snapshot(root:&Value)->Result<Value,PatchError>{
  for(n,mut witnesses)in roots{
   let c=&containers[&n.to_string()];
   let size=id(&c["Size"]);let parent=id(&c["ParentItemID"]);
-  if rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
+  if !scoped.contains(&n){continue;}
+  if scope.is_some_and(|s|witnesses.iter().any(|w|w["grid"].as_str().is_none_or(|g|!s.contains(g))))||rejected.contains(&n)||refs.get(&n).copied()!=Some(witnesses.len())||size.is_none_or(|s|s>8192)||parent.is_none()||
     c.as_object().is_none_or(|m|m.len()!=7||m.keys().any(|k|!matches!(k.as_str(),"ID"|"Size"|"Inventory"|"BelongsToPlayer"|"BlockMoveTo"|"ParentItemID"|"ExtraSize")))||
     c["BlockMoveTo"].as_bool()!=Some(false)||c["ExtraSize"].as_u64().is_none()||!simple_inventory(&c["Inventory"]){skipped+=1;continue;}
   witnesses.sort_by_cached_key(Value::to_string);
@@ -53,21 +55,23 @@ fn snapshot(root:&Value)->Result<Value,PatchError>{
  }
  // Unmatched or unverified player-owned containers are not silently restored.
  let included:HashSet<_>=rows.iter().filter_map(|r|id(&r["id"])).collect();
- skipped=containers.iter().filter(|(_,c)|c["BelongsToPlayer"].as_bool()==Some(true)&&id(&c["ID"]).is_none_or(|n|!included.contains(&n))).count().max(skipped);
+ skipped=if scope.is_some(){scoped.iter().filter(|n|!included.contains(n)).count()}else{containers.iter().filter(|(_,c)|c["BelongsToPlayer"].as_bool()==Some(true)&&id(&c["ID"]).is_none_or(|n|!included.contains(&n))).count().max(skipped)};
  Ok(json!({"schema":SCHEMA,"version":643,"skipped":skipped,"rows":rows}))
 }
-pub fn export(source:&str)->Result<String,PatchError>{
+pub fn export(source:&str)->Result<String,PatchError>{export_scoped(source,None)}
+pub fn export_scoped(source:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
  validate_json_without_edit(source)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
- let raw=snapshot(&root)?.to_string();if raw.len()>LIMIT{return Err(BAD);}Ok(raw)
+ let raw=snapshot(&root,scope)?.to_string();if raw.len()>LIMIT{return Err(BAD);}Ok(raw)
 }
-pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{
+pub fn restore(source:&str,backup:&str)->Result<String,PatchError>{restore_scoped(source,backup,None)}
+pub fn restore_scoped(source:&str,backup:&str,scope:Option<&HashSet<String>>)->Result<String,PatchError>{
  if backup.len()>LIMIT{return Err(BAD);}
  validate_json_without_edit(source)?;validate_json_without_edit(backup)?;
  let root:Value=serde_json::from_str(source).map_err(|_|BAD)?;
  let b:Value=serde_json::from_str(backup).map_err(|_|BAD)?;
  if b.as_object().is_none_or(|m|m.len()!=4)||b["schema"].as_str()!=Some(SCHEMA)||b["version"].as_u64()!=Some(643)||b["skipped"].as_u64().is_none(){return Err(BAD);}
- let current=snapshot(&root)?;
+ let current=snapshot(&root,scope)?;
  let available:HashMap<_,_>=current["rows"].as_array().ok_or(BAD)?.iter().map(|r|(id(&r["id"]).unwrap(),r)).collect();
  let mut locator=JsonLocator::new(source,QuantityTarget::Inventory{inventory_id:"1".into(),item_id:"1".into()})?;
  locator.amount_path=vec![Segment::Index(usize::MAX)];
@@ -100,6 +104,15 @@ mod tests{
   let original=r#"[{"ItemID":30000001,"Amount":3,"State":null}]"#;
   assert_eq!(restored,changed.replace(original,&doc["rows"][0]["inventory"].to_string()));
   assert!(restore(SAVE,&backup).is_err());
+  let scope=HashSet::from(["42".to_owned()]);
+  assert_eq!(export_scoped(SAVE,Some(&scope)).unwrap(),backup);
+  let other=HashSet::from(["43".to_owned()]);
+  assert!(restore_scoped(&changed,&backup,Some(&other)).is_err());
+  let mut alias:Value=serde_json::from_str(SAVE).unwrap();
+  let mut g=alias["World"]["GridCollection"]["Grids"]["42"].clone();g["ID"]=43.into();
+  alias["World"]["GridCollection"]["Grids"]["43"]=g;
+  let doc:Value=serde_json::from_str(&export_scoped(&alias.to_string(),Some(&scope)).unwrap()).unwrap();
+  assert_eq!(doc["rows"],json!([]));assert_eq!(doc["skipped"],1);
   assert!(restore(&changed.replace("\"Size\":48","\"Size\":32"),&backup).is_err());
   let unknown=changed.replace("\"State\":null","\"State\":{\"Unknown\":1}");
   assert!(restore(&unknown,&backup).is_err());

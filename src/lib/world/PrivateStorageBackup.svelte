@@ -4,7 +4,7 @@
  import {testSaveExportEnabled} from './test-save-export.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
- export let file:File,locale:WandLanguage='ja',blocked=false;
+ export let file:File,locale:WandLanguage='ja',blocked=false,scopeJson='null';
  const words={
  ja:['収納内容バックアップ','保存','復元','復元済みセーブをダウンロード','処理中…','対象なし・復元先不一致・未対応状態・変更なし','既存収納の内容のみ。共有プリセットには登録しません。','対象','対象外'],
  en:['Storage contents backup','Back up','Restore','Download restored Save','Working…','No eligible contents, incompatible target, unsupported state or no change','Existing storage contents only. Not added to shared presets.','Included','Excluded'],
@@ -18,18 +18,19 @@
  const allowed=browser&&testSaveExportEnabled(window.location);
  let own:Worker|null=null,seen:File|null=null,input:HTMLInputElement,copy:ReturnType<typeof experimentalCopyDownload>|null=null,report='',error=false;
  $: w=words[locale];
- $: if(seen!==file||blocked){clear();seen=file;}
+ let seenScope='';
+ $: if(seen!==file||seenScope!==scopeJson||blocked){clear();seen=file;seenScope=scopeJson;}
  function clear(){own?.terminate();own=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;error=false;report='';}
  function run(backup?:File){
-  if(own||blocked||backup&&!allowed)return;clear();const source=file,worker=new Worker(new URL('./private-storage-backup.worker.ts',import.meta.url),{type:'module'});own=worker;
-  const done=(d:any)=>{worker.terminate();if(own!==worker||file!==source||blocked){d?.bytes?.fill(0);return;}own=null;try{
+  if(own||blocked||backup&&!allowed)return;clear();const source=file,selectedScope=scopeJson,worker=new Worker(new URL('./private-storage-backup.worker.ts',import.meta.url),{type:'module'});own=worker;
+  const done=(d:any)=>{worker.terminate();if(own!==worker||file!==source||scopeJson!==selectedScope||blocked){d?.bytes?.fill(0);return;}own=null;try{
    if(d?.kind==='restored'&&backup){copy=experimentalCopyDownload(d,source);return;}
    if(d?.kind!=='backup'||backup||typeof d.raw!=='string'||!Number.isSafeInteger(d.count)||!Number.isSafeInteger(d.skipped))throw Error('backup');
    report=w[7]+': '+d.count+' · '+w[8]+': '+d.skipped;if(!d.count){error=true;return;}
    const url=URL.createObjectURL(new Blob([d.raw],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='wand-private-storage-contents.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch{error=true;}};
   worker.onmessage=e=>done(e.data);worker.onerror=()=>done(null);worker.onmessageerror=()=>done(null);
-  worker.postMessage({command:backup?'restore':'backup',file:source,...(backup?{backup,allowExperimentalCopy:true}:{})});
+  worker.postMessage({command:backup?'restore':'backup',file:source,scope:selectedScope,...(backup?{backup,allowExperimentalCopy:true}:{})});
  }
  function open(e:Event){const el=e.currentTarget as HTMLInputElement,f=el.files?.[0];el.value='';if(f)run(f);}
  onDestroy(clear);
