@@ -221,6 +221,17 @@ def validate_snapshot(directory):
                 grid_id in grid_ids):
                 raise ValueError("duplicate or invalid native GridCollection grid ID")
             grid_ids.add(grid_id)
+            hash_keys = {"defaultGridHashCode", "defaultGridDataHashCode",
+                         "defaultHashEvidence"}
+            if hash_keys.intersection(grid):
+                if (not hash_keys.issubset(grid) or
+                    manifest.get("platform") != "Steam" or
+                    manifest.get("gameVersion") != "1.26.2" or
+                    grid["defaultHashEvidence"] != "source_native_method_correlated" or
+                    any(type(grid[k]) is not int or not -(1 << 31) <= grid[k] < (1 << 31)
+                        for k in ("defaultGridHashCode", "defaultGridDataHashCode")) or
+                    grid.get("gridDataPath") not in families["grids"]):
+                    raise ValueError("invalid source-native DiffGrid hash pair")
             grid_rows = [row for row in rows if row["gridIdNative"] == grid_id]
             if grid.get("defaultObjectCount") != len(grid_rows):
                 raise ValueError("native GridCollection per-grid object count mismatch")
