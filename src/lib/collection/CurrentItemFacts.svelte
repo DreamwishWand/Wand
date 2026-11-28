@@ -96,7 +96,9 @@
                 {:else if part.kind==='ingredient_type'}
                   <span>{facts.names.get(part.tagId)??t(7,locale)}</span>
                 {:else}
-                  <span>{(part.kind==='item_alternatives'?part.itemIds:part.tagIds).map(id=>facts?.names.get(id)??t(7,locale)).join(part.kind==='item_alternatives'?' / ':' + ')}</span>
+                  {#if part.kind==='item_alternatives'}
+                    <span>{#each part.itemIds as id,index}{#if index} / {/if}{#if facts.names.has(id)}<a href={itemEntityHref(base,id,isWandLanguage(locale)?locale:undefined)}>{facts.names.get(id)}</a>{:else}{t(7,locale)}{/if}{/each}</span>
+                  {:else}<span>{part.tagIds.map(id=>facts?.names.get(id)??t(7,locale)).join(' + ')}</span>{/if}
                 {/if}
                 <span class="fact-quantity">×{part.quantity}</span>
               </div>

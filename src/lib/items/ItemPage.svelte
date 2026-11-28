@@ -32,6 +32,7 @@
   let item:CollectionItem|null=null;
   let entry:CollectionEntry={};
   let loading=true,failed=false,recordFailed=false,busy=false,expert=false,showPieces=false;
+  let recordError='';
   let alive=true,detach=()=>{};
   let fromInApp=false;
   afterNavigate(({from})=>{if(from&&from.url.origin===location.origin)fromInApp=true;});
@@ -49,7 +50,7 @@
     }catch{item=null;entry={};}
   }
   async function load(){
-    loading=true;failed=false;recordFailed=false;
+    loading=true;failed=false;recordFailed=false;recordError='';
     try{
       const found=await (await currentItemViewMaster(base)).getItem(itemId);
       if(!alive||!found||found.itemId!==itemId)return;
@@ -86,8 +87,18 @@
       const before=db.state;await db.setEntry(itemId,patch);
       editHistory.recordCollection(before,db.state,{title:name,change:copy.collectionRecord});
       if(alive)refresh(db,locale);
-    }catch{if(alive)recordFailed=true;}
+    }catch(error){if(alive){recordFailed=true;recordError=error instanceof Error?error.message:String(error);}}
     finally{busy=false;editHistory.endCollectionEdit();if(!alive)db.close();}
+  }
+  async function reloadRecord(){
+    const db=runtime;if(!db||busy)return;
+    busy=true;
+    try{
+      await db.reloadLatest();
+      editHistory.reconcileCollection(db.state);
+      if(alive){refresh(db,locale);recordFailed=false;recordError='';}
+    }catch(error){if(alive){recordFailed=true;recordError=error instanceof Error?error.message:String(error);}}
+    finally{busy=false;if(!alive)db.close();}
   }
   function setBits(value:number){
     if(!memory||!item||!Number.isInteger(value)||value<0||value>completeMemoryBits(memory.numberOfShards))return;
@@ -132,13 +143,17 @@
         {/if}
         <section class="item-page-record">
           <h2>{copy.collectionRecord}</h2>
-          {#if recordFailed}<p role="alert">{copy.failed}</p>
+          {#if recordFailed}<div role="alert" class="record-error">
+            <p>{recordError==='COLLECTION_STORAGE_CONFLICT'?copy.storageConflict:copy.failed} {copy.storageKept}</p>
+            {#if runtime}<button type="button" disabled={busy} on:click={()=>void reloadRecord()}>{copy.reloadRecord}</button>{/if}
+          </div>
           {:else if !runtime}<p role="status">{copy.loading}</p>
           {:else if !item}<p role="status">{copy.unrecorded}</p>{/if}
           {#if item}
             {#if !memory}<div class="item-page-actions">
               <button type="button" disabled={busy||recordFailed} aria-pressed={entry.status==='owned'} on:click={()=>change({status:'owned'})}>{copy.owned}</button>
-              <button type="button" disabled={busy||recordFailed} aria-pressed={entry.status!=='owned'} on:click={()=>change({status:'missing'})}>{copy.missing}</button>
+              <button type="button" disabled={busy||recordFailed} aria-pressed={entry.status==='missing'} on:click={()=>change({status:'missing'})}>{copy.missing}</button>
+              <button type="button" disabled={busy||recordFailed} aria-pressed={entry.status===undefined} on:click={()=>change({status:null})}>{copy.unrecorded}</button>
             </div>{/if}
             {#if ['QUANTITY_STOCK','OWNERSHIP_STOCK_AND_DISCOVERY'].includes(item.stateSemantic)}
               <label>{copy.manualQuantity}<input type="number" min="0" max="999999" step="1" value={entry.quantity??''} disabled={busy||recordFailed} on:change={event=>change({quantity:event.currentTarget.value===''?null:Number(event.currentTarget.value)})}/></label>

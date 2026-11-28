@@ -1,4 +1,4 @@
-import type {CompleteItemMasterRecord,PublicCompleteItemMaster,ItemMasterLocale} from './public-item-master.ts';
+import {ITEM_MASTER_LOCALES,type CompleteItemMasterRecord,type PublicCompleteItemMaster,type ItemMasterLocale} from './public-item-master.ts';
 import {createCanonicalRecipeReader} from '../acquisition/canonical-recipes.ts';
 import {usableItemName} from './display-name.ts';
 import {readNativeEntityRelations} from './native-entity-parent.ts';
@@ -40,10 +40,11 @@ export async function readItemPageRelations(db:PublicCompleteItemMaster,record:P
   const parentIds=entity.parent===null?[]:[entity.parent];
   const ids=[...new Set([...seriesIds,...recipeIds,...parentIds,...entity.styles,...entity.gear])].sort((a,b)=>a-b);
   const names=new Map<number,RelatedItemTile>();
+  const labelFields=[...new Set([locale,'en',...ITEM_MASTER_LOCALES])].map(l=>'names.'+l);
   for(let start=0;start<ids.length;start+=500){
-    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope','names.'+locale,'names.en'].filter((v,i,a)=>a.indexOf(v)===i))){
+    for(const row of await db.getItemFields(ids.slice(start,start+500),['definitionScope',...labelFields])){
       if(!row||row.values.definitionScope==='other_definition')continue;
-      const label=[row.values['names.'+locale],row.values['names.en']].find(usableItemName);
+      const label=labelFields.map(field=>row.values[field]).find(usableItemName);
       if(label)names.set(row.itemId,{itemId:row.itemId,name:label});
     }
   }

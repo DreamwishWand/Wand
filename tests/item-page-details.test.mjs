@@ -55,3 +55,9 @@ test('source observation, native definition introduction and confirmed content a
  assert.deepEqual(await readItemIntroductionContext(db,2),{introduced:'1.26.1',observed:null,releaseKind:'expansion'});
  assert.equal(await readItemIntroductionContext(db,3),null);
 });
+
+test('related links fall back to any available original localization',async()=>{
+  const db={getItemReferences:async()=>[[11,'sourceSetItemId']],getItemFields:async ids=>ids.map(itemId=>({itemId,values:{definitionScope:'item_definition','names.fr':'Chaise'}}))};
+  const result=await readItemPageRelations(db,{itemId:10,sourceSetItemId:100,nativeCategory:'Furniture'},'ja');
+  assert.deepEqual(result.series,[{itemId:11,name:'Chaise'}]);
+});
