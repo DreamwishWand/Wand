@@ -174,6 +174,5 @@ if __name__=='__main__':
         apply_skin_inputs(a.skin_inputs.read_bytes() if a.skin_inputs else download_skin_inputs(),a.dest,palette_source,base_source)
         from prepare_eye_mouth_materials import download_eye_mouth,apply_eye_mouth
         apply_eye_mouth(a.eye_mouth.read_bytes() if a.eye_mouth else download_eye_mouth(),a.dest,eye_source)
-        if a.studio_assets:
-            from prepare_studio_assets import apply_studio_assets
-            apply_studio_assets(a.studio_assets.read_bytes(),a.dest)
+        from prepare_studio_assets import download_studio_assets, apply_studio_assets
+        apply_studio_assets(a.studio_assets.read_bytes() if a.studio_assets else download_studio_assets(), a.dest)

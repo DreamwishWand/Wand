@@ -74,7 +74,7 @@ export function loadPagesPoseIndex(base:string){
   })();void request.catch(()=>{request=undefined})}
   return request;
 }
-export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'|'.wem'|'.wec'|'.wfl'|'.wsg'|'.wnt'|'.wmp'|'.wsi'|'.wem2'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
+export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'|'.wem'|'.wec'|'.wfl'|'.wsg'|'.wnt'|'.wmp'|'.wsi'|'.wem2'|'.wlc'|'.wlt'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
 async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'|'.wem'|'.wec'|'.wfl'|'.wsg'|'.wnt'|'.wmp'|'.wsi'|'.wem2'|'.wlc'|'.wlt',signal:AbortSignal){
   const response=await fetch(assetUrl(base,entry,ext),{signal});check(response.ok,'Scene unavailable');
   return verifyBlob(await response.arrayBuffer(),entry);
