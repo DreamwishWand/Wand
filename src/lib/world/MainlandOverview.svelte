@@ -173,9 +173,14 @@
  let regionBackupMode=false,captureRegion:CaptureRegion|null=null,captureOptions:CaptureOptions={roads:false,fences:false},captureMembers:MainlandSavedObject[]=[];
  let captureDrag:{pointer:number;start:{x:number;y:number};region:CaptureRegion;edge:'move'|'nw'|'ne'|'sw'|'se'}|null=null;
  $: crw=captureRegionWords[locale];
- $: canCaptureScene=furnitureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureRegionBounds(pasteSelection);
- $: capturePlan=captureRegion?captureRegionPlan(captureRegion,captureMembers,projection.objects,captureOptions,projection.omitted,freePlacement):null;
- $: if(captureRegion&&(!furnitureReady||furnitureBlocked||networkOpen||roadSeed||supportOpen||furniturePlacing||pasteActive||groupPickupActive||editSymmetryOpen))closeCaptureRegion();
+ $: sceneCaptureReady=stockReady&&(!underwaterLocal||localPlainSelection&&!!captureFurnitureGroup(pasteSelection,false,freePlacement));
+ $: canCaptureScene=sceneCaptureReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!pasteActive&&!groupPickupActive&&!!captureRegionBounds(pasteSelection);
+ $: capturePlan=captureRegion?checkedCapturePlan(captureRegion,captureMembers,projection.objects,captureOptions,projection.omitted,freePlacement,underwaterLocal):null;
+ function checkedCapturePlan(region:CaptureRegion,members:readonly MainlandSavedObject[],objects:readonly MainlandSavedObject[],options:CaptureOptions,omitted:number,free:boolean,plainOnly:boolean){
+  const plan=captureRegionPlan(region,members,objects,plainOnly?{roads:false,fences:false}:options,omitted,free);
+  return plainOnly?{...plan,valid:plan.valid&&plainLocalSelection(plan.items)&&!!captureFurnitureGroup(plan.items,false,free)}:plan;
+ }
+ $: if(captureRegion&&(!(regionBackupMode?furnitureReady:sceneCaptureReady)||furnitureBlocked||networkOpen||roadSeed||supportOpen||furniturePlacing||pasteActive||groupPickupActive||editSymmetryOpen))closeCaptureRegion();
  function closeCaptureRegion(){regionBackupMode=false;captureRegion=null;captureMembers=[];captureDrag=null;}
  function openRegionBackup(){
   if(!regionBackupReady||!furnitureReady||furnitureBlocked)return;const r=captureRegionBounds(pasteSelection)??{x:Math.round((extent.x+(extent.w-Math.min(16,extent.w))/2)*2)/2,y:Math.round((extent.y+(extent.h-Math.min(16,extent.h))/2)*2)/2,w:Math.min(16,extent.w),h:Math.min(16,extent.h)};
@@ -203,10 +208,11 @@
  function setCaptureDimension(k:keyof CaptureRegion,value:number){
   if(!captureRegion)return;const next={...captureRegion,[k]:value};if(validCaptureRegion(next,extent))captureRegion=next;
  }
- function confirmCaptureRegion(){if(regionBackupMode){if(!captureRegion||!validCaptureRegion(captureRegion,extent))return;const r=captureRegion;if(!regionBackupReady||!furnitureReady||furnitureBlocked)return;openBiome(false,!independent);if(biomeOpen)backupRegion=r;return;}if(!capturePlan?.valid||!captureRegion||!validCaptureRegion(captureRegion,extent)||!furnitureReady||furnitureBlocked)return;const items=capturePlan.items;closeCaptureRegion();pasteTools?.saveScene(items);}
+ function confirmCaptureRegion(){if(regionBackupMode){if(!captureRegion||!validCaptureRegion(captureRegion,extent))return;const r=captureRegion;if(!regionBackupReady||!furnitureReady||furnitureBlocked)return;openBiome(false,!independent);if(biomeOpen)backupRegion=r;return;}if(!capturePlan?.valid||!captureRegion||!validCaptureRegion(captureRegion,extent)||!sceneCaptureReady||furnitureBlocked)return;const items=capturePlan.items;closeCaptureRegion();pasteTools?.saveScene(items);}
 $: cutWords=groupCutWords[locale];
  $: pasteSelection=group.length?group:chosen?[chosen]:[];
- $: localPlainSelection=pasteSelection.every(p=>Math.floor(Number(p.object.itemId)/100000)===400&&!p.object.storageKnown&&!p.object.storage&&!p.object.subgrid&&isCardinal(p.object.orientation));
+ function plainLocalSelection(items:readonly MainlandSavedObject[]){return items.every(p=>Math.floor(Number(p.object.itemId)/100000)===400&&!p.object.storageKnown&&!p.object.storage&&!p.object.subgrid&&isCardinal(p.object.orientation));}
+ $: localPlainSelection=plainLocalSelection(pasteSelection);
  $: batchReady=stockReady&&(!underwaterLocal||localPlainSelection);
  $: canCutFurniture=testExport&&batchReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&!!captureCutWitness(pasteSelection,freePlacement);
  $: canDuplicateFurniture=testExport&&batchReady&&!furnitureBlocked&&!networkOpen&&!roadSeed&&!supportOpen&&!furniturePlacing&&(!!nativeDuplicateSelection(pasteSelection,freePlacement)||!!localSupportDuplicateSelection(pasteSelection,freePlacement)||!!storageGroupSelection(pasteSelection,freePlacement)||!!captureFurnitureGroup(pasteSelection,false,freePlacement));
@@ -286,7 +292,7 @@ $: cutWords=groupCutWords[locale];
   if(status==='ready'){nativeFrameId=id;nativeError='';}
   if(status==='error'){nativeFrameId='';nativeError=nativeWords[6];}
  }
- const underwaterEditWords={ja:'海中：同一Gridの編集（テスト）',en:'Underwater: same-grid editing (test)',fr:'Sous-marin : déplacement/rotation dans la grille (test)',it:'Subacqueo: spostamento/rotazione nella griglia (test)',de:'Unterwasser: Verschieben/Drehen im Grid (Test)','es-ES':'Submarino: mover/girar en la cuadrícula (prueba)','zh-CN':'水下：同网格移动/旋转（测试）','pt-BR':'Subaquático: mover/girar na grade (teste)'} as const;
+ const underwaterEditWords={ja:'海中：家具編集（テスト）',en:'Underwater: furniture editing (test)',fr:'Sous-marin : édition des meubles (test)',it:'Subacqueo: modifica dei mobili (test)',de:'Unterwasser: Möbel bearbeiten (Test)','es-ES':'Submarino: edición de muebles (prueba)','zh-CN':'水下：家具编辑（测试）','pt-BR':'Subaquático: edição de móveis (teste)'} as const;
  let freePlacement=false;
  const freeWords={ja:['自由配置','ゲーム内の配置・操作制限を解除します。ゲームが配置を修正する場合があります。'],en:['Free placement','Ignore game placement and operation restrictions. The game may adjust placements.'],fr:['Placement libre','Ignore les restrictions du jeu. Le jeu peut corriger les placements.'],it:['Posizionamento libero','Ignora i limiti del gioco. Il gioco può correggere le posizioni.'],de:['Freie Platzierung','Spielbeschränkungen ignorieren. Das Spiel kann Platzierungen korrigieren.'],'es-ES':['Colocación libre','Ignora las restricciones del juego. El juego puede ajustar la colocación.'],'zh-CN':['自由摆放','忽略游戏摆放和操作限制。游戏可能调整位置。'],'pt-BR':['Posicionamento livre','Ignora restrições do jogo. O jogo pode ajustar posições.']} as const;
  $: fpw=freeWords[locale];
@@ -712,8 +718,8 @@ $: cutWords=groupCutWords[locale];
   {#if captureRegion}<aside class="scene-capture-panel" aria-label={regionBackupMode?rgw[0]:crw[0]}>
    <strong>{regionBackupMode?rgw[0]:crw[0]}</strong><small>{crw[10]}</small>
    <div class="capture-dimensions">{#each ['x','y','w','h'] as dim}<label>{dim.toUpperCase()} <input type="number" step=".5" aria-label={dim.toUpperCase()} value={captureRegion[dim as keyof CaptureRegion]} on:change={e=>setCaptureDimension(dim as keyof CaptureRegion,e.currentTarget.valueAsNumber)}/></label>{/each}</div>
-   {#if !regionBackupMode}<label><input type="checkbox" bind:checked={captureOptions.roads}/>{crw[1]}</label>
-   <label><input type="checkbox" bind:checked={captureOptions.fences}/>{crw[2]}</label>
+   {#if !regionBackupMode}{#if !underwaterLocal}<label><input type="checkbox" bind:checked={captureOptions.roads}/>{crw[1]}</label>
+   <label><input type="checkbox" bind:checked={captureOptions.fences}/>{crw[2]}</label>{/if}
    <small>{crw[3]} {capturePlan?.furniture??0} · {crw[4]} {capturePlan?.roads??0} · {crw[5]} {capturePlan?.fences??0}</small>
    {#if capturePlan&&!capturePlan.valid}<small role="alert">{capturePlan.partial.length||capturePlan.outside.length?crw[6]:crw[7]}</small>{/if}{/if}
    <div><button type="button" disabled={!regionBackupMode&&!capturePlan?.valid} on:click={confirmCaptureRegion}>{regionBackupMode?rgw[1]:crw[8]}</button><button type="button" on:click={closeCaptureRegion}>{crw[9]}</button></div>
