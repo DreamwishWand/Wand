@@ -40,6 +40,7 @@ export interface OrdinaryProductionEvidence {
   readonly currentAvailabilityVerified:false;
 }
 const extensionFields={
+  characterUnlock:'acquisition.characterUnlockSources',
   questObjective:'acquisition.questObjectiveGrantSources',
   progression:'acquisition.ordinaryProgressionSources',
   critterBefriending:'acquisition.ordinaryCritterSources',
@@ -77,6 +78,22 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
     check(Array.isArray(list),'EXTENSION_LIST');
     for(const evidence of list){
       check(object(evidence)&&evidence.currentAvailabilityVerified===false,'EXTENSION_SOURCE');
+      if(family==='characterUnlock'){
+        const category=evidence.category;
+        if(category===null)continue;
+        check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
+          evidence.sourceCharacterSha256===sha?.Character&&evidence.sourceGameVersion===db.release.target.gameVersion&&
+          id(evidence.sourceItemId)&&id(evidence.targetItemId)&&evidence.guaranteedGrantVerified===false&&
+          (evidence.kind==='character_automatic_unlock'&&evidence.sourceItemId===evidence.targetItemId&&evidence.unlockConditionCode===1&&
+            evidence.sourcePath==='source.UnlockCondition'&&category==='ordinary_gameplay'||
+           evidence.kind==='character_quest_unlock'&&evidence.sourceMissionSha256===sha?.Mission&&
+            evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
+            [2,4].some(n=>n===evidence.unlockConditionCode)&&evidence.nextStateCode===0&&
+            object(evidence.original)&&typeof evidence.sourcePath==='string'&&
+            /^source\.Steps\[\d+\]\.SubSteps\[\d+\]\.Objectives\[\d+\]\.UnlockCharacter$/.test(evidence.sourcePath)&&
+            (evidence.targetResolution==='explicit_character'||evidence.targetResolution==='mission_owner')),'EXTENSION_CHARACTER_UNLOCK');
+        output.push({family,category,evidence,sourceId:evidence.sourceItemId,relatedIds:[]});continue;
+      }
       if(family==='questLoot'){
         const category=evidence.category;
         check((category==='ordinary_gameplay'||category==='in_game_limited_event')&&categories.includes(category)&&
@@ -423,7 +440,7 @@ export async function readItemAcquisitionSourceDetails(db:PublicCompleteItemMast
     classificationExtensionStatus,
     classificationExtensions:Object.freeze(c.extensions.map(e=>{
       const source=identity(e.sourceId);
-      const expected=e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
+      const expected=e.family==='characterUnlock'?(e.evidence.kind==='character_automatic_unlock'?['Character']:['Mission']):e.family==='questLoot'?['Mission']:e.family==='progression'?['Story','DutyAch','BoardGame']:e.family==='conditionalQuest'||e.family==='memorySpawn'||e.family==='eventLootPresent'?['ConditionalEvent']:
         e.family==='questObjective'?['Mission']:(e.family==='storeSequence'||e.family==='storeGeneratedShelf')?['Display']:e.family==='lootPresent'?['ActivityItem']:e.family==='configuredStore'?[]:['Companion'];
       check(e.sourceId===null||source&&expected.includes(source.nativeCategory),'EXTENSION_IDENTITY');
       const related=e.relatedIds.map(n=>{const r=identity(n);check(r,'EXTENSION_RELATED');return r;});
