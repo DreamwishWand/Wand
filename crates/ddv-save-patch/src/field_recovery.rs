@@ -89,7 +89,7 @@ pub fn stateless_field_object(root:&Value,target:&GridCoordinateTarget,expected:
  o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
- super::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
+ super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)&&empty_grid_state(o.get("State"))
 }
 /// Recover a selection in one transaction. All source witnesses and destination
 /// capacity are checked against the original document; only the changed slot
@@ -225,6 +225,22 @@ mod tests{
   assert_eq!(actual["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]);
   let mut duplicate=batch.clone();duplicate.push(batch[0].clone());assert!(recover_batch(&raw,&duplicate,"0").is_err());
   let mut over=batch.clone();over.push(make("42","5",5,30000003));assert!(recover_batch(&raw,&over,"0").is_err());
+ }
+ #[test]fn maximum_batch_recovers_all_eight_saved_orientations_without_changing_other_state(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let mut targets=Vec::new();
+  for i in 0..super::super::MAX_GRID_MIXED_EDITS{
+   let oid=(i+3).to_string();
+   let orientation=super::super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS[i%8];
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"][&oid]=json!({"ID":i+3,"ItemID":30000001,"X":i,"Y":2,"Orientation":orientation});
+   targets.push((GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"42".into(),object_id:oid,item_id:30000001},(i as i32,2),orientation.to_owned()));
+  }
+  root["World"]["GridCollection"]["Grids"]["42"]["NextGridObjectID"]=(targets.len()+3).into();
+  let out:Value=serde_json::from_str(&recover_batch(&root.to_string(),&targets,"0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["Amount"],targets.len());
+  assert_eq!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object().unwrap().len(),2);
+  assert_eq!(out["Player"]["ContainerInventories"]["9"],root["Player"]["ContainerInventories"]["9"]);
+  targets[0].2="GridOrientation_Unknown".into();assert!(recover_batch(&root.to_string(),&targets,"0").is_err());
  }
  #[test]fn batch_appends_only_missing_slots_and_rejects_capacity_without_partial_result(){
   let mut root:Value=serde_json::from_str(SOURCE).unwrap();
