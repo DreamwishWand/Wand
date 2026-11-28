@@ -43,3 +43,37 @@ test('all 90 native stall definitions, 335 slots and 1385 item occurrences join 
   assert.equal(missing,null);assert.deepEqual(item,again);
   assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
 });
+
+
+test('every dialogue stall item occurrence joins the original stall to the canonical target without conflating loot slots',async()=>{
+  const requests=[];
+  const db=await openCurrentItemDatabase('',async url=>{requests.push(url);return new Response(await readFile('static'+url),{status:200});});
+  const ids=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'StallBuildingItemData'});
+  const raw=await db.getItemFields(ids,['source.DialogueStall']);
+  const expected=[];
+  for(const row of raw)for(const [i,v] of (row.values['source.DialogueStall']?.ItemsToGive??[]).entries()){
+    if(Number.isSafeInteger(v.ItemToGive)&&v.ItemToGive>0)expected.push({stallItemId:row.itemId,
+      itemId:v.ItemToGive,sourcePath:'source.DialogueStall.ItemsToGive['+i+'].ItemToGive',
+      original:v,configuredGrantVerified:false,currentAvailabilityVerified:false});
+  }
+  assert(expected.length>0);
+  const reader=createStallLootReader(db);
+  const forward=await reader.getForStalls(ids);
+  assert.deepEqual(forward.flatMap(r=>r.definition.dialogueItems),expected);
+  const targets=[...new Set(expected.map(r=>r.itemId))];
+  const reverse=await reader.getForItems(targets);
+  const key=r=>JSON.stringify([r.stallItemId,r.itemId,r.sourcePath]);
+  assert.deepEqual(reverse.flatMap(r=>r.dialogueSources.map(s=>{
+    assert.equal(s.stall.stallItemId,s.occurrence.stallItemId);
+    assert.equal(s.occurrence.itemId,r.itemId);
+    assert.equal(s.occurrence.configuredGrantVerified,false);
+    assert.equal(s.occurrence.currentAvailabilityVerified,false);
+    return key(s.occurrence);
+  })).sort(),expected.map(key).sort());
+  const known=targets[0];
+  const [a,missing,b]=await reader.getForItems([known,99999999,known]);
+  assert.equal(missing,null);assert.deepEqual(a,b);
+  assert(!requests.some(u=>u.includes('/id/')||u.includes('/locale/')||u.includes('/text/')||u.includes('/acquisition/public/')));
+  console.log('DB01_DIALOGUE_STALL '+JSON.stringify({occurrences:expected.length,items:targets.length,
+    stalls:new Set(expected.map(r=>r.stallItemId)).size}));
+});
