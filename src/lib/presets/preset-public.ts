@@ -18,6 +18,7 @@ import {parseRoomProject} from '../world/room-project-design.ts';
 import {roomDesignTemplates,supportDesignTemplate} from '../world/room-design.ts';
 import {readRoomFinish,roomFinishKind} from '../world/room-finish-design.ts';
 import {parsePublicTerrainRelease,sameTerrainGrid,type PublicTerrainGridRef,type PublicTerrainRelease} from '../world/public-terrain-projection.ts';
+import {nativeUnderwaterDesignGrid} from '../world/native-calibration-grids.ts';
 import {bindMainland,bindMainlandGrid,bindFloatingIslandGrid,type MainlandGrid} from '../world/mainland-world-coordinates.ts';
 import {supportTerrainRow,type SupportTree} from '../world/subgrid-local.ts';
 
@@ -60,7 +61,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
    }
   }return g??fail();
  }
- function areaGrid(v:any):MainlandGrid{const g=grid(v);return bindMainlandGrid(g)??bindFloatingIslandGrid(g)??fail();}
+ function areaGrid(v:any):MainlandGrid{const g=grid(v);return bindMainlandGrid(g)??bindFloatingIslandGrid(g)??nativeUnderwaterDesignGrid(g)?.grid??fail();}
  function design(d:any,expected?:PublicTerrainGridRef,allowDiagonal=false,roomBackup=false){
   keys(d,['schema','grid','placements'],['roomFinish']);if(d.schema!=='wand.world-design@1')fail();
   const g=grid(d.grid);if(expected&&!sameTerrainGrid(g,expected))fail();
@@ -73,7 +74,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
  function whole(d:any,expected?:PublicTerrainGridRef,kind?:WholeAreaKind){
   keys(d,['schema','gameVersion','kind','design']);const g=grid(d.design?.grid);
   if(expected&&!sameTerrainGrid(expected,g)||kind&&kind!==d.kind)fail();
-  if(d.kind==='world-grid'?!bindMainlandGrid(g):d.kind==='floating-island'?!bindFloatingIslandGrid(g):wholeAreaKind(g,all)!=='biome')fail();
+  if(d.kind==='world-grid'?!bindMainlandGrid(g)&&!nativeUnderwaterDesignGrid(g):d.kind==='floating-island'?!bindFloatingIslandGrid(g):wholeAreaKind(g,all)!=='biome')fail();
   parseWholeArea(JSON.stringify(d),g,d.kind);design(d.design,g,d.kind!=='floating-island'&&g.factor===1&&!!bindMainlandGrid(g));return g;
  }
  function network(d:any,g:MainlandGrid){
@@ -107,6 +108,7 @@ export function validateShareablePreset(raw:string,catalog:Catalog):string{
   case 'wand.preset.biome-decoration@1':decoration(doc,areaGrid(doc.furniture?.design?.grid),'biome');break;
   case 'wand.preset.floating-island-design@1':{keys(doc,['schema','gameVersion','layoutId','areas']);const grids=islandGrids(doc.layoutId);parseIslandDesign(raw,grids);multiarea(doc,grids,(a,g)=>{design(a,g);},a=>a.grid);break;}
   case 'wand.preset.floating-island-decoration@1':{keys(doc,['schema','gameVersion','layoutId','areas']);const grids=islandGrids(doc.layoutId);parseIslandDecoration(raw,grids);multiarea(doc,grids,(a,g)=>decoration(a,g,'island'),a=>a.furniture?.design?.grid);break;}
+  case 'wand.preset.world-grid-decoration@1':{const g=areaGrid(doc.furniture?.design?.grid);if(!nativeUnderwaterDesignGrid(g)||doc.houses!==undefined||doc.buildings!==undefined||doc.landscape!==undefined||doc.network?.rows?.length!==0||!Array.isArray(doc.supports))fail();decoration(doc,g,'world');break;}
   case 'wand.preset.world-decoration@1':worldDecoration(doc);break;
   case 'wand.preset.region-decoration@1':{
    if(Object.hasOwn(doc,'island')){
