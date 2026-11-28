@@ -40,6 +40,33 @@ class SharedDeltaTests(unittest.TestCase):
             self.assertEqual(register(out,ledger,2,150,False)["networkRequests"],0)
             with self.assertRaises(ValueError):prepare(out,None)
 
+    def test_sprite_texture_alias_requires_pixel_identity(self):
+        g="1"*32
+        native=Image.new("RGBA",(32,16),(1,2,3,255))
+        other=Image.new("RGBA",(32,16),(1,2,4,255))
+        a="unity:"+"a"*64+":CAB-abc:3:Texture2D"
+        b="unity:"+"a"*64+":CAB-abc:4:Sprite"
+        m={"sha256":"c"*64,"bytes":100,"width":32,"height":16,
+           "sourcePixelSha256":hashlib.sha256(native.tobytes()).hexdigest()}
+        ledger={"schema":SCHEMA,"bucket":BUCKET,"thumbnailPolicy":POLICY,
+                "images":{m["sha256"]:{k:v for k,v in m.items() if k!="sourcePixelSha256"}},
+                "originals":{},"thumbnails":{}}
+        spec={"schema":TARGET_SCHEMA,"gameVersion":"1.26.2","targets":{g:"shop-512"}}
+        for alias,valid in [(native,True),(other,False)]:
+            with tempfile.TemporaryDirectory() as d:
+                out=Path(d)/"out"
+                refs=lambda im:{"Image":N(read=lambda:N(image=im))}
+                resolved=[(g,(a,refs(native),[]),None),(g,(b,refs(alias),[]),None)]
+                with patch("shared_source_delta.verify_game_version",return_value="v1.26.2"),patch("shared_source_delta.resolve",return_value=({g:[]},{})),patch("shared_source_delta.exact_objects",return_value=resolved),patch("shared_source_delta.materialize",return_value=m) as encode,patch("shared_source_delta.local_image",return_value=m):
+                    if valid:
+                        result=extract(spec,Path(d),None,out,ledger)
+                        self.assertEqual(result["uniqueImages"],1)
+                        report=json.loads((out/"shared-source-report.json").read_bytes())
+                        self.assertEqual(report["assets"][g]["equivalentSourceObjects"],[b])
+                    else:
+                        with self.assertRaises(ValueError):extract(spec,Path(d),None,out,ledger)
+                    self.assertEqual(encode.call_count,1)
+
     def test_reference_delta(self):
         self.assertEqual(classify({"a":1,"b":2,"c":3},{"a":1,"b":4,"d":5}),
                          {"a":"unchanged","b":"changed","c":"notReferenced","d":"added"})
