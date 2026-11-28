@@ -101,7 +101,7 @@ try{
       await body.nth(b).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
-      assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+index.eyePalette.items['70000001'].texture.sha256+'.png'),'source eye mask requested');
+      const mask=index.eyePalette.items['70000001'].texture;const eyeMap=index.eyeMouthMaterials?.eyes[mask.sha256];assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+(eyeMap?eyeMap.asset.sha256+'.wem2':mask.sha256+'.png')),'source eye mask requested');if(index.eyeMouthMaterials)assert.ok(eyeRequests.has(base+'/photo-mode-preview/'+index.eyeMouthMaterials.teeth.diffuse.asset.sha256+'.wem2'),'source tooth diffuse requested');
       const duration=Number(await seek.getAttribute('max'));
       assert.ok(duration>0);
       await seek.evaluate((el,value)=>{el.value=String(value);el.dispatchEvent(new Event('input',{bubbles:true}))},duration*.5);
@@ -205,7 +205,7 @@ try{
   const controls=linked.locator('.pose-preview .body-options button');
   const faceSeek=linked.locator('input.seek');
   async function expectAppearance(body,skin,eye){
-    const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
+    const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),(index.eyeMouthMaterials?asset(index.eyeMouthMaterials.eyes[index.eyePalette.items[String(eye)].texture.sha256].asset)+'.wem2':asset(index.eyePalette.items[String(eye)].texture)+'.png'),...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
     const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
     const materials=index.nativeSkinInputs.rows[skin][body];assert.equal(materials.face.faceFlag,1);
     urls.push(asset(index.nativeBodyGeometry[body].asset)+'.wsg',...Object.values(materials).flatMap(r=>[r.spec,r.shadow,...(r.normal?[r.normal]:[])].map(m=>asset(m.asset)+'.wsi')));
