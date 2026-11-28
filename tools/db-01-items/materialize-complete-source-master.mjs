@@ -1680,6 +1680,29 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       if(membership.legacyBundleIds.length)add('acquisition.premiumLegacyBundleIds',row.itemId,membership.legacyBundleIds);
     }
     const categorySet=new Set(acquisition?.summary.get(row.itemId)?.categories??[]);
+    // Native ProfilePlayer.Create initializes list inventories through
+    // InitListInventory (clears the existing map, then MergeFrom).
+    // Backpack and HomeStorage are independently cleared and merged via
+    // ContainerInventory.MergeFrom (RVA 41A9420; Create callsites 4B2D97A/4B2D9CF).
+    // Named world-container templates are NOT promoted by this rule.
+    const initialInventory=(source.target.platform==='Steam'&&source.target.gameVersion==='1.26.2'&&
+      source.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08')?
+      (protoAcquisition.inventoryTemplates.get(row.itemId)??[])
+        .filter(l=>l.kind==='configured_default_inventory_entry'&&
+          (l.sourceInventoryType==='list'&&l.sourceFieldNumber>=3&&l.sourceFieldNumber<=15||
+           l.sourceInventoryType==='container'&&l.sourceFieldNumber>=1&&l.sourceFieldNumber<=2)&&
+          l.sourceProtoDbSha256==='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'&&
+          l.sourceProjectionSha256==='35f22a0dd42826921ce462c93b7a21910b2ff7c653a9b93a127a12bbeaab5813')
+        .map(l=>({...l,kind:l.sourceInventoryType==='list'?'ordinary_initial_list_inventory':'ordinary_initial_container_inventory',targetItemId:row.itemId,
+          category:'ordinary_gameplay',sourceGameVersion:source.target.gameVersion,
+          sourceRecordIndex:97,sourceRecordSha256:'9ef61e35f310002608496d9748673eaa48051444f3083752cbe3c111f039940c',
+          sourcePayloadSha256:'d4fc13504131da7f0cb47f5b41e612e73b19936b6e4d3b858e7178c1b614a7b7',
+          nativeAssemblySha256:'a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653',
+          nativeInitializationVerified:true,guaranteedGrantVerified:false})):[];
+    if(initialInventory.length){
+      add('acquisition.ordinaryInitialInventorySources',row.itemId,initialInventory);
+      categorySet.add('ordinary_gameplay');
+    }
     const storySources=storyUnlock.get(row.itemId);
     if(storySources?.length){
       add('acquisition.storyUnlockSources',row.itemId,storySources);
