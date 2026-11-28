@@ -10,6 +10,24 @@ fn bounded_inventory(v:&Value)->bool{
  v.as_array().is_some_and(|a|a.len()<=8192&&a.iter().all(|s|s.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
  s["ItemID"].as_u64().is_some_and(|n|n<=u32::MAX as u64)&&s["Amount"].as_u64().is_some_and(|n|n<=i32::MAX as u64)&&s.get("State").is_none_or(|s|s.is_null()||s.is_object())))
 }
+// v643 native inventory observations: MealData on meal items and an embedded
+// ConsummableData stack on consumables. Numeric item IDs refer to the game
+// catalog, not allocated Save records. Unknown fields and variants remain
+// opaque until their dependencies are established.
+fn independent_item_state(row:&Value)->bool{
+ let Some(state)=row.get("State").filter(|s|!s.is_null())else{return true;};
+ let Some(m)=state.as_object().filter(|m|m.len()==1)else{return false;};
+ let Some(item)=id(&row["ItemID"])else{return false;};
+ if let Some(meal)=m.get("MealData"){
+  return item/100_000==303&&meal.as_object().is_some_and(|o|o.len()==2&&o.contains_key("IngredientsUsed")&&o.contains_key("SceneRestriction"))&&
+   meal["SceneRestriction"].is_null()&&meal["IngredientsUsed"].as_array().is_some_and(|a|a.len()<=5&&a.iter().all(|x|id(x).is_some_and(|n|matches!(n/100_000,302|311))));
+ }
+ if let Some(inner)=m.get("ConsummableData"){
+  return item/100_000==315&&inner.as_object().is_some_and(|o|o.len()==3&&o.contains_key("ItemID")&&o.contains_key("Amount")&&o.contains_key("State"))&&
+   id(&inner["ItemID"]).is_some_and(|n|n/100_000==701)&&inner["Amount"].as_u64().is_some_and(|n|n>0&&n<=i32::MAX as u64)&&inner["State"].is_null();
+ }
+ false
+}
 fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
  match v{
   Value::Object(m)=>for(k,v)in m{let k=k.to_ascii_lowercase();if k!="nextcontainerinventoryid"{count_refs(v,marked||k.contains("container")&&k.contains("id"),counts);}},
@@ -120,14 +138,14 @@ pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>
   };
   let dest=id(&c["id"]).filter(|id|destination_ids.insert(*id)).ok_or(BAD)?;
   if r["inventory"]==c["inventory"]{continue;}
-  // Opaque native item state is preserved only when its exact slot remains
-  // unchanged. Ordinary stacks in the same container can still be restored.
+  // Known self-contained variants may be added, removed or restored. All
+  // unverified variants must remain exactly unchanged in their original slot.
   let old=c["inventory"].as_array().ok_or(BAD)?;
   let next=r["inventory"].as_array().ok_or(BAD)?;
   for i in 0..old.len().max(next.len()){
    let a=old.get(i);let b=next.get(i);
-   let stateful=|v:Option<&Value>|v.is_some_and(|v|v.get("State").is_some_and(|s|!s.is_null()));
-   if (stateful(a)||stateful(b))&&a!=b{return Err(BAD);}
+   let opaque=|v:Option<&Value>|v.is_some_and(|v|!independent_item_state(v));
+   if (opaque(a)||opaque(b))&&a!=b{return Err(BAD);}
   }
   let p=vec![k("Player"),k("ContainerInventories"),k(&dest.to_string()),k("Inventory")];
   locator.capture.insert(p.clone(),None);changes.push((p,r["inventory"].to_string()));
@@ -144,6 +162,32 @@ pub fn restore_scoped_mode(source:&str,backup:&str,scope:Option<&HashSet<String>
 mod tests{
  use super::*;
  const SAVE:&str=r#"{"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"9":{"ID":9,"ParentItemID":40001680,"Size":48,"Inventory":[{"ItemID":30000001,"Amount":5,"State":null}],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDataPath":"GridData/Rooms/Room8x8-GridData.json","Objects":{"1":{"ID":1,"ItemID":40001680,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"Storage":{"ContainerInventoryID":9,"DefaultContainerInventoryData":"Chest_48Slot","UnlockKeyItemID":0,"UnlockLocId":"","DesignID":null}}}}}}}},"Marker":1e2}"#;
+ #[test]fn native_independent_inventory_states_roundtrip(){
+  let mut root:Value=serde_json::from_str(SAVE).unwrap();
+  // Synthetic item IDs and quantities, not a private Save fixture.
+  let rows=json!([
+   {"ItemID":30300001,"Amount":2,"State":{"MealData":{"IngredientsUsed":[30200001,31100001],"SceneRestriction":null}}},
+   {"ItemID":31500001,"Amount":1,"State":{"ConsummableData":{"ItemID":70100001,"Amount":1,"State":null}}}
+  ]);
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=rows.clone();
+  let backup=export(&root.to_string()).unwrap();
+  root["Player"]["ContainerInventories"]["9"]["Inventory"]=json!([]);
+  let out:Value=serde_json::from_str(&restore(&root.to_string(),&backup).unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["9"]["Inventory"],rows);
+  let mut recreated=root.clone();
+  let mut c=recreated["Player"]["ContainerInventories"].as_object_mut().unwrap().remove("9").unwrap();
+  c["ID"]=10.into();recreated["Player"]["ContainerInventories"]["10"]=c;
+  let objects=recreated["World"]["GridCollection"]["Grids"]["42"]["Objects"].as_object_mut().unwrap();
+  let mut obj=objects.remove("1").unwrap();obj["ID"]=2.into();obj["State"]["Storage"]["ContainerInventoryID"]=10.into();objects.insert("2".into(),obj);
+  let restored:Value=serde_json::from_str(&restore(&recreated.to_string(),&backup).unwrap()).unwrap();
+  assert_eq!(restored["Player"]["ContainerInventories"]["10"]["Inventory"],rows);
+  for (index,field,value) in [(0,"SceneRestriction",json!("Unknown")),(0,"IngredientsUsed",json!([9])),(1,"State",json!({"Unknown":true})),(1,"ContainerInventoryID",json!(9))]{
+   let mut bad:Value=serde_json::from_str(&backup).unwrap();
+   let state=&mut bad["rows"][0]["inventory"][index]["State"];
+   if index==0{state["MealData"][field]=value;}else{state["ConsummableData"][field]=value;}
+   assert!(restore(&root.to_string(),&bad.to_string()).is_err());
+  }
+ }
  #[test]fn private_storage_roundtrip_preserves_unrelated_bytes(){
   let backup=export(SAVE).unwrap();let doc:Value=serde_json::from_str(&backup).unwrap();assert_eq!(doc["rows"].as_array().unwrap().len(),1);
   let changed=SAVE.replace("\"Amount\":5","\"Amount\":3");
