@@ -1,6 +1,6 @@
 import {islandPresetGrids,serializeIslandDesign,parseIslandDesign} from './island-design-preset.ts';
 import {parseWholeArea,serializeWholeArea} from './whole-area-preset.ts';
-import {biomeFurnitureSnapshot,biomeFurnitureReplacement,BIOME_CHANGE_LIMIT,type BiomeFurniturePlan} from './biome-furniture-preset.ts';
+import {biomeFurnitureSnapshot,biomeFurnitureReplacement,BIOME_CHANGE_LIMIT,type BiomeFurniturePlan,type SupportAreaTrees} from './biome-furniture-preset.ts';
 import {bindFloatingIslandGrid,bindMainland,sourceWorldScope,type MainlandGrid} from './mainland-world-coordinates.ts';
 import {projectMainlandSaved,type MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {SavedShapeMap} from './saved-shape-map.ts';
@@ -47,18 +47,18 @@ export function parseIslandSavePreset(text:string,grids:readonly MainlandGrid[],
  if(grids.length===1&&JSON.parse(text)?.schema==='wand.preset.whole-area-design@1')return new Map([[grids[0].key,parseWholeArea(text,grids[0],'floating-island')]]);
  return parseIslandDesign(text,grids);
 }
-export function islandSaveReplacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:NonNullable<ReturnType<typeof islandSaveSnapshot>>,incoming:ReadonlyMap<string,readonly DesignPlacement[]>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,localPlain?:ReadonlySet<number>){
+export function islandSaveReplacement(grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,snapshot:NonNullable<ReturnType<typeof islandSaveSnapshot>>,incoming:ReadonlyMap<string,readonly DesignPlacement[]>,defs:ReadonlyMap<string,ReadonlyMap<number,DesignItemGeometry>>,stock:ReadonlyMap<number,number>,localPlain?:ReadonlySet<number>,supports?:{before:SupportAreaTrees;after:SupportAreaTrees}){
  const plan:BiomeFurniturePlan[]=[],reviews=new Map<string,NonNullable<ReturnType<typeof biomeFurnitureReplacement>>>(),balance=new Map(stock),required=new Map<number,number>();
  let changes=0;
  for(const g of grids){
   const objects=snapshot.objects.get(g.key),placements=incoming.get(g.key),geometry=defs.get(g.key);
   if(!objects||!placements||!geometry||!rasters.has(g.key))return null;
-  const review=biomeFurnitureReplacement(g,[g],rasters,objects,0,placements,geometry,stock,true,undefined,false,!!localPlain,localPlain);if(!review)return null;
+  const review=biomeFurnitureReplacement(g,[g],rasters,objects,0,placements,geometry,stock,true,supports,false,!!localPlain,localPlain);if(!review)return null;
   reviews.set(g.key,review);plan.push(review.plan);
-  changes+=review.plan.remove.length+review.plan.add.length;
+  changes+=review.changeCount;
   if(changes>BIOME_CHANGE_LIMIT)return null;
-  for(const row of review.plan.remove){const id=Number(row.itemId);if(!balance.has(id))return null;balance.set(id,balance.get(id)!+1);}
-  for(const row of review.plan.add){const id=Number(row.itemId);required.set(id,(required.get(id)??0)+1);}
+  for(const [id,n] of review.returned){if(!balance.has(id))return null;balance.set(id,balance.get(id)!+n);}
+  for(const [id,n] of review.required){required.set(id,(required.get(id)??0)+n);}
  }
  const missing=[...required].filter(([id,n])=>(balance.get(id)??0)<n).map(([itemId,n])=>({itemId,quantity:n-(balance.get(itemId)??0)}));
  return {plan,reviews,missing,changed:changes>0};

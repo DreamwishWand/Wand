@@ -23,8 +23,8 @@ export async function validateAreaSupportTrees(worker:Worker,scenes:Iterable<Sup
   if(d?.kind!=='support-scene-geometry'||d.valid!==true)throw Error('SUPPORT_GEOMETRY');
  }
 }
-export async function readAreaSupportTrees(file:File,objects:readonly MainlandSavedObject[],terrain:Worker,nextRequest:()=>number,signal:AbortSignal):Promise<SupportAreaTrees>{
- const parents=objects.filter(supportAreaEligible).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
+export async function readAreaSupportTrees(file:File,objects:readonly MainlandSavedObject[],terrain:Worker,nextRequest:()=>number,signal:AbortSignal,free=false):Promise<SupportAreaTrees>{
+ const parents=objects.filter(p=>supportAreaEligible(p,free)).map(p=>({localOrdinal:p.object.localOrdinal,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y}));
  const out=new Map<number,SupportScene>();
  if(new Set(parents.map(p=>p.localOrdinal)).size!==parents.length)throw Error('SUPPORT_SCOPE');
  for(let i=0;i<parents.length;i+=128){

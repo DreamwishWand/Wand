@@ -1,3 +1,4 @@
+import type {NativeEyeMaterial,NativeTeethMaterial} from './eye-mouth-assets.ts';
 import type {NativeSkinInputs} from './native-skin-inputs.ts';
 import type {LoadedMakeupLayer} from './makeup-assets.ts';
 import type {NativeFaceNormal} from './native-face-normal.ts';
@@ -20,6 +21,8 @@ export interface PosePrimitive {
   readonly expressionDeltas?:readonly Float32Array[];
   readonly nativeFaceNormal?:NativeFaceNormal;
   readonly nativeSkin?:NativeSkinInputs;
+  readonly nativeEye?:NativeEyeMaterial;
+  readonly nativeTeeth?:NativeTeethMaterial;
   readonly nativeMakeup?:{uv:Float32Array;layers:readonly LoadedMakeupLayer[]};
 }
 export interface PoseScene {

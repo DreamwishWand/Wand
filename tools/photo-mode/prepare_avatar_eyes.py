@@ -37,3 +37,4 @@ def apply_eyes(raw,dest):
     public["eyePalette"]={"colors":palette,"items":rows,"shaderParityVerified":False}
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Avatar eyes: 12 source masks, 75 native colors; shader parity unverified")
+    return m

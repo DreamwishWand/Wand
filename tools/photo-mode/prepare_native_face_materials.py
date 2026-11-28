@@ -12,7 +12,7 @@ def apply_native_materials(raw,dest,head_source,base_source=None):
     require(len(raw)==SIZE and digest(raw)==SHA,"native materials archive identity")
     index=dest/"index.json";public=json.loads(index.read_bytes())
     require(public["schema"]=="wand.photo-mode.pages-test@2" and public["gameVersion"]=="1.26.2" and public["publicationAuthorized"] is True and public["testOnly"] is True and public["fullPoseVerified"] is False and public.get("headGeometry"),"native material base identity")
-    assets={};used=set();geometry={};bodies={};body_geometry={}
+    assets={};used=set();geometry={};bodies={};body_geometry={};teeth_geometry={}
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         require(len(z.infolist())==75 and len(set(z.namelist()))==75,"native materials coverage")
         def manifest(name):
@@ -47,9 +47,10 @@ def apply_native_materials(raw,dest,head_source,base_source=None):
                     body_geometry[r["body"]]={k:r[k] for k in ("vertices","channels","positionSha256","uv0Sha256")}|{"asset":e};assets[name]=data
                 continue
             b,role,p=head_parts[key];require((r["body"],r["role"],v,r["headGeometrySha256"],r["positionSha256"])==(b,role,p["vertices"],p["asset"]["sha256"],p["positionSha256"]),"surface head identity")
-            if role=="skull":
+            if role in ("skull","teeth_upper","teeth_lower"):
                 whg=(dest/(p["asset"]["sha256"]+".whg")).read_bytes();require(digest(whg[16+24*v:16+32*v])==r["uv0Sha256"],"surface UV identity")
-                geometry[p["asset"]["sha256"]]={k:r[k] for k in ("vertices","channels","positionSha256","uv0Sha256")}|{"asset":e};assets[name]=data
+                target=geometry if role=="skull" else teeth_geometry
+                target[p["asset"]["sha256"]]={k:r[k] for k in ("vertices","channels","positionSha256","uv0Sha256")}|{"asset":e};assets[name]=data
         require(len(geometry)==16 and set(used)==set(z.namelist()) and set(head_parts)<=set(g["items"]),"native surface coverage")
     if base_source is not None:require(set(body_geometry)=={"male","female"},"body surface coverage")
     for name,data in assets.items():
@@ -58,5 +59,7 @@ def apply_native_materials(raw,dest,head_source,base_source=None):
         else:p.write_bytes(data)
     public["nativeFaceNormals"]={"bodies":bodies,"mask":mask,"geometry":geometry}
     if body_geometry:public["nativeBodyGeometry"]=body_geometry
+    require(set(teeth_geometry)=={p["asset"]["sha256"] for b in ("male","female") for row in head_source["items"][b] for role,p in row["parts"].items() if role in ("teeth_upper","teeth_lower")},"teeth tangent coverage")
+    public["nativeTeethGeometry"]=teeth_geometry
     index.write_text(json.dumps(public,separators=(",",":")),encoding="utf-8")
     print("Native face normals: 17 exact LOD-zero maps, 16 skull tangent bindings")
