@@ -1467,7 +1467,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
         let (x,y)=selection.2;
         if x<0||y<0||x as u64>=from.3*from.2||y as u64>=from.4*from.2{return Err(CodecError::Json);}
         let object=grids.get(&target.grid_id).and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id)).ok_or(CodecError::Json)?;
-        if !ddv_save_patch::storage_pickup_eligible(&root,object){return Err(CodecError::Json);}
+        if !ddv_save_patch::storage_pickup_eligible(&root,object)||limit==MAX_AREA_FURNITURE_CHANGES&&!crate::storage_source::restorable_empty_storage(&root,object,target.item_id){return Err(CodecError::Json);}
         let refs=grid_identity_dependencies(profile,target)?;
         if refs.blocking()>0||refs.historical>0{return Err(CodecError::Json);}
     }
@@ -4083,6 +4083,9 @@ mod terrain_session_tests{
             assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],2);
             assert!(result.contains("1e2"));
         }
+        let mut noncanonical:Value=serde_json::from_slice(raw).unwrap();
+        noncanonical["Player"]["ContainerInventories"]["9"]["ExtraSize"]=2.into();
+        assert!(group_pickup_bounded(&serde_json::to_vec(&noncanonical).unwrap(),&rows.to_string(),2,None,MAX_AREA_FURNITURE_CHANGES).is_err());
         let mut full:Value=serde_json::from_slice(raw).unwrap();
         full["Player"]["ContainerInventories"]["9"]["Inventory"]=serde_json::json!([{"ItemID":30000001,"Amount":1,"State":null}]);
         assert!(group_pickup_bounded(&serde_json::to_vec(&full).unwrap(),&rows.to_string(),2,None,ddv_save_patch::MAX_GRID_MIXED_EDITS).is_err());

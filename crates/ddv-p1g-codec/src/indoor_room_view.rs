@@ -885,6 +885,7 @@ mod tests{
   assert_eq!(after["Player"]["ListInventories"]["0"]["Inventory"]["40001680"]["Amount"],1);
   assert_eq!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"],old["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]);
   assert_eq!(after["World"]["GridCollection"]["Grids"]["42"]["Objects"]["3"]["State"]["Storage"]["ContainerInventoryID"],10);assert!(draft.patched_json.contains("1e2"));
+  let original_plan=plan.clone();
   let mut batch_source=old.clone();
   let mut second=batch_source["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"].clone();second["ID"]=2.into();second["X"]=2.into();
   batch_source["World"]["GridCollection"]["Grids"]["42"]["Objects"]["2"]=second;
@@ -900,6 +901,7 @@ mod tests{
   assert_eq!(v["Player"]["ListInventories"]["0"]["Inventory"]["40000001"]["Amount"],0);
   plan["place"][2]["storageSource"]["expectedX"]=99.into();
   assert!(furniture_candidate(&serde_json::to_vec(&batch_source).unwrap(),&plan.to_string()).is_err());
+  plan=original_plan;
   plan["place"][0]["storageSource"]["copyContents"]=json!(false);
   let empty:Value=serde_json::from_str(&furniture_candidate(raw,&plan.to_string()).unwrap().patched_json).unwrap();assert_eq!(empty["Player"]["ContainerInventories"]["10"]["Inventory"],json!([]));
   let mut invalid=old.clone();invalid["World"]["Unknown"]=json!({"ContainerInventoryID":10});assert!(furniture_candidate(&serde_json::to_vec(&invalid).unwrap(),&plan.to_string()).is_err());
