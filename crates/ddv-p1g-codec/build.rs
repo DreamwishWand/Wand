@@ -60,6 +60,43 @@ fn main(){
  for pair in pairs{id=id.checked_add(pair[0].as_u64().filter(|n|*n>0).unwrap()).unwrap();activity_ids.push(id);}
  fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("activity-item-source.json"),serde_json::to_vec(&activity_ids).unwrap()).unwrap();
 
+ // Compile only the IDs needed for self-contained reward references from
+ // the existing definition-complete DB01 archive, not a separate source DB.
+ // This is build-time only; never load the archive in the browser.
+ let complete=&release["complete"];
+ let parts=complete["parts"].as_u64().filter(|n|*n>0&&*n<=100).unwrap();
+ let mut packed=Vec::new();
+ for i in 0..parts{
+  let p=root.join(format!("data/ddv/item-master/complete-source-steam-1.26.2.json.gz.part{i}"));
+  println!("cargo:rerun-if-changed={}",p.display());
+  packed.extend(fs::read(p).expect("complete source part"));
+ }
+ assert_eq!(format!("{:x}",Sha256::digest(&packed)),complete["archiveSha256"].as_str().unwrap());
+ let limit=128*1024*1024;
+ let mut raw=Vec::new();
+ flate2::read::MultiGzDecoder::new(packed.as_slice()).take(limit+1).read_to_end(&mut raw).unwrap();
+ assert!(raw.len()<=limit as usize);
+ let complete_source:Value=serde_json::from_slice(&raw).unwrap();
+ assert_eq!(complete_source["schema"],"wand.item-master.complete-source@1");
+ assert_eq!(complete_source["release"],complete["release"]);
+ assert_eq!(complete_source["target"]["gameVersion"],"1.26.2");
+ assert_eq!(complete_source["target"]["platform"],"Steam");
+ let rows=complete_source["items"].as_array().unwrap();
+ assert_eq!(rows.len() as u64,complete["count"].as_u64().unwrap());
+ let mut reward_ids=Vec::new();
+ let mut previous=0;
+ for row in rows{
+  let id=row["itemId"].as_u64().filter(|n|*n>previous&&*n<=i32::MAX as u64).unwrap();
+  previous=id;
+  if matches!(row["nativeCategory"].as_str(),Some("ActivityItem"|"Furniture"|"Clothing"|"AvatarFeature"|"Currency")){
+   reward_ids.push(id);
+  }
+ }
+ assert!(reward_ids.len()>activity_ids.len());
+ assert!(activity_ids.iter().all(|id|reward_ids.binary_search(id).is_ok()));
+ fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("recovery-reward-items.json"),serde_json::to_vec(&reward_ids).unwrap()).unwrap();
+ drop(complete_source);drop(raw);drop(packed);
+
  let mut geometry=std::collections::BTreeSet::<u64>::new();
  let mut special=std::collections::BTreeSet::<u64>::new();let mut support_extra=std::collections::BTreeSet::<u64>::new();
  for (key,entry) in fields{

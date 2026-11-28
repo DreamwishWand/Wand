@@ -87,11 +87,12 @@ if __name__=='__main__':
     p.add_argument('--skin-inputs',type=Path,help='Local pinned native skin inputs archive')
     p.add_argument('--makeup',type=Path,help='Local copy of pinned converted avatar makeup archive')
     p.add_argument('--native-materials',type=Path,help='Local approved native material archive')
+    p.add_argument('--hair-assets',type=Path,help='Local converted test-only hair archive')
     p.add_argument('--studio-assets',type=Path,help='Local converted studio reflection and LUT archive')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs or a.expression_weights or a.face_layers or a.native_materials or a.makeup or a.skin_inputs or a.eye_mouth or a.studio_assets: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs or a.expression_weights or a.face_layers or a.native_materials or a.makeup or a.skin_inputs or a.eye_mouth or a.studio_assets or a.hair_assets: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -176,3 +177,6 @@ if __name__=='__main__':
         apply_eye_mouth(a.eye_mouth.read_bytes() if a.eye_mouth else download_eye_mouth(),a.dest,eye_source)
         from prepare_studio_assets import download_studio_assets, apply_studio_assets
         apply_studio_assets(a.studio_assets.read_bytes() if a.studio_assets else download_studio_assets(), a.dest)
+        from prepare_hair_assets import download_hair_assets, apply_hair_assets
+        hair=a.hair_assets.read_bytes() if a.hair_assets else download_hair_assets()
+        apply_hair_assets(hair,a.dest)

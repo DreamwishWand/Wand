@@ -442,7 +442,7 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   const {fetcher,requests}=site();
   const master=await openCurrentItemDatabase('/Wand',fetcher);
   const byItem=(await master.getFieldRows('acquisition.additionalSources')).flatMap(([id,links])=>{
-    const existing=links.filter(l=>l.kind!=='configured_container_slot'&&l.kind!=='configured_default_inventory_entry'&&l.kind!=='configured_container_furniture_slot');
+    const existing=links.filter(l=>l.kind!=='configured_container_slot'&&l.kind!=='configured_default_inventory_entry'&&l.kind!=='configured_container_furniture_slot'&&l.kind!=='profile_update_grant');
     return existing.length?[[id,existing]]:[];
   });
   const byOwner=await master.getFieldRows('acquisition.individualFriendshipRewards');
@@ -497,6 +497,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of stores.keys())expected.add(id);
   const feeding=fields.has('acquisition.ordinaryCritterFeedingSources')?new Map(await master.getFieldRows('acquisition.ordinaryCritterFeedingSources')):new Map();
   for(const id of feeding.keys())expected.add(id);
+  const profileLevels=fields.has('acquisition.profileLevelRewardSources')?new Map(await master.getFieldRows('acquisition.profileLevelRewardSources')):new Map();
+  for(const id of profileLevels.keys())expected.add(id);
   const historicStar=new Map(await master.getFieldRows('acquisition.historicalStarpathSources'));
   for(const id of historicStar.keys())expected.add(id);
   const storyUnlock=fields.has('acquisition.storyUnlockSources')?new Map(await master.getFieldRows('acquisition.storyUnlockSources')):new Map();
@@ -511,6 +513,8 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of memoryDefaults.keys())expected.add(id);
   const recurringLoot=fields.has('acquisition.eventRecurringLootSources')?new Map(await master.getFieldRows('acquisition.eventRecurringLootSources')):new Map();
   for(const id of recurringLoot.keys())expected.add(id);
+  const miniEventRewards=fields.has('acquisition.miniEventRewardSources')?new Map(await master.getFieldRows('acquisition.miniEventRewardSources')):new Map();
+  for(const id of miniEventRewards.keys())expected.add(id);
   const eventLoot=fields.has('acquisition.eventLootPresentSources')?new Map(await master.getFieldRows('acquisition.eventLootPresentSources')):new Map();
   for(const id of eventLoot.keys())expected.add(id);
   const objectiveGrants=new Map(await master.getFieldRows('acquisition.questObjectiveGrantSources'));
@@ -523,12 +527,15 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   for(const id of generatedStage.keys())expected.add(id);
   const initialInventory=fields.has('acquisition.ordinaryInitialInventorySources')?new Map(await master.getFieldRows('acquisition.ordinaryInitialInventorySources')):new Map();
   for(const id of initialInventory.keys())expected.add(id);
+  const evolutionAcquisition=fields.has('acquisition.evolutionAcquisitionSources')?new Map(await master.getFieldRows('acquisition.evolutionAcquisitionSources')):new Map();
+  for(const id of evolutionAcquisition.keys())expected.add(id);
   assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
   for(const id of expected){
     const old=previous.get(id)??[];
     const want=(rewardIds.has(id)||production.has(id)||intro.has(id)||progress.has(id)||critter.has(id)||stores.has(id))&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:[...old];
     for(const link of questLoot.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if(premiumIds.has(id)&&!want.includes('premium_shop'))want.push('premium_shop');
+    if(profileLevels.has(id)&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
     if(historicStar.has(id)&&!want.includes('star_path'))want.push('star_path');
     for(const link of conditional.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     if((loot.has(id)||feeding.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
@@ -538,9 +545,10 @@ test('original ProtoDB individual friendship rewards and configured store facts 
     if(memoryCategory&&!want.includes(memoryCategory))want.push(memoryCategory);
     for(const link of memorySpawn.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     for(const link of memoryDefaults.get(id)??[])if(!want.includes(link.category))want.push(link.category);
-    if((eventLoot.has(id)||recurringLoot.has(id))&&!want.includes('in_game_limited_event'))want.push('in_game_limited_event');
+    if((miniEventRewards.has(id)||eventLoot.has(id)||recurringLoot.has(id))&&!want.includes('in_game_limited_event'))want.push('in_game_limited_event');
     for(const link of objectiveGrants.get(id)??[])if(link.category!==null&&!want.includes(link.category))want.push(link.category);
     if((initialInventory.has(id)||storeSequence.has(id)||generatedShelf.has(id)||generatedStage.has(id))&&!want.includes('ordinary_gameplay'))want.push('ordinary_gameplay');
+    for(const link of evolutionAcquisition.get(id)??[])if(!want.includes(link.category))want.push(link.category);
     assert.deepEqual(effective.get(id),['ordinary_gameplay','premium_shop','star_path','in_game_limited_event','real_time_limited_event','iap_package_reward'].filter(c=>want.includes(c)));
   }
   const newlyClassified=[...rewardIds].filter(id=>!previous.get(id)?.length);

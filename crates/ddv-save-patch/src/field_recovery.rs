@@ -86,7 +86,11 @@ fn valid_field_object(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32
  let collection=&root["World"]["GridCollection"];let g=&collection["Grids"][&target.grid_id];let o=&g["Objects"][&target.object_id];
  root["GameInfo"]["Version"].as_u64()==Some(643)&&g["ID"].as_u64()==key_id(&target.grid_id).map(u64::from)&&
  collection.get("DiffGrids").is_none_or(|v|v.as_object().is_some_and(|m|!m.contains_key(&target.grid_id)))&&
- o.as_object().is_some_and(|m|matches!(m.len(),5|6)&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&
+ // Native GridObject.From is the optional GridSource enum (tag 7).
+ // PlayerDrop (15) is source metadata, not an ItemState or allocated ID.
+ // Other provenance may belong to automatic spawning or progression.
+ o.as_object().is_some_and(|m|(5..=7).contains(&m.len())&&m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"|"From")))&&
+ o.get("From").is_none_or(|v|v.is_null()||v.as_str()==Some("GridSource_PlayerDrop")||v.as_u64()==Some(15))&&
  o["ID"].as_u64()==key_id(&target.object_id).map(u64::from)&&o["ItemID"].as_u64()==Some(target.item_id)&&
  o["X"].as_i64()==Some(i64::from(expected.0))&&o["Y"].as_i64()==Some(i64::from(expected.1))&&o["Orientation"].as_str()==Some(orientation)&&
  super::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(&orientation)
@@ -100,6 +104,42 @@ fn valid_field_object(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32
 /// Do not infer a missing quantity or discard a player assignment.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct RecoveryItem{pub item_id:u64,pub amount:u64,pub state:Value}
+/// Native ItemState oneof tag 4 contains MultiItemInstance.Items (tag 1),
+/// whose elements are the same ItemInstance message as container slots.
+/// Preserve the exact payload, never open/re-roll a bag. Bound nesting and
+/// total entries; other state cases retain the existing independent checks.
+/// Exact reward definition membership and mission references are enforced
+/// by the codec against the shared DB01/DB03 sources before commit.
+fn recovery_state(row:&Value,depth:usize,budget:&mut usize)->bool{
+ if depth>8||*budget==0{return false;}
+ *budget-=1;
+ let Some(state)=row.get("State").filter(|v|!v.is_null())else{return true;};
+ let Some(m)=state.as_object().filter(|m|m.len()<=1)else{return false;};
+ if m.is_empty(){return true;}
+ if let Some(loot)=m.get("LootPresentData"){
+  if row["ItemID"].as_u64().is_none_or(|id|id/100_000!=314){return false;}
+  let Some(o)=loot.as_object().filter(|o|o.keys().all(|k|k=="Items"))else{return false;};
+  let Some(items)=o.get("Items")else{return true;};
+  return items.as_array().is_some_and(|a|a.len()<=2048&&a.iter().all(|r|{
+   r.as_object().is_some_and(|m|matches!(m.len(),2|3)&&m.keys().all(|k|matches!(k.as_str(),"ItemID"|"Amount"|"State")))&&
+   r["ItemID"].as_u64().is_some_and(|n|n>0&&n<=i32::MAX as u64)&&
+   r["Amount"].as_u64().is_some_and(|n|n>0&&n<=i32::MAX as u64)&&recovery_state(r,depth+1,budget)
+  }));
+ }
+ super::storage_backup::independent_item_state(row)
+}
+/// All embedded source-definition references of a structurally valid
+/// recovery item. Used for catalog membership and active mission checks.
+pub fn recovery_item_references(item:&RecoveryItem)->Vec<u64>{
+ fn collect(state:&Value,out:&mut Vec<u64>){
+  if let Some(a)=state["LootPresentData"]["Items"].as_array(){
+   for row in a{if let Some(id)=row["ItemID"].as_u64(){out.push(id);}collect(&row["State"],out);}
+  }
+  if let Some(id)=state["ConsummableData"]["ItemID"].as_u64(){out.push(id);}
+  if let Some(a)=state["MealData"]["IngredientsUsed"].as_array(){out.extend(a.iter().filter_map(Value::as_u64));}
+ }
+ let mut out=Vec::new();collect(&item.state,&mut out);out.sort_unstable();out.dedup();out
+}
 pub fn field_recovery_item(root:&Value,target:&GridCoordinateTarget,expected:(i32,i32),orientation:&str)->Option<RecoveryItem>{
  if !valid_field_object(root,target,expected,orientation){return None;}
  let o=&root["World"]["GridCollection"]["Grids"][&target.grid_id]["Objects"][&target.object_id];
@@ -111,7 +151,8 @@ pub fn field_recovery_item(root:&Value,target:&GridCoordinateTarget,expected:(i3
  let amount=wrapped.get("Amount")?.as_u64().filter(|n|*n>0&&*n<=i32::MAX as u64)?;
  let state=wrapped.get("State").cloned().unwrap_or(Value::Null);
  let row=json!({"ItemID":target.item_id,"Amount":amount,"State":state});
- if !super::storage_backup::independent_item_state(&row){return None;}
+ let mut budget=2048;
+ if !recovery_state(&row,0,&mut budget){return None;}
  Some(RecoveryItem{item_id:target.item_id,amount,state})
 }
 /// Only plain, structurally known stacks may receive a recovered plain item.
@@ -381,6 +422,48 @@ mod tests{
   for bad in [json!({"Amount":3,"AssignedPlayer":1,"State":state}),json!({"Amount":null,"State":state}),json!({"Amount":0,"State":state}),json!({"Amount":3,"State":{"Unknown":1}}),json!({"Amount":3,"State":state,"Unknown":0})]{
    root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=json!({"ItemAmountState":bad});
    assert!(recover(&root.to_string(),&meal,(1,2),"GridOrientation_Down","0").is_err());
+  }
+ }
+ #[test]fn loot_payload_and_empty_native_state_are_preserved_without_opening_or_merging(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let mut t=target();t.item_id=31400001;
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["ItemID"]=t.item_id.into();
+  let payload=json!({"LootPresentData":{"Items":[
+   {"ItemID":40000001,"Amount":2,"State":null},
+   {"ItemID":31400002,"Amount":1,"State":{"LootPresentData":{}}},
+   {"ItemID":30300001,"Amount":3,"State":{"MealData":{"IngredientsUsed":[30200001],"SceneRestriction":null}}}
+  ]}});
+  let wrap=|state:Value|json!({"ItemAmountState":{"Amount":2,"State":state,"AssignedPlayer":null}});
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=wrap(payload.clone());
+  let item=field_recovery_item(&root,&t,(1,2),"GridOrientation_Down").unwrap();
+  assert_eq!(recovery_item_references(&item),vec![30200001,30300001,31400002,40000001]);
+  let out:Value=serde_json::from_str(&recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0],json!({"ItemID":t.item_id,"Amount":2,"State":payload}));
+  for bad in [json!({"LootPresentData":{"Items":[{"ItemID":1,"Amount":1,"State":{"MemoryShardIndex":2}}]}}),
+   json!({"LootPresentData":{"Items":[{"ItemID":40000001,"Amount":0}]}}),
+   json!({"LootPresentData":{"Items":[],"Unknown":1}}),json!({"RewardCondition":0}),json!({"SceneRestriction":1})]{
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=wrap(bad);
+   assert!(recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").is_err());
+  }
+  root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]=wrap(json!({}));
+  let out:Value=serde_json::from_str(&recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+  assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"][0]["State"],json!({}));
+ }
+ #[test]fn recover_player_dropped_stack_without_inventing_inventory_source_fields(){
+  let mut root:Value=serde_json::from_str(SOURCE).unwrap();
+  let t=target();
+  // Source metadata is optional and exists only on GridObject.
+  for source in [Value::Null,json!("GridSource_PlayerDrop"),json!(15)]{
+   let o=&mut root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"];
+   o["From"]=source;
+   o["State"]=json!({"ItemAmountState":{"Amount":7,"State":null,"AssignedPlayer":null}});
+   let out:Value=serde_json::from_str(&recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").unwrap()).unwrap();
+   assert_eq!(out["Player"]["ContainerInventories"]["0"]["Inventory"],json!([{"ItemID":t.item_id,"Amount":7,"State":null}]));
+   assert!(out["World"]["GridCollection"]["Grids"]["42"]["Objects"].get("1").is_none());
+  }
+  for source in [json!("GridSource_Gardening"),json!("GridSource_LootPresent"),json!("GridSource_Mining"),json!(10),json!(18),json!({"Unknown":true}),json!("Unknown")]{
+   root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["From"]=source;
+   assert!(recover(&root.to_string(),&t,(1,2),"GridOrientation_Down","0").is_err());
   }
  }
  #[test]fn unknown_state_stale_pose_and_full_destination_fail_atomically(){

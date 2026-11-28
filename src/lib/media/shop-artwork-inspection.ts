@@ -1,10 +1,13 @@
 import type {PremiumBundleRevision} from '../items/public-item-master.ts';
 import type {BundleArtwork} from './bundle-artwork.ts';
 import type {ShopSourceKind} from './shop-source-media.ts';
-import {shopArtworkTemplate} from './shop-artwork-layout.ts';
+import {shopArtworkTemplate,shopOneLineArtworkTemplate} from './shop-artwork-layout.ts';
+import {steamShopArtworkRules,nativeShopBindingAddress} from './shop-native-artwork.ts';
+
+import type {ShopRuntimePrefix} from './shop-runtime-items.ts';
 
 type Reader={get(address:unknown,kind?:ShopSourceKind):BundleArtwork|null};
-export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,groupWidth:number){
+export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,groupWidth:number,runtime?:ShopRuntimePrefix|null){
   const art=revision.artwork??{};
   const mega=art.megaImages as Record<string,unknown>|undefined;
   const fields:{field:string;address:unknown;itemId?:number}[]=[
@@ -14,15 +17,55 @@ export function inspectShopArtwork(revision:PremiumBundleRevision,reader:Reader,
   ];
   const rows=fields.map(f=>({...f,
     sprite:reader.get(f.address,'Sprite'),texture:reader.get(f.address,'Texture2D')}));
-  const template=shopArtworkTemplate(art.lightLayout,groupWidth);
+  const native=steamShopArtworkRules(revision);
+  const template=shopArtworkTemplate(native?.layout??art.lightLayout,groupWidth);
   // Explicit candidate bindings only; an absent override or ambiguous Icon is not a resolved native image.
+  const prefix=runtime?.revisionSha256===revision.revisionSha256?runtime:null;
   const slots=template?.slots.map(s=>{
-    const field=s.binding==='CurrentImage'?'Image':s.binding.startsWith('MegaBundleImage')?
+    const nativeAddress=native?nativeShopBindingAddress(revision,s.binding,runtime?.revisionSha256===revision.revisionSha256?runtime.items:undefined):null;
+    const field=nativeAddress?.status==='address'?nativeAddress.field:
+      s.binding==='CurrentImage'?'Image':s.binding.startsWith('MegaBundleImage')?
       'OverridedImage'+s.binding.slice('MegaBundleImage'.length):
       'Contents.'+s.binding.match(/\d+/)?.[0]+'.Image';
     const row=rows.find(r=>r.field===field);
-    const image=s.binding.startsWith('Items[')?null:row?.sprite??null;
-    return {...s,field,image};
+    const main=s.binding==='CurrentImage';
+    // CurrentImage/Mega use Sprite. Item.Icon can use either native consumer;
+    // use no image until that choice is known (or both exact aliases agree).
+    const sprite=nativeAddress?.status==='address'?reader.get(nativeAddress.address,'Sprite'):null;
+    const texture=nativeAddress?.status==='address'&&nativeAddress.consumer==='Icon'?reader.get(nativeAddress.address,'Texture2D'):null;
+    const image=nativeAddress
+      ?nativeAddress.status==='address'
+        ?nativeAddress.consumer==='Sprite'?sprite:
+          sprite&&texture&&sprite.original.sha256===texture.original.sha256&&sprite.thumbnail.sha256===texture.thumbnail.sha256?sprite:null
+        :null
+      :s.binding.startsWith('Items[')?null:row?.sprite??null;
+    const adjustment=main&&image?native?.adjustment??null:null;
+    const index=s.binding==='CurrentImage'?0:s.binding.startsWith('MegaBundleImage')?Number(s.binding.slice('MegaBundleImage'.length))-1:Number(s.binding.match(/\d+/)?.[0]);
+    const runtimeItem=prefix?.items[index]??(index===0?revision.components[0]:null);
+    return {...s,field,image,adjustment,nativeAddress,itemId:runtimeItem?.itemId??null};
   })??[];
-  return {rows,template,slots,renderingVerified:false as const};
+  const scrollItems=template?.scroll?(prefix?.items??[]).map(item=>{
+    const sprite=item.address?reader.get(item.address,'Sprite'):null,texture=item.address?reader.get(item.address,'Texture2D'):null;
+    const image=sprite&&texture&&sprite.original.sha256===texture.original.sha256&&sprite.thumbnail.sha256===texture.thumbnail.sha256?sprite:null;
+    return {...item,image};
+  }):[];
+  return {rows,template,slots,native,scrollItems,runtimeOrderVerified:prefix?.complete??false,renderingVerified:false as const};
+}
+
+/** Category must be established by the caller from a pinned appearance.
+ * The first runtime item is the only source position used without expansion.
+ * Do not apply grid ImageAdjustmentBinding to this dedicated prefab.
+ */
+export function inspectOneLineShopArtwork(revision:PremiumBundleRevision,reader:Reader,width:number,height:number,runtime?:ShopRuntimePrefix|null){
+  if(!steamShopArtworkRules(revision))return null;
+  const template=shopOneLineArtworkTemplate(width,height);
+  if(!template)return null;
+  const main=nativeShopBindingAddress(revision,'CurrentImage');
+  const first=nativeShopBindingAddress(revision,'Items[0].Icon');
+  const prefix=runtime?.revisionSha256===revision.revisionSha256?runtime:null;
+  const scrollItems=prefix?.items.map(item=>({...item,image:item.address?reader.get(item.address,'Sprite'):null}))??[];
+  return {template,main,first,scrollItems,
+    mainImage:main.status==='address'?reader.get(main.address,'Sprite'):null,
+    firstImage:first.status==='address'?reader.get(first.address,'Sprite'):null,
+    runtimeOrderVerified:prefix?.complete??false,renderingVerified:false as const};
 }

@@ -699,7 +699,23 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
     let objects:HashSet<u64>=ids.iter().map(|s|key_id(s).ok_or(CodecError::Json)).collect::<Result<_,_>>()?;
     if objects.len()!=ids.len(){return Err(CodecError::Json);}
     let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
-    let mut out=GridIdentityDependencies::default();
+    let mut out=grid_identity_dependencies_batch(&root,&[(grid,objects)])?;
+    out.pop().ok_or(CodecError::Json)
+}
+
+/// Resolve independent requested identity groups in one bounded traversal.
+/// A reference without an unambiguous GridID still protects every matching
+/// local object ID, including matches across distinct Grids.
+fn grid_identity_dependencies_batch(root:&Value,groups:&[(u64,HashSet<u64>)])->Result<Vec<GridIdentityDependencies>,CodecError>{
+    if groups.len()>8192+512{return Err(CodecError::Bounds);}
+    let mut by_object=HashMap::<u64,Vec<usize>>::new();
+    for (index,(_,ids)) in groups.iter().enumerate(){
+        if ids.is_empty()||ids.len()>512{return Err(CodecError::Bounds);}
+        for &id in ids{by_object.entry(id).or_default().push(index);}
+    }
+    let mut out=(0..groups.len()).map(|_|GridIdentityDependencies::default()).collect::<Vec<_>>();
+    if groups.is_empty(){return Ok(out);}
+
     // Iterative scan with explicit depth and node bounds. No private path,
     // identifier or arbitrary field name leaves the Worker.
     // MissionSlots is an observed native container, but a positive MissionId
@@ -735,7 +751,7 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
         }
     }
     type Flags=(bool,bool,bool,bool,bool);
-    let mut stack=vec![(&root,(false,false,false,false,false),None::<u64>,0usize)];
+    let mut stack=vec![(root,(false,false,false,false,false),None::<u64>,0usize)];
     let mut visited=0usize;
     while let Some((v,flags,owning,depth))=stack.pop(){
         visited+=1;
@@ -749,25 +765,32 @@ pub(super) fn grid_identity_dependencies_for_ids(profile:&[u8],grid_id:&str,ids:
                     if k=="gridid"{grid_values.push(value.as_u64());}
                     if k=="gridobjectid"{object_values.push(value.as_u64());}
                 }
-                if object_values.iter().any(|v|v.is_some_and(|id|objects.contains(&id))){
+                let matches=object_values.iter().filter_map(|v|v.and_then(|id|by_object.get(&id))).flatten().copied().collect::<HashSet<_>>();
+                for i in matches{
+                    let grid=groups[i].0;let hit=&mut out[i];
                     if grid_values.iter().any(|v|*v==Some(grid)){
-                        if flags.0{out.active+=1;}else if flags.4{if flags.3{out.active+=1;}else{out.unknown+=1;}}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
-                    }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){out.unknown+=1;}
+                        if flags.0{hit.active+=1;}else if flags.4{if flags.3{hit.active+=1;}else{hit.unknown+=1;}}else if flags.1{hit.historical+=1;}else if flags.2{hit.navigation+=1;}else if flags.3{hit.active+=1;}else{hit.unknown+=1;}
+                    }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){hit.unknown+=1;}
                 }
                 for (key,value) in o{
                     let k=normal(key);
-                    if k=="saplinggridobjectid"&&value.as_u64().is_some_and(|id|objects.contains(&id))&&owning.is_none_or(|g|g==grid){out.related+=1;}
-                    else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64().is_some_and(|id|objects.contains(&id)){out.unknown+=1;}
+                    if let Some(indices)=value.as_u64().and_then(|id|by_object.get(&id)){
+                        if k=="saplinggridobjectid"{for &i in indices{if owning.is_none_or(|g|g==groups[i].0){out[i].related+=1;}}}
+                        else if k!="gridobjectid"&&k!="nextgridobjectid"&&k.contains("gridobjectid"){for &i in indices{out[i].unknown+=1;}}
+                    }
                     // Mission identity arrays may use unclassified field names.
                     // Only the exact archived objective history list, without
                     // an explicit GridID or active-reference context, is exempt.
                     // Never infer completion or an instance address from a local ID.
-                    if flags.4&&k.contains("gridobjectid")&&k!="nextgridobjectid"&&
-                        value.as_array().is_some_and(|a|a.iter().any(|v|v.as_u64().is_some_and(|id|objects.contains(&id))))&&
-                        (grid_values.is_empty()||grid_values.iter().any(|v|v.is_none()||*v==Some(grid))){
-                        let historical=objective_history.contains(&(value as *const Value))&&grid_values.is_empty()&&!flags.0&&!flags.3;
-                        if !historical{
-                            if flags.0||flags.3||k.contains("spawned"){out.active+=1;}else{out.unknown+=1;}
+                    if flags.4&&k.contains("gridobjectid")&&k!="nextgridobjectid"{
+                        if let Some(rows)=value.as_array(){
+                            let matches=rows.iter().filter_map(|v|v.as_u64().and_then(|id|by_object.get(&id))).flatten().copied().collect::<HashSet<_>>();
+                            let historical=objective_history.contains(&(value as *const Value))&&grid_values.is_empty()&&!flags.0&&!flags.3;
+                            if !historical{for i in matches{
+                                if grid_values.is_empty()||grid_values.iter().any(|v|v.is_none()||*v==Some(groups[i].0)){
+                                    if flags.0||flags.3||k.contains("spawned"){out[i].active+=1;}else{out[i].unknown+=1;}
+                                }
+                            }}
                         }
                     }
                     let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"),flags.4||mission_slots.is_some_and(|slot|std::ptr::eq(slot,value)));
@@ -1620,8 +1643,16 @@ fn saved_db04_source_projection(
                     let object=grid.and_then(|g|g.get("Objects")).and_then(|o|o.get(&target.object_id));
                     let storage_known=crate::storage_source::is_storage(target.item_id)||object.is_some_and(|o|o.get("State").and_then(|s|s.get("Storage")).is_some());
                     let storage_pose=aligned&&target.item_id/100_000==400&&object.is_some_and(|o|o["ID"].as_u64()==key_id(&target.object_id)&&o.as_object().is_some_and(|m|m.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State")))&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&o["Orientation"].as_str().unwrap_or(""))&&ddv_save_patch::storage_pose(&root,o));
+                    // Structural candidate only: the selected batch still
+                    // checks active mission, exact identity and destination
+                    // capacity before any copy can be produced.
+                    let recovery=aligned&&activity_item_id(target.item_id)&&
+                        !scan.subgrid_parents.contains(&(i+1))&&
+                        xy.is_some_and(|p|source.size.zip(factor).is_some_and(|((sx,sy),f)|p.0>=0&&p.1>=0&&(p.0 as u64)<u64::from(sx)*u64::from(f)&&(p.1 as u64)<u64::from(sy)*u64::from(f))&&
+                            scan.rows[i].get("orientation").and_then(Value::as_str).is_some_and(|ori|recovery_item_with_source(&root,target,p,ori).is_some()));
                     bindings.push(serde_json::json!({
                         "localOrdinal":i+1,
+                        "recoveryCandidate":recovery,
                         "sourceRefIndex":witness_index,
                         "savedFactor":factor,
                         "sourceLocalCoordinateMappingVerified":aligned,
@@ -3574,6 +3605,18 @@ pub(super) fn activity_item_id(item:u64)->bool{
  static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
  IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).expect("compiled ActivityItem source")).binary_search(&item).is_ok()
 }
+/// The payload's item references are original DB01 definitions, not
+/// allocated Save IDs. A recovered bag may contain ordinary item rewards,
+/// but unresolved and progression-specific definitions remain protected.
+fn recovery_reward_reference(id:u64)->bool{
+ static IDS:std::sync::OnceLock<Vec<u64>>=std::sync::OnceLock::new();
+ IDS.get_or_init(||serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/recovery-reward-items.json"))).expect("compiled recovery reward source")).binary_search(&id).is_ok()
+}
+fn recovery_item_with_source(root:&Value,t:&GridCoordinateTarget,xy:(i32,i32),ori:&str)->Option<ddv_save_patch::field_recovery::RecoveryItem>{
+ let item=ddv_save_patch::field_recovery::field_recovery_item(root,t,xy,ori)?;
+ if ddv_save_patch::field_recovery::recovery_item_references(&item).iter().any(|id|!recovery_reward_reference(*id)){return None;}
+ Some(item)
+}
 /// Return only transient ordinals for structurally recoverable Activity Items; room UI
 /// never receives native Grid IDs or object IDs.
 pub(super) fn field_recovery_ordinals(source:&[u8])->Result<HashMap<(String,String),usize>,CodecError>{
@@ -3586,11 +3629,25 @@ fn field_recovery_ordinals_from_scan(root:&Value,scan:&Scan)->HashMap<(String,St
  scan.private_targets.iter().enumerate().filter_map(|(i,(t,xy))|{
   let xy=(*xy)?;
   let ori=scan.rows.get(i)?.get("orientation")?.as_str()?;
-  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&ddv_save_patch::field_recovery::field_recovery_item(root,t,xy,ori).is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
+  (activity_item_id(t.item_id)&&!scan.subgrid_parents.contains(&(i+1))&&recovery_item_with_source(root,t,xy,ori).is_some()).then(||((t.grid_id.clone(),t.object_id.clone()),i+1))
  }).collect()
 }
 fn activity_recovery_destinations(root:&Value)->Result<Vec<ddv_save_patch::field_recovery::RecoveryDestination>,CodecError>{
  Ok(ddv_save_patch::field_recovery::destinations(root).map_err(|_|CodecError::Json)?.into_iter().filter(|r|r.parent_item.is_none_or(|item|crate::storage_source::is_storage(item)&&(r.owner.is_some()||crate::storage_source::placement_storage_template(root,item).is_some_and(|(_,size)|size==r.capacity)))).collect())
+}
+/// Preview and commit share this exact destination filter. A single scan
+/// evaluates every linked chest instead of parsing a Save per candidate.
+fn activity_recovery_destination_safety(root:&Value,rows:&[ddv_save_patch::field_recovery::RecoveryDestination])->Result<Vec<bool>,CodecError>{
+ let mut groups=Vec::new();let mut indices=Vec::new();
+ let mut allowed=vec![true;rows.len()];
+ for (i,r) in rows.iter().enumerate(){
+  if let Some(t)=&r.owner{
+   groups.push((key_id(&t.grid_id).ok_or(CodecError::Json)?,HashSet::from([key_id(&t.object_id).ok_or(CodecError::Json)?])));
+   indices.push(i);
+  }
+ }
+ for (i,refs) in indices.into_iter().zip(grid_identity_dependencies_batch(root,&groups)?){allowed[i]=refs.blocking()==0;}
+ Ok(allowed)
 }
 pub(super) fn field_recovery_destinations_json(source:&[u8],plan:&str)->Result<String,CodecError>{
  if plan.len()>128*1024{return Err(CodecError::Bounds);}
@@ -3598,15 +3655,16 @@ pub(super) fn field_recovery_destinations_json(source:&[u8],plan:&str)->Result<S
  if root["GameInfo"]["Version"].as_u64()!=Some(643){return Err(CodecError::Json);}
  let request:Value=serde_json::from_str(plan).map_err(|_|CodecError::Json)?;
  let batch=activity_recovery_selection(source,&root,&request)?;
- let items=batch.iter().map(|(t,xy,ori)|ddv_save_patch::field_recovery::field_recovery_item(&root,t,*xy,ori).ok_or(CodecError::Json)).collect::<Result<Vec<_>,_>>()?;
+ let items=batch.iter().map(|(t,xy,ori)|recovery_item_with_source(&root,t,*xy,ori).ok_or(CodecError::Json)).collect::<Result<Vec<_>,_>>()?;
  let quantity=items.iter().map(|i|i.amount).sum::<u64>();
  let rows=activity_recovery_destinations(&root)?;
+ let allowed=activity_recovery_destination_safety(&root,&rows)?;
  let out=rows.iter().enumerate().map(|(i,r)|{
   let owner=r.owner.as_ref().map(|t|{
    let g=&root["World"]["GridCollection"]["Grids"][&t.grid_id];let o=&g["Objects"][&t.object_id];
    serde_json::json!({"itemId":t.item_id,"gridDataPath":g["GridDataPath"],"x":o["X"],"y":o["Y"]})
   });
-  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"afterUsed":ddv_save_patch::field_recovery::projected_recovery_used(&root,r,&items),"parentItemId":r.parent_item,"owner":owner})
+  serde_json::json!({"ordinal":i+1,"kind":if r.container_id=="0"{"inventory"}else if r.container_id=="1"{"home-storage"}else if r.owner.is_none(){"unlinked-chest"}else{"chest"},"capacity":r.capacity,"used":r.used,"afterUsed":if allowed[i]{ddv_save_patch::field_recovery::projected_recovery_used(&root,r,&items)}else{None},"parentItemId":r.parent_item,"owner":owner})
  }).collect::<Vec<_>>();
  Ok(serde_json::json!({"contract":"wand.db05.field-recovery-destinations@3","quantity":quantity,"rows":out}).to_string())
 }
@@ -3724,7 +3782,6 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
   let ori=m["expectedOrientation"].as_str().filter(|s|ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
   selections.push((ord,item,xy,"full".to_owned(),Some(ori.to_owned())));
  }
- if mission_items_referenced(root,&checked)?{return Err(bad);}
  let targets=resolve_grid_mixed_targets(source,&selections)?;
  let mut groups=HashMap::<String,Vec<String>>::new();
  let mut bounds=HashMap::<String,(u64,u64,u64)>::new();
@@ -3737,10 +3794,21 @@ fn activity_recovery_selection(source:&[u8],root:&Value,rows:&Value)->Result<Vec
    bounds.insert(t.grid_id.clone(),b);b
   };
   let (x,y)=s.2;
-  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy||ddv_save_patch::field_recovery::field_recovery_item(root,t,s.2,s.4.as_deref().ok_or(bad)?).is_none(){return Err(bad);}
+  if x<0||y<0||x as u64>=factor*sx||y as u64>=factor*sy{return Err(bad);}
+  let item=recovery_item_with_source(root,t,s.2,s.4.as_deref().ok_or(bad)?).ok_or(bad)?;
+  for id in ddv_save_patch::field_recovery::recovery_item_references(&item){
+   if active_items.contains(&id){return Err(bad);}
+   checked.insert(id);
+  }
   groups.entry(t.grid_id.clone()).or_default().push(t.object_id.clone());
  }
- for (gid,ids) in groups{let refs=grid_identity_dependencies_for_ids(source,&gid,&ids)?;if refs.blocking()>0||refs.historical>0{return Err(bad);}}
+ if mission_items_referenced(root,&checked)?{return Err(bad);}
+ let identity_groups=groups.into_iter().map(|(gid,ids)|{
+  let grid=key_id(&gid).ok_or(bad)?;
+  let objects=ids.iter().map(|id|key_id(id).ok_or(bad)).collect::<Result<HashSet<_>,_>>()?;
+  Ok((grid,objects))
+ }).collect::<Result<Vec<_>,CodecError>>()?;
+ if grid_identity_dependencies_batch(root,&identity_groups)?.iter().any(|r|r.blocking()>0||r.historical>0){return Err(bad);}
 
  let batch=targets.into_iter().zip(selections).map(|(target,selection)|{
   Ok((target,selection.2,selection.4.ok_or(bad)?))
@@ -3756,9 +3824,7 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
  let ordinal=o["destinationOrdinal"].as_u64().and_then(|n|usize::try_from(n).ok()).filter(|n|*n>0).ok_or(bad)?;
  let destinations=activity_recovery_destinations(&root)?;
  let dest=destinations.get(ordinal-1).ok_or(bad)?;
- if let Some(t)=&dest.owner{
-  let refs=grid_identity_dependencies(source,t)?;if refs.blocking()>0{return Err(bad);}
- }
+ if !activity_recovery_destination_safety(&root,std::slice::from_ref(dest))?[0]{return Err(bad);}
  let batch=activity_recovery_selection(source,&root,&o["rows"])?;
  ddv_save_patch::field_recovery::recover_batch(std::str::from_utf8(source).map_err(|_|bad)?,&batch,&dest.container_id).map_err(|_|CodecError::Patch)
 }
@@ -3766,6 +3832,23 @@ pub(super) fn activity_recovery_candidate(source:&[u8],plan:&str)->Result<String
 #[cfg(test)]
 mod tests{
     use super::*;
+
+    #[test]
+    fn loot_recovery_uses_source_membership_and_protects_nested_mission_items(){
+        let ids:Vec<u64>=serde_json::from_str(include_str!(concat!(env!("OUT_DIR"),"/activity-item-source.json"))).unwrap();
+        let item=*ids.iter().find(|id|**id/100_000==314).unwrap();
+        let reward=*ids.iter().find(|id|**id/100_000==302).unwrap();
+        let mut root=serde_json::json!({"GameInfo":{"Version":643},"Player":{"ContainerInventories":{"0":{"ID":0,"ParentItemID":null,"Size":2,"Inventory":[],"BelongsToPlayer":true,"BlockMoveTo":false,"ExtraSize":0}}},"World":{"GridCollection":{"Grids":{"42":{"ID":42,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":2,"Objects":{"1":{"ID":1,"ItemID":item,"X":1,"Y":2,"Orientation":"GridOrientation_Down","State":{"ItemAmountState":{"Amount":2,"State":{"LootPresentData":{"Items":[{"ItemID":reward,"Amount":3,"State":null}]}}}}}}}}}}});
+        let plan=serde_json::json!({"destinationOrdinal":1,"rows":[{"localOrdinal":1,"itemId":item.to_string(),"expectedX":1,"expectedY":2,"expectedOrientation":"GridOrientation_Down"}]});
+        let result:Value=serde_json::from_str(&activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).unwrap()).unwrap();
+        assert_eq!(result["Player"]["ContainerInventories"]["0"]["Inventory"][0]["State"],root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["ItemAmountState"]["State"]);
+        root["World"]["MissionSlots"]=serde_json::json!({"5":{"Slots":[{"MissionSteps":[{"RequiredItemID":reward}]}]}});
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+        assert!(field_recovery_destinations_json(root.to_string().as_bytes(),&plan["rows"].to_string()).is_err());
+        root["World"].as_object_mut().unwrap().remove("MissionSlots");
+        root["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]["ItemAmountState"]["State"]["LootPresentData"]["Items"][0]["ItemID"]=2147483647.into();
+        assert!(activity_recovery_candidate(root.to_string().as_bytes(),&plan.to_string()).is_err());
+    }
 
     #[test]
     fn activity_recovery_in_nested_support_keeps_all_owners_and_rejects_aliases(){
@@ -4823,6 +4906,34 @@ mod terrain_session_tests{
         assert_eq!(r["bindings"][1]["sourceLocalCoordinateMappingVerified"],false);
         assert!(!r.to_string().contains("SceneLayouts/"));
     }
+    #[test]
+    fn recovery_dependency_batch_keeps_grid_addresses_separate_and_protects_ambiguous_ids(){
+        let root=serde_json::json!({"World":{
+            "SpawnedObjects":[{"GridID":42,"GridObjectID":1}],
+            "LastUsedLinkedEnvironmentEnter":{"GridID":43,"GridObjectID":2},
+            "Unclassified":{"GridObjectID":3},
+            "GridCollection":{"Grids":{"42":{"ID":42,"Objects":{"9":{"State":{"GardenData":{"SaplingGridObjectID":4}}}}}}}
+        }});
+        let groups=vec![(42,HashSet::from([1,4])),(43,HashSet::from([1,2,4])),(42,HashSet::from([3])),(43,HashSet::from([3])),(44,HashSet::from([1,2,4]))];
+        let result=grid_identity_dependencies_batch(&root,&groups).unwrap();
+        assert_eq!((result[0].active,result[0].related),(1,1));
+        assert_eq!((result[1].active,result[1].navigation,result[1].related),(0,1,0));
+        assert_eq!(result[2].unknown,1);
+        assert_eq!(result[3].unknown,1);
+        assert_eq!(result[4].blocking(),0);
+        let raw=root.to_string();
+        for ((grid,ids),multi) in groups.iter().zip(&result){
+            let keys=ids.iter().map(u64::to_string).collect::<Vec<_>>();
+            let single=grid_identity_dependencies_for_ids(raw.as_bytes(),&grid.to_string(),&keys).unwrap();
+            assert_eq!((single.active,single.historical,single.navigation,single.related,single.unknown),
+              (multi.active,multi.historical,multi.navigation,multi.related,multi.unknown));
+        }
+        let destinations=[(42,1),(43,1),(44,1)].into_iter().enumerate().map(|(i,(grid,object))|
+            ddv_save_patch::field_recovery::RecoveryDestination{container_id:(i+2).to_string(),parent_item:Some(40001680),owner:Some(GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:grid.to_string(),object_id:object.to_string(),item_id:40001680}),capacity:48,used:0}
+        ).collect::<Vec<_>>();
+        assert_eq!(activity_recovery_destination_safety(&root,&destinations).unwrap(),vec![false,true,true]);
+    }
+
     #[test]
     fn dependency_scan_distinguishes_historical_active_and_unknown_addresses(){
         let profile=br#"{"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":2,"Objects":{"2":{"ID":2,"ItemID":40005160},"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}},"20":{"ID":20,"Objects":{"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}}}},"Events":{"SpawnedObjects":[{"GridID":10,"GridObjectID":2},{"GridID":20,"GridObjectID":2}]}},"Player":{"Achievements":{"GridObjectsCollected":[{"GridId":10,"GridObjectId":2}]},"LastUsedLinkedEnvironmentEnter":{"1":{"GridID":10,"GridObjectID":2}},"Unknown":{"GridID":10,"GridObjectID":2}}}"#;

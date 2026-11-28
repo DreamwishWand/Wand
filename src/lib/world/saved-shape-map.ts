@@ -29,11 +29,11 @@ export function parseSavedShapePoints(input:unknown):SavedNumericPoint[]{
     if(!record(row)||!uint(row.localOrdinal)||row.localOrdinal===0||seen.has(row.localOrdinal)||
       !uint(row.localGridOrdinal)||row.localGridOrdinal===0||typeof row.itemId!=='string'||
       !/^[1-9][0-9]{0,19}$/.test(row.itemId)||!int32(row.x)||!int32(row.y)||
-      (row.orientation!==null&&(typeof row.orientation!=='string'||row.orientation.length>32)))
+      (row.orientation!==null&&(typeof row.orientation!=='string'||row.orientation.length>32))||(row.recoveryCandidate!==undefined&&row.recoveryCandidate!==true))
       throw new TypeError('DB04_SAVE_SHAPE_POINT_INVALID');
     seen.add(row.localOrdinal);
     return {localOrdinal:row.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
-      x:row.x,y:row.y,orientation:row.orientation as string|null,...(row.subgrid===undefined?{}:{subgrid:parseSavedSubgridSummary(row.subgrid)}),...(row.storage===true?{storage:true as const}:{}),...(row.storage===true&&row.storageEmpty===true?{storageEmpty:true as const}:{}),...(row.storageKnown===true?{storageKnown:true as const}:{}),...(row.storage===true&&row.storageEmpty===true&&row.storageRestorable===true?{storageRestorable:true as const}:{})};
+      x:row.x,y:row.y,orientation:row.orientation as string|null,...(row.recoveryCandidate===true?{recoveryCandidate:true as const}:{}),...(row.subgrid===undefined?{}:{subgrid:parseSavedSubgridSummary(row.subgrid)}),...(row.storage===true?{storage:true as const}:{}),...(row.storage===true&&row.storageEmpty===true?{storageEmpty:true as const}:{}),...(row.storageKnown===true?{storageKnown:true as const}:{}),...(row.storage===true&&row.storageEmpty===true&&row.storageRestorable===true?{storageRestorable:true as const}:{})};
   });
 }
 export function buildSavedShapeMap(source:unknown,layoutId:string,gridIdNative:number,input:unknown):SavedShapeMap{
