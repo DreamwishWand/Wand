@@ -62,7 +62,18 @@ fn same_address(before:&Value,after:&Value,g:u64,o:u64)->bool{
                 if a.and_then(|v|v.get(key))!=b.and_then(|v|v.get(key)){return false;}
             }
         }
-        if kind=="DiffGrids"&&removed(a,&oid,o)!=removed(b,&oid,o){return false;}
+        if kind=="DiffGrids"{
+            if removed(a,&oid,o)!=removed(b,&oid,o){return false;}
+            // An address can refer to an unchanged default object with no
+            // ModifiedObjects entry. Changing its base layout or either
+            // native hash can silently change that object at load time.
+            // Preserve all five native identity fields and existence.
+            if a.is_some()!=b.is_some(){return false;}
+            for key in ["ID","GridDefaultLayoutPath","GridDefaultLayoutType",
+                        "DefaultLayoutGridID","DefaultGridHashCode","DefaultGridDataHashCode"]{
+                if a.and_then(|v|v.get(key))!=b.and_then(|v|v.get(key)){return false;}
+            }
+        }
     }
     true
 }
@@ -175,6 +186,32 @@ mod tests{
         b=a.clone();b["World"]["GridCollection"]["Grids"]["30"]["Objects"].as_object_mut().unwrap().remove("6");assert!(!check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["40"]["Objects"]["8"]["X"]=4.into();assert!(check(&a,&b));
         b=a.clone();b["World"]["GridCollection"]["Grids"]["50"]=json!({"ID":50,"Objects":{"1":{"ID":1,"State":{"SubGrid":{"GridID":60}}}}});assert!(check(&a,&b));
+    }
+    #[test]
+    fn referenced_default_diff_object_protects_complete_layout_identity(){
+        let mut a=fixture();
+        a["World"]["GridCollection"]["DiffGrids"]["10"]=json!({
+            "ID":10,"GridDefaultLayoutPath":"SceneLayouts/Synthetic.json",
+            "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+            "DefaultLayoutGridID":2,"DefaultGridHashCode":31,
+            "DefaultGridDataHashCode":-12,"ModifiedObjects":{},"RemovedObjects":[],"NextGridObjectID":50
+        });
+        // Event refers to default object 9, which has no overlay record.
+        for (key,value) in [
+            ("ID",json!(11)),("GridDefaultLayoutPath",json!("SceneLayouts/Other.json")),
+            ("GridDefaultLayoutType",json!("Different")),("DefaultLayoutGridID",json!(3)),
+            ("DefaultGridHashCode",json!(32)),("DefaultGridDataHashCode",json!(-13))
+        ]{
+            let mut b=a.clone();
+            b["World"]["GridCollection"]["DiffGrids"]["10"][key]=value;
+            assert!(!check(&a,&b),"{key}");
+        }
+        let mut b=a.clone();
+        b["World"]["GridCollection"]["DiffGrids"].as_object_mut().unwrap().remove("10");
+        assert!(!check(&a,&b));
+        b=a.clone();b["World"]["GridCollection"]["DiffGrids"]["10"]["ModifiedObjects"]["8"]=json!({"ID":8,"X":1});
+        b["World"]["GridCollection"]["DiffGrids"]["10"]["NextGridObjectID"]=51.into();
+        assert!(check(&a,&b));
     }
     #[test]
     fn absent_progress_fields_do_not_disable_editing(){
