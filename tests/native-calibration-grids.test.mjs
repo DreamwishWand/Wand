@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {bindNativeCalibrationGrids,nativeCalibrationScope} from '../src/lib/world/native-calibration-grids.ts';
+import {bindNativeCalibrationGrids,nativeCalibrationScope,nativeUnderwaterDesignGrid} from '../src/lib/world/native-calibration-grids.ts';
 const {grids}=JSON.parse(readFileSync(new URL('../static/ddv/world/steam-1.26.2/villageexpansion04underwaterareas.json',import.meta.url),'utf8'));
 test('all twelve source grids bind to exactly three separate native map planes',()=>{
  const cases=[
@@ -25,4 +25,17 @@ test('all twelve source grids bind to exactly three separate native map planes',
  assert.equal(seen.size,12);
  assert.equal(nativeCalibrationScope('MapVillageExpansion4Underwater01'),null);
  assert.equal(bindNativeCalibrationGrids('MapVillageExpansion4Underwater01',grids),null);
+});
+
+test('individual underwater design area maps only to its own scene and original north-up bounds',()=>{
+ for(const g of grids){
+  const binding=nativeUnderwaterDesignGrid(g);
+  assert.ok(binding);
+  const source=bindNativeCalibrationGrids(binding.mapId,grids);
+  assert.deepEqual(binding.grid,source.find(row=>row.key===g.key));
+  for(const invalid of [{...g,factor:2},{...g,sizeX:g.sizeX+1},{...g,gridDataPath:g.gridDataPath+'x'},{...g,key:g.key+'x'}])
+   assert.equal(nativeUnderwaterDesignGrid(invalid),null);
+ }
+ assert.equal(nativeUnderwaterDesignGrid(null),null);
+ assert.equal(nativeUnderwaterDesignGrid({...grids[0],layoutId:'SceneLayouts/OffGridBuildings/Expansion04/UnderwaterTutorial/UnderwaterTutorial-DefaultLayout.json'}),null);
 });
