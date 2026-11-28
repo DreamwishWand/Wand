@@ -21,6 +21,8 @@ mod storage_source;
 mod private_storage_scope;
 #[cfg(feature="wasm")]
 mod private_storage_pose;
+#[cfg(feature="wasm")]
+mod private_storage_transfer;
 mod player_house_source;
 #[cfg(feature="wasm")]
 mod indoor_room_view;
@@ -1548,8 +1550,24 @@ mod browser_amount_preview {
             }.map_err(|_|invalid())?});
             let after=crate::private_storage_scope::resolve(draft.as_bytes(),scope).map_err(|_|invalid())?;
             if grids!=crate::private_storage_scope::resolve(draft.as_bytes(),&grid_scope).map_err(|_|invalid())?{return Err(invalid());}
-            let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,after.as_ref(),plan!="null",true).map_err(|_|invalid())?;
+            let patched=ddv_save_patch::storage_backup::restore_scoped_mode(&draft,backup,after.as_ref(),true,true).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
+        }
+        pub fn stage_private_decoration(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<String,JsValue>{
+            let invalid=||fail("DB05_PRIVATE_DECORATION_STAGE_INVALID");
+            if !allow_experimental_copy||!self.ready||self.closed||self.copy_prepared||backup.len()>4*1024*1024{return Err(invalid());}
+            let source=match self.kind{InputKind::PlainJson=>self.pending.as_slice(),InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or_else(invalid)?.profile.as_slice()};
+            let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
+            let grids=match scope_value["kind"].as_str(){
+                Some("region-poses")=>crate::private_storage_scope::resolve_region_stage(source,&scope_value,backup).map_err(|_|invalid())?,
+                Some("outdoor"|"room"|"floor"|"building")=>crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?,
+                _=>return Err(invalid())
+            };
+            let (mut patched,normalized)=crate::private_storage_transfer::stage_decoration(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
+            let normalized=zeroize::Zeroizing::new(normalized);
+            let changed=patched.as_bytes()!=source;
+            let length=if changed{self.prepare_copy_from_patched(patched,true)?}else{patched.zeroize();0};
+            Ok(serde_json::json!({"length":length,"storage":&*normalized}).to_string())
         }
         pub fn prepare_private_storage_pose_copy(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{
             let invalid=||fail("DB05_STORAGE_POSE_RESTORE_INVALID");
@@ -1558,7 +1576,7 @@ mod browser_amount_preview {
             let scope_value:serde_json::Value=serde_json::from_str(scope).map_err(|_|invalid())?;
             if !matches!(scope_value["kind"].as_str(),Some("outdoor"|"room"|"floor"|"building")){return Err(invalid());}
             let grids=crate::private_storage_scope::resolve(source,scope).map_err(|_|invalid())?.ok_or_else(invalid)?;
-            let patched=crate::private_storage_pose::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
+            let patched=crate::private_storage_transfer::restore(std::str::from_utf8(source).map_err(|_|invalid())?,backup,&grids).map_err(|_|invalid())?;
             self.prepare_copy_from_patched(patched,true)
         }
         pub fn prepare_private_storage_contents_copy(&mut self,backup:&str,scope:&str,allow_experimental_copy:bool)->Result<u32,JsValue>{

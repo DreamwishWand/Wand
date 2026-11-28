@@ -1,6 +1,6 @@
 <script lang="ts">
  import PrivateStorageBackup from './PrivateStorageBackup.svelte';
- import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope} from './private-decoration-backup.ts';
+ import {readDecorationFile,savePrivateDecoration,privateDecorationWords,outdoorPrivateScope,stagePrivateDecoration,projectPrivateDecorationTerrain} from './private-decoration-backup.ts';
  import RestoreStockReview from './RestoreStockReview.svelte';
  import {restoreStockRows} from './restore-stock-review.ts';
  import {readPresetText} from '../presets/preset-file.ts';
@@ -17,7 +17,8 @@
  import {checkpointWords} from './world-checkpoint-words.ts';
  import {testSaveWords} from './test-save-export.ts';
  import type {StockCandidate} from './save-furniture-placement.ts';
- import type {MainlandSavedObject} from './mainland-saved-objects.ts';
+ import {projectMainlandSaved,type MainlandSavedObject} from './mainland-saved-objects.ts';
+ import type {SavedShapeMap} from './saved-shape-map.ts';
  import type {MainlandGrid} from './mainland-world-coordinates.ts';
  import type {TerrainRaster,TerrainScopeReceipt} from './terrain-binding.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
@@ -31,16 +32,16 @@
  $: if(!available.some(g=>g.key===key))key=available[0]?.key??'';
  $: grid=available.find(g=>g.key===key);
  $: snapshot=grid?biomeFurnitureSnapshot(grid,objects,omitted):null;
- $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,objects,omitted,incoming,defs,stock,false,undefined,false,freePlacement):null;
+ $: result=grid&&source===file&&sourceObjects===objects&&sourceKey===key&&incoming&&defs&&stock?biomeFurnitureReplacement(grid,grids,rasters,stagedObjects??objects,omitted,incoming,defs,stock,false,undefined,false,freePlacement):null;
  $: ghosts=result?.ghosts??[];$: removed=result?.removed??[];
  $: busy=reading||!!shapeRequest||!!stockWorker||!!writeWorker;
  let lastFree=false;
  $: if(freePlacement!==lastFree){lastFree=freePlacement;cancel();}
  $: if(source&&(source!==file||sourceObjects!==objects||sourceKey!==key||blocked))cancel();
  $: if(worker!==subscribed){subscribed?.removeEventListener('message',receive);subscribed=worker;subscribed?.addEventListener('message',receive);cancel();}
- let privateStorage:string|null=null,includeContents=false;
+ let privateStorage:string|null=null,stagedFile:File|null=null,stagedObjects:readonly MainlandSavedObject[]|null=null,includeContents=false;
  $: privateWords=privateDecorationWords[locale];
- function cancel(){privateStorage=null;epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
+ function cancel(){privateStorage=null;stagedFile=null;stagedObjects=null;epoch++;reading=false;shapeRequest=0;stockWorker?.terminate();stockWorker=null;writeWorker?.terminate();writeWorker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;sourceObjects=null;sourceKey='';incoming=null;defs=null;stock=null;error=false;}
  async function exportPreset(){if(!snapshot||!grid||blocked||busy||!file)return;if(includeContents){const f=file,g=grid,token=epoch;reading=true;try{const privateSnapshot=biomeFurnitureSnapshot(g,objects,omitted,false,undefined,false,true);if(!privateSnapshot)throw Error('private snapshot');await savePrivateDecoration(f,outdoorPrivateScope([g]),privateSnapshot.text,'wand-private-biome-'+g.key+'.json',()=>file===f&&key===g.key&&epoch===token&&!blocked);}catch{error=true;}finally{if(epoch===token)reading=false;}}else savePresetFile(snapshot.text,'wand-biome-furniture-'+grid.key+'.json');}
  async function open(e:Event){
   const element=e.currentTarget as HTMLInputElement,f=element.files?.[0];element.value='';if(f)void openFile(f);
@@ -50,7 +51,31 @@
   try{
    const loaded=await readDecorationFile(f,DESIGN_FILE_LIMIT),raw=loaded.text,rows=parseWholeArea(raw,g,'biome');if(!loaded.storage)void rememberPreset(f,raw).catch(()=>{});
    if(epoch!==token||file!==activeFile||objects!==activeObjects||key!==g.key||worker!==own||blocked)return;
-   incoming=rows;privateStorage=loaded.storage;
+   let normalized=loaded.storage;
+   const valid=()=>epoch===token&&file===activeFile&&objects===activeObjects&&key===g.key&&worker===own&&!blocked;
+   if(normalized){
+    const stage=await stagePrivateDecoration(activeFile,normalized,outdoorPrivateScope([g]),valid);
+    if(!valid())return;normalized=stage.storage;
+    if(stage.file!==activeFile){
+     const receipts=await projectPrivateDecorationTerrain(stage.file,[g],valid);
+     if(!valid())return;
+     const s=receipts[0];if(!s?.completeGridOrdinal||s.receipt.rowsWithoutCoordinates||s.receipt.dataSampled)throw Error('staged scope');
+     const maps=new Map<string,SavedShapeMap>();
+     if(s.receipt.points.length){
+      const requestId=nextRequest();
+      const d=await new Promise<any>((resolve,reject)=>{
+       const done=(value:any)=>{clearTimeout(timer);own.removeEventListener('message',receive);value?resolve(value):reject(Error('staged shapes'));};
+       const receive=(e:MessageEvent)=>{if(e.data?.requestId===requestId)done(e.data.kind==='shapes'&&e.data.key===g.key?e.data:null);};
+       const timer=setTimeout(()=>done(null),30000);own.addEventListener('message',receive);own.postMessage({command:'shapes',requestId,key:g.key,points:s.receipt.points});
+      });
+      maps.set(g.key,d.result);
+     }
+     if(!valid())return;
+     const projected=projectMainlandSaved([g],receipts,maps,[]);if(projected.omitted)throw Error('staged objects');
+     stagedFile=stage.file;stagedObjects=projected.objects;
+    }
+   }
+   incoming=rows;privateStorage=normalized;
    if(rows.length){shapeRequest=nextRequest();own.postMessage({command:'design-shapes',requestId:shapeRequest,key:g.key,itemIds:[...new Set(rows.map(p=>p.itemId))],eightWay:rows.some(p=>!Number.isInteger(p.orientation))});}else defs=new Map();
    const read=new Worker(new URL('./furniture-stock-view.worker.ts',import.meta.url),{type:'module'});stockWorker=read;
    const done=(d:any)=>{read.terminate();if(stockWorker!==read||source!==activeFile)return;stockWorker=null;try{if(d?.kind!=='furniture-stock')throw Error('stock');stock=parseFurnitureStock(d.result);}catch{error=true;}};
@@ -62,7 +87,7 @@
   if(!allowed||blocked||busy||copy||!file||source!==file||sourceObjects!==objects||!result||!result.changed&&!privateStorage||result.missing.length||!grid)return;
   const f=file,plan=result.changed?result.plan:null,own=new Worker(new URL('./furniture-stock-preview.worker.ts',import.meta.url),{type:'module'});writeWorker=own;error=false;
   const done=(d:any)=>{own.terminate();if(writeWorker!==own||source!==f||file!==f||sourceObjects!==objects){d?.bytes?.fill(0);return;}writeWorker=null;try{if(d?.kind!=='furniture-stock-copy')throw Error('copy');copy=experimentalCopyDownload(d,f);}catch{d?.bytes?.fill(0);error=true;}};
-  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'biome-furniture-export',file:f,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:outdoorPrivateScope([grid])}:{})});
+  own.onmessage=e=>done(e.data);own.onerror=()=>done(null);own.onmessageerror=()=>done(null);own.postMessage({command:'biome-furniture-export',file:stagedFile??f,plan,allowExperimentalCopy:true,...(privateStorage?{privateStorage,privateScope:outdoorPrivateScope([grid])}:{})});
  }
  function apply(){if(!allowed||blocked||!copy||!file||source!==file||sourceObjects!==objects||sourceKey!==key)return;if(!commitWorldCheckpoint(file,copy.file)){error=true;return;}cancel();onClose();}
  onDestroy(()=>{cancel();subscribed?.removeEventListener('message',receive);});

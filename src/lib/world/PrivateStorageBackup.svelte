@@ -18,14 +18,14 @@
  'pt-BR':['Backup de armazenamento','Salvar','Restaurar','Baixar jogo restaurado','Processando…','Sem conteúdo compatível ou alterações','Somente conteúdo existente. Sem compartilhamento.','Incluídos','Excluídos']
  } as const;
  const poseWords={
- ja:['位置・向きも復元','元の配置に戻します。現在の家具と重なる場合があります。'],
- en:['Also restore position and rotation','Returns storage to its saved position; it may overlap current furniture.'],
- fr:['Restaurer aussi position et orientation','Le rangement revient à sa position enregistrée, avec chevauchement possible.'],
- it:['Ripristina anche posizione e rotazione','Il contenitore torna alla posizione salvata, con possibili sovrapposizioni.'],
- de:['Auch Position und Drehung wiederherstellen','Rückkehr zur gespeicherten Position; Überschneidungen sind möglich.'],
- 'es-ES':['Restaurar también posición y giro','Vuelve a su posición guardada; puede solaparse con muebles actuales.'],
- 'zh-CN':['同时恢复位置和朝向','恢复至保存的位置，可能与当前家具重叠。'],
- 'pt-BR':['Restaurar também posição e rotação','Retorna à posição salva; pode sobrepor móveis atuais.']
+ ja:['位置・向きも復元','別のエリアに移動した収納も元の配置へ戻します。現在の家具と重なる場合があります。'],
+ en:['Also restore position and rotation','Returns storage from other areas to its saved position; it may overlap current furniture.'],
+ fr:['Restaurer aussi position et orientation','Le rangement revient à sa position enregistrée, même depuis une autre zone, avec chevauchement possible.'],
+ it:['Ripristina anche posizione e rotazione','Il contenitore torna alla posizione salvata anche da un\'altra area, con possibili sovrapposizioni.'],
+ de:['Auch Position und Drehung wiederherstellen','Rückkehr zur gespeicherten Position auch aus anderen Gebieten; Überschneidungen sind möglich.'],
+ 'es-ES':['Restaurar también posición y giro','Vuelve a su posición guardada incluso desde otra zona; puede solaparse con muebles actuales.'],
+ 'zh-CN':['同时恢复位置和朝向','将其他区域的储物家具移回保存的位置，可能与当前家具重叠。'],
+ 'pt-BR':['Restaurar também posição e rotação','Retorna à posição salva mesmo de outra área; pode sobrepor móveis atuais.']
  } as const;
  function poseScope(raw:string){try{return ['outdoor','room','floor','building'].includes(JSON.parse(raw)?.kind);}catch{return false;}}
  let restorePose=false;

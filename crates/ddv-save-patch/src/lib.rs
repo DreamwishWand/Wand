@@ -2083,12 +2083,12 @@ pub fn preview_storage_duplicate(source:&str,target:&GridCoordinateTarget,expect
 pub fn preview_storage_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,i32),d:&PlainGridDestination,xy:(i32,i32),orientation:&str,to_room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  if target.grid_id==d.grid_id||target.kind!=GridObjectKind::Full||target.item_id/100_000!=400||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(PatchError::InvalidTarget);}
  if to_room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(PatchError::InvalidTarget);}validate_local_grid_destination_mode(source,d,target.item_id,xy,orientation,"GridData/Rooms/",free)?;}
- else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(PatchError::InvalidTarget);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
+ else{if house_exterior_world(&d.layout_path,&d.data_path).is_none()&&!(free&&d.tessellation==1&&underwater_plain_path(&d.layout_path,&d.data_path)){return Err(PatchError::InvalidTarget);}validate_plain_grid_destination(source,d,target.item_id,xy,orientation)?;}
  let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
  let from=&root["World"]["GridCollection"]["Grids"][&target.grid_id];
  let data=from["GridDataPath"].as_str().ok_or(PatchError::InvalidTarget)?;
  let layout=from["GridDefaultLayoutPath"].as_str().unwrap_or("");
- if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||!(data.starts_with("GridData/Rooms/Room")&&data.ends_with("-GridData.json")&&!data.contains("..")||house_exterior_world(layout,data).is_some()){return Err(PatchError::InvalidTarget);}
+ if from["ID"].as_u64()!=target.grid_id.parse::<u64>().ok()||!(data.starts_with("GridData/Rooms/Room")&&data.ends_with("-GridData.json")&&!data.contains("..")||house_exterior_world(layout,data).is_some()||free&&underwater_plain_path(layout,data)&&from.get("TessellationFactor").map_or(Some(1),serde_json::Value::as_u64)==Some(1)){return Err(PatchError::InvalidTarget);}
  relocate_grid_record(source,target,expected,d,xy,orientation,false,true)
 }
 /// Atomic relocation of a plain leaf between two separately resolved owned support grids.

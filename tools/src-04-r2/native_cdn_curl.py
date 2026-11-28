@@ -31,8 +31,15 @@ class CurlReader:
     def __exit__(self,*args):
         if self.proc is not None:
             if self.proc.poll() is None:
-                self.proc.terminate()
-                self.proc.wait(timeout=10)
+                if self.index==len(self.pending):
+                    # Let curl close its healthy final connection normally.
+                    try:self.proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        self.proc.terminate()
+                        self.proc.wait(timeout=10)
+                else:
+                    self.proc.terminate()
+                    self.proc.wait(timeout=10)
             self.proc.stderr.close()
         if self.temp:self.temp.cleanup()
 
