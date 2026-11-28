@@ -29,7 +29,7 @@
   let master:Promise<PublicCompleteItemMaster>|undefined;
   let price=$state.raw<Readonly<ItemPriceDetails>|null>(null);
   let priceFailed=$state(false),priceLoading=$state(false),priceAttempt=$state(0);
-  function currentMaster(){
+  function currentMaster():Promise<PublicCompleteItemMaster>{
     if(!master){
       const task=openCurrentItemDatabase(base);
       master=task;
@@ -99,7 +99,7 @@
     <div class="minor configured-prices" data-configured-prices>
       {#each priceSections as section (section.label)}
         <strong>{section.label}</strong>
-        {#each section.rows as row (row.currencyItemId)}
+        {#each section.rows as row}
           <div class="price-row"><span class="currency-art"><ItemArtwork itemId={row.currencyItemId} alt=""/></span><span>{row.amount?.toLocaleString(locale)} {row.currency?.name}{row.source==='dynamic_cache'?' · '+label('cachedPrice'):''}</span></div>
         {/each}
       {/each}
