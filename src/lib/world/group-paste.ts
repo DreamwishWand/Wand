@@ -108,7 +108,7 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
  if(cut.length!==candidate.rows.length||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
- return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||r.destination.factor===r.supportFactor&&CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))&&(!r.storage||CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))?rows:null;
+ return rows.every((r,i)=>r.itemId===cut[i].itemId&&(!r.supportFactor||(free&&!!r.roomSource||r.destination.factor===r.supportFactor)&&CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))&&(!r.storage||CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)&&CARDINAL_ORIENTATIONS.some(o=>o===r.orientation)))?rows:null;
 }
 export const groupCutWords={
  ja:['切り取り','切り取り済み（貼り付けまで元の家具は残ります）','家具を移動','移動元を確認できません。'],

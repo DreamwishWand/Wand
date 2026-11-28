@@ -1862,7 +1862,8 @@ fn support_room_transfer(source:&str,target:&GridCoordinateTarget,expected:(i32,
  let grids=root.get("World").and_then(|v|v.get("GridCollection")).and_then(|v|v.get("Grids")).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
  let from=grids.get(&target.grid_id).ok_or(PatchError::MissingTarget)?;
  let data=from.get("GridDataPath").and_then(|v|v.as_str()).ok_or(PatchError::InvalidTarget)?;
- if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(u64::from(d.tessellation)){return Err(PatchError::InvalidTarget);}
+ let source_factor=from.get("TessellationFactor").map_or(Some(1),|v|v.as_u64()).filter(|n|matches!(n,1|2)).ok_or(PatchError::InvalidTarget)?;
+ if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||!free&&source_factor!=u64::from(d.tessellation){return Err(PatchError::InvalidTarget);}
  if from_room{
   if !data.starts_with("GridData/Rooms/Room")||!data.ends_with(".json")||data.contains(".."){return Err(PatchError::InvalidTarget);}
  }else{

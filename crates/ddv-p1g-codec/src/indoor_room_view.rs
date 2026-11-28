@@ -323,7 +323,7 @@ pub(super) fn room_to_outdoor_candidate_mode(source:&[u8],row:&Value,free:bool)-
  if !free&&dest.values().any(|v|v.get("ItemID").and_then(Value::as_u64).is_none_or(|n|n/100_000!=401)&&v.get("X").and_then(Value::as_i64)==Some(i64::from(xy.0))&&v.get("Y").and_then(Value::as_i64)==Some(i64::from(xy.1))){return Err(bad);}
  let json=std::str::from_utf8(source).map_err(|_|bad)?;
  let draft=if storage{let (_,layout,factor,sx,sy)=crate::grid_instance_preview::house_exterior_identity(&root,&d.grid_id)?;if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}ddv_save_patch::preview_storage_transfer(json,&target,expected,&d,xy,orientation,false,free).map_err(|_|CodecError::Patch)?}else if let Some(f)=support{
-  if f!=d.tessellation{return Err(bad);}
+  if !free&&f!=d.tessellation{return Err(bad);}
   let c=root["World"]["GridCollection"].as_object().ok_or(bad)?;
   let fresh=c["Grids"][&d.grid_id]["NextGridObjectID"].as_u64().ok_or(bad)?.to_string();
   let tree=crate::grid_instance_preview::subgrid_tree(c,&target.grid_id,&target.object_id)?;
@@ -587,7 +587,7 @@ pub(super) fn furniture_candidate(source:&[u8],plan:&str)->Result<ddv_save_patch
   if storage&&support.is_some(){return Err(bad);}
   if row.as_object().is_none_or(|r|r.len()!=8+usize::from(support.is_some())+usize::from(storage)||r.contains_key("localOrdinal")==r.contains_key("roomSource")||r.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"roomSource"|"itemId"|"expectedX"|"expectedY"|"expectedOrientation"|"x"|"y"|"orientation"|"supportFactor"|"storage"))){return Err(bad);}
   let room_source=row.get("roomSource");
-  if support.is_some()&&support!=Some(factor){return Err(bad);}
+  if !free&&support.is_some()&&support!=Some(factor){return Err(bad);}
   let item=row.get("itemId").and_then(Value::as_u64).filter(|n|*n/100_000==400).ok_or(bad)?;
   let expected=(coord(row,"expectedX")?,coord(row,"expectedY")?);
   let old=row.get("expectedOrientation").and_then(Value::as_str).ok_or(bad)?;
@@ -1153,6 +1153,29 @@ mod tests{
   assert_eq!(after["Player"],orig["Player"]);
   back["transfer"][0]["supportFactor"]=1.into();assert!(furniture_candidate(moved.as_bytes(),&back.to_string()).is_err());
   outdoor["supportFactor"]=1.into();assert!(crate::grid_instance_preview::group_cut_candidate(&bytes,&json!([outdoor]).to_string()).is_err());
+  // Catalog-backed exterior factor one; the native child grid retains
+  // its own factor two, original IDs and lexical state across both moves.
+  let mut different=orig.clone();
+  different["World"]["GridCollection"]["Grids"]["45"]=json!({"ID":45,"GridDefaultLayoutPath":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","GridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","TessellationFactor":1,"NextGridObjectID":3,"Objects":{"2":{"ID":2,"ItemID":40005162,"X":5,"Y":5,"Orientation":"GridOrientation_Down"}}});
+  let mut cross_factor=outdoor.clone();cross_factor["supportFactor"]=2.into();cross_factor["x"]=5.into();cross_factor["y"]=5.into();cross_factor["destination"]=json!({"layoutId":"SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json","gridDataPath":"GridData/Villages/Village04-MeadowLevel-GridData.json","factor":1,"sizeX":196,"sizeY":100});
+  let free_cross=json!({"freePlacement":true,"rows":[cross_factor.clone()]});
+  let moved=crate::grid_instance_preview::group_cut_candidate(different.to_string().as_bytes(),&free_cross.to_string()).unwrap();
+  let after:Value=serde_json::from_str(&moved).unwrap();let g=&after["World"]["GridCollection"]["Grids"];
+  assert_eq!(g["43"],orig["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(g["45"]["Objects"]["2"],different["World"]["GridCollection"]["Grids"]["45"]["Objects"]["2"]);
+  assert_eq!(g["45"]["Objects"]["3"]["State"],orig["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"]["State"]);
+  assert_eq!(after["Player"],orig["Player"]);
+  let ordinals=crate::grid_instance_preview::room_support_ordinals(moved.as_bytes()).unwrap();
+  let ordinal=ordinals.get(&("45".to_owned(),"3".to_owned())).unwrap();
+  let mut return_plan=json!({"roomOrdinal":2,"surfaceOrdinal":1,"freePlacement":true,"transfer":[{"localOrdinal":ordinal,"itemId":40005160,"expectedX":5,"expectedY":5,"expectedOrientation":"GridOrientation_Left","x":6,"y":6,"orientation":"GridOrientation_Down","supportFactor":1}]});
+  let returned=furniture_candidate(moved.as_bytes(),&return_plan.to_string()).unwrap();
+  let after:Value=serde_json::from_str(&returned.patched_json).unwrap();
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["43"],orig["World"]["GridCollection"]["Grids"]["43"]);
+  assert_eq!(after["World"]["GridCollection"]["Grids"]["44"]["Objects"]["7"]["State"]["SubGrid"]["GridID"],43);
+  assert_eq!(after["Player"],orig["Player"]);
+  return_plan["transfer"][0]["supportFactor"]=2.into();assert!(furniture_candidate(moved.as_bytes(),&return_plan.to_string()).is_err());
+  return_plan["transfer"][0]["supportFactor"]=1.into();return_plan["transfer"][0]["x"]=999.into();assert!(furniture_candidate(moved.as_bytes(),&return_plan.to_string()).is_err());
+  let mut forged=free_cross.clone();forged["rows"][0]["destination"]["factor"]=2.into();assert!(crate::grid_instance_preview::group_cut_candidate(different.to_string().as_bytes(),&forged.to_string()).is_err());
   let mut alias=orig.clone();alias["World"]["GridCollection"]["Grids"]["44"]["Objects"]["1"]=orig["World"]["GridCollection"]["Grids"]["42"]["Objects"]["1"].clone();
   plan["transfer"][1]["x"]=6.into();assert!(furniture_candidate(&serde_json::to_vec(&alias).unwrap(),&plan.to_string()).is_err());
  }
