@@ -77,10 +77,11 @@ if __name__=='__main__':
     p.add_argument('--mermaid-materials',type=Path,help='Local copy of source-derived mermaid base materials')
     p.add_argument('--avatar-materials',type=Path,help='Local copy of shared source avatar base materials')
     p.add_argument('--skin-palette',type=Path,help='Local copy of all original skin base-color assets')
+    p.add_argument('--eyes',type=Path,help='Local copy of the approved native eye masks and colors')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -136,3 +137,6 @@ if __name__=='__main__':
 
         from prepare_avatar_skin_palette import download_skin_palette,apply_skin_palette
         apply_skin_palette(a.skin_palette.read_bytes() if a.skin_palette else download_skin_palette(),a.dest,base_source)
+
+        from prepare_avatar_eyes import download_eyes,apply_eyes
+        apply_eyes(a.eyes.read_bytes() if a.eyes else download_eyes(),a.dest)

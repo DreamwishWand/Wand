@@ -1,5 +1,6 @@
 const captions = {
   "ja": {
+    "eyeDiagnostic": "瞳の模様と色は原本データを使用したRGBマスクの簡易表示です。ゲームのシェーダーは未再現で、未記録の色はアイテム既定値を使用します。",
     "nativeLoops": "原本の異なる再生周期を個別に再現しています。ゲーム内の同期は未検証です。",
     "residualMotion": "一部のドラゴンの動作参照は未解決です。",
     "limboGeometryDiagnostic": "原本の特殊材質の色・輪郭計算を反映しています。発光後処理・その他の材質などは未再現です。",
@@ -10,7 +11,7 @@ const captions = {
     "pose": "ポーズ",
     "title": "3Dポーズプレビュー（テスト）",
     "note": "ゲーム内の最終姿勢・外見との一致は未検証です。",
-    "savedSkin": "セーブに記録された肌色を使用します。その他の外見設定は未再現です。",
+    "savedSkin": "セーブに記録された肌色を使用します。その他の外見設定は一部未再現です。",
     "partial": "現在は1体型のみ対応しています。",
     "playerOnly": "小道具は未対応です。",
     "companionOnly": "コンパニオン本体は未対応です。プレイヤーの動作のみ表示します。",
@@ -30,6 +31,7 @@ const captions = {
     "related": "同じプレイヤーポーズ"
   },
   "en": {
+    "eyeDiagnostic": "Eye patterns and colors use a diagnostic RGB mask projection of original data. Game shaders are not reproduced; missing colors use item reference defaults.",
     "nativeLoops": "Original unequal clip periods are sampled independently; in-game synchronization is unverified.",
     "residualMotion": "Some dragon motion bindings remain unresolved.",
     "limboGeometryDiagnostic": "Source special-material color and rim calculations are reproduced. Glow post-processing and other materials remain incomplete.",
@@ -40,7 +42,7 @@ const captions = {
     "pose": "Pose",
     "title": "3D pose preview (test)",
     "note": "In-game appearance and final pose are not yet verified.",
-    "savedSkin": "Uses the saved skin color when available. Other saved appearance settings are not yet reproduced.",
+    "savedSkin": "Uses the saved skin color when available. Other saved appearance settings remain incomplete.",
     "partial": "Only one body type is currently available.",
     "playerOnly": "Props are not included yet.",
     "companionOnly": "Only the player motion is shown; the companion is not included yet.",
@@ -60,6 +62,7 @@ const captions = {
     "related": "Same player pose"
   },
   "fr": {
+    "eyeDiagnostic": "Les motifs et couleurs des yeux utilisent une projection RGB de diagnostic des données originales. Les shaders du jeu ne sont pas reproduits ; les couleurs manquantes utilisent les valeurs de référence.",
     "nativeLoops": "Les cycles originaux de durées différentes sont lus indépendamment ; la synchronisation en jeu reste à vérifier.",
     "residualMotion": "Certaines liaisons de mouvement du dragon restent non résolues.",
     "limboGeometryDiagnostic": "Les calculs de couleur et de contour du matériau spécial d’origine sont reproduits. Le halo et les autres matériaux restent incomplets.",
@@ -70,7 +73,7 @@ const captions = {
     "pose": "Pose",
     "title": "Aperçu de la pose en 3D (test)",
     "note": "L'apparence et la pose finale en jeu ne sont pas encore vérifiées.",
-    "savedSkin": "La couleur de peau sauvegardée est utilisée si disponible. Les autres réglages d’apparence ne sont pas encore reproduits.",
+    "savedSkin": "La couleur de peau sauvegardée est utilisée si disponible. Les autres réglages d’apparence restent incomplets.",
     "partial": "Une seule morphologie est disponible actuellement.",
     "playerOnly": "Les accessoires ne sont pas encore inclus.",
     "companionOnly": "Seul le mouvement du joueur est affiché ; le compagnon n'est pas encore inclus.",
@@ -90,6 +93,7 @@ const captions = {
     "related": "Même pose du joueur"
   },
   "it": {
+    "eyeDiagnostic": "I motivi e i colori degli occhi usano una proiezione RGB diagnostica dei dati originali. Gli shader del gioco non sono riprodotti; i colori mancanti usano i valori di riferimento.",
     "nativeLoops": "I cicli originali di durata diversa sono riprodotti separatamente; la sincronizzazione in gioco non è verificata.",
     "residualMotion": "Alcuni riferimenti di movimento del drago non sono ancora risolti.",
     "limboGeometryDiagnostic": "Sono riprodotti i calcoli originali del colore e del contorno del materiale speciale. Bagliore e altri materiali restano incompleti.",
@@ -100,7 +104,7 @@ const captions = {
     "pose": "Posa",
     "title": "Anteprima posa 3D (test)",
     "note": "L'aspetto e la posa finale nel gioco non sono ancora verificati.",
-    "savedSkin": "Usa il colore della pelle salvato, quando disponibile. Le altre impostazioni non sono ancora riprodotte.",
+    "savedSkin": "Usa il colore della pelle salvato, quando disponibile. Le altre impostazioni restano incomplete.",
     "partial": "Al momento è disponibile un solo tipo di corporatura.",
     "playerOnly": "Gli accessori non sono ancora inclusi.",
     "companionOnly": "Viene mostrato solo il movimento del giocatore; il compagno non è ancora incluso.",
@@ -120,6 +124,7 @@ const captions = {
     "related": "Stessa posa del giocatore"
   },
   "de": {
+    "eyeDiagnostic": "Augenmuster und -farben verwenden eine diagnostische RGB-Projektion der Originaldaten. Spielshader sind nicht nachgebildet; fehlende Farben nutzen die Referenzwerte.",
     "nativeLoops": "Unterschiedlich lange Originalzyklen werden unabhängig wiedergegeben; die Synchronisation im Spiel ist nicht verifiziert.",
     "residualMotion": "Einige Bewegungsbindungen des Drachen sind noch nicht aufgelöst.",
     "limboGeometryDiagnostic": "Die ursprüngliche Farb- und Konturberechnung des Spezialmaterials wird wiedergegeben. Leuchteffekte und weitere Materialien fehlen teilweise.",
@@ -130,7 +135,7 @@ const captions = {
     "pose": "Pose",
     "title": "3D-Posenvorschau (Test)",
     "note": "Aussehen und endgültige Pose im Spiel sind noch nicht verifiziert.",
-    "savedSkin": "Die gespeicherte Hautfarbe wird verwendet, sofern verfügbar. Andere Aussehensdaten sind noch nicht umgesetzt.",
+    "savedSkin": "Die gespeicherte Hautfarbe wird verwendet, sofern verfügbar. Andere Aussehensdaten sind noch unvollständig.",
     "partial": "Derzeit ist nur ein Körpertyp verfügbar.",
     "playerOnly": "Requisiten sind noch nicht enthalten.",
     "companionOnly": "Nur die Spielerbewegung wird angezeigt; der Begleiter ist noch nicht enthalten.",
@@ -150,6 +155,7 @@ const captions = {
     "related": "Gleiche Spielerpose"
   },
   "es-ES": {
+    "eyeDiagnostic": "Los patrones y colores de ojos usan una proyección RGB de diagnóstico de los datos originales. No se reproducen los shaders del juego; los colores ausentes usan valores de referencia.",
     "nativeLoops": "Los ciclos originales de distinta duración se reproducen de forma independiente; la sincronización en el juego no está verificada.",
     "residualMotion": "Algunas referencias de movimiento del dragón aún no se han resuelto.",
     "limboGeometryDiagnostic": "Se reproducen los cálculos originales de color y contorno del material especial. El brillo y otros materiales siguen incompletos.",
@@ -160,7 +166,7 @@ const captions = {
     "pose": "Pose",
     "title": "Vista previa de pose 3D (prueba)",
     "note": "El aspecto y la pose final en el juego aún no se han verificado.",
-    "savedSkin": "Se usa el color de piel guardado si está disponible. Los demás ajustes de aspecto aún no se reproducen.",
+    "savedSkin": "Se usa el color de piel guardado si está disponible. Los demás ajustes de aspecto siguen incompletos.",
     "partial": "Por ahora solo hay un tipo de cuerpo disponible.",
     "playerOnly": "Los accesorios aún no están incluidos.",
     "companionOnly": "Solo se muestra el movimiento del jugador; el compañero aún no está incluido.",
@@ -180,6 +186,7 @@ const captions = {
     "related": "Misma pose del jugador"
   },
   "zh-CN": {
+    "eyeDiagnostic": "眼睛图案和颜色使用原始数据的RGB遮罩诊断显示。尚未复现游戏着色器；缺失颜色使用物品参考默认值。",
     "nativeLoops": "独立播放原始的不同动画周期；尚未验证游戏内同步。",
     "residualMotion": "部分龙的动作绑定尚未解析。",
     "limboGeometryDiagnostic": "已复现原始特殊材质的颜色和边缘计算，发光后处理及其他材质仍不完整。",
@@ -190,7 +197,7 @@ const captions = {
     "pose": "姿势",
     "title": "3D姿势预览（测试）",
     "note": "尚未验证与游戏内最终姿势及外观的一致性。",
-    "savedSkin": "可用时使用存档肤色，其他外观设置尚未复现。",
+    "savedSkin": "可用时使用存档肤色，其他外观设置仍不完整。",
     "partial": "目前仅支持一种体型。",
     "playerOnly": "暂不支持道具。",
     "companionOnly": "目前仅显示玩家动作，暂不支持伙伴模型。",
@@ -210,6 +217,7 @@ const captions = {
     "related": "相同的玩家姿势"
   },
   "pt-BR": {
+    "eyeDiagnostic": "Os padrões e cores dos olhos usam uma projeção RGB de diagnóstico dos dados originais. Os shaders do jogo não são reproduzidos; cores ausentes usam os valores de referência.",
     "nativeLoops": "Os ciclos originais de durações diferentes são reproduzidos independentemente; a sincronização no jogo não foi verificada.",
     "residualMotion": "Algumas referências de movimento do dragão ainda não foram resolvidas.",
     "limboGeometryDiagnostic": "Os cálculos originais de cor e contorno do material especial são reproduzidos. Brilho e outros materiais permanecem incompletos.",
@@ -220,7 +228,7 @@ const captions = {
     "pose": "Pose",
     "title": "Prévia da pose em 3D (teste)",
     "note": "A aparência e a pose final no jogo ainda não foram verificadas.",
-    "savedSkin": "Usa a cor de pele salva, quando disponível. As demais configurações de aparência ainda não são reproduzidas.",
+    "savedSkin": "Usa a cor de pele salva, quando disponível. As demais configurações de aparência permanecem incompletas.",
     "partial": "Apenas um tipo de corpo está disponível no momento.",
     "playerOnly": "Os acessórios ainda não estão incluídos.",
     "companionOnly": "Apenas o movimento do jogador é exibido; o companheiro ainda não está incluído.",
