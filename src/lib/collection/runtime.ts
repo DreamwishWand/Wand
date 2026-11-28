@@ -296,6 +296,33 @@ export class CollectionRuntime {
     this.isOwnerLocal = ownerLocalCoverage !== null;
     this.ownerLocalCoverage = ownerLocalCoverage;
   }
+  /** Profile-only use of the existing Rust state engine and IndexedDB CAS.
+   * No public Item catalog fetch. Do not use catalog queries on this instance. */
+  static async openProfile(): Promise<CollectionRuntime> {
+    await init(wasmUrl);
+    const engine = new CollectionEngine();
+    try {
+      const runtime = new CollectionRuntime(engine,{
+        snapshot:'local-profile',platform:'local',version:null,
+        expansions:[],worlds:[],universes:[],worldLabels:[],universeLabels:[]
+      });
+      await runtime.loadStorage();
+      return runtime;
+    } catch(error) { engine.free(); throw error; }
+  }
+  /** One validated transaction; existing explicit favorite values are authoritative
+   * when migrating the old unscoped Explorer stars. */
+  importLegacyFavorites(ids:readonly number[]):Promise<void> {
+    return this.mutate(()=>{
+      const state=this.state, workspace=state.workspaces.find(w=>w.id===state.active);
+      if(!workspace)throw Error('COLLECTION_WORKSPACE_NOT_FOUND');
+      for(const id of new Set(ids)){
+        if(!Number.isSafeInteger(id)||id<=0)throw Error('COLLECTION_ITEM_ID_INVALID');
+        if(workspace.entries[String(id)]?.favorite===undefined)
+          this.engine.set_entry(BigInt(id),JSON.stringify({favorite:true}));
+      }
+    });
+  }
   static async open(base: string): Promise<CollectionRuntime> {
     const active = JSON.parse(await download(asset(base,ACTIVE))) as ActiveDb00Pointer;
     if (active.schema !== 'wand.game-db.active@1'

@@ -138,6 +138,8 @@ try{
      tx.onabort=()=>{db.close();reject(tx.error);};
    };
  }),ownedId);
+ // The old unscoped favorites must migrate only to the sole active profile.
+ await page.evaluate(id=>localStorage.setItem('dreamwishwand.explore.moodboards.v1',JSON.stringify({schema:'wand.explore.boards@1',active:null,boards:[],favorites:[id]})),ownedId);
  await page.reload();
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  const ownedButton=page.getByRole('button',{name:/所有済みのみ|Owned only/});
@@ -149,6 +151,24 @@ try{
  await page.waitForFunction(()=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))>0&&Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))<10);
  await cards.first().waitFor();
  assert.ok((await cards.evaluateAll(es=>es.map(e=>Number(e.dataset.itemId)))).every(id=>id===ownedId),'only positive ownership is shown');
+ const star=cards.first().locator('.tile-favorite');
+ await page.waitForFunction(()=>document.querySelector('.tile-favorite')?.getAttribute('aria-pressed')==='true');
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('dreamwishwand.explore.moodboards.v1')).favorites.length===0);
+ await star.click();
+ await page.waitForFunction(()=>document.querySelector('.tile-favorite')?.getAttribute('aria-pressed')==='false');
+ if(hasItemPage){
+   await cards.first().locator('.item').click();
+   await quick.locator('[data-item-page-link]').click();
+   const favorite=page.locator('.shared-item-page').getByRole('checkbox',{name:/お気に入り|Favorite/,exact:true});
+   await favorite.waitFor({timeout:30000});
+   assert.equal(await favorite.isChecked(),false);
+   await favorite.check();
+   await page.waitForFunction(()=>{const input=[...document.querySelectorAll('.shared-item-page input[type=checkbox]')].find(el=>/お気に入り|Favorite/.test(el.parentElement.textContent));return input?.checked&&!input.disabled;});
+   await page.locator('.shared-item-page').getByRole('button',{name:/戻る|Back/,exact:true}).click();
+   await page.waitForURL('**/decorate/explore/');
+   await quick.waitFor({timeout:30000});
+   await page.waitForFunction(()=>document.querySelector('.tile-favorite')?.getAttribute('aria-pressed')==='true');
+ }
  assert.deepEqual(errors,[]);
  console.log('EXPLORE_VIRTUAL '+JSON.stringify({total,initialCards,initialHeight,after,desktopColumns:firstColumns}));
 }finally{await browser?.close();server.kill();}

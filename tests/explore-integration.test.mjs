@@ -56,3 +56,14 @@ test('Quick View uses selective configured prices and separates cached and live 
   assert.match(view,/if\(live\)\{price=result/);
   assert.doesNotMatch(view,/loadCompleteCollection|premiumBundleCatalog/);
 });
+
+test('Explorer favorites use the shared Rust-backed profile rather than Moodboard storage',()=>{
+  const runtime=readFileSync(new URL('../src/lib/collection/runtime.ts',import.meta.url),'utf8');
+  assert.match(explore,/CollectionRuntime\.openProfile\(\)/);
+  assert.match(explore,/db\.setEntry\(item\.itemId,\{favorite:next\}\)/);
+  assert.match(explore,/db\.importLegacyFavorites\(boards\.favorites\)/);
+  assert.match(explore,/favoriteProfile\?\.count===1/);
+  assert.match(explore,/wand:collection-history-restored/);
+  assert.doesNotMatch(explore,/toggleFavorite\(boards/);
+  assert.match(runtime,/workspace\.entries\[String\(id\)\]\?\.favorite===undefined/);
+});

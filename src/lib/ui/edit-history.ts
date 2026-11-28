@@ -1,5 +1,4 @@
 import {writable} from 'svelte/store';
-import {base} from '$app/paths';
 import type {CollectionRuntime,CollectionState} from '$lib/collection/runtime';
 
 /** In-memory, per-tool edit timeline; only Collection writes are currently supported. */
@@ -83,7 +82,7 @@ class EditHistoryController {
     try{
       const runtime=this.currentRuntime??await (async()=>{
         const {CollectionRuntime}=await import('$lib/collection/runtime');
-        return CollectionRuntime.open(base);
+        return CollectionRuntime.openProfile();
       })();
       if(runtime!==this.currentRuntime)ephemeral=runtime;
       if(JSON.stringify(runtime.state)!==expected){
