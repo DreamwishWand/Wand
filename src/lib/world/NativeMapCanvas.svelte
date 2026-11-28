@@ -1,3 +1,6 @@
+<script module lang="ts">
+ export const nativeMapRetryLabels={ja:'再試行',en:'Retry',fr:'Réessayer',it:'Riprova',de:'Erneut versuchen','es-ES':'Reintentar','zh-CN':'重试','pt-BR':'Tentar novamente'} as const;
+</script>
 <script lang="ts">
  import {onMount} from 'svelte';
  import NativeMapLoading from './NativeMapLoading.svelte';
@@ -64,7 +67,7 @@
   if(closed)return;
   stopRender();detachStage();createStage();
  }
- const retryLabels={ja:'再試行',en:'Retry',fr:'Réessayer',it:'Riprova',de:'Erneut versuchen','es-ES':'Reintentar','zh-CN':'重试','pt-BR':'Tentar novamente'} as const;
+
  onMount(()=>{
   createStage();
   const resize=()=>{
@@ -139,7 +142,7 @@
   style:visibility={rect?'visible':'hidden'}></canvas>
  </div>
  {#if showLoading&&loading&&!error}<NativeMapLoading {locale} {progress} compact={completeFrame}/>{/if}
- {#if error&&showLoading}<div class="error"><span role="alert">{error}</span><button type="button" on:click={retry}>{retryLabels[locale]??retryLabels.en}</button></div>{/if}
+ {#if error&&showLoading}<div class="error"><span role="alert">{error}</span><button type="button" on:click={retry}>{nativeMapRetryLabels[locale]??nativeMapRetryLabels.en}</button></div>{/if}
 </div>
 <style>
  .native-canvas{position:absolute;inset:0;overflow:hidden;pointer-events:none;min-width:0;min-height:0;}
