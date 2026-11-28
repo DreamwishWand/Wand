@@ -7,7 +7,7 @@ use serde_json::{Value,Map,json};
 use std::collections::{HashMap,HashSet};
 
 const LIMIT:usize=100_000;
-const ORIENTATIONS:[&str;16]=["Up","UpUpRight","UpRight","UpRightRight","Right","DownRightRight","DownRight","DownDownRight","Down","DownDownLeft","DownLeft","DownLeftLeft","Left","UpLeftLeft","UpLeft","UpUpLeft"];
+const ORIENTATIONS:[&str;16]=["GridOrientation_Up","GridOrientation_UpUpRight","GridOrientation_UpRight","GridOrientation_UpRightRight","GridOrientation_Right","GridOrientation_DownRightRight","GridOrientation_DownRight","GridOrientation_DownDownRight","GridOrientation_Down","GridOrientation_DownDownLeft","GridOrientation_DownLeft","GridOrientation_DownLeftLeft","GridOrientation_Left","GridOrientation_UpLeftLeft","GridOrientation_UpLeft","GridOrientation_UpUpLeft"];
 
 fn uint(v:&Value)->Option<u32>{v.as_u64().and_then(|v|u32::try_from(v).ok())}
 fn signed(v:&Value)->Option<i32>{v.as_i64().and_then(|v|i32::try_from(v).ok())}
@@ -21,7 +21,7 @@ fn pose(v:&Value,origin:&str,source:bool)->Result<Value,CodecError>{
          uint(&v["orientationCode"]).and_then(|i|ORIENTATIONS.get(i as usize).copied()))
     }else{
         (uint(&v["ItemID"]),v.get("X").map_or(Some(0),signed),
-         v.get("Y").map_or(Some(0),signed),v.get("Orientation").map_or(Some("Up"),Value::as_str))
+         v.get("Y").map_or(Some(0),signed),v.get("Orientation").map_or(Some("GridOrientation_Up"),Value::as_str))
     };
     let item=item.filter(|v|*v>0).ok_or(bad)?;
     let o=o.filter(|v|ORIENTATIONS.contains(v)).ok_or(bad)?;
@@ -123,7 +123,7 @@ pub(super) fn project(profile:&[u8],witness:&Value)->Result<String,CodecError>{
 mod tests{
     use super::*;
     fn source(id:u32,item:u32)->Value{json!({"gridObjectIdNative":id,"itemId":item,"x":0,"y":0,"orientationCode":0})}
-    fn saved(id:u32,item:u32)->Value{json!({"ID":id,"ItemID":item,"X":3,"Y":2,"Orientation":"Right"})}
+    fn saved(id:u32,item:u32)->Value{json!({"ID":id,"ItemID":item,"X":3,"Y":2,"Orientation":"GridOrientation_Right"})}
     #[test]
     fn native_enumeration_is_not_lookup_precedence(){
         let a=source(1,10);let b=source(2,20);let c=source(3,30);let d=source(4,40);
