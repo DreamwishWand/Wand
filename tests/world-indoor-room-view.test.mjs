@@ -493,3 +493,16 @@ test('free linked symmetry transforms typed stateful partners without treating t
   assert.equal(indoorLinkedMove({...full,positions:[...full.positions,{...full.positions[1]}]},shapes,allowed,[0],0,2,2,axis,true),null);
  }
 });
+
+import {indoorFieldRecoveryRows} from '../src/lib/world/indoor-room-view.ts';
+test('room recovery uses exact local ordinals, and refuses mixed or stale selections',()=>{
+ const p={itemId:30000001,x:1,y:2,orientationCode:8,recoveryOrdinal:15};
+ const q={itemId:30000002,x:2,y:2,orientationCode:2,recoveryOrdinal:16};
+ const raw={...face,items:[{itemId:p.itemId,quantity:1},{itemId:q.itemId,quantity:1}],positions:[p,q],missingPositions:0,terrain:{sizeX:4,sizeY:4,values:Array(16).fill(1)}};
+ const full=parseIndoorRooms(report([{...room,surfaces:[raw]}]))[0].surfaces[0];
+ assert.deepEqual(indoorFieldRecoveryRows(full,[0,1]),[{localOrdinal:15,itemId:'30000001',expectedX:1,expectedY:2,expectedOrientation:'GridOrientation_Down'},{localOrdinal:16,itemId:'30000002',expectedX:2,expectedY:2,expectedOrientation:'GridOrientation_UpRight'}]);
+ assert.equal(indoorFieldRecoveryRows(full,[0,0]),null);
+ assert.equal(indoorFieldRecoveryRows({...full,positions:[p,{...q,recoveryOrdinal:15}]},[0,1]),null);
+ assert.equal(indoorFieldRecoveryRows({...full,positions:[p,{...q,recoveryOrdinal:undefined}]},[0,1]),null);
+ assert.throws(()=>parseIndoorRooms(report([{...room,surfaces:[{...raw,positions:[p,{...q,recoveryOrdinal:0}]}]}])));
+});

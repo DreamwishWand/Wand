@@ -13,6 +13,7 @@
  import type {WandLanguage} from '../ui/preferences.ts';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  export let items:readonly MainlandSavedObject[]=[],file:File|null=null,locale:WandLanguage='ja',blocked=false;
+ export let selection:readonly {localOrdinal:number;itemId:string;expectedX:number;expectedY:number;expectedOrientation:string}[]|null=null;
  export let names:ReadonlyMap<number,string>=new Map();
  export let grids:readonly PublicTerrainGridRef[]=[];
  export let label:(key:string)=>string=key=>key;
@@ -40,7 +41,8 @@
  const allowed=browser&&testSaveExportEnabled(window.location);
  let worker:Worker|null=null,source:File|null=null,copy:ReturnType<typeof experimentalCopyDownload>|null=null,rows:Destination[]=[],destination=0,expected='',open=false,error=false;
  $: w=words[locale];$: cw=checkpointWords[locale];$: tw=testSaveWords[locale];
- $: plan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
+ $: outdoorPlan=items.length>0&&items.length<=MAX_GRID_MIXED_EDITS&&new Set(items.map(p=>p.object.localOrdinal)).size===items.length&&items.every(p=>p.object.activityItem&&isEightWay(p.object.orientation)&&!p.object.storage&&!p.object.subgrid)?items.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation})):null;
+ $: plan=selection===null?outdoorPlan:selection.length>0&&selection.length<=MAX_GRID_MIXED_EDITS&&new Set(selection.map(p=>p.localOrdinal)).size===selection.length&&selection.every(p=>isEightWay(p.expectedOrientation))?selection:null;
  $: key=JSON.stringify(plan);
  $: if(source&&(source!==file||expected!==key||blocked))cancel();
  function cancel(){worker?.terminate();worker=null;if(copy)URL.revokeObjectURL(copy.url);copy=null;source=null;expected='';rows=[];destination=0;open=false;error=false;}
