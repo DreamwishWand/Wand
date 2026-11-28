@@ -59,7 +59,8 @@ assert.equal(new Set(limboRows.map(row=>JSON.stringify(row.male.limboMaterial.ma
 assert.ok([limboActor,limboRaven].every(id=>index.items[id].male.companionIncluded===true&&index.items[id].female.companionIncluded===true),'limbo diagnostic actors');
 const residualActors=['120000072','120000145','120000176','120000239','120000251'];
 assert.ok(residualActors.every(id=>['male','female'].every(b=>index.items[id][b].companionIncluded===true&&index.items[id][b].secondaryPassOmitted===true)),'residual textured actors');
-const ids=[...new Set([lucky,'120000197','120000208',residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
+const expressionId=Object.keys(index.items).find(id=>index.items[id].male&&index.items[id].female&&index.expressionWeights.clips[index.items[id].female.sourceSha256]);assert.ok(expressionId,'current clip expression identity');
+const ids=[...new Set([expressionId,lucky,'120000197','120000208',residualActors[0],residualActors[4],limboActor,limboRaven,maxDog,mermaids[0],mermaids[7],eulerSquirrel,eulerPair,materialActor,secondaryActor,...props,byKind('player'),byKind('pair'),attached,expansion,multi,expandedActor,bindActor,curveActor,rigidActor,partialActor])];
 assert.ok(ids.every(Boolean),'both scene kinds must be published');
 assert.equal(Object.values(index.items).filter(row=>row.male?.companionIncluded===false&&row.female?.companionIncluded===false).length,0);
 for(const id of ['120000197','120000198']){const rows=[index.items[id],...index.variants[id]];assert.equal(rows.length,2);for(const row of rows)for(const body of ['male','female']){const o=row[body];assert.equal(o.companionIncluded,true);assert.ok(o.nativeLoops.player<o.nativeLoops.companion);}}
@@ -102,6 +103,11 @@ try{
       const t=await seek.inputValue();
       const toggle=preview.locator('input[type=checkbox]');
       const option=index.items[id][b===0?'male':'female'];
+      if(b===1&&index.expressionWeights.clips[option.sourceSha256]){
+        const model=option.kind==='pair'?option.asset:index.models.female;const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads.female[target.index];const prefix=base+'/photo-mode-preview/';
+        assert.ok(eyeRequests.has(prefix+index.expressionWeights.clips[option.sourceSha256].sha256+'.wec'),'native curve asset requested');
+        for(const role of ['skull','eyelash','teeth_lower','teeth_upper']){const m=index.expressionWeights.meshes[head.parts[role].asset.sha256];assert.ok(m&&eyeRequests.has(prefix+m.asset.sha256+'.wem'),'native head expression part '+role)}
+      }
       const hasActor=option.kind==='pair'||option.companionIncluded===true||option.accessoryIncluded===true;
       assert.equal(await toggle.count(),hasActor?1:0);
       if(hasActor){await toggle.uncheck();assert.equal(await seek.inputValue(),t);await toggle.check();assert.equal(await seek.inputValue(),t)}

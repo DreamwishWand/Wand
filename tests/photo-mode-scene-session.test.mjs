@@ -55,3 +55,10 @@ test('pan tracks drag pixels at any zoom and preserves a world pivot across orbi
   }
   assert.throws(()=>pan(base,NaN,0,640,480));
 });
+
+test('facial weights stay synchronized with absolute playback and camera-only redraws',()=>{
+ const times=[],drawn=[];
+ const scene={duration:2,primitives:[],actors:[{id:'player',label:'',canHide:false}],jointCounts:[1],center:[0,0,0],radius:1,sample(t){return [new Float32Array(16).fill(t)]},expressionWeights(t){times.push(t);return [t,0,0,0,0]},dispose(){}};
+ const s=new PoseSceneSession(scene,{draw(p,v,h,e){drawn.push([p[0][0],e[0]])},dispose(){}});
+ s.clock.seek(.75);s.pan(30,40,400,400);s.zoom(3);assert.deepEqual(times,[0,.75]);assert.deepEqual(drawn.at(-1),[.75,.75]);s.clock.seek(.2);assert.ok(Math.abs(drawn.at(-1)[0]-drawn.at(-1)[1])<1e-6);s.dispose();
+});

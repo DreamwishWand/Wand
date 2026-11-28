@@ -81,10 +81,11 @@ if __name__=='__main__':
     p.add_argument('--face-morphs',type=Path,help='Local copy of the approved face morph archive')
     p.add_argument('--head-geometry',type=Path,help='Local copy of the approved head geometry archive')
     p.add_argument('--body-morphs',type=Path,help='Local copy of the approved body morph archive')
+    p.add_argument('--expression-weights',type=Path,help='Local copy of the approved expression weights archive')
     p.add_argument('--dest',type=Path,default=Path('static/photo-mode-preview'))
     a=p.parse_args()
     if a.source:
-        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs: p.error('--source cannot be combined with release archives')
+        if a.archive or a.companion_delta or a.actor_delta or a.player_expansion or a.player_complete or a.actor_expansion or a.actor_bind or a.actor_curve or a.actor_partial or a.props or a.actor_material or a.euler_correction or a.mermaid or a.max_alternate or a.limbo_geometry or a.actor_residual or a.actor_final or a.actor_lucky or a.ariel_prop or a.mermaid_materials or a.avatar_materials or a.skin_palette or a.eyes or a.face_morphs or a.head_geometry or a.body_morphs or a.expression_weights: p.error('--source cannot be combined with release archives')
         prepare(a.source,a.dest)
     else:
         from prepare_release_preview import download, project
@@ -148,7 +149,10 @@ if __name__=='__main__':
         morph_source=apply_face_morphs(a.face_morphs.read_bytes() if a.face_morphs else download_face_morphs(),a.dest,base_source)
 
         from prepare_head_geometry import download_heads,apply_heads
-        apply_heads(a.head_geometry.read_bytes() if a.head_geometry else download_heads(),a.dest,base_source,morph_source)
+        head_source=apply_heads(a.head_geometry.read_bytes() if a.head_geometry else download_heads(),a.dest,base_source,morph_source)
 
         from prepare_body_morphs import download_body_morphs,apply_body_morphs
         apply_body_morphs(a.body_morphs.read_bytes() if a.body_morphs else download_body_morphs(),a.dest,base_source)
+
+        from prepare_expression_weights import download_expressions,apply_expressions
+        apply_expressions(a.expression_weights.read_bytes() if a.expression_weights else download_expressions(),a.dest,head_source)

@@ -1,3 +1,4 @@
+import type {ExpressionWeights} from './expression-weights.ts';
 import type {LimboMaterial} from './limbo-material.ts';
 import {PosePlayback,type PosePlaybackState,type PoseSpeed} from './playback.ts';
 
@@ -13,6 +14,7 @@ export interface PosePrimitive {
   readonly color:readonly [number,number,number,number];
   readonly texture?:ImageBitmap;
   readonly limbo?:LimboMaterial;
+  readonly expressionDeltas?:readonly Float32Array[];
 }
 export interface PoseScene {
   readonly duration:number;
@@ -24,12 +26,13 @@ export interface PoseScene {
   /** Absolute-time joint palettes, in world space, column-major. All actors
    * are evaluated together, including hidden actors and their constraints. */
   sample(seconds:number):readonly Float32Array[];
+  expressionWeights?(seconds:number):ExpressionWeights;
   dispose():void;
 }
 export interface PoseView {readonly yaw:number;readonly pitch:number;readonly zoom:number;readonly targetOffset?:readonly [number,number,number]}
 export interface PoseComparison {readonly playback:PosePlaybackState;readonly view:PoseView;readonly hidden:readonly string[]}
 export interface PoseRenderer {
-  draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>):void;
+  draw(palettes:readonly Float32Array[],view:PoseView,hidden:ReadonlySet<string>,expression?:ExpressionWeights):void;
   dispose():void;
 }
 export function orbit(view:PoseView,dx:number,dy:number,width:number,height:number):PoseView {
@@ -55,6 +58,7 @@ export class PoseSceneSession {
   private view:PoseView={yaw:0,pitch:0,zoom:1};
   private hidden=new Set<string>();
   private palettes:readonly Float32Array[]=[];
+  private expression?:ExpressionWeights;
   private disposed=false;
   readonly scene:PoseScene;
   private readonly renderer:PoseRenderer;
@@ -62,6 +66,7 @@ export class PoseSceneSession {
     this.scene=scene;this.renderer=renderer;
     this.clock=new PosePlayback(scene.duration,{sample:t=>{
       this.palettes=scene.sample(t);
+      this.expression=scene.expressionWeights?.(t);
       if(this.palettes.length!==scene.jointCounts.length||this.palettes.some((p,i)=>p.length!==scene.jointCounts[i]*16))throw new Error('Invalid pose palette');
       this.redraw();
     },setVisible:(id,visible)=>{
@@ -87,7 +92,7 @@ export class PoseSceneSession {
     if(saved.playback.playing&&this.state.time<this.scene.duration)this.clock.play();
     else this.clock.pause();
   }
-  redraw(){if(!this.disposed)this.renderer.draw(this.palettes,this.view,this.hidden)}
+  redraw(){if(!this.disposed)this.renderer.draw(this.palettes,this.view,this.hidden,this.expression)}
   move(dx:number,dy:number,width:number,height:number){this.view=orbit(this.view,dx,dy,width,height);this.redraw()}
   pan(dx:number,dy:number,width:number,height:number){this.view=pan(this.view,dx,dy,width,height);this.redraw()}
   zoom(value:number){if(!Number.isFinite(value))throw new RangeError('Invalid zoom');this.view={...this.view,zoom:Math.max(.5,Math.min(4,value))};this.redraw()}

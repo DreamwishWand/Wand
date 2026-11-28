@@ -7,6 +7,7 @@ import {validEyePalette,projectEyeMask,type EyePalette,type EyeSelection} from '
 import {validFaceMorphs,hasFaceMorph,applyFaceMorphs,type FaceChoices,type FaceMorphs} from './face-morph.ts';
 import {validHeadGeometry,selectHead,headRoles,decodeHeadPart,type HeadGeometry} from './head-geometry.ts';
 import {validBodyMorphs,applyBodyMorph,type BodyMorphs} from './body-morph.ts';
+import {validExpressionIndex,parseExpressionClip,sampleExpression,decodeExpressionDeltas,type ExpressionIndex} from './expression-weights.ts';
 import type {PoseScene} from './scene-session.ts';
 import {collectionItemHref,collectionItemIdFromSearch} from '../collection/item-permalink.ts';
 export const bodyTypes=['male','female'] as const;
@@ -20,7 +21,7 @@ function validMermaidBaseMaterials(slots:MermaidBaseMaterial[]|undefined){return
 export type MermaidOption={kind:'mermaid';sourceSha256:string;clip:ClipEntry;model:BlobEntry;camera:{center:[number,number,number];radius:number};neutralMaterialProjection:true;unresolvedTransform:number;nonTransform:number;baseMaterials?:MermaidBaseMaterial[]}&({accessoryIncluded?:false;prop?:never;anchor?:never}|{accessoryIncluded:true;prop:ActorEntry;anchor:ActorAnchor});
 export type PreviewOption=PairOption|PlayerOption|MermaidOption;
 export type PoseRow=Partial<Record<BodyType,PreviewOption>>;
-export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>;avatarMaterials?:Record<string,AvatarBaseMaterial[]>;skinPalette?:SkinPalette;eyePalette?:EyePalette;faceMorphs?:FaceMorphs;headGeometry?:HeadGeometry;bodyMorphs?:BodyMorphs};
+export type PreviewIndex={schema:string;publicationAuthorized:boolean;testOnly:boolean;fullPoseVerified:boolean;bodyIcons:Record<BodyType,BlobEntry>;models?:Record<BodyType,BlobEntry>;items:Record<string,PoseRow>;variants?:Record<string,PoseRow[]>;avatarMaterials?:Record<string,AvatarBaseMaterial[]>;skinPalette?:SkinPalette;eyePalette?:EyePalette;faceMorphs?:FaceMorphs;headGeometry?:HeadGeometry;bodyMorphs?:BodyMorphs;expressionWeights?:ExpressionIndex};
 function check(v:unknown,message:string):asserts v{if(!v)throw new Error(message)}
 function validNativeLoops(x:NativeLoopPeriods|undefined){return x===undefined||!!x&&Object.keys(x).length===2&&[x.player,x.companion].every(v=>Number.isFinite(v)&&v>0&&v<=600)&&Math.abs(x.player-x.companion)>1e-5}
 function validEntry(e:BlobEntry){return e&&/^[a-f0-9]{64}$/.test(e.sha256)&&Number.isSafeInteger(e.bytes)&&e.bytes>0&&e.bytes<=64*1024*1024}
@@ -51,12 +52,13 @@ export function loadPagesPoseIndex(base:string){
     if(m.faceMorphs!==undefined)check(m.avatarMaterials&&validFaceMorphs(m.faceMorphs),'Invalid face morphs');
     if(m.headGeometry!==undefined)check(m.avatarMaterials&&m.faceMorphs&&validHeadGeometry(m.headGeometry,Object.keys(m.avatarMaterials)),'Invalid head geometry');
     if(m.bodyMorphs!==undefined)check(m.avatarMaterials&&validBodyMorphs(m.bodyMorphs),'Invalid body morphs');
+    if(m.expressionWeights!==undefined)check(m.headGeometry&&validExpressionIndex(m.expressionWeights),'Invalid expression weights');
     return m;
   })();void request.catch(()=>{request=undefined})}
   return request;
 }
-export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
-async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm',signal:AbortSignal){
+export function assetUrl(base:string,e:BlobEntry,ext:'.glb'|'.png'|'.wpa'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'|'.wem'|'.wec'){check(validEntry(e),'Invalid asset');return base+'/photo-mode-preview/'+e.sha256+ext}
+async function fetchAsset(base:string,entry:BlobEntry,ext:'.glb'|'.wpa'|'.png'|'.uv'|'.webp'|'.wfm'|'.whg'|'.wbm'|'.wem'|'.wec',signal:AbortSignal){
   const response=await fetch(assetUrl(base,entry,ext),{signal});check(response.ok,'Scene unavailable');
   return verifyBlob(await response.arrayBuffer(),entry);
 }
@@ -90,6 +92,11 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
     const faceBytes=faceEntry?await fetchAsset(base,faceEntry.asset,'.wfm',signal):undefined;
     const bodyEntry=entry.kind!=='mermaid'&&bodyTypeIndex!==undefined&&bodyTypeIndex>0?index.bodyMorphs?.[body]:undefined;
     const bodyBytes=bodyEntry?await fetchAsset(base,bodyEntry.asset,'.wbm',signal):undefined;
+    const expressionAsset=body==='female'&&entry.kind!=='mermaid'?index.expressionWeights?.clips[entry.sourceSha256]:undefined;
+    const expressionClip=expressionAsset?parseExpressionClip(await fetchAsset(base,expressionAsset,'.wec',signal)):undefined;
+    const expressionMeshes=new Map<string,Float32Array[]>();
+    if(expressionClip&&modelKey&&index.headGeometry){const target=index.headGeometry.targets[modelKey];check(target&&target.body===body,'Expression target identity');const row=head?.row??index.headGeometry.heads[body][target.index];
+      await Promise.all(headRoles.map(async role=>{const part=row.parts[role],m=index.expressionWeights?.meshes[part.asset.sha256];if(!m)return;check(m.vertices===part.vertices,'Expression mesh identity');const slot=target.slots[role];expressionMeshes.set(slot.mesh+':'+slot.primitive,decodeExpressionDeltas(await fetchAsset(base,m.asset,'.wem',signal),m.vertices))}));}
     const primitives=[];const used=new Set<MermaidBaseMaterial>();const usedAvatar=new Set<AvatarBaseMaterial>();const uvCache=new Map<string,Float32Array>();
     async function getTexture(e:BlobEntry,format:'png'|'webp'='png'){const key='material:'+e.sha256;let texture=images.get(key);if(!texture){const bytes=await fetchAsset(base,e,format==='png'?'.png':'.webp',signal);signal.throwIfAborted();texture=await createImageBitmap(new Blob([bytes],{type:'image/'+format}));images.set(key,texture)}return texture}
     async function getEyeTexture(selection:EyeSelection){
@@ -101,17 +108,18 @@ export async function loadPreviewScene(base:string,itemId:number,body:BodyType,i
       const texture=await createImageBitmap(canvas);images.set(key,texture);signal.throwIfAborted();return texture;
     }
     for(const p of g.primitives){signal.throwIfAborted();const {image,meshIndex,primitiveIndex,headReplaced,...primitive}=p;let texture:ImageBitmap|undefined;
+      const expressionDeltas=primitive.actorId==='player'?expressionMeshes.get(meshIndex+':'+primitiveIndex):undefined;
       const slot=entry.kind==='mermaid'&&primitive.actorId==='player'?entry.baseMaterials?.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
       const avatarSlot=primitive.actorId==='player'?avatarSlots.find(s=>s.mesh===meshIndex&&s.primitive===primitiveIndex):undefined;
-      if(avatarSlot){check(!slot&&!usedAvatar.has(avatarSlot)&&avatarSlot.vertices*3===primitive.positions.length,'Invalid avatar material slot');usedAvatar.add(avatarSlot);let uv=headReplaced?primitive.uv:uvCache.get(avatarSlot.uv.sha256);if(!uv){const data=await fetchAsset(base,avatarSlot.uv,'.uv',signal);signal.throwIfAborted();uv=new Float32Array(data);check(uv.length===avatarSlot.vertices*2&&uv.every(Number.isFinite),'Invalid source UV');uvCache.set(avatarSlot.uv.sha256,uv)}const skin=skinTextureFor(index.skinPalette,skinIndex,body,avatarSlot.role);texture=avatarSlot.role==='eyes'&&eye?await getEyeTexture(eye):await getTexture(skin?.texture??avatarSlot.texture,skin?.format??'png');const positions=avatarSlot.role==='face'&&faceBytes&&face&&faceEntry?(check(faceEntry.vertices===primitive.positions.length/3,'Face mesh identity'),applyFaceMorphs(faceBytes,primitive.positions,face)):avatarSlot.role==='body'&&bodyBytes&&bodyEntry&&bodyTypeIndex!==undefined?(check(bodyEntry.vertices===primitive.positions.length/3,'Body mesh identity'),applyBodyMorph(bodyBytes,primitive.positions,bodyTypeIndex)):primitive.positions;primitives.push({...primitive,positions,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
+      if(avatarSlot){check(!slot&&!usedAvatar.has(avatarSlot)&&avatarSlot.vertices*3===primitive.positions.length,'Invalid avatar material slot');usedAvatar.add(avatarSlot);let uv=headReplaced?primitive.uv:uvCache.get(avatarSlot.uv.sha256);if(!uv){const data=await fetchAsset(base,avatarSlot.uv,'.uv',signal);signal.throwIfAborted();uv=new Float32Array(data);check(uv.length===avatarSlot.vertices*2&&uv.every(Number.isFinite),'Invalid source UV');uvCache.set(avatarSlot.uv.sha256,uv)}const skin=skinTextureFor(index.skinPalette,skinIndex,body,avatarSlot.role);texture=avatarSlot.role==='eyes'&&eye?await getEyeTexture(eye):await getTexture(skin?.texture??avatarSlot.texture,skin?.format??'png');const positions=avatarSlot.role==='face'&&faceBytes&&face&&faceEntry?(check(faceEntry.vertices===primitive.positions.length/3,'Face mesh identity'),applyFaceMorphs(faceBytes,primitive.positions,face)):avatarSlot.role==='body'&&bodyBytes&&bodyEntry&&bodyTypeIndex!==undefined?(check(bodyEntry.vertices===primitive.positions.length/3,'Body mesh identity'),applyBodyMorph(bodyBytes,primitive.positions,bodyTypeIndex)):primitive.positions;primitives.push({...primitive,positions,uv,expressionDeltas,color:[1,1,1,1] as [number,number,number,number],texture});continue}
       if(slot){check(!used.has(slot),'Duplicate garment slot');used.add(slot);texture=await getTexture(slot.texture);const uv=slot.flipV?primitive.uv.slice():primitive.uv;if(slot.flipV)for(let i=1;i<uv.length;i+=2)uv[i]=1-uv[i];primitives.push({...primitive,uv,color:[1,1,1,1] as [number,number,number,number],texture});continue}
       if(image){check(image.mime==='image/png','Unsupported image');const key=image.bytes.byteOffset+':'+image.bytes.byteLength;texture=images.get(key);if(!texture){texture=await createImageBitmap(new Blob([new Uint8Array(image.bytes)],{type:image.mime}));images.set(key,texture)}}
-      primitives.push({...primitive,texture});
+      primitives.push({...primitive,texture,expressionDeltas});
     }
     check(entry.kind!=='mermaid'||used.size===(entry.baseMaterials?.length??0),'Missing garment material slot');
     check(usedAvatar.size===avatarSlots.length,'Missing avatar material slot');
     signal.throwIfAborted();
-    return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[]),...(hasProp?[{id:'prop',label:propLabel,canHide:true}]:[])],center:entry.kind==='mermaid'?entry.camera.center:[0,1.05,0],radius:entry.kind==='mermaid'?entry.camera.radius:1.25,sample:t=>g.sampler.sample(t),dispose(){for(const im of images.values())im.close();images.clear()}};
+    return {duration:g.sampler.duration,jointCounts:g.sampler.jointCounts,primitives,actors:[{id:'player',label:'',canHide:false},...(paired?[{id:'companion',label:companionLabel,canHide:true}]:[]),...(hasProp?[{id:'prop',label:propLabel,canHide:true}]:[])],center:entry.kind==='mermaid'?entry.camera.center:[0,1.05,0],radius:entry.kind==='mermaid'?entry.camera.radius:1.25,sample:t=>g.sampler.sample(t),expressionWeights:expressionClip?t=>sampleExpression(expressionClip,t,entry.kind==='player'&&entry.companionIncluded===true&&entry.nativeLoops&&!(t===g.sampler.duration&&Math.abs(entry.nativeLoops.player-g.sampler.duration)<1e-5)?entry.nativeLoops.player:undefined):undefined,dispose(){for(const im of images.values())im.close();images.clear()}};
   }catch(e){for(const im of images.values())im.close();throw e}
 }
 
