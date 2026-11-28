@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import {loadPinnedShopBundleSources} from '$lib/acquisition/public-native-shop.ts';
+  import {createShopCategoryObservations,type ShopCategoryObservation} from '$lib/media/shop-category-observations.ts';
   import ShopBundleContents from '$lib/media/ShopBundleContents.svelte';
   import {base} from '$app/paths';
   import {openCurrentItemDatabase,type PremiumBundleDefinition,type PublicCompleteItemMaster} from '$lib/items/public-item-master.ts';
@@ -12,15 +14,22 @@
   let reader:Awaited<ReturnType<typeof loadShopSourceMedia>>|null=null;
   let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500;
   let loading=true,error='';
+  let categoryLookup:ReturnType<typeof createShopCategoryObservations>|null=null;
+  let categoryLoading=true,categoryFailed=false;
+  let appearance='';
+  $: observations=definition&&revision&&categoryLookup?categoryLookup(definition,revision):[];
+  $: observation=observations.find(o=>o.snapshotKey===appearance)??observations.at(-1)??null;
+  const appearanceLabel=(o:ShopCategoryObservation)=>o.snapshotKey+' · '+o.category;
   const origin='https://media.dreamwishwand.com';
   const url=(a:BundleArtwork,original:boolean)=>bundleArtworkUrl(origin,a,original)??undefined;
   $: filtered=definitions.filter(b=>[b.bundleId,b.current?.title,b.legacy?.title].some(v=>v?.toLowerCase().includes(query.trim().toLowerCase())));
   $: definition=definitions.find(b=>b.bundleId===selected);
   $: revision=definition?.[source]??null;
   $: inspection=revision&&reader?inspectShopArtwork(revision,reader,groupWidth):null;
-  function choose(b:PremiumBundleDefinition){selected=b.bundleId;source=b.current?'current':'legacy';}
+  function choose(b:PremiumBundleDefinition){selected=b.bundleId;source=b.current?'current':'legacy';appearance='';}
   onMount(()=>{
     let alive=true;
+    void loadPinnedShopBundleSources(base).then(s=>{if(alive)categoryLookup=createShopCategoryObservations(s);}).catch(()=>{if(alive)categoryFailed=true;}).finally(()=>{if(alive)categoryLoading=false;});
     Promise.all([openCurrentItemDatabase(base).then(async db=>({db,catalog:await db.getPremiumBundleCatalog()})),loadShopSourceMedia()])
       .then(([{db,catalog},r])=>{if(!alive)return;if(!catalog)throw new Error('Bundle catalog unavailable');
         database=db;definitions=catalog.definitions;reader=r;if(definitions[0])choose(definitions[0]);})
@@ -56,8 +65,20 @@
         {/if}
         {#if inspection && revision}
           <p>LightLayout: {inspection.native?.layout??String(revision.artwork?.lightLayout??'未指定')}{inspection.native?.layoutDefaulted?' (原本既定値)':''} / Layout: {String(revision.artwork?.layout??'未指定')}</p>
+          {#if categoryLoading}<p role="status">掲載カテゴリ読み込み中…</p>
+          {:else if categoryFailed}<p>掲載カテゴリ取得不可</p>
+          {:else if observations.length}
+            <label>原本掲載記録 <select value={observation?.snapshotKey??''} onchange={(e)=>appearance=e.currentTarget.value}>
+              {#each observations as o (o.snapshotKey)}<option value={o.snapshotKey}>{appearanceLabel(o)}</option>{/each}
+            </select></label>
+            <p>{observation?.presentation==='one_line'?'専用横長カテゴリ：グリッドとは別のPrefab':observation?.presentation==='grid'?'グリッドカテゴリの掲載記録':'未対応カテゴリ'}（掲載時点の記録・現在の販売状況ではない）</p>
+          {:else}<p>構成が一致する掲載記録なし。グリッド比較のみ。</p>{/if}
           <label>比較用 group width <input type="number" min="541" max="16384" bind:value={groupWidth}/></label>
-          {#if inspection.template}
+          {#if observation?.presentation==='one_line'}
+            <p>専用横長Prefabの寸法・配置は未確認。下の原本参照・構成画像を使用。</p>
+          {:else if observation?.presentation==='unsupported'}
+            <p>このカテゴリの配置は未確認。</p>
+          {:else if inspection.template}
             {@const t=inspection.template}
             <p>配置候補（カテゴリ・背景・Icon選択および既定の描画調整は未確定）</p>
             <div class="candidate" style:aspect-ratio={t.artworkWidth+' / '+t.artworkHeight}>
