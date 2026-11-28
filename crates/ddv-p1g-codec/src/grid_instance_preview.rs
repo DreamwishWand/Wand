@@ -1869,7 +1869,7 @@ fn group_pickup_bounded(profile:&[u8],plan:&str,minimum:usize,scope:Option<&str>
     let grids=c.get("Grids").and_then(Value::as_object).ok_or(CodecError::Json)?;
     let local=targets.iter().find(|t|is_underwater_grid(&grids[&t.grid_id])).map(|t|t.grid_id.as_str());
     if let Some(gid)=local{
-        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&(scope!=Some(gid)||support_flags.iter().any(|v|*v)||storage_flags.iter().any(|v|*v))||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
+        if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&(scope!=Some(gid)||support_flags.iter().any(|v|*v))||targets.iter().any(|t|t.grid_id!=gid){return Err(CodecError::Json);}
         let (sx,sy)=underwater_transform_identity(&root,gid)?;
         let checked=underwater_plain_items(&root);
         for (((target,selection),support),storage) in targets.iter().zip(&selections).zip(&support_flags).zip(&storage_flags){
@@ -2818,7 +2818,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
     let inventory=root.get("Player").and_then(|p|p.get("ListInventories")).and_then(|m|m.get("0")).and_then(|r|r.get("Inventory")).and_then(Value::as_object).ok_or(bad)?;
     let mut destinations=HashMap::<String,PlainGridDestination>::new();
     let mut checked_world_grids=HashSet::new();let mut poses=Vec::new();let mut anchors=HashSet::new();let mut count_by_grid=HashMap::<String,u64>::new();let mut counts=HashMap::<u64,(u32,u32)>::new();
-    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;
+    let mut underwater_grid=None::<String>;let mut ordinary_grid=false;let mut local_items=None::<HashSet<u64>>;let mut local_storage=HashMap::new();
     for row in rows{
         let o=row.as_object().filter(|o|((o.len()==5&&!o.contains_key("freePlacement"))||(limit>ddv_save_patch::MAX_GRID_MIXED_EDITS&&o.len()==6&&o.get("freePlacement").and_then(Value::as_bool)==Some(true)))&&o.keys().all(|k|matches!(k.as_str(),"destination"|"itemId"|"x"|"y"|"orientation"|"freePlacement"))).ok_or(bad)?;
         let witness=o.get("destination").ok_or(bad)?;let key=witness.to_string();
@@ -2840,8 +2840,9 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let orientation=o.get("orientation").and_then(Value::as_str).filter(|s|ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(s)||(free||limit>ddv_save_patch::MAX_GRID_MIXED_EDITS)&&d.tessellation==1&&ddv_save_patch::EXPERIMENTAL_EIGHT_WAY_ORIENTATIONS.contains(s)).ok_or(bad)?;
         if underwater{
             if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
-            let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));
-            if !ids.contains(&item){return Err(bad);}
+            if crate::storage_source::is_storage(item){
+                if !local_storage.contains_key(&item){let t=if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS{crate::storage_source::initial_storage_template(item)}else{crate::storage_source::placement_storage_template(&root,item)}.ok_or(bad)?;local_storage.insert(item,t);}
+            }else{let ids=local_items.get_or_insert_with(||underwater_plain_items(&root));if !ids.contains(&item){return Err(bad);}}
             let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
             if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
         }
@@ -2868,7 +2869,7 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let mut templates=HashMap::new();
         for p in &places{if crate::storage_source::is_storage(p.item_id){
             let (template,capacity)=if let Some(t)=templates.get(&p.item_id){*t}else{crate::storage_source::placement_storage_template(&root,p.item_id).ok_or(bad)?};
-            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&p.destination.grid_id)?;
+            let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&p.destination.grid_id)?;
             if layout!=p.destination.layout_path||factor!=u64::from(p.destination.tessellation)||sx!=u64::from(p.destination.size.0)||sy!=u64::from(p.destination.size.1){return Err(bad);}
             templates.insert(p.item_id,(template,capacity));
         }}
@@ -2885,9 +2886,9 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
         let amount=&mut counts.get_mut(&item).ok_or(bad)?.0;
         let dest=destinations.get(&key).ok_or(bad)?;
         let mut draft=if crate::storage_source::is_storage(item){
-            let (_,layout,factor,sx,sy)=house_exterior_identity(&root,&dest.grid_id)?;
+            let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&dest.grid_id)?;
             if layout!=dest.layout_path||factor!=u64::from(dest.tessellation)||sx!=u64::from(dest.size.0)||sy!=u64::from(dest.size.1){return Err(bad);}
-            let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?;
+            let (template,capacity)=if let Some(t)=local_storage.get(&item){*t}else{crate::storage_source::placement_storage_template(&root,item).ok_or(bad)?};
             ddv_save_patch::preview_initial_storage(&working,dest,item,xy,&orientation,*amount,template,capacity,false,row_free)
         }else{preview_furniture_stock_transaction(&working,*amount,FurnitureStockAction::Place{destination:dest,item_id:item,xy,orientation:&orientation})}.map_err(|_|CodecError::Patch)?;
         if !draft.changed||!draft.untouched_bytes_preserved||draft.writer_authorized||draft.export_authorized{draft.patched_json.zeroize();return Err(CodecError::Patch);}
