@@ -4456,7 +4456,7 @@ mod terrain_session_tests{
         let draft=support_child_candidate(save,&plan).unwrap();
         let mut expected:Value=serde_json::from_slice(save).unwrap();
         expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]=serde_json::json!({});
-        expected["World"]["GridCollection"]["Grids"]["9"]["Objects"]=serde_json::json!({"4":{"ID":4,"ItemID":40005161,"X":2,"Y":0,"Orientation":"GridOrientation_Left"}});
+        expected["World"]["GridCollection"]["Grids"]["9"]["Objects"]=serde_json::json!({"4":{"ID":4,"ItemID":40005161,"X":2,"Y":0,"Orientation":"GridOrientation_Left","State":null}});
         expected["World"]["GridCollection"]["Grids"]["9"]["NextGridObjectID"]=Value::from(5);
         assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
         assert!(draft.patched_json.contains("\"Marker\":1e2"));
@@ -4493,7 +4493,7 @@ mod terrain_session_tests{
         assert_eq!(result["Player"],save["Player"]);
         for g in ["7","9"]{assert_eq!(result["World"]["GridCollection"]["Grids"][g],save["World"]["GridCollection"]["Grids"][g]);}
         assert_eq!(result["World"]["GridCollection"]["Grids"]["8"]["Objects"],serde_json::json!({}));
-        assert_eq!(result["World"]["GridCollection"]["Grids"]["10"]["Objects"]["4"],serde_json::json!({"ID":4,"ItemID":40005161,"X":2,"Y":2,"Orientation":"GridOrientation_Left"}));
+        assert_eq!(result["World"]["GridCollection"]["Grids"]["10"]["Objects"]["4"],serde_json::json!({"ID":4,"ItemID":40005161,"X":2,"Y":2,"Orientation":"GridOrientation_Left","State":null}));
         plan["transfer"]["destination"]["localOrdinal"]=from.into();assert!(support_child_candidate(&raw,&plan).is_err());
         plan["transfer"]["destination"]["localOrdinal"]=to.into();
         save["World"]["MissionSlots"]=serde_json::json!({"owner":{"Slots":[{"SpawnedObjects":[{"GridID":8,"GridObjectID":1}]}]}});
