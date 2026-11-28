@@ -31,7 +31,7 @@ fn independent_item_state(row:&Value)->bool{
 pub(super) fn independent_inventory(v:&Value)->bool{
  bounded_inventory(v)&&v.as_array().is_some_and(|a|a.iter().all(independent_item_state))
 }
-fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
+pub(super) fn count_refs(v:&Value,marked:bool,counts:&mut HashMap<u32,usize>){
  match v{
   Value::Object(m)=>for(k,v)in m{let k=k.to_ascii_lowercase();if k!="nextcontainerinventoryid"{count_refs(v,marked||k.contains("container")&&k.contains("id"),counts);}},
   Value::Array(a)=>for v in a{count_refs(v,marked,counts);},
