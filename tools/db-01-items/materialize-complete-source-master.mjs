@@ -1294,7 +1294,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(browseUniverses.length)add('browse.universeTagIds',row.itemId,browseUniverses);
     const rewardLinks=protoAcquisition.byItem.get(row.itemId)??[];
     const ownerRewards=protoAcquisition.byOwner.get(row.itemId);
-    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean)];
+    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean),...(protoAcquisition.inventoryTemplates.get(row.itemId)??[])];
     if(extraSources.length){
       add('acquisition.additionalSources',row.itemId,extraSources);
       sourceKeys(row.itemId,'additional',extraSources,l=>[l.kind,l.sourceId]);

@@ -6,6 +6,7 @@ import {existsSync,readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {inflateSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
+import {loadConfiguredInventorySources} from './configured-inventory-sources.mjs';
 const SHA=/^[a-f0-9]{64}$/;
 const check=(ok,code)=>{if(!ok)throw Error('DB01_PROTODB_ACQUISITION_'+code)};
 const digest=b=>createHash('sha256').update(b).digest('hex');
@@ -13,7 +14,7 @@ export function loadProtoDbAcquisition(project,source,byId){
   const version=source.target.gameVersion;
   check(/^\d+\.\d+\.\d+$/.test(version),'VERSION');
   const path=join(project,'data/ddv/item-master','original-protodb-acquisition-steam-'+version+'.json');
-  const result={byItem:new Map(),byOwner:new Map(),shopDisplay:new Map(),preDlc:new Map(),designUnlock:new Map()};
+  const result={byItem:new Map(),byOwner:new Map(),shopDisplay:new Map(),preDlc:new Map(),designUnlock:new Map(),inventoryTemplates:new Map()};
   if(!existsSync(path))return result;
   const d=JSON.parse(readFileSync(path,'utf8'));
   check(d.schema==='wand.db01.original-protodb-acquisition@1'&&d.target.platform==='Steam'&&
@@ -73,6 +74,7 @@ export function loadProtoDbAcquisition(project,source,byId){
       sourceRecordIndex:index,sourceField:'CatalogVisibilityConditions.UnlockedByDesignChallenge',
       sourceProtoDbSha256:d.sourceProtoDbSha256,currentAvailabilityVerified:false});
   }
+  result.inventoryTemplates=loadConfiguredInventorySources(project,source,byId,d.sourceProtoDbSha256);
   console.log('DB01_PROTO_ACQUISITION '+JSON.stringify({friendshipItems:result.byItem.size,
     friendshipOwners:result.byOwner.size,storeDisplay:result.shopDisplay.size,
     preDlc:result.preDlc.size,designUnlock:result.designUnlock.size}));
