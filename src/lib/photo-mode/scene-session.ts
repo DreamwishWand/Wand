@@ -1,3 +1,4 @@
+import type {NativeSkinInputs} from './native-skin-inputs.ts';
 import type {LoadedMakeupLayer} from './makeup-assets.ts';
 import type {NativeFaceNormal} from './native-face-normal.ts';
 import type {ExpressionWeights} from './expression-weights.ts';
@@ -18,6 +19,7 @@ export interface PosePrimitive {
   readonly limbo?:LimboMaterial;
   readonly expressionDeltas?:readonly Float32Array[];
   readonly nativeFaceNormal?:NativeFaceNormal;
+  readonly nativeSkin?:NativeSkinInputs;
   readonly nativeMakeup?:{uv:Float32Array;layers:readonly LoadedMakeupLayer[]};
 }
 export interface PoseScene {
