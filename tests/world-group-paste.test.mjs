@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
+import {storageGroupSelection,storageGroupPlan,groupSceneOrigin,symmetricWorldCandidate,savedWorldGroupPoses,groupCandidatePoses,captureFurnitureGroup,captureCutWitness,cutWitnessMatches,cutClipboardMatches,groupCutPlan,groupStockAvailable,groupPasteCandidate,rotateFurnitureGroup} from '../src/lib/world/group-paste.ts';
 const item=40000001;
 const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'',acceptedFloorTypesFlag:4};
 const geometry={itemId:item,name:'Table',layer:'furniture',surfaceCapable:false,shapes:Object.fromEntries([0,4,8,12].map(code=>[item+':'+code,shape]))};
@@ -158,4 +158,13 @@ test('owned storage uses explicit cut witness rather than stock duplication',()=
  const q={rows:[{itemId:String(item),x:4,y:5,orientation:'GridOrientation_Left',destination:{factor:1}}],ghosts:[]};
  assert.equal(groupCutPlan(rows,q,true)[0].storage,true);
  assert.equal(groupCutPlan(rows,{...q,rows:[{...q.rows[0],orientation:'GridOrientation_DownLeft'}]},true),null);
+});
+
+test('mixed storage duplication retains original source witnesses and explicit contents choice',()=>{
+ const normal=saved(2,4,-3),storage={...saved(3,6,-3),object:{...saved(3,6,-3).object,storage:true,storageKnown:true}};
+ const group=storageGroupSelection([normal,storage]);assert.ok(group);assert.equal(captureFurnitureGroup([normal,storage]),null);
+ const q=groupPasteCandidate(group.clip,[grid],rasters,defs,new Map([[item,2]]),[],0,8.1,-2.1);assert.ok(q);
+ const plan=storageGroupPlan(group.sources,q,true,false);assert.equal(plan.storageGroup.rows[0].copyContents,undefined);assert.equal(plan.storageGroup.rows[1].localOrdinal,3);assert.equal(plan.storageGroup.rows[1].copyContents,true);assert.equal(plan.storageGroup.rows[1].x,10);
+ assert.equal(storageGroupPlan(group.sources,q,false,true).storageGroup.rows[1].copyContents,false);
+ assert.equal(storageGroupSelection([normal,{...storage,object:{...storage.object,storage:undefined}}]),null);
 });

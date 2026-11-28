@@ -13,7 +13,7 @@
  import {currentDesign} from './design-layout.ts';
  import {indoorFreeFloor} from './indoor-room-view.ts';
  import type {RoomApplySurfaceGeometry} from './room-project-apply.ts';
- import {captureRoomTemplate,captureRoomRows,captureRoomSurface,capturedRoomDocument,roomBackupSurfaceValid,roomCaptureWords,protectedRoomWords} from './room-project-capture.ts';
+ import {captureRoomTemplate,captureRoomRows,captureRoomSurface,capturedRoomDocument,roomBackupSurfaceValid,roomBackupProtected,roomCaptureWords,protectedRoomWords} from './room-project-capture.ts';
  import {captureSupportScene,type SupportScene} from './support-scene.ts';
  import {parseSupportTree} from './subgrid-local.ts';
  import {designAttachments} from './design-support-attachment.ts';
@@ -124,7 +124,7 @@
 </script>
 <button type="button" disabled={busy||blocked} on:click={()=>run('design')}>{busy?w[2]:w[0]}</button>
 <div class="indoor-backup">
- {#if targets.some(r=>r.surfaces.some(f=>f.positions.some(p=>p.protected)))}<small>{protectedRoomWords[locale]}</small>{/if}
+ {#if targets.some(r=>r.surfaces.some(f=>f.positions.some(roomBackupProtected)))}<small>{protectedRoomWords[locale]}</small>{/if}
  <label>{bw[0]} <select bind:value={scope} disabled={busy||blocked||!!copy} on:change={reset}><option value="room">{bw[1]}</option><option value="floor">{bw[2]}</option><option value="building">{bw[3]}</option></select></label>
  <button type="button" disabled={busy||blocked||!targets.length||!!copy} on:click={()=>run('backup')}>{bw[4]}</button>
  {#if testExport}<input hidden type="file" accept=".wandpreset,.json,.gz,application/json,application/gzip" bind:this={input} on:change={open}/><PresetFilePicker {locale} schemas={['wand.preset.indoor-decoration@1']} kinds={[scope]} disabled={busy||blocked||!targets.length||!!copy} label={bw[5]} onPick={openBackup}/>{/if}

@@ -142,6 +142,13 @@ fn existing_identity(v:&Value,item:u64,index:u64)->bool{
     }
 }
 // Fresh storage allocation intentionally leaves detached/orphan contents untouched.
+pub(super) fn container_refs_in_range(v:&Value,first:u32,end:u32,marked:bool)->bool{
+ match v{
+  Value::Object(m)=>m.iter().any(|(k,v)|{let key=k.to_ascii_lowercase();key!="nextcontainerinventoryid"&&container_refs_in_range(v,first,end,marked||key.contains("container")&&key.contains("id"))}),
+  Value::Array(a)=>a.iter().any(|v|container_refs_in_range(v,first,end,marked)),
+  _=>marked&&v.as_u64().is_some_and(|n|n>=u64::from(first)&&n<u64::from(end))
+ }
+}
 pub(super) fn container_ref(v:&Value,fresh:u32,marked:bool)->bool{
     match v{
         Value::Object(m)=>m.iter().any(|(k,v)|{

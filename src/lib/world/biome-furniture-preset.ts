@@ -7,11 +7,12 @@ import {mainlandMapAnchor,bindFloatingIslandGrid,bindMainlandGrid,type MainlandG
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {MainlandSavedObject} from './mainland-saved-objects.ts';
 import type {DesignPlacement,DesignItemGeometry} from './design-layout.ts';
-import {groupPickupPlan,type GroupPickupRow} from './group-pickup.ts';
+import {groupPickupPlan,emptyStoragePickupEligible,type GroupPickupRow} from './group-pickup.ts';
 import {supportSceneRootCounts,type SupportScene} from './support-scene.ts';
 export const BIOME_CHANGE_LIMIT=2048;
 export interface BiomeFurniturePlan{destination:StockDestination;remove:GroupPickupRow[];add:(GroupPasteRow&{scene?:SupportScene})[]}
-const eligible=(p:MainlandSavedObject,diagonal:boolean)=>{const ordinary:boolean=stockSourceEligible(p);return ordinary||diagonal&&!isCardinal(p.object.orientation)&&!p.object.surfaceCapable&&stockSourceEligible(p,true)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');};
+export const storageAreaEligible=(p:MainlandSavedObject)=>p.object.storageRestorable===true&&emptyStoragePickupEligible(p);
+export const areaFurnitureEligible=(p:MainlandSavedObject,diagonal:boolean)=>{if(p.object.storage||p.object.storageKnown)return storageAreaEligible(p);const ordinary:boolean=stockSourceEligible(p);return ordinary||diagonal&&!isCardinal(p.object.orientation)&&!p.object.surfaceCapable&&stockSourceEligible(p,true)&&!nativeActionBlocked(p.object.editRestrictions,'select')&&!nativeActionBlocked(p.object.editRestrictions,'remove');};
 const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
 export function supportAreaEligible(p:MainlandSavedObject){return !!p.object.subgrid&&!!groupPickupPlan([p]);}
 export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
@@ -20,7 +21,7 @@ export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly Mainla
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
  const diagonal=!island&&grid.factor===1&&!!bindMainlandGrid(grid);
- const editable=area.filter(p=>eligible(p,diagonal)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
+ const editable=area.filter(p=>areaFurnitureEligible(p,diagonal)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
  if(supports&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:(worldOrientationCode(p.object.orientation)??-4)/4}));
  try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,world?'world-grid':island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
@@ -37,8 +38,10 @@ export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly Mainl
  };
  const existing=new Map<string,MainlandSavedObject[]>();
  for(const p of snapshot.editable){const k=key(Number(p.object.itemId),p.object.x,p.object.y,(worldOrientationCode(p.object.orientation)??-4)/4)+':'+sceneKey(supports?.before.get(p.object.localOrdinal));const a=existing.get(k)??[];a.push(p);existing.set(k,a);}
+ const protectedStorage=new Map<string,MainlandSavedObject[]>();
+ for(const p of snapshot.protectedObjects){if(!p.object.storage&&!p.object.storageKnown)continue;const k=key(Number(p.object.itemId),p.object.x,p.object.y,(worldOrientationCode(p.object.orientation)??-4)/4);const bucket=protectedStorage.get(k)??[];bucket.push(p);protectedStorage.set(k,bucket);}
  const added:DesignPlacement[]=[],retained:MainlandSavedObject[]=[];
- for(const p of incoming){const match=existing.get(key(p.itemId,p.x,p.y,p.orientation)+':'+sceneKey(supports?.after.get(p.id)))?.shift();if(match)retained.push(match);else added.push(p);}
+ for(const p of incoming){const scene=supports?.after.get(p.id),k=key(p.itemId,p.x,p.y,p.orientation);const match=existing.get(k+':'+sceneKey(scene))?.shift()??(!scene?protectedStorage.get(k)?.shift():undefined);if(match)retained.push(match);else added.push(p);}
  const removed=[...existing.values()].flat();
  if(removed.length+added.length>BIOME_CHANGE_LIMIT)return null;
  const removedIds=new Set(removed.map(p=>p.object.localOrdinal)),remaining=objects.filter(p=>!removedIds.has(p.object.localOrdinal)),capacity=new Map(stock),returned=new Map<number,number>(),required=new Map<number,number>();
@@ -63,7 +66,7 @@ export function biomeFurnitureReplacement(grid:MainlandGrid,grids:readonly Mainl
  }
  if(!q||q.ghosts.some(p=>p.area!==grid.key))return null;
  const destination:StockDestination={layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,factor:grid.factor,sizeX:grid.sizeX,sizeY:grid.sizeY};
- const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!,...(supports?.before.has(p.object.localOrdinal)?{includeSupport:true as const}:{})})).sort((a,b)=>a.localOrdinal-b.localOrdinal);
+ const remove=removed.map(p=>({localOrdinal:p.object.localOrdinal,itemId:p.object.itemId,expectedX:p.object.x,expectedY:p.object.y,expectedOrientation:p.object.orientation!,...(supports?.before.has(p.object.localOrdinal)?{includeSupport:true as const}:{}),...(storageAreaEligible(p)?{includeStorage:true as const}:{})})).sort((a,b)=>a.localOrdinal-b.localOrdinal);
  const plan:BiomeFurniturePlan={destination,remove,add:q.rows.map((row,i)=>{const scene=supports?.after.get(added[i].id);return scene?{...row,scene}:row;})};
  return {plan,ghosts:q.ghosts,removed,retained,protectedObjects:snapshot.protectedObjects,returned,required,changeCount,missing,changed:remove.length+q.rows.length>0};
 }

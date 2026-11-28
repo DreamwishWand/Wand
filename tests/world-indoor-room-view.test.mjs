@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorCeilingFinishPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorFreeGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
+import test from 'node:test';import assert from 'node:assert/strict';import {indoorFloorGroups,indoorRoomRenamePlan,indoorRoomResizePlan,indoorAppendFloorPlan,indoorAddRoomPlan,indoorRemoveRoomPlan,indoorCeilingFinishPlan,indoorHouseGroups,parseIndoorRooms,indoorPositionPlot,indoorFurnitureEdits,indoorSwapPartners,indoorPickup,indoorGroupPickup,indoorDuplicateClip,indoorStorageDuplicateSelection,indoorStorageDuplicatePlacement,indoorGroupPlace,captureIndoorScene,indoorSceneClip,indoorScenePlacement,indoorMove,indoorGroupMove,indoorGroupRotate,indoorFreeGroupRotate,indoorPlace,indoorTransferPlace,captureIndoorCut,indoorGroupTransfer,rotateIndoorCut} from '../src/lib/world/indoor-room-view.ts';
 const face={kind:'floor',ordinal:1,wallPosition:null,finish:40000001,gridStatus:'full',items:[{itemId:40000002,quantity:2}],positions:[{itemId:40000002,x:1,y:2,orientationCode:8}],factor:1,missingPositions:1};
 const room={ordinal:1,house:1,floor:1,name:'Test',ceiling:null,surfaces:[face,{kind:'wall',ordinal:2,wallPosition:0,finish:0,gridStatus:'diff',items:[],positions:[],factor:null,missingPositions:0}]};
 const report=rooms=>({contract:'wand.db05.indoor-rooms@1',rooms,geometryVerified:false,writerAuthorized:false});
@@ -406,4 +406,16 @@ test('storage root supports cardinal move and explicit storage cut but not leaf 
  assert.equal(cut.rows[0].storage,true);
  assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,cut.clip,2,2,true)[0].storage,true);
  assert.equal(indoorGroupTransfer(full,shapes,allowed,cut.rows,[{...cut.clip[0],orientation:2.5}],2,2,true),null);
+});
+
+test('indoor mixed storage duplication keeps each original witness and staged stock',()=>{
+ const id=40001680,normal=40000001,positions=[{itemId:id,x:1,y:1,orientationCode:8,storage:true,storageKnown:true},{itemId:normal,x:2,y:1,orientationCode:8,plain:true},{itemId:id,x:3,y:1,orientationCode:8,storage:true,storageKnown:true}];
+ const f={...face,sourcePath:'GridData/Rooms/Room8x8-GridData.json',positions,missingPositions:0,terrain:{sizeX:8,sizeY:8,nativeFloorValues:new Uint32Array(64)}};
+ const shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],acceptedFloorTypesFlag:1024,path:''},shapes=Object.fromEntries([id,normal].flatMap(id=>[0,4,8,12].map(n=>[id+':'+n,shape]))),allowed=new Set([id,normal]),stock=new Map([[id,2],[normal,1]]);
+ const selection=indoorStorageDuplicateSelection(f,[0,1,2],shapes,allowed,stock,true);assert.ok(selection);
+ const q=indoorStorageDuplicatePlacement(f,shapes,allowed,stock,selection.clip,selection.sources,true,2,3,true);assert.ok(q);
+ assert.deepEqual(q.map(p=>[p.expectedStock,p.storageSource?.index,p.storageSource?.copyContents]),[[2,0,true],[1,undefined,undefined],[1,2,true]]);
+ assert.equal(indoorStorageDuplicateSelection(f,[0,1,2],shapes,allowed,new Map([[id,1],[normal,1]]),true),null);
+ assert.equal(indoorStorageDuplicatePlacement(f,shapes,allowed,stock,selection.clip.map((p,i)=>i===0?{...p,orientation:2.5}:p),selection.sources,true,2,3,true),null);
+ assert.equal(indoorStorageDuplicateSelection({...f,positions:[{...positions[0],storage:undefined},...positions.slice(1)]},[0,1,2],shapes,allowed,stock,true),null);
 });

@@ -1873,11 +1873,16 @@ pub fn storage_pose(root:&serde_json::Value,obj:&serde_json::Value)->bool{
  c["ID"].as_u64()==Some(id)&&c["BelongsToPlayer"].as_bool()==Some(true)&&c["ParentItemID"].as_u64()==obj["ItemID"].as_u64()&&
  c["Size"].as_u64().is_some_and(|n|n>0)&&c["Inventory"].is_array()
 }
+/// Cross-check the exact known standard template/capacity pair. The codec
+/// is responsible for authenticating the item binding and observed instance.
+pub fn standard_storage_capacity(template:&str,capacity:u32)->bool{
+ matches!((template,capacity),("Chest_16Slot",16)|("Chest_32Slot",32)|("Chest_48Slot",48)|("Furniture_16Slot",16))
+}
 /// Initialize an empty storage using a source-authorized native template.
 pub fn preview_initial_storage(source:&str,d:&PlainGridDestination,item:u64,xy:(i32,i32),orientation:&str,expected_stock:u32,template:&str,capacity:u32,room:bool,free:bool)->Result<GridCoordinateDraft,PatchError>{
  use serde_json::{Value,json};
  let bad=PatchError::InvalidTarget;
- if item/100_000!=400||template!="Chest_48Slot"||capacity!=48||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+ if item/100_000!=400||!standard_storage_capacity(template,capacity)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
  if room{if !d.data_path.starts_with("GridData/Rooms/Room"){return Err(bad);}validate_local_grid_destination_mode(source,d,item,xy,orientation,"GridData/Rooms/",free)?;}
  else{if house_exterior_world(&d.layout_path,&d.data_path).is_none(){return Err(bad);}validate_plain_grid_destination(source,d,item,xy,orientation)?;}
  let root:Value=serde_json::from_str(source).map_err(|_|bad)?;

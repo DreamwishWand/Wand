@@ -2232,7 +2232,7 @@ mod browser_amount_preview {
                     let next=root["World"]["GridCollection"]["Grids"][&dest.grid_id]["NextGridObjectID"].as_u64().ok_or_else(invalid)?.to_string();
                     let refs=grid_instance_preview::grid_identity_dependencies_for_ids(original,&dest.grid_id,&[next]).map_err(|_|invalid())?;
                     if refs.blocking()>0||refs.historical>0{return Err(invalid());}
-                    let (template,capacity)=crate::storage_source::initial_storage_template(item).ok_or_else(invalid)?;
+                    let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or_else(invalid)?;
                     ddv_save_patch::preview_initial_storage(json,&dest,item,(int("x")?,int("y")?),orientation,stock,template,capacity,false,false)
                 }else{preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})}
             }else{
