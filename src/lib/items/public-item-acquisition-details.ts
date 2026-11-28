@@ -143,6 +143,9 @@ function extensionRows(values:Readonly<Record<string,ItemFieldValue>>,db:PublicC
              evidence.itemNativeCategory==='Furniture'&&evidence.sourceItemFileSha256===sha?.Furniture&&object(evidence.nativeGrid)&&evidence.nativeGrid.status==='passed'&&evidence.nativeGrid.directTagPredicateVerified===true)&&
             evidence.sourceSetSha256===sha?.Set&&evidence.nativeAssemblySha256==='a574a3c41b2911f6031070d05f933f562e4b3efdb881ac3c774384a0effee653'&&
             evidence.purchaseCurrencyItemId===80000000&&id(evidence.configuredPurchaseAmount)&&id(evidence.buildingItemId)&&
+            (evidence.priceSource==='explicit_override'&&evidence.priceProviderRecordIndex===null||
+             (evidence.priceSource==='static'||evidence.priceSource==='dynamic_cache')&&typeof evidence.priceProviderRecordIndex==='number'&&
+              Number.isSafeInteger(evidence.priceProviderRecordIndex)&&evidence.priceProviderRecordIndex>=0)&&
             id(evidence.minimum)&&id(evidence.maximum)&&evidence.configuredPurchaseAmount>=evidence.minimum&&
             evidence.configuredPurchaseAmount<=evidence.maximum&&
             (evidence.setItemId===null||id(evidence.setItemId))&&evidence.itemCatalogGateEmpty===true&&
