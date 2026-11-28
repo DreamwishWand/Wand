@@ -59,7 +59,7 @@ export async function loadCollectionSupplement(master:PublicCompleteItemMaster,s
 }
 /** Only item-like definitions with a known Collection destination enter the
  * user-facing catalog. Source relations retain their original native types. */
-export function projectCompleteCollection(source:CompleteItemMasterFacets,supplement:readonly CollectionSupplement[]=[],displayIds?:ReadonlySet<number>):CollectionDb01Index{
+export function projectCompleteCollection(source:CompleteItemMasterFacets,supplement:readonly CollectionSupplement[]=[]):CollectionDb01Index{
   const nativeSubtypeByItem=new Map<number,CollectionDb01NativeSubtype>();
   const itemsByNativeSubtype=new Map<string,number[]>();
   const nativeSubtypeNames=new Map<string,string|null>();
@@ -82,7 +82,6 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
   const candidateMenus=new Map(source.categoryItems);
   const recipeResults=new Set(source.craftingRecipeResultItems.map(row=>row[0]));
   for(const [id,type,code,name] of source.nativeSubtypeItems){
-    if(displayIds&&!displayIds.has(id))continue;
     const row=allowed.get(id);const supplemental=extra.get(id);
     if(!row&&!(supplemental&&supplementalFamilies.has(type)))continue;
     const codes=(candidateMenus.get(id)??[]).filter(x=>menus.has(x)) as CollectionDb01SubmenuCode[];
@@ -202,10 +201,11 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
         const row=names.get(id)??{};row[locale]=name;names.set(id,row);
       }
     }));
-    // Exclude rows without any usable original localized label from the
-    // public browsing projection and denominator, not from the source DB.
-    // Partially translated records remain visible; no icon/name guessing.
-    const projected=projectCompleteCollection(source,supplement,new Set(names.keys()));
+    // Localization coverage is not collectible membership. Some original
+    // collectible classes (notably MemoryShard and TouchOfMagic) have no
+    // standalone localized name. Keep their identity, art and saved progress.
+    // Only sanitize display labels; category and source evidence determine membership.
+    const projected=projectCompleteCollection(source,supplement);
     const [parentEntityByItem,browse]=await Promise.all([loadParentEntities(master,projected),loadBrowseUniverses(master,projected)]);
     const index={...projected,furnitureKindLabels,parentEntityByItem,...browse};
     const rows:CollectionCatalogRow[]=[];

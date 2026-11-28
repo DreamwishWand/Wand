@@ -38,7 +38,7 @@
   $: copy=collectionInterfaceCopy(locale);
   $: labels=itemPageCopy(locale);
   $: memoryCopy=memoryPieceCopy(locale);
-  $: name=record?displayItemName(record.names,locale)??'':'';
+  $: name=record?displayItemName(record.names,locale)??item?.label??collectionFamilyLabel(locale,record.nativeCategory==='MemoryShard'?'Memories':record.nativeCategory==='TouchOfMagic'?'Touch of Magic':record.nativeCategory):'';
   $: memory=getMemorySources(itemId);
   $: bits=memory?knownMemoryBits(entry,memory.numberOfShards,Boolean($localSaveSession.file)):null;
   $: eligible=memory?maskPreviewEligible(memory.mask.sha256,memory.numberOfShards):false;
@@ -49,20 +49,24 @@
     }catch{item=null;entry={};}
   }
   async function load(){
-    loading=true;failed=false;
+    loading=true;failed=false;recordFailed=false;
     try{
       const found=await (await currentItemViewMaster(base)).getItem(itemId);
-      if(!alive)return;
-      record=found?.itemId===itemId&&found.definitionScope!=='other_definition'&&
-        displayItemName(found.names,locale)!==null?found:null;
+      if(!alive||!found||found.itemId!==itemId)return;
+      const namedPublic=found.definitionScope!=='other_definition'&&displayItemName(found.names,locale)!==null;
+      if(namedPublic){record=found;loading=false;}
+      // A nameless or source-supplemented collectible is still a valid page
+      // if it resolves against the verified public Collection catalog.
+      // Never expose an arbitrary other_definition merely by its numeric ID.
+      try{
+        const db=await CollectionRuntime.open(base);
+        if(!alive){db.close();return;}
+        refresh(db,locale);
+        if(!namedPublic&&!item){db.close();return;}
+        runtime=db;detach=editHistory.attachCollection(db);record=found;
+      }catch{if(alive){recordFailed=true;if(!namedPublic)failed=true;}}
     }catch{if(alive)failed=true;}
     finally{if(alive)loading=false;}
-    if(!alive||!record)return;
-    try{
-      const db=await CollectionRuntime.open(base);
-      if(!alive){db.close();return;}
-      runtime=db;detach=editHistory.attachCollection(db);refresh(db,locale);
-    }catch{if(alive)recordFailed=true;}
   }
   onMount(()=>{
     alive=true;void load();

@@ -1466,6 +1466,14 @@ try{
   await memoryToolbar.getByRole('button',{name:'すべて解除'}).click();
   await memoryToolbar.getByRole('button',{name:'ピース 1',exact:true,pressed:false}).waitFor();
   assert.equal(await memoryToolbar.locator('strong').innerText(),'0 / 10');
+  // The same unnamed, source-backed Memory identity must open as a
+  // service-neutral Item Page and retain the shared manual piece record.
+  await memoryPage.locator('.item-page-link').click();
+  await memoryPage.locator('[data-item-page="130000001"] .item-page-actions').first().waitFor({timeout:60000});
+  await memoryPage.getByRole('button',{name:'ピース 1',exact:true}).waitFor({timeout:30000});
+  assert.equal(await memoryPage.getByRole('button',{name:'ピース 1',exact:true}).getAttribute('aria-pressed'),'false');
+  await memoryPage.goBack();
+  await memoryPage.locator('.memory-piece-toolbar').waitFor({timeout:30000});
   await memoryPage.goto(url+'?memoryPreview=1&item=130000001');
   await memoryPage.locator('.item-inspector').waitFor({timeout:25000});
   await memoryPage.locator('.item-inspector [data-memory-view="manual"]').waitFor({timeout:25000});

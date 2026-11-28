@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {usableItemName} from '../src/lib/items/display-name.ts';
 import {projectCompleteCollection,loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {collectionSubcategories} from '../src/lib/collection/subcategories.ts';
 import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
@@ -82,11 +81,14 @@ test('all verified collectible native classes are recovered from canonical sourc
   const index=full.index;
   assert.equal(index.sourceItemCount,full.rows.length);
   const base=projectCompleteCollection(source);
-  const named=new Set();
-  for(const locale of ['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'])
-    for(const [id,label] of await full.master.getBrowseNames(locale))if(usableItemName(label))named.add(id);
-  for(const id of base.rootsByItem.keys())if(named.has(id))assert(index.rootsByItem.has(id),'named original candidates must remain visible');
-  assert(full.rows.every(row=>Object.values(row.names).some(usableItemName)),'unnamed definitions cannot inflate the visible checklist');
+  assert(index.sourceItemCount>=base.sourceItemCount);
+  for(const id of base.rootsByItem.keys())assert(index.rootsByItem.has(id),'original collectible candidates must not disappear due to missing names');
+  for(const root of ['memories','touch-of-magic']){
+    const expected=base.itemsByRoot.get(root)??[];
+    assert(expected.length>0,root+' is an existing product category');
+    assert(expected.every(id=>index.rootsByItem.get(id)===root));
+  }
+  assert.equal(index.rootsByItem.get(130000001),'memories');
   assert(full.rows.some(row=>row.id==='40005160'),'named real furniture remains visible');
   const worlds=buildWorldBrowseIndex(index);
   for(const [key,scope] of worlds){
@@ -103,7 +105,7 @@ test('all verified collectible native classes are recovered from canonical sourc
   assert(furniture.filter(group=>group.key.startsWith('furniture-kind:')).length>5);
   assert(!furniture.some(group=>group.key==='Furniture:0'));
   console.log('COLLECTION_FINAL_CATEGORY_CENSUS '+JSON.stringify({
-    population:index.sourceItemCount,excludedUnnamed:[...base.rootsByItem.keys()].filter(id=>!named.has(id)).length,
+    population:index.sourceItemCount,additional:index.sourceItemCount-base.sourceItemCount,
     roots:COLLECTION_TOP_CATEGORIES.map(row=>[row.id,index.itemsByRoot.get(row.id)?.length??0]),
     furniture:furniture.map(row=>[row.key,row.total])
   }));
