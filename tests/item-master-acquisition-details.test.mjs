@@ -80,6 +80,7 @@ test('all classification extensions preserve original evidence and localized sou
   const fields={progression:'acquisition.ordinaryProgressionSources',critterBefriending:'acquisition.ordinaryCritterSources',
     conditionalQuest:'acquisition.conditionalQuestSources',memorySpawn:'acquisition.classifiedMemorySpawnSources',
     eventLootPresent:'acquisition.eventLootPresentSources',questObjective:'acquisition.questObjectiveGrantSources',configuredStore:'acquisition.ordinaryConfiguredStoreSource',
+    storeSequence:'acquisition.ordinaryStoreSequenceSources',storeGeneratedShelf:'acquisition.ordinaryGeneratedStoreShelfSources',
     lootPresent:'acquisition.ordinaryLootPresentSources',critterFeeding:'acquisition.ordinaryCritterFeedingSources',historicalStarpath:'acquisition.historicalStarpathSources'};
   const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
   const expected=new Map(),counts={};
@@ -110,7 +111,7 @@ test('all classification extensions preserve original evidence and localized sou
       const related=ext.family==='configuredStore'?[80000000]:ext.family==='conditionalQuest'?
         [...new Set(ev.questGates.map(g=>g.questId))]:ext.family==='memorySpawn'?
         [...new Set([...ev.questGates.map(g=>g.questId),...ev.sceneItemIds,...(ev.conditionItemIds??[]),...(ev.characterItemIds??[])])]:
-        ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId])]:ev.tableItemId?[ev.tableItemId]:[];
+        ext.family==='eventLootPresent'?[...new Set([ev.bagItemId,ev.tableItemId])]:ext.family==='storeSequence'?[ev.buildingItemId,80000000]:ext.family==='storeGeneratedShelf'?[ev.buildingItemId,80000000,...(ev.setItemId?[ev.setItemId]:[])]:ev.tableItemId?[ev.tableItemId]:[];
       assert.deepEqual(ext.relatedIdentities.map(i=>i.itemId),related);
       assert(ext.relatedIdentities.every(i=>i.locale==='ja'));
     }

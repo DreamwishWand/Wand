@@ -27,6 +27,26 @@ PINS={
 # Original relative file offsets in the SHA-authenticated Windows build:
 # the il2cpp section has a verified RVA-to-file displacement of 0x1800.
 WINDOWS=(
+ # AllTags / AnyTag and ignore-size call the direct IHasTags.Tags getter.
+ (0x386cbd1,43,'7ea519155a58aabf52adc93dac8440b8ff36cc14e0aaccd21f2754e86552ee59'),
+ (0x386e1d1,43,'14e7f88b638f0679b95932b2facb0de1f375b358b6fd3c925774bb238451c22f'),
+ (0x3872f9c,57,'2c118bf017ba4a7b6fd3ed21519452e7f662de455b1c9dbe113bca78ab9c2102'),
+ (0x6eb090,8,'909e0dc4d3ccacb58fc60ac44606c857c6ca02c2998d3c01aa5d00470ded71c2'),
+ (0x386cc40,4,'20cdc1df20ac7ef181c9eecea393d56a3fb42630c2f6503d1cb79512285995fc'),
+ (0x386e1fa,8,'e91d415d13c1da13f1a7e814f5dcd7b0bee941366f021aacc4dc1854c1b5b040'),
+ # ItemGridFilter.Matches, GridAreaData validity, qualifier and bounds branches.
+ (0x3872e65,83,'9d0ac558f2a47c61ac27e6d455bfcb977adf57d022b5f037b603d3109b188f5f'),
+ (0x3872f0d,200,'1b16329c5a795b36fd2c3602457403bb9340ce039080974d56dc6e27f7f15cf0'),
+ (0x38730df,100,'5bea494ad4a9e558e090caaa95e7ef65eb685491e51986694caefb86e687fea5'),
+ (0x38731e7,129,'98d3ff869d28f1fa409f4e54fda5cbc2ff5916362c8d2ec32e7cda42570b4737'),
+ (0x38732fd,246,'0a3a20853a3c9eac22c1a1dd4a49fc7392f93b0d9ddbad99e53e216b16e1b4f8'),
+ (0x38733f3,306,'c3ae0cbe135d0b0e6264390ef6d1b7ae7cb40fc3fc03cc31fee09da4b9b58c93'),
+ (0x38f9eca,57,'0b9b4203f7a27f3e425e25275f8efd463a18fa789678f588596555b28e0afea6'),
+ (0x38fa36e,47,'8609f2df9fd556a2edf83af08955ac87fdf1639529aa5364e3246795baac036b'),
+ (0x38faa80,38,'5e4071a3b9eb62d189a96907b490b54b5e0761781b09897de26395a4b7b1ba11'),
+ (0x38faba0,38,'c66b28becdd1ea486e5b14694eb3c9835bbd4f7d515036c9878f80509cb1c8df'),
+ (0x39231b7,9,'62a052153d3248bd4d53b5d4148853ecddac133b56ea97c5ecf9235083708350'),
+ (0x3924603,11,'4a0e151ff00b862bde6383c3f746f983594e698d30c8238ba05043ecd361cafe'),
  (0x410813c,48,'8155b505f5cd3d2191a43354e8c393ebd063901647f1ed5754ad93b071a89a4e'),
  (0xf6c9d0,8,'f735d0fc9d977dae4106869f19103860041ce8fe3fcea5a380c84ac3a66f7df4'),
  (0xff8b70,8,'b96a99bb019c6c196f2d811c580adcf2028e3696b8a30e4838ae8294f6715cb7'),
@@ -42,6 +62,13 @@ WINDOWS=(
  (0x383b179,24,'c455514d6b5622cc2e911dde0205087d6bb096f062f444ef975928bd2b269255'),
  (0x4a55385,9,'1016c74cd17988108feb64ccf6ff93d6fb86baaeb0f212a8f40f65f111c8f222'),
  (0x4a5540d,32,'24d9a44c2c539ce193d166b3a31701cbb293fdba602bbd347d4c7ed9615be38f'),
+ # Native catalogue enumeration: positive inclusive price ranges and set fallback.
+ (0x4d21fa0,100,'52b3f0891fbdf23ed92e628d95366e43a5afd25ebf7feba62b9e0b2aa6ccc628'),
+ (0x4d22002,8,'81094a4f1f1b8e7f3f05ef60109e0319f385f043e1949de9e6ba18b3947dd4a3'),
+ (0x3874ee7,27,'b2d636da393394d89115f4cc66041ffc9a2dd8a26e8efef24a4b2d0f5ebaa0ee'),
+ (0x3875088,24,'0fb5e083d371ef0bb97a423f7b0224075771381ccfc05aca4d18900b6084e190'),
+ (0x410b11d,147,'43e0f395c362b98208c617e7790bc339174020f25d8120dd3aa6b98bfae94db1'),
+ (0x38a6a78,78,'c6e722b03d8f81fabf15c086b04d60d34cff5338bf2a483d0a71348d966e7d4f'),
 )
 # Direct call edges: explicit override first, formula/provider paths later,
 # transaction callers, then the actual store generator's structural/state filters.
@@ -53,6 +80,12 @@ CALLS=(
  (0x45e285a,0x383a8c0),(0x4a5858c,0x383ae60),
  (0x4a50200,0x41080c0),(0x4a5022f,0x36d8d70),
  (0x4a5032c,0x4a552d0),(0x4a53a9f,0x38a6770),
+ (0x4d21990,0x4d21c70),(0x4d21b62,0x4d21c70),
+ (0x4d21e32,0x38a6870),(0x4d2203e,0x38a6870),
+ (0x38a6ca3,0x41080c0),(0x38a6e16,0x41080c0),
+ (0x38a6cd5,0x38a6f90),(0x38a6e54,0x38a6f90),
+ (0x38d0508,0x410afc0),(0x410b0cb,0x3b67c40),(0x410b18d,0x410afc0),
+ (0x38751c9,0x383ae60),(0x38751dd,0x3874d10),
 )
 def require(ok,code):
  if not ok:raise ValueError('DB01_NATIVE_PURCHASE_'+code)
@@ -69,7 +102,9 @@ def resolve_native_interfaces(raw,schema):
  for slot,expected_index,expected_definition,name in [
      (0x9bd90a0,69924,11069,'IIsHiddable'),
      (0x9bd9558,68775,11029,'IAvailability'),
-     (0x9b57de8,69925,11006,'IIsMissionItem')]:
+     (0x9b57de8,69925,11006,'IIsMissionItem'),
+     (0x9b16928,69820,10990,'IHasSet'),
+     (0x9bccdd8,69824,10987,'IHasTags')]:
   encoded=struct.unpack_from('<Q',raw,slot-0x3200)[0]
   require(encoded==(0x20000001|(expected_index<<1)),'TYPE_ENCODING')
   va=struct.unpack_from('<Q',raw,table+expected_index*8)[0]
@@ -115,6 +150,13 @@ def audit(assembly,dump,proto,itemlist):
  original_price_provider_census(original)
  require(len(original)==PROTO_BYTES and sha(original)==PROTO_SHA,'PROTO_SHA')
  entries=fields(original);require(len(entries)==EXPECTED_RECORDS,'PROTO_CENSUS')
+ qualifier=fields(entries[88][2]);meta=fields(one(qualifier,2));body=one(meta,6)
+ require(strings(qualifier,1)=='GridSizeQualifierData' and strings(meta,5)=='Definitions.Grid.GridSizeQualifierData' and sha(body)=='99a5348bc8a6688173c5435f9ff0a33b627b44eb8cbc498b7225a214ab203409','GRID_QUALIFIER_SOURCE')
+ ranges={1:[],2:[]}
+ for n,w,v in fields(body):
+  require(n in ranges and w==2,'GRID_QUALIFIER_WIRE');f=fields(v)
+  ranges[n].append([one(f,1) or 0,one(f,2),one(f,3)])
+ require(ranges=={1:[[0,1,1],[2,16,2],[17,64,3],[65,999999999,4]],2:[[0,1,1],[2,4,2],[5,7,3],[8,999999999,4]]},'GRID_QUALIFIER_RANGES')
  providers={}
  for _,_,rec in entries:
   meta=fields(one(fields(rec),2));typ=strings(meta,5);payload=one(meta,6)
@@ -157,6 +199,9 @@ def audit(assembly,dump,proto,itemlist):
   'nativeCallEdgesVerified':len(CALLS),'matchingCurrencyExplicitOverridePrecedesProviders':True,
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
   'storeDisplayScreen':dict(screen),'nativeNotBuyableInterfaceIdentitiesVerified':True,
+  'nativeCatalogueEnumerationPriceBandsVerified':True,'nativeSetUnlockFallbackVerified':True,
+  'nativeGridQualifierRanges':ranges,'nativeGridBoundsAndLayerBranchesVerified':True,
+  'nativeDirectTagFiltersVerified':True,
   'otherNativeConditionsVerified':False,
   'overrideProviderComparison':dict(counts),'storeMembershipVerified':False,'liveTransactionVerified':False,
   'privateProviderValuesExported':False}
