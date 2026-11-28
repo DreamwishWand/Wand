@@ -4865,6 +4865,34 @@ mod terrain_session_tests{
         assert!(!r.to_string().contains("SceneLayouts/"));
     }
     #[test]
+    fn recovery_dependency_batch_keeps_grid_addresses_separate_and_protects_ambiguous_ids(){
+        let root=serde_json::json!({"World":{
+            "SpawnedObjects":[{"GridID":42,"GridObjectID":1}],
+            "LastUsedLinkedEnvironmentEnter":{"GridID":43,"GridObjectID":2},
+            "Unclassified":{"GridObjectID":3},
+            "GridCollection":{"Grids":{"42":{"ID":42,"Objects":{"9":{"State":{"GardenData":{"SaplingGridObjectID":4}}}}}}}
+        }});
+        let groups=vec![(42,HashSet::from([1,4])),(43,HashSet::from([1,2,4])),(42,HashSet::from([3])),(43,HashSet::from([3])),(44,HashSet::from([1,2,4]))];
+        let result=grid_identity_dependencies_batch(&root,&groups).unwrap();
+        assert_eq!((result[0].active,result[0].related),(1,1));
+        assert_eq!((result[1].active,result[1].navigation,result[1].related),(0,1,0));
+        assert_eq!(result[2].unknown,1);
+        assert_eq!(result[3].unknown,1);
+        assert_eq!(result[4].blocking(),0);
+        let raw=root.to_string();
+        for ((grid,ids),multi) in groups.iter().zip(&result){
+            let keys=ids.iter().map(u64::to_string).collect::<Vec<_>>();
+            let single=grid_identity_dependencies_for_ids(raw.as_bytes(),&grid.to_string(),&keys).unwrap();
+            assert_eq!((single.active,single.historical,single.navigation,single.related,single.unknown),
+              (multi.active,multi.historical,multi.navigation,multi.related,multi.unknown));
+        }
+        let destinations=[(42,1),(43,1),(44,1)].into_iter().enumerate().map(|(i,(grid,object))|
+            ddv_save_patch::field_recovery::RecoveryDestination{container_id:(i+2).to_string(),parent_item:Some(40001680),owner:Some(GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:grid.to_string(),object_id:object.to_string(),item_id:40001680}),capacity:48,used:0}
+        ).collect::<Vec<_>>();
+        assert_eq!(activity_recovery_destination_safety(&root,&destinations).unwrap(),vec![false,true,true]);
+    }
+
+    #[test]
     fn dependency_scan_distinguishes_historical_active_and_unknown_addresses(){
         let profile=br#"{"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":2,"Objects":{"2":{"ID":2,"ItemID":40005160},"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}},"20":{"ID":20,"Objects":{"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}}}},"Events":{"SpawnedObjects":[{"GridID":10,"GridObjectID":2},{"GridID":20,"GridObjectID":2}]}},"Player":{"Achievements":{"GridObjectsCollected":[{"GridId":10,"GridObjectId":2}]},"LastUsedLinkedEnvironmentEnter":{"1":{"GridID":10,"GridObjectID":2}},"Unknown":{"GridID":10,"GridObjectID":2}}}"#;
         let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40005160};
