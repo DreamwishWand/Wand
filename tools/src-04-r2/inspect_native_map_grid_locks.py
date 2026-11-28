@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Resolve source MapGridLocks entries to matching prefab area names, privately."""
-import argparse,json
+import argparse,json,math
 from pathlib import Path
 from inspect_native_map_layout import Reader,check,script_ids,unityfs,serialized
-from inspect_native_map_registration import component,digest,MONO_SHA
+from inspect_native_map_registration import component,transform,digest,MONO_SHA
 
 
 def inspect(mono,scenes,registration,graph,locks):
@@ -18,6 +18,7 @@ def inspect(mono,scenes,registration,graph,locks):
         for scab,raw in unityfs(path).items():
             if scab!=m['sceneCab']:continue
             objs,extern,unity=serialized(raw);check(unity=='6000.0.62f1','Unexpected Unity version')
+            transforms={pid:transform(b,cl) for pid,(cl,b) in objs.items() if cl==4}
             def script(sf,sp):return scripts.get(sp,('',''))[0] if 0<sf<=len(extern) and extern[sf-1]==cab else ''
             for pid,(cl,b) in objs.items():
                 if cl!=114:continue
@@ -32,9 +33,17 @@ def inspect(mono,scenes,registration,graph,locks):
                     name=r.aligned_string();n=r.count();check(n==1 and name in names,'Unexpected lock entry')
                     f,p=r.ptr();check(f==0 and p in objs and objs[p][0]==114,'Invalid local grid reference')
                     target,enabled,fs,ps,rr=component(objs[p][1]);check(script(fs,ps)=='Mdl.Grid.GridScript' and enabled==1,'Unexpected grid target')
-                    rr.ptr();grid_path=rr.aligned_string();check(grid_path.startswith('GridData/OffGridBuildings/Expansion04/Underwater'),'Unexpected grid data path')
+                    of,origin=rr.ptr();check(of==0 and origin in transforms,'Invalid grid origin PPtr')
+                    tr=transforms[origin];position=tr['position'];check(all(math.isfinite(v) for v in position) and tr['q']==[0,0,0,1] and tr['scale']==[1,1,1],'Unsupported grid origin')
+                    ancestors=[];parent=tr['parent']
+                    while parent:
+                        check(parent not in ancestors and parent in transforms,'Invalid grid origin ancestry')
+                        ancestors.append(parent);t=transforms[parent]
+                        check(t['position']==[0,0,0] and t['q']==[0,0,0,1] and t['scale']==[1,1,1],'Nonidentity ancestor')
+                        parent=t['parent']
+                    grid_path=rr.aligned_string();check(grid_path.startswith('GridData/OffGridBuildings/Expansion04/Underwater'),'Unexpected grid data path')
                     a=names.pop(name);check(a['enabled'] and a['mode']=='overlay' and not a['blockers'] and a['areaNameCanvasGroup'] is None,'Unexpected overlay rule')
-                    entries.append({'name':name,'areaType':a['areaType'],'node':a['node'],'overlayNode':a['overlayNode'],'gridComponent':str(p),'gridDataPath':grid_path})
+                    entries.append({'name':name,'areaType':a['areaType'],'node':a['node'],'overlayNode':a['overlayNode'],'gridComponent':str(p),'gridDataPath':grid_path,'origin':{'transform':str(origin),'position':position,'identityAncestors':[str(p) for p in ancestors]}})
                 check(not names and r.pos==len(b),'Incomplete source lock entries')
                 rows.append({'prefab':m['prefab'],'sceneSha256':h,'component':str(pid),'entries':entries})
     check(len(seen)==len(reg)==10 and len(rows)==3 and len({m['prefab'] for m in rows})==3,'Incomplete original scene coverage')
