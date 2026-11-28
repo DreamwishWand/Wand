@@ -65,7 +65,7 @@ export function cutClipboardMatches(cut:CutClipboard,file:File|null,scope:string
  if(cut.rows.some(r=>r.roomSource))return cut.scope==='indoor'&&cut.rows.length<=ROOM_CUT_LIMIT&&cut.rows.every(r=>r.roomSource&&r.roomSource.roomOrdinal===cut.rows[0].roomSource?.roomOrdinal)&&new Set(cut.rows.map(r=>r.roomSource?.index)).size===cut.rows.length&&scope!=='indoor';
  if(cut.rows.some(r=>r.supportFactor)&&cut.scope!==scope){
   const outdoor=['Village04','VillageExpansion01','VillageExpansion02','VillageExpansion03','VillageExpansion04','VillageWinnieDLC'];
-  if(free)outdoor.push('FloatingIslands');
+  if(free)outdoor.push('FloatingIslands','VillageExpansion04UnderwaterAreas');
   if(!outdoor.includes(cut.scope)||!outdoor.includes(scope))return false;
  }
  if(cut.scope===scope&&!(free&&['FloatingIslands','VillageExpansion04UnderwaterAreas'].includes(scope)&&cut.rows.every(r=>!objects.some(p=>p.object.localOrdinal===r.localOrdinal))))return cutWitnessMatches(cut.rows,objects,free);
@@ -108,8 +108,6 @@ export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPos
  return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:(worldOrientationCode(candidate.rows[i].orientation)??-4)/4}));
 }
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate,free=false){
- const calibrated=(s:string)=>s.startsWith('SceneLayouts/VillageExpansion04UnderwaterAreas/');
- if(cut.some((r,i)=>(r.storage||r.supportFactor)&&(calibrated(r.area)||calibrated(candidate.rows[i]?.destination.layoutId??''))&&r.area!==candidate.ghosts[i]?.area))return null;
  if(cut.some(r=>r.supportSource)&&(!free||cut.length>ROOM_CUT_LIMIT||cut.some(r=>!r.supportSource))||cut.length!==candidate.rows.length||!free&&(cut.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation))||candidate.rows.some(r=>!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
  if(rows.some(r=>Math.floor(Number(r.itemId)/100000)!==400&&(!free||!CARDINAL_ORIENTATIONS.some(o=>o===r.expectedOrientation)||!CARDINAL_ORIENTATIONS.some(o=>o===r.orientation))))return null;
