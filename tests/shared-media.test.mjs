@@ -8,7 +8,7 @@ const payload=Buffer.from(JSON.stringify(document));
 const sha=createHash('sha256').update(payload).digest('hex');
 const config={state:'published',publicationAuthorized:true,publicReadbackVerified:true,gameVersion:'1.26.2',origin:'https://media.dreamwishwand.com/',groups:{maps:{file:'maps-'+sha.slice(0,16)+'.json',sha256:sha,bytes:payload.length,nameCount:1}}};
 test('unpublished mode never fetches',async()=>{
-  const c=createSharedMediaClient(undefined,()=>{throw Error('unexpected network');});
+  const c=createSharedMediaClient(undefined,()=>{throw Error('unexpected network');},{state:'unpublished'});
   assert.equal(await c.unique('ui','icon_collection'),null);
 });
 test('published media loads only the requested group and shares cached index',async()=>{
@@ -48,4 +48,18 @@ test('static original UI release requires byte-verified publication and never fe
   assert.equal((await c.unique('ui','icon_furniture')).url,sharedMediaUrl(config.origin,image));
   assert.equal(await c.unique('ui','missing'),null);
   assert.throws(()=>createSharedMediaClient(undefined,fetch,{...release,publicReadbackVerified:false}),/static UI release/);
+});
+
+test('activated original UI release resolves canonical images without index fetch',async()=>{
+  const c=createSharedMediaClient(undefined,()=>{throw Error('unexpected network');});
+  assert.equal((await c.names('ui')).length,261);
+  const icon=await c.unique('ui','Icon_All','Texture2D');
+  assert.equal(icon.url,'https://media.dreamwishwand.com/images/58a8bd19c51ed7b61ffa7f18c3e426095fc4cc6dc966f73116ea8559ac676b40.webp');
+  assert.equal(icon.width,128);
+  assert.equal((await c.find('ui','icon_collection_fish','Texture2D')).length,2);
+  assert.equal(await c.unique('ui','icon_collection_fish','Texture2D'),null);
+  const images=new Map();
+  for(const name of await c.names('ui'))for(const row of await c.find('ui',name,'Texture2D'))images.set(row.sha256,row.bytes);
+  assert.equal(images.size,254);
+  assert.equal([...images.values()].reduce((sum,n)=>sum+n,0),3757798);
 });
