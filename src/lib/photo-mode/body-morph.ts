@@ -10,13 +10,13 @@ export function savedBodyType(appearance:SavedAvatarAppearance|undefined,body:Bo
 }
 export function validBodyMorphs(x:unknown):x is BodyMorphs{
  if(!x||typeof x!=='object'||Array.isArray(x)||Object.keys(x).length!==2)return false;
- const m=x as BodyMorphs;return (['male','female'] as const).every(b=>{const r=m[b];return !!r&&Number.isSafeInteger(r.vertices)&&r.vertices>0&&r.vertices<=100000&&!!r.asset&&/^[a-f0-9]{64}$/.test(r.asset.sha256)&&Number.isSafeInteger(r.asset.bytes)&&r.asset.bytes>=28&&r.asset.bytes<=2*1024*1024})
+ const m=x as BodyMorphs;return (['male','female'] as const).every(b=>{const r=m[b];return !!r&&Number.isSafeInteger(r.vertices)&&r.vertices>0&&r.vertices<=100000&&!!r.asset&&/^[a-f0-9]{64}$/.test(r.asset.sha256)&&Number.isSafeInteger(r.asset.bytes)&&r.asset.bytes>=108&&r.asset.bytes<=Math.min(2*1024*1024,28+80*r.vertices)&&(r.asset.bytes-28)%16===0})
 }
 /** Native configured land body position deltas; clothing and normal maps are not altered. */
 export function applyBodyMorph(raw:ArrayBuffer,positions:Float32Array,choice:number):Float32Array{
  const v=new DataView(raw),n=positions.length/3;
  const fail=()=>{throw new Error('Invalid body morph asset')};
- if(!validChoice(choice)||!Number.isInteger(n)||n<1||n>100000||v.byteLength<8||v.getUint32(0,true)!==0x314d4257||v.getUint32(4,true)!==n)fail();
+ if(!positions.every(Number.isFinite)||!validChoice(choice)||!Number.isInteger(n)||n<1||n>100000||v.byteLength<8||v.getUint32(0,true)!==0x314d4257||v.getUint32(4,true)!==n)fail();
  let off=8;const out=positions.slice();
  for(let frame=1;frame<=5;frame++){
   if(off+4>v.byteLength)fail();const count=v.getUint32(off,true);off+=4;if(count<1||count>n||off+16*count>v.byteLength)fail();
