@@ -2339,7 +2339,7 @@ mod browser_amount_preview {
                     if refs.blocking()>0||refs.historical>0{return Err(invalid());}
                     let (template,capacity)=crate::storage_source::placement_storage_template(&root,item).ok_or_else(invalid)?;
                     ddv_save_patch::preview_initial_storage(json,&dest,item,(int("x")?,int("y")?),orientation,stock,template,capacity,false,free)
-                }else{preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})}
+                }else if crate::storage_source::support_source_path(item).is_some(){return Err(invalid());}else{preview_furniture_stock_transaction(json,stock,FurnitureStockAction::Place{destination:&dest,item_id:item,xy:(int("x")?,int("y")?),orientation})}
             }else{
                 // Reuse the original-source structural rehearsal, including
                 // dependency blocking when the removal guard is available.

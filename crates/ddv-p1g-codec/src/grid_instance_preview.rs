@@ -2866,6 +2866,13 @@ fn plain_group_paste_with_mode(profile:&[u8],plan:&str,limit:usize,free:bool)->R
             let (sx,sy)=underwater_transform_identity(&root,&d.grid_id)?;
             if d.tessellation!=1||d.size!=(sx as u32,sy as u32){return Err(bad);}
         }
+        if !underwater&&!crate::storage_source::is_storage(item)&&crate::storage_source::support_source_path(item).is_some(){
+            if limit>ddv_save_patch::MAX_GRID_MIXED_EDITS||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){return Err(bad);}
+            let (_,layout,factor,sx,sy)=plain_scene_identity(&root,&d.grid_id)?;
+            if layout!=d.layout_path||factor!=u64::from(d.tessellation)||sx!=u64::from(d.size.0)||sy!=u64::from(d.size.1){return Err(bad);}
+            let trees=local_support.get_or_insert_with(||crate::storage_source::initial_support_trees(&root,inventory.keys().filter_map(|k|k.parse::<u64>().ok())));
+            if !trees.contains_key(&item){return Err(bad);}
+        }
         if !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation){player_house_grid_scope(&root,&d.grid_id)?;}
         if x<0||y<0||x as u32>=d.size.0*d.tessellation||y as u32>=d.size.1*d.tessellation||!row_free&&!anchors.insert((d.grid_id.clone(),x,y)){return Err(bad);}
         let grid=grids.get(&d.grid_id).ok_or(bad)?;
