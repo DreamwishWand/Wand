@@ -2,7 +2,6 @@
 import argparse, json, struct, io, re
 from pathlib import Path
 from math import isfinite
-from PIL import Image
 from resolve_animation_bundle import Reader, unityfs, serialized_objects, digest
 from pose_curves import require
 
@@ -55,6 +54,7 @@ def read_streamed_texture(raw,resources):
 
 
 def decode_texture(raw,resources):
+    from PIL import Image
     info,payload,lengths=read_streamed_texture(raw,resources)
     width,height,fmt=info['width'],info['height'],info['format']
     require(fmt in (10,12,25),'unsupported PNG conversion format')
