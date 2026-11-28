@@ -1658,6 +1658,12 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(memory){
       add('acquisition.memoryAppearance',row.itemId,memory);
       add('acquisition.memoryAppearanceCondition',row.itemId,memory.appearanceCondition);
+      // Keep exact source grouping separate from verified acquisition routes.
+      // A shared orb or memory tag is not proof of a shared drop or grant.
+      if(memory.consummableOverrideItemId!==null)
+        add('acquisition.memoryOrbItemId',row.itemId,memory.consummableOverrideItemId);
+      const tagId=({...row.nativeProperties,...row.sourceAttributes}).MemoryShardTagItemID;
+      if(ID(tagId))add('acquisition.memoryShardTagItemId',row.itemId,tagId);
       if(memory.category)categorySet.add(memory.category);
     }
     const historicStar=historicalStarpath.byItem.get(row.itemId);

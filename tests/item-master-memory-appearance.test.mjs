@@ -8,9 +8,11 @@ test('all original memory appearance actions, exact condition fields, shard coun
   const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
   const ids=await db.findItemIdsByField('sourceClass',{kind:'equals',value:'MemoryShardItemData'});
   assert.equal(ids.length,472);
-  const rows=await db.getItemFields(ids,['source.AppearanceCondition','source.Conditions','source.NumberOfShards','source.ConsummableOverrideItemID','observedFields','acquisition.memoryAppearance','acquisition.effectiveCategories']);
+  const rows=await db.getItemFields(ids,['source.AppearanceCondition','source.Conditions','source.NumberOfShards','source.ConsummableOverrideItemID','source.MemoryShardTagItemID','acquisition.memoryOrbItemId','acquisition.memoryShardTagItemId','observedFields','acquisition.memoryAppearance','acquisition.effectiveCategories']);
   const details=await readItemAcquisitionSourceDetails(db,ids,'ja');
   const counts={},gates={},dlc={};let ordinary=0,festival=0;
+  const orbGroups=new Map(),tagGroups=new Map();
+  const group=(map,key,itemId)=>{const list=map.get(key)??[];list.push(itemId);map.set(key,list);};
   const expansionIds=new Map([[2130001296,'Expansion01'],[2130001490,'Expansion02'],[2130003048,'Expansion03'],[2130004933,'Expansion04']]);
   const eventIds=new Map([[130000408,'HauntedFloatingFestival2026'],[130000411,'WinterFloatingFestival'],[130000446,'SpringFloatingFestival']]);
   const commonIds=[...expansionIds.keys(),2130004213,2130004415,2130004992];
@@ -19,6 +21,16 @@ test('all original memory appearance actions, exact condition fields, shard coun
     const v=row.values,a=v['acquisition.memoryAppearance'],code=v['source.AppearanceCondition'],condition=v['source.Conditions'];
     assert.equal(a.appearanceConditionCode,code);assert.equal(a.appearanceCondition,names[code]);
     assert.equal(a.configuredShardCount,v['source.NumberOfShards']);
+    for(const [sourceKey,indexKey,map] of [
+      ['source.ConsummableOverrideItemID','acquisition.memoryOrbItemId',orbGroups],
+      ['source.MemoryShardTagItemID','acquisition.memoryShardTagItemId',tagGroups]
+    ]){
+      const original=v[sourceKey];
+      if(Number.isSafeInteger(original)&&original>0){
+        assert.equal(v[indexKey],original);
+        group(map,original,row.itemId);
+      }else assert.equal(v[indexKey],undefined);
+    }
     assert.deepEqual(a.conditions,condition??null);
     assert.equal(a.conditionsFieldPresent,condition!==undefined);
     const absent=condition===undefined&&!v.observedFields.some(([n])=>n===16);
@@ -55,6 +67,14 @@ test('all original memory appearance actions, exact condition fields, shard coun
   for(const [code,count] of Object.entries(counts)){
     const result=await db.findItemIdsByField('acquisition.memoryAppearanceCondition',{kind:'equals',value:names[Number(code)]});
     assert.equal(result.length,count);
+  }
+  assert.equal(tagGroups.size,12);
+  assert.equal([...tagGroups.values()].reduce((n,ids)=>n+ids.length,0),302);
+  for(const [field,groups] of [['acquisition.memoryOrbItemId',orbGroups],['acquisition.memoryShardTagItemId',tagGroups]]){
+    for(const [value,expected] of groups){
+      const actual=await db.findItemIdsByField(field,{kind:'equals',value});
+      assert.deepEqual([...actual].sort((a,b)=>a-b),[...expected].sort((a,b)=>a-b));
+    }
   }
   assert.equal(ordinary,170);assert.equal(festival,3);assert.deepEqual(dlc,{Expansion01:25,Expansion02:25,Expansion03:25,Expansion04:25});
   console.log('DB01_MEMORY_APPEARANCE_VERIFIED '+JSON.stringify({items:ids.length,ordinary,festival,dlc,counts,gates}));
