@@ -21,7 +21,7 @@
  import {islandSaveSnapshot,privateIslandFurnitureText,parseIslandSavePreset,islandSaveReplacement,islandSaveWords} from './island-save-preset.ts';
  import {biomeFurnitureWords} from './biome-furniture-preset.ts';
  import {DESIGN_FILE_LIMIT,type DesignItemGeometry} from './design-layout.ts';
- import {parseFurnitureStock,parseLocalPlainStock} from './furniture-stock-view.ts';
+ import {parseFurnitureStock,parseLocalPlainStock,parseLocalRestorableStorageStock} from './furniture-stock-view.ts';
  import {wholeAreaWords} from './whole-area-preset.ts';
  import {experimentalCopyDownload} from './experimental-copy.ts';
  import {commitWorldCheckpoint} from '../ui/local-save-session.ts';
@@ -75,7 +75,7 @@
    const cleanup=()=>{clearTimeout(timer);own.terminate();if(stockWorker===own)stockWorker=null;cancelRequests.delete(cancel);};
    const cancel=()=>{cleanup();reject(Error('stock'));};
    const timer=setTimeout(cancel,30000);cancelRequests.add(cancel);
-   own.onmessage=e=>{cleanup();try{if(e.data?.kind!=='furniture-stock')throw Error('stock');if(localScene)localPlainIds=parseLocalPlainStock(e.data.result);resolve(parseFurnitureStock(e.data.result));}catch(e){reject(e);}};
+   own.onmessage=e=>{cleanup();try{if(e.data?.kind!=='furniture-stock')throw Error('stock');if(localScene)localPlainIds=new Set([...parseLocalPlainStock(e.data.result),...parseLocalRestorableStorageStock(e.data.result)]);resolve(parseFurnitureStock(e.data.result));}catch(e){reject(e);}};
    own.onerror=cancel;own.onmessageerror=cancel;own.postMessage({command:'read-furniture-stock',file:f});
   });
  }
