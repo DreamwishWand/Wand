@@ -1,5 +1,6 @@
 import type {GroupPickupRow} from './group-pickup.ts';
-import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import type {CutClipboard} from './group-paste.ts';
+import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import type {IndoorSurface} from './indoor-room-view.ts';
 import type {IndoorRoom} from './indoor-room-view.ts';
@@ -17,6 +18,16 @@ export function supportTransferTargets(source:SupportParentWitness|null,targets:
   return ((names.get(p.itemId)??'')+' '+p.context).normalize('NFKC').toLocaleLowerCase().includes(needle);
  });
 }
+/** Only one exact ordinary room floor leaf may be pasted into a support.
+ * The clipboard is bound to the unchanged local working Save. */
+export function supportFloorCut(cut:CutClipboard|null,file:File|null){
+ const row=cut?.rows[0];
+ if(!file||!cut||cut.file!==file||cut.scope!=='indoor'||cut.rows.length!==1||!row?.roomSource||row.supportFactor!==undefined||row.storage||!isCardinal(row.expectedOrientation))return null;
+ const itemId=Number(row.itemId);
+ if(!Number.isSafeInteger(itemId)||String(itemId)!==row.itemId||Math.floor(itemId/100000)!==400)return null;
+ return {roomSource:row.roomSource,itemId,expectedX:row.expectedX,expectedY:row.expectedY,expectedOrientation:row.expectedOrientation};
+}
+export const supportFloorPasteWords={ja:'切り取った家具をここに移動',en:'Move cut furniture here',fr:'Déplacer le meuble coupé ici',it:'Sposta qui il mobile tagliato',de:'Ausgeschnittenes Möbel hierher verschieben','es-ES':'Mover aquí el mueble cortado','zh-CN':'将剪切的家具移到此处','pt-BR':'Mover móvel recortado para cá'} as const;
 export type IndoorSupportWitness=SupportParentWitness&{roomOrdinal:number;surfaceOrdinal:number;index:number};
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const integer=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min&&v<=max;

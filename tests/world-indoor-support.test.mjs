@@ -81,3 +81,12 @@ test('support transfer targets retain exact local handles across rooms and exclu
  assert.deepEqual(supportTransferTargets(a,[a,b,c],names,'house b'),[c]);
  assert.deepEqual(supportTransferTargets(null,[a,b,c],names,''),[]);
 });
+
+test('single room floor cut can be reused by support paste without stock or native IDs',async()=>{
+ const {supportFloorCut}=await import('../src/lib/world/indoor-support.ts');
+ const file=new File(['save'],'local.json'),row={roomSource:{roomOrdinal:1,index:2},itemId:'40000002',expectedX:3,expectedY:4,expectedOrientation:'GridOrientation_Down',area:'room:1'},cut={file,scope:'indoor',rows:[row]};
+ assert.deepEqual(supportFloorCut(cut,file),{roomSource:row.roomSource,itemId:40000002,expectedX:3,expectedY:4,expectedOrientation:'GridOrientation_Down'});
+ assert.equal(supportFloorCut(cut,new File(['save'],'local.json')),null);
+ for(const r of [{...row,storage:true},{...row,supportFactor:2},{...row,expectedOrientation:'GridOrientation_DownLeft'},{...row,itemId:'40100001'}])assert.equal(supportFloorCut({...cut,rows:[r]},file),null);
+ assert.equal(supportFloorCut({...cut,rows:[row,row]},file),null);
+});
