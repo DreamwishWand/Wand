@@ -6,7 +6,7 @@
   import {GpuPoseRenderer} from './gpu-renderer';
 
   type BodyOption={id:string;iconUrl:string;label:string;load:(signal:AbortSignal)=>Promise<PoseScene>};
-  type Copy={play:string;pause:string;restart:string;loop:string;speed:string;time:string;zoom:string;resetView:string;orbit:string;loading:string;unavailable:string;bodyType:string};
+  type Copy={play:string;pause:string;restart:string;loop:string;speed:string;time:string;zoom:string;resetView:string;orbit:string;pan:string;loading:string;unavailable:string;bodyType:string};
   // The caller must provide verified native body icons and approved scene sources.
   let {options,copy,preferredBody,appearanceKey}:{options:readonly BodyOption[];copy:Copy;preferredBody?:string;appearanceKey?:string}=$props();
   let mounted=$state(false);
@@ -20,10 +20,11 @@
   let actors=$state<readonly {id:string;label:string;canHide:boolean}[]>([]);
   let hidden=$state<readonly string[]>([]);
   let zoom=$state(1);
+  let viewMode=$state<'orbit'|'pan'>('orbit');
   let abort:AbortController|undefined;
   let generation=0,frame=0,last:number|undefined;
   let comparison:PoseComparison|undefined;
-  let pointer:{id:number;x:number;y:number}|undefined;
+  let pointer:{id:number;x:number;y:number;pan:boolean}|undefined;
   function refresh(){if(session){snapshot=session.state;hidden=session.hiddenActors;zoom=session.camera.zoom}}
   function release(){session?.dispose();session=undefined}
   async function choose(option:BodyOption,refreshAppearance=false){
@@ -40,10 +41,10 @@
   }
   function tick(now:number){if(session&&status==='ready'&&snapshot.playing){try{if(last!==undefined)session.clock.tick(Math.min(.1,(now-last)/1000));refresh()}catch{release();status='error'}}last=now;frame=requestAnimationFrame(tick)}
   function act(fn:(s:PoseSceneSession)=>void){if(!session)return;try{fn(session);refresh()}catch{release();status='error'}}
-  function down(e:PointerEvent){if(!session||pointer||e.button!==0)return;pointer={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId)}
-  function move(e:PointerEvent){if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;pointer.x=e.clientX;pointer.y=e.clientY;const r=canvas.getBoundingClientRect();if(r.width&&r.height)act(s=>s.move(dx,dy,r.width,r.height))}
+  function down(e:PointerEvent){if(!session||pointer||(e.button!==0&&e.button!==2&&e.button!==1))return;e.preventDefault();canvas.focus();pointer={id:e.pointerId,x:e.clientX,y:e.clientY,pan:viewMode==='pan'||e.shiftKey||e.button!==0};canvas.setPointerCapture(e.pointerId)}
+  function move(e:PointerEvent){if(!pointer||pointer.id!==e.pointerId)return;const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y;pointer.x=e.clientX;pointer.y=e.clientY;const r=canvas.getBoundingClientRect();if(r.width&&r.height){const translating=pointer.pan;act(s=>translating?s.pan(dx,dy,r.width,r.height):s.move(dx,dy,r.width,r.height))}}
   function up(e:PointerEvent){if(pointer?.id===e.pointerId)pointer=undefined}
-  function key(e:KeyboardEvent){const r=canvas.getBoundingClientRect();if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home')act(s=>s.resetView());else if(r.width&&r.height)act(s=>s.move(e.key==='ArrowLeft'?-r.width/24:e.key==='ArrowRight'?r.width/24:0,e.key==='ArrowUp'?-r.height/24:e.key==='ArrowDown'?r.height/24:0,r.width,r.height))}
+  function key(e:KeyboardEvent){const r=canvas.getBoundingClientRect();if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home'].includes(e.key))return;e.preventDefault();if(e.key==='Home')act(s=>s.resetView());else if(r.width&&r.height){const dx=e.key==='ArrowLeft'?-r.width/24:e.key==='ArrowRight'?r.width/24:0,dy=e.key==='ArrowUp'?-r.height/24:e.key==='ArrowDown'?r.height/24:0;act(s=>viewMode==='pan'||e.shiftKey?s.pan(dx,dy,r.width,r.height):s.move(dx,dy,r.width,r.height))}}
   function lost(e:Event){e.preventDefault();generation++;abort?.abort();if(session)comparison=session.comparison(comparison);release();status='error'}
   $effect(()=>{
     const key=appearanceKey,preferred=preferredBody;
@@ -59,7 +60,7 @@
 
 <section class="pose-preview" aria-label={copy.bodyType}>
   <div class="viewport">
-    <canvas bind:this={canvas} tabindex="0" aria-label={copy.orbit} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onkeydown={key}></canvas>
+    <canvas bind:this={canvas} tabindex="0" aria-label={viewMode==='pan'?copy.pan:copy.orbit} class:panning={viewMode==='pan'} oncontextmenu={e=>e.preventDefault()} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} onlostpointercapture={up} onkeydown={key}></canvas>
     <div class="body-options" aria-label={copy.bodyType}>
       {#each options as option (option.id)}
         <button type="button" title={option.label} aria-label={option.label} aria-pressed={selected===option.id} onclick={()=>void choose(option)}><img src={option.iconUrl} alt="" width="44" height="44"/></button>
@@ -78,6 +79,8 @@
     <button type="button" title={copy.loop} aria-label={copy.loop} aria-pressed={snapshot.loop} disabled={status!=='ready'} onclick={()=>act(s=>s.clock.setLoop(!s.state.loop))}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></svg></button>
   </div>
   <div class="controls">
+    <button class="camera-orbit" type="button" title={copy.orbit} aria-label={copy.orbit} aria-pressed={viewMode==='orbit'} onclick={()=>viewMode='orbit'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 8a9 9 0 1 0 0 8M20 3v5h-5"/></svg></button>
+    <button class="camera-pan" type="button" title={copy.pan} aria-label={copy.pan} aria-pressed={viewMode==='pan'} onclick={()=>viewMode='pan'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20M2 12h20M9 5l3-3 3 3M9 19l3 3 3-3M5 9l-3 3 3 3M19 9l3 3-3 3"/></svg></button>
     <input type="range" aria-label={copy.zoom} min=".5" max="4" step=".05" value={zoom} disabled={status!=='ready'} oninput={e=>act(s=>s.zoom(e.currentTarget.valueAsNumber))}/>
     <button type="button" disabled={status!=='ready'} onclick={()=>act(s=>s.resetView())}>{copy.resetView}</button>
     {#each actors as actor (actor.id)}<label><input type="checkbox" checked={!hidden.includes(actor.id)} onchange={e=>act(s=>s.clock.setActorVisible(actor.id,e.currentTarget.checked))}/>{actor.label}</label>{/each}
@@ -87,6 +90,7 @@
   .pose-preview{background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:12px;overflow:hidden}
   .viewport{position:relative;min-height:240px;aspect-ratio:4/3;background:var(--wand-bg)}
   canvas{display:block;width:100%;height:100%;position:absolute;inset:0;touch-action:none;cursor:grab}
+  canvas.panning{cursor:move}
   canvas:active{cursor:grabbing}
   .body-options{position:absolute;top:8px;right:8px;display:flex;gap:4px}
   .body-options img{display:block;object-fit:contain}

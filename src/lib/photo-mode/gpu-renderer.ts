@@ -15,7 +15,8 @@ export function cameraMatrix(scene:Pick<PoseScene,'center'|'radius'>,view:PoseVi
   const cy=Math.cos(view.yaw),sy=Math.sin(view.yaw),cp=Math.cos(view.pitch),sp=Math.sin(view.pitch);
   const x=[cy,0,-sy],y=[-sp*sy,cp,-sp*cy],z=[cp*sy,sp,cp*cy];
   const scale=view.zoom/(scene.radius*1.15),sx=scale*Math.min(1,height/width),ssy=scale*Math.min(1,width/height),sz=-1/(scene.radius*8);
-  const dot=(v:number[])=>v.reduce((s,k,i)=>s+k*scene.center[i],0);
+  const offset=view.targetOffset??[0,0,0];check(offset.length===3&&offset.every(Number.isFinite),'Invalid camera target');
+  const dot=(v:number[])=>v.reduce((s,k,i)=>s+k*(scene.center[i]+offset[i]*scene.radius*1.15),0);
   return new Float32Array([x[0]*sx,y[0]*ssy,z[0]*sz,0,x[1]*sx,y[1]*ssy,z[1]*sz,0,x[2]*sx,y[2]*ssy,z[2]*sz,0,-dot(x)*sx,-dot(y)*ssy,-dot(z)*sz,1]);
 }
 export function validatePrimitive(p:PosePrimitive,counts:readonly number[]){
