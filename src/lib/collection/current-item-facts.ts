@@ -1,4 +1,5 @@
-import type {PublicCompleteItemMaster,ItemMasterLocale} from '../items/public-item-master.ts';
+import {ITEM_MASTER_LOCALES,type PublicCompleteItemMaster,type ItemMasterLocale} from '../items/public-item-master.ts';
+import {usableItemName} from '../items/display-name.ts';
 import {readItemPriceDetails,type ItemPriceDetails} from '../items/public-item-price-details.ts';
 import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from '../items/public-item-acquisition-details.ts';
 import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from '../items/public-item-taxonomy-details.ts';
@@ -31,9 +32,11 @@ export async function readCollectionItemFacts(db:PublicCompleteItemMaster,id:num
   let nameFailed=false;
   if(related.size){
     try{
-      for(const row of await db.getItemFields([...related],['names.'+locale])){
-        const label=row?.values['names.'+locale];
-        if(row&&typeof label==='string'&&label.length)names.set(row.itemId,label);
+      const fields=[...new Set([locale,'en',...ITEM_MASTER_LOCALES])].map(l=>'names.'+l);
+      for(const row of await db.getItemFields([...related],fields)){
+        if(!row)continue;
+        const label=fields.map(field=>row.values[field]).find(usableItemName);
+        if(label)names.set(row.itemId,label);
       }
     }catch{nameFailed=true;}
   }

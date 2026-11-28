@@ -61,3 +61,44 @@ test('related links fall back to any available original localization',async()=>{
   const result=await readItemPageRelations(db,{itemId:10,sourceSetItemId:100,nativeCategory:'Furniture'},'ja');
   assert.deepEqual(result.series,[{itemId:11,name:'Chaise'}]);
 });
+
+import {readFile} from 'node:fs/promises';
+import {openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
+import {createCanonicalRecipeReader} from '../src/lib/acquisition/canonical-recipes.ts';
+import {readCollectionItemFacts} from '../src/lib/collection/current-item-facts.ts';
+import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+
+test('Item Page uses actual canonical recipe, placement, history and entity joins',async()=>{
+  const fetcher=async url=>new Response(await readFile('static'+url),{status:200});
+  const db=await openCurrentItemDatabase('',fetcher);
+  const [recipe]=await createCanonicalRecipeReader(db).getRecipes([2050300000]);
+  const material=await db.getItem(31700009);
+  assert(material);
+  const results=await readItemPageRelations(db,material,'en');
+  assert.equal(results.partial,false);
+  assert(results.recipeResults.some(row=>row.itemId===recipe.resultItemId),'published result must be reachable from a real ingredient');
+  const facts=await readCollectionItemFacts(db,recipe.resultItemId,'en');
+  assert(facts.names.has(material.itemId),'recipe ingredient must have a display label');
+  assert.equal(await readItemPlacementHint(db,40000047,'Furniture'),'both');
+  assert.equal(await readItemPlacementHint(db,40000052,'Furniture'),'indoor');
+  assert.equal(await readItemPlacementHint(db,40200001,'Furniture'),'outdoor');
+  assert.equal(await readItemPlacementHint(db,40003445,'Furniture'),null);
+  const introduction=await readItemIntroductionContext(db,40006127);
+  assert.equal(introduction.releaseKind,'expansion');
+  const bundleCatalog=await db.getPremiumBundleCatalog();
+  const sample=bundleCatalog.definitions.find(row=>row.current?.components.length);
+  assert(sample);
+  const bundleId=sample.current.components[0].itemId;
+  const context=await readItemBundleContext(db,bundleId,'en');
+  assert(context?.count>0);
+  const {index}=await loadCompleteCollection('',fetcher);
+  for(const root of ['characters','mounts']){
+    const pair=[...index.parentEntityByItem].find(([id])=>index.rootsByItem.get(id)===root);
+    assert(pair,root+' has an original parent relationship');
+    const [child,parent]=pair;
+    const childType=index.nativeSubtypeByItem.get(child),parentType=index.nativeSubtypeByItem.get(parent);
+    assert.equal((await readNativeEntityRelations(db,child,childType)).parent,parent);
+    const reverse=await readNativeEntityRelations(db,parent,parentType);
+    assert([...reverse.styles,...reverse.gear].includes(child),'reverse Item Page edge must agree with Collection ordering');
+  }
+});
