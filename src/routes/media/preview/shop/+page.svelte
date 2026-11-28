@@ -13,6 +13,7 @@
   let definitions:readonly PremiumBundleDefinition[]=[];
   let database:PublicCompleteItemMaster|null=null;
   let reader:Awaited<ReturnType<typeof loadShopSourceMedia>>|null=null;
+  let profile:'default'|'male'='default';
   let query='',selected='',source:'current'|'legacy'='current',detail=false,groupWidth=1500,groupHeight=508;
   let loading=true,error='';
   let categoryLookup:ReturnType<typeof createShopCategoryObservations>|null=null;
@@ -70,6 +71,8 @@
             <button disabled={!definition.current} aria-pressed={source==='current'} onclick={()=>source='current'}>Steam</button>
             <button disabled={!definition.legacy} aria-pressed={source==='legacy'} onclick={()=>source='legacy'}>Switch</button>
             <label><input type="checkbox" bind:checked={detail}/> Original resolution</label>
+            <button aria-pressed={profile==='default'} onclick={()=>profile='default'}>Default</button>
+            <button aria-pressed={profile==='male'} onclick={()=>profile='male'}>Male</button>
           </div>
         {/if}
         {#if inspection && revision}
@@ -91,7 +94,7 @@
               <div class="candidate one-line" style:aspect-ratio={t.artworkWidth+' / '+t.artworkHeight}>
                 <div class="slot" style:left={100*t.main.x/t.artworkWidth+'%'} style:width={100*t.main.width/t.artworkWidth+'%'} style:top={100*t.main.y/t.artworkHeight+'%'} style:height={100*t.main.height/t.artworkHeight+'%'}>
                   {#if oneLine.mainImage}<div class="image-frame"><img src={url(oneLine.mainImage,detail)} alt="CurrentImage" loading="lazy" decoding="async" style:object-fit={t.main.fill}/></div>
-                  {:else if oneLine.main.status==='unresolved'&&oneLine.main.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
+                  {:else if oneLine.main.status==='unresolved'&&oneLine.main.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail} {profile} {database} {reader} gameVersion={revision.gameVersion} consumer="Sprite"/>
                   {:else}<span>CurrentImage 未確定</span>{/if}
                 </div>
                 <div class="slot one-line-scroll" style:left={100*t.scroll.x/t.artworkWidth+'%'} style:width={100*t.scroll.width/t.artworkWidth+'%'} style:top={100*t.scroll.y/t.artworkHeight+'%'} style:height={100*t.scroll.height/t.artworkHeight+'%'}>
@@ -99,14 +102,14 @@
                     {#each oneLine.scrollItems as item,j (j)}
                       <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
                         {#if item.image}<img src={url(item.image,detail)} alt={'Items['+j+'].Icon'} loading="lazy" decoding="async" style:object-fit={t.scroll.fill}/>
-                        {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail}/>
+                        {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail} {profile} {database} {reader} gameVersion={revision.gameVersion} consumer="Sprite"/>
                         {:else}<span>画像未登録</span>{/if}
                       </div>
                     {/each}
                   {:else}
                   <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
                     {#if oneLine.firstImage}<img src={url(oneLine.firstImage,detail)} alt="Items[0].Icon" loading="lazy" decoding="async" style:object-fit={t.scroll.fill}/>
-                    {:else if oneLine.first.status==='unresolved'&&oneLine.first.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
+                    {:else if oneLine.first.status==='unresolved'&&oneLine.first.reason==='runtime_icon_address'&&revision.components[0]}<ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail} {profile} {database} {reader} gameVersion={revision.gameVersion} consumer="Sprite"/>
                     {:else}<span>Items[0].Icon 未確定</span>{/if}
                   </div>
                   {/if}
@@ -127,7 +130,7 @@
                       <img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async" style:object-fit={slot.adjustment?.fill??'contain'}/>
                     </div>
                   {:else if slot.nativeAddress?.status==='unresolved'&&slot.nativeAddress.reason==='runtime_icon_address'&&slot.itemId!==null}
-                    <ShopPrimaryIconCandidate itemId={slot.itemId} {detail}/>
+                    <ShopPrimaryIconCandidate itemId={slot.itemId} {detail} {profile} {database} {reader} gameVersion={revision.gameVersion} consumer={slot.binding.startsWith('Items[')?'Icon':'Sprite'}/>
                   {:else}<span>{slot.binding}<br/>未確定</span>{/if}
                 </div>
               {/each}
@@ -136,7 +139,7 @@
                   {#each inspection.scrollItems as item,j (j)}
                     <div class="one-line-item" style:width={100*t.scroll.itemWidth/t.artworkWidth+'cqw'}>
                       {#if item.image}<div class="image-frame" style:inset-inline={100*t.scroll.imageInset/2/t.artworkWidth+'cqw'}><img src={url(item.image,detail)} alt={'Items['+j+'].Icon'} loading="lazy" decoding="async"/></div>
-                      {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail}/>
+                      {:else if !item.address}<ShopPrimaryIconCandidate itemId={item.itemId} {detail} {profile} {database} {reader} gameVersion={revision.gameVersion}/>
                       {:else}<span>Icon型 / 画像未確定</span>{/if}
                     </div>
                   {/each}
