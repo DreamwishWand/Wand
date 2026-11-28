@@ -19,11 +19,14 @@ const key=(id:number,x:number,y:number,o:number)=>[id,x,y,o].join(':');
 export function supportAreaEligible(p:MainlandSavedObject,free=false){return !!p.object.subgrid&&!!groupPickupPlan([p],free);}
 export type SupportAreaTrees=ReadonlyMap<number,SupportScene>;
 export function biomeFurnitureSnapshot(grid:MainlandGrid,objects:readonly MainlandSavedObject[],omitted:number,island=false,supports?:SupportAreaTrees,world=false,privateContents=false,localPlain?:ReadonlySet<number>){
- if(omitted||(localPlain?!nativeUnderwaterDesignGrid(grid)||privateContents:world?!bindMainlandGrid(grid):island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
+ if(omitted||(localPlain?!nativeUnderwaterDesignGrid(grid):world?!bindMainlandGrid(grid):island?!bindFloatingIslandGrid(grid):wholeAreaKind(grid,[grid])!=='biome'))return null;
  const area=objects.filter(p=>p.area===grid.key);
  if(area.some(p=>!p.shape||p.factor!==grid.factor)||new Set(area.map(p=>p.object.localOrdinal)).size!==area.length)return null;
  const diagonal=!island&&grid.factor===1&&!!bindMainlandGrid(grid);
- const editable=area.filter(p=>localPlain?(localPlain.has(Number(p.object.itemId))&&(p.object.storage||p.object.storageKnown?storageAreaEligible(p):stockSourceEligible(p,true)&&isCardinal(p.object.orientation)&&!p.object.subgrid)||!!supports?.has(p.object.localOrdinal)&&supportAreaEligible(p,true)):areaFurnitureEligible(p,diagonal)||privateContents&&privateStoragePoseEligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
+ // A private local backup must represent every known storage root. Do not
+ // silently export contents whose placement cannot be reconstructed.
+ if(localPlain&&privateContents&&area.some(p=>(p.object.storage||p.object.storageKnown)&&(!privateStoragePoseEligible(p)||!localPlain.has(Number(p.object.itemId)))))return null;
+ const editable=area.filter(p=>localPlain?(localPlain.has(Number(p.object.itemId))&&(p.object.storage||p.object.storageKnown?storageAreaEligible(p)||privateContents&&privateStoragePoseEligible(p):stockSourceEligible(p,true)&&isCardinal(p.object.orientation)&&!p.object.subgrid)||!!supports?.has(p.object.localOrdinal)&&supportAreaEligible(p,true)):areaFurnitureEligible(p,diagonal)||privateContents&&privateStoragePoseEligible(p)||supports&&supportAreaEligible(p)&&supports.has(p.object.localOrdinal)),protectedObjects=area.filter(p=>!editable.includes(p));
  if(supports&&!localPlain&&area.some(p=>supportAreaEligible(p)&&!supports.has(p.object.localOrdinal)))return null;
  const placements=editable.map((p,i)=>({id:i+1,itemId:Number(p.object.itemId),x:p.object.x,y:p.object.y,orientation:(worldOrientationCode(p.object.orientation)??-4)/4}));
  try{const text=serializeWholeArea({snapshots:[placements],cursor:0,nextId:placements.length+1},grid,localPlain||world?'world-grid':island?'floating-island':'biome');return {editable,protectedObjects,placements,text,supports:editable.flatMap((p,i)=>{const scene=supports?.get(p.object.localOrdinal);return scene?[{placementId:placements[i].id,scene}]:[];})};}catch{return null;}
