@@ -198,3 +198,11 @@ test('free cut capture accepts fixed support parents only with resolved hierarch
  assert.equal(captureCutWitness([table]),null);const rows=captureCutWitness([table],true);assert.ok(rows);assert.equal(cutWitnessMatches(rows,[table],true),true);assert.equal(cutWitnessMatches(rows,[table],false),false);assert.ok(localSupportDuplicateSelection([table],true));assert.equal(localSupportDuplicateSelection([table]),null);
  table.object.subgrid={status:'unresolved',objectCount:null};assert.equal(captureCutWitness([table],true),null);
 });
+
+test('free room cut retains source support factor when destination has a different lattice',()=>{
+ const cut=[{roomSource:{roomOrdinal:1,index:0},area:'indoor',itemId:String(item),expectedX:2,expectedY:2,expectedOrientation:'GridOrientation_Down',supportFactor:2}];
+ const candidate={rows:[{itemId:String(item),x:4,y:5,orientation:'GridOrientation_Left',destination:{factor:1}}],ghosts:[]};
+ assert.equal(groupCutPlan(cut,candidate,false),null);
+ assert.equal(groupCutPlan(cut,candidate,true)[0].supportFactor,2);
+ assert.equal(groupCutPlan(cut,{...candidate,rows:[{...candidate.rows[0],orientation:'GridOrientation_DownLeft'}]},true),null);
+});
