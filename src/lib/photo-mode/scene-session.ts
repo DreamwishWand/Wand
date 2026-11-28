@@ -1,3 +1,4 @@
+import type {StudioAssets} from './native-studio-assets.ts';
 import type {NativeEyeMaterial,NativeTeethMaterial} from './eye-mouth-assets.ts';
 import type {NativeSkinInputs} from './native-skin-inputs.ts';
 import type {LoadedMakeupLayer} from './makeup-assets.ts';
@@ -27,6 +28,7 @@ export interface PosePrimitive {
 }
 export interface PoseScene {
   readonly duration:number;
+  readonly studioAssets?:StudioAssets;
   readonly primitives:readonly PosePrimitive[];
   readonly jointCounts:readonly number[];
   readonly actors:readonly {id:string;label:string;canHide:boolean}[];
