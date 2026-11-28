@@ -27,7 +27,7 @@ def inspect(game,literals):
         addr=rva+7+struct.unpack_from('<i',method,i+3)[0]
         require(literal_by_addr.get(addr)==expected,'literal identity')
         calls.append(dict(property=expected,field=field))
-    require(method[0x1315ed4-0x1315d90:0x1315ee8-0x1315d90]==bytes.fromhex('33c085ff0f95c0660f6ec00f5bc0f30f11442c'),'highlight alpha assignment')
+    require(method[0x1315ed4-0x1315d90:0x1315ee8-0x1315d90]==bytes.fromhex('33c085ff0f95c0660f6ec00f5bc0f30f1144242c'),'highlight alpha assignment')
     # Verify the actual IL2CPP internal call target, not a name-based guess.
     offset=0x187ebe9f0-0x187c5c000+0x7c59c00
     name=game[offset:offset+160].split(b'\0')[0]
