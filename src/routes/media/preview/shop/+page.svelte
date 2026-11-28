@@ -3,6 +3,7 @@
   import {base} from '$app/paths';
   import {openCurrentItemDatabase,type PremiumBundleDefinition} from '$lib/items/public-item-master.ts';
   import {loadShopSourceMedia} from '$lib/media/shop-source-media.ts';
+  import ShopPrimaryIconCandidate from '$lib/media/ShopPrimaryIconCandidate.svelte';
   import {inspectShopArtwork} from '$lib/media/shop-artwork-inspection.ts';
   import {bundleArtworkUrl,type BundleArtwork} from '$lib/media/bundle-artwork.ts';
   let definitions:readonly PremiumBundleDefinition[]=[];
@@ -64,6 +65,8 @@
                     <div class="image-frame" style:inset={slot.adjustment?slot.adjustment.margins.map(n=>100*n/t.artworkWidth+'cqw').join(' '):undefined}>
                       <img src={url(slot.image,detail)} alt={slot.binding} loading="lazy" decoding="async" style:object-fit={slot.adjustment?.fill??'contain'}/>
                     </div>
+                  {:else if slot.nativeAddress?.status==='unresolved'&&slot.nativeAddress.reason==='runtime_icon_address'&&revision.components[0]&&(slot.binding==='CurrentImage'||slot.binding==='MegaBundleImage1'||slot.binding==='Items[0].Icon')}
+                    <ShopPrimaryIconCandidate itemId={revision.components[0].itemId} {detail}/>
                   {:else}<span>{slot.binding}<br/>未確定</span>{/if}
                 </div>
               {/each}
