@@ -260,14 +260,14 @@ def recover_typed_shop(aa,out,projection,ledger=None,existing_root=None):
         entry=report["assets"].setdefault(g,{"uses":sorted(uses[g]),"sources":{}})
         check(entry["uses"]==sorted(uses[g]),"Checkpoint role mismatch")
         texture={"unityAssetId":row["unityAssetId"],"original":o}
-        check(entry["sources"].get("Texture2D",texture)==texture,"Texture checkpoint mismatch")
+        check(all(entry["sources"].get("Texture2D",texture).get(k)==v for k,v in texture.items()),"Texture checkpoint mismatch")
         entry["sources"]["Texture2D"]=texture
         if "Sprite" in wanted[g]:
             check(classes["Sprite"]==1,"Required Sprite not in catalog: "+g)
             equivalent=[v for v in row.get("equivalentSourceObjects",[]) if v.endswith(":Sprite")]
             if len(equivalent)==1 and g not in source["errors"]:
                 sprite={"unityAssetId":equivalent[0],"original":o}
-                check(entry["sources"].get("Sprite",sprite)==sprite,"Sprite checkpoint mismatch")
+                check(all(entry["sources"].get("Sprite",sprite).get(k)==v for k,v in sprite.items()),"Sprite checkpoint mismatch")
                 entry["sources"]["Sprite"]=sprite
             elif "Sprite" in entry["sources"]:
                 sprite=entry["sources"]["Sprite"];w=aliases.get(g,{})
@@ -322,6 +322,7 @@ def recover_typed_shop(aa,out,projection,ledger=None,existing_root=None):
         for row in e["sources"].values():
             sha=row["original"]["sha256"]
             if sha in selected:row["thumbnail"]=cache[sha]
+    for sha in selected:verify_local_or_published(out,info(cache[sha]),ledger)
     report["complete"]=True;save()
     return {"guids":len(roles),"textureOriginals":len(roles),
             "spriteSources":sum("Sprite" in e["sources"] for e in report["assets"].values()),
