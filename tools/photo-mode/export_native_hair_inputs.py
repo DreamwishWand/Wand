@@ -14,6 +14,8 @@ from resolve_animation_bundle import Reader, digest, serialized_objects, unityfs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'db-01-items'))
 from build_full_native_fields import frames, fields, require
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src-04-r2'))
+from resolve_shop_catalog import resolve
 
 SLOTS = {5: 'BodHair', 16: 'FaceHairUpper', 17: 'FaceHairLower'}
 
@@ -128,6 +130,7 @@ def main():
     p.add_argument('--clothing',type=Path,required=True)
     p.add_argument('--dump',type=Path,required=True)
     p.add_argument('--bundle',type=Path,action='append',default=[])
+    p.add_argument('--catalog',type=Path,required=True,help='Directory of original split Addressables catalog')
     p.add_argument('--out',type=Path,required=True)
     a = p.parse_args()
     out = a.out.resolve()
@@ -136,8 +139,14 @@ def main():
     verify_declarations(dump.decode('utf-8-sig'))
     colors,rows = palette(resources),clothing(items)
     guids = {r[b]['guid'] for r in rows.values() for b in ('male','female') if r[b]['guid']}
+    locations, catalog_pins = resolve(a.catalog, guids, resource_classes=('UnityEngine.GameObject',))
     hits = [h for path in a.bundle for h in prefab_hits(path,guids)]
-    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits)
+    for hit in hits:
+        candidates = locations[hit['guid']]
+        bundle_name = hit['bundle'].removesuffix('.bin')
+        require(any(bundle_name in {d.replace('\\\\','/').rsplit('/',1)[-1] for d in row['dependencies']} for row in candidates), 'Prefab bundle is not an original catalog dependency')
+    coverage = dict(itemCount=len(rows),guidCount=len(guids),uniqueCatalogLocations=sum(len(v)==1 for v in locations.values()),missingCatalogLocations=sum(not v for v in locations.values()),ambiguousCatalogLocations=sum(len(v)>1 for v in locations.values()))
+    report = dict(schema='wand.photo-mode.private-hair-inputs@1',privateOnly=True,publicationAuthorized=False,shaderParityVerified=False,sourceSha256=dict(resources=digest(resources),clothing=digest(items),dump=digest(dump)),palette=colors,items=list(rows.values()),prefabs=hits,catalogSha256=catalog_pins,locations=locations,coverage=coverage)
     out.parent.mkdir(parents=True,exist_ok=True)
     with out.open('x',encoding='utf-8') as f:
         json.dump(report,f,allow_nan=False,separators=(',',':'))
