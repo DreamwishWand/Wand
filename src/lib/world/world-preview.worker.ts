@@ -43,7 +43,7 @@ type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
-  | { command:'compare-diff';requestId:number;file:Blob;viewKey:string;gridIdNative:number }
+  | { command:'compare-diff';requestId:number;file:Blob;viewKey:string;gridIdNative:number;draftPlan?:unknown }
   | { command:'floor-items'; requestId:number; query:string }
   | { command:'floor-match';requestId:number;regionKey:string;
       viewKey:string;gridIdNative:number;itemId:number;orientationCode:number }
@@ -109,7 +109,7 @@ function parseRequest(data:unknown): Request {
   if(data.command==='compare-diff'&&data.file instanceof Blob&&data.file.size>0&&data.file.size<=32*1024*1024&&
      typeof data.viewKey==='string'&&data.viewKey.length>0&&data.viewKey.length<=2048&&
      nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff)
-    return {command:'compare-diff',requestId,file:data.file,viewKey:data.viewKey,gridIdNative:data.gridIdNative};
+    return {command:'compare-diff',requestId,file:data.file,viewKey:data.viewKey,gridIdNative:data.gridIdNative,draftPlan:data.draftPlan};
   if(data.command==='gridarea-window'&&positive(data.itemId)&&
      nonnegative(data.orientationCode)&&data.orientationCode<=15&&
      (data.callerGridFactor===1||data.callerGridFactor===2)&&
@@ -281,10 +281,11 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
           wasm=new WasmAmountPreview(format);
           for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
           wasm.finish_open();
-          result=parseEffectiveDiffGridPreview(JSON.parse(wasm.match_db04_grid_object_sources(JSON.stringify(witness))));
+          const request=message.draftPlan===undefined?witness:{contract:'wand.db05.diffgrid-draft-request@1',source:witness,plan:message.draftPlan};
+          result=parseEffectiveDiffGridPreview(JSON.parse(wasm.match_db04_grid_object_sources(JSON.stringify(request))));
         }finally{bytes?.fill(0);wasm?.close();wasm?.free();}
       }
-      if(current===loaded)worker.postMessage({kind:'effective-diff',requestId,viewKey:message.viewKey,gridIdNative:message.gridIdNative,result});
+      if(current===loaded)worker.postMessage({kind:message.draftPlan===undefined?'effective-diff':'effective-diff-draft',requestId,viewKey:message.viewKey,gridIdNative:message.gridIdNative,result});
       return;
     }
     if(message.command==='find-global-anchor'){
