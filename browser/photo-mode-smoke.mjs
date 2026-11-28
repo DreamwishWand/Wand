@@ -48,6 +48,7 @@ const mermaids=['70200021','70200023','70200024','70200025','70200026','70200027
 assert.ok(mermaids.every(id=>['male','female'].every(b=>index.items[id][b].kind==='mermaid'&&index.items[id][b].neutralMaterialProjection===true)),'all mermaid diagnostic poses');
 const mermaidTextures=new Set();for(const id of mermaids)for(const b of ['male','female']){const slots=index.items[id][b].baseMaterials;assert.equal(slots.length,4);for(const s of slots)mermaidTextures.add(s.texture.sha256)}assert.equal(mermaidTextures.size,6);
 const avatarTextures=new Set();const avatarKeys=new Set();for(const b of ['male','female']){avatarKeys.add(index.models[b].sha256);for(const row of [...Object.values(index.items),...Object.values(index.variants).flat()]){const o=row[b];if(o?.kind==='pair')avatarKeys.add(o.asset.sha256);else if(o?.kind==='mermaid')avatarKeys.add(o.model.sha256)}}assert.equal(Object.keys(index.avatarMaterials).length,avatarKeys.size);for(const key of avatarKeys){const slots=index.avatarMaterials[key];assert.ok(slots.some(s=>s.role==='face')&&slots.some(s=>s.role==='eyes')&&slots.some(s=>s.role==='body'||s.role==='mermaidBody'));for(const s of slots){assert.equal(s.uv.bytes,s.vertices*8);avatarTextures.add(s.texture.sha256)}}assert.equal(avatarTextures.size,5);
+assert.equal(Object.keys(index.avatarMakeup.items).length,69);assert.equal(Object.keys(index.avatarMakeup.textures).length,128);assert.equal(index.avatarMakeup.palette.length,75);
 assert.equal(index.skinPalette.length,30);const skinAssets=new Set();for(const [i,row] of index.skinPalette.entries())for(const b of ['male','female'])for(const role of ['face','body']){const s=row[b][role];assert.equal(s.format,i===1?'png':'webp');skinAssets.add(s.texture.sha256)}assert.equal(skinAssets.size,120);
 assert.equal(index.eyePalette.colors.length,75);assert.equal(Object.keys(index.eyePalette.items).length,12);assert.equal(index.eyePalette.shaderParityVerified,false);assert.equal(new Set(Object.values(index.eyePalette.items).map(x=>x.texture.sha256)).size,12);
 assert.deepEqual(Object.keys(index.faceMorphs).sort(),['female','male']);for(const b of ['male','female']){const f=index.faceMorphs[b];assert.ok(index.avatarMaterials[index.models[b].sha256].filter(s=>s.role==='face').every(s=>s.vertices===f.vertices));const raw=await readFile('build/photo-mode-preview/'+f.asset.sha256+'.wfm');assert.equal(raw.length,f.asset.bytes);assert.equal(raw.subarray(0,4).toString(),'WFM1')}
@@ -83,7 +84,7 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   await checkNativeFaceNormalBake(page);
   await checkNativeMakeupBake(page);
-  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));
+  const eyeRequests=new Set();page.on('request',r=>eyeRequests.add(r.url()));page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log('Preview browser:',m.text())});page.on('pageerror',e=>console.log('Preview page error:',e.message));
   for(const [i,id] of ids.entries()){
     await page.goto(base+'/collection/?item='+id);
     const detail=page.locator('details.pose-test');
@@ -95,6 +96,7 @@ try{
     await body.nth(1).waitFor({state:'visible',timeout:15000});
     assert.equal(await body.count(),2,'two original body type controls');
     for(let b=0;b<2;b++){
+      console.log('Preview scene',id,'body',b);
       await body.nth(b).click();
       await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
       assert.equal(await body.nth(b).getAttribute('aria-pressed'),'true');
@@ -111,6 +113,11 @@ try{
         const model=option.kind==='pair'?option.asset:index.models.female;const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads.female[target.index];const prefix=base+'/photo-mode-preview/';
         assert.ok(eyeRequests.has(prefix+index.expressionWeights.clips[option.sourceSha256].sha256+'.wec'),'native curve asset requested');
         for(const role of ['skull','eyelash','teeth_lower','teeth_upper']){const m=index.expressionWeights.meshes[head.parts[role].asset.sha256];assert.ok(m&&eyeRequests.has(prefix+m.asset.sha256+'.wem'),'native head expression part '+role)}
+      }
+      if(option.kind!=='mermaid'){
+        const sex=b===0?'male':'female',model=option.kind==='pair'?option.asset:index.models[sex],target=index.headGeometry.targets[model.sha256],head=index.headGeometry.heads[sex][target.index],norm=index.nativeFaceNormals,prefix=base+'/photo-mode-preview/';
+        for(const row of [norm.bodies[sex][target.index],norm.bodies[sex][0],norm.mask])assert.ok(eyeRequests.has(prefix+row.asset.sha256+'.wnt'),'source face normal requested');
+        assert.ok(eyeRequests.has(prefix+norm.geometry[head.parts.skull.asset.sha256].asset.sha256+'.wsg'),'source face tangent requested');
       }
       const hasActor=option.kind==='pair'||option.companionIncluded===true||option.accessoryIncluded===true;
       assert.equal(await toggle.count(),hasActor?1:0);
@@ -196,6 +203,7 @@ try{
   const faceSeek=linked.locator('input.seek');
   async function expectAppearance(body,skin,eye){
     const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
+    const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
     for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
     await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
     assert.equal(await controls.nth(body==='male'?0:1).getAttribute('aria-pressed'),'true');
