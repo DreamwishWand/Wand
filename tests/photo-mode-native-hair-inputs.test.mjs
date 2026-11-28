@@ -20,3 +20,5 @@ test('native GPU input accepts only bounded opaque materials and verified mip la
  assert.ok(!validNativeHairInputs({...hair,maps:{...map,mipByteLengths:[20]}},1));
  assert.ok(!validNativeHairInputs({...hair,tangent:new Float32Array([1,0,0,0])},1));
 });
+
+test('opaque accessory inputs preserve explicit material family and reject unsupported scales',()=>{const map={width:1,height:1,colorSpace:0,mipByteLengths:[4],pixels:new Uint8Array(4)};const m={shader:'PBR/PBR',dst:0,tangent:new Float32Array([1,0,0,-1]),uv:new Float32Array(2),mask:map,maps:map,normal:map,tint:[.2,.4,.6,0],metallicScale:1.5,glossScale:.7};assert.ok(validNativeHairInputs(m,1));assert.ok(!validNativeHairInputs({...m,metallicScale:5},1));assert.ok(!validNativeHairInputs({...m,shader:'PBR/PBR Clothing'},1));assert.ok(validNativeHairInputs({...m,shader:'PBR/PBR Clothing',metallicScale:1,glossScale:1},1));});

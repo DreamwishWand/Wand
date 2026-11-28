@@ -12,6 +12,7 @@ from pose_material import decode_material,externals,read_streamed_texture
 from convert_native_makeup import decode_mip,source_color_space
 from export_native_hair_inputs import palette
 from pose_curves import require
+from native_attachment_material_profile import profile
 
 SHADER=('CAB-d79bfb1b074ecaf0c1e3e4fd94de319e','7527358103810511856')
 SLOTS=(('normal','_BumpMap'),('maps','_MapsTex'),('mask','_MaskMap'))
@@ -58,17 +59,13 @@ def convert(geometry, resources, paths, out):
         if key in materials:return key
         raw=get(ref,21);m=decode_material(raw)
         shader=target(ref[0],*m['shader'])
-        require(shader==SHADER,'unsupported shader '+str(shader))
-        # Validate exact source shader object when supplied; do not accept a
-        # material with a matching display name but different shader identity.
-        require(digest(get(shader,48))=='956e8d032fa32c378ad3feedfd405ce2e73d6b31845290c55b4ba6fa2aca9ba4','shader source identity')
-        require(m['floats'].get('_dst')==0 and m['floats'].get('_src')==1,'unsupported blend')
+        state,mask_slot=profile(m,shader,get(shader,48),digest)
         refs={}
-        for role,name in SLOTS:
+        for role,name in (('normal','_BumpMap'),('maps','_MapsTex'),('mask',mask_slot)):
             t=m['textures'][name];require(t['scale']==(1.,1.) and t['offset']==(0.,0.),'unsupported UV transform')
             refs[role]=convert_map(target(ref[0],t['fileId'],t['pathId']))
         require(maps[refs['normal']]['colorSpace']==0,'normal map color space')
-        materials[key]=dict(name=m['name'],shader='PBR/PBR Hair',dst=0,**refs,rawMaterialColors={k:m['colors'][k] for k in ('_BaseColor','_ColorOne','_ColorTwo','_ColorThree')},sourceSha256=digest(raw))
+        materials[key]=dict(name=m['name'],**state,**refs,sourceSha256=digest(raw))
         return key
     with zipfile.ZipFile(geometry) as z:
         g=json.loads(z.read('index.json'))
