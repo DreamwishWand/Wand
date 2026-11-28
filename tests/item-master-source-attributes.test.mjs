@@ -521,7 +521,7 @@ test('content attribution is independent of observed source version and release 
     'history.contentReleaseKind','history.contentDlcType'];
   const rows=await db.getItemFields([40005160,2130000001],fields);
   for(const row of rows)for(const field of fields)assert.equal(row.values[field],null);
-  assert.equal((await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'dlc.the-keepsake-sea'})).length,565);
+  assert.equal((await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'dlc.the-keepsake-sea'})).length,800);
   assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'version.26'}),[]);
 });
 
@@ -570,7 +570,7 @@ test('typed historic source joins distinguish proven DLC association from indire
     [130000507,130000480,30300732,31000118,30400282,120100112,20300089,10000049],fields);
   const has=(row,kind,value)=>row.values[fields[3]]?.some(x=>x[0]===kind&&x[1]===value);
   const confirmed=await db.findItemIdsByField(fields[0],{kind:'equals',value:'dlc.the-keepsake-sea'});
-  assert.equal(confirmed.length,565);
+  assert.equal(confirmed.length,800);
   assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_condition'})).length,25);
   assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_package'})).length,4);
   assert(has(memory,'memory_expansion_gate',2130004933));
@@ -585,10 +585,15 @@ test('typed historic source joins distinguish proven DLC association from indire
   assert(has(seed,'seed_dlc_crop',30200232));
   assert(has(critter,'critter_source_area',48));
   assert(has(well,'building_scene',1540000209));
-  for(const row of [diary,meal,fish,seed,critter,well]){
+  for(const row of [diary,critter,well]){
     assert.deepEqual(row.values[fields[2]],['dlc.the-keepsake-sea']);
     assert.equal(row.values[fields[0]],null);
   }
+  for(const row of [meal,fish,seed]){
+    assert.deepEqual(row.values[fields[2]],['dlc.the-keepsake-sea']);
+    assert.equal(row.values[fields[0]],'dlc.the-keepsake-sea');
+  }
+  for(const row of [meal,seed])assert.equal(row.values[fields[1]],'verified_expansion_tag_and_gameplay_relation');
 });
 
 test('typed content origins distinguish observed versions, verified release, and unresolved candidate',async()=>{
@@ -619,7 +624,7 @@ test('typed content origins distinguish observed versions, verified release, and
   const query=(kind,releaseId)=>db.findItemIdsByContent({kind,releaseId});
   const confirmed=await query('confirmed_release','dlc.the-keepsake-sea');
   assert.equal(confirmed.status,'indexed');
-  assert.equal(confirmed.itemIds.length,565);
+  assert.equal(confirmed.itemIds.length,800);
   const unresolved=await query('unconfirmed_candidate','dlc.the-keepsake-sea');
   assert(unresolved.itemIds.includes(40006771));
   assert(!unresolved.itemIds.some(id=>confirmed.itemIds.includes(id)));
