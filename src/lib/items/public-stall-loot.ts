@@ -13,11 +13,34 @@ function check(v:unknown,why:string):asserts v{if(!v)throw TypeError('DB01_STALL
 function input(ids:readonly number[]){check(Array.isArray(ids)&&ids.length<=10000&&ids.every(id),'IDS');}
 const unique=(values:readonly number[])=>[...new Set(values)].sort((a,b)=>a-b);
 const int=(v:unknown)=>typeof v==='number'&&Number.isSafeInteger(v)?v:null;
+const obj=(v:unknown):v is Obj=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+export interface DialogueStallItemOccurrence {
+  readonly stallItemId:number;
+  readonly itemId:number;
+  readonly sourcePath:string;
+  readonly original:Obj;
+  readonly configuredGrantVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
+function dialogueItems(stallItemId:number,raw:ItemFieldValue|null):readonly Readonly<DialogueStallItemOccurrence>[]{
+  const entries=obj(raw)?raw.ItemsToGive:undefined;
+  check(entries===undefined||Array.isArray(entries),'DIALOGUE_ITEMS');
+  const result:DialogueStallItemOccurrence[]=[];
+  for(const [i,entry] of (entries??[] as readonly ItemFieldValue[]).entries()){
+    check(obj(entry),'DIALOGUE_ENTRY');
+    if(!id(entry.ItemToGive))continue;
+    result.push(Object.freeze({stallItemId,itemId:entry.ItemToGive,
+      sourcePath:'source.DialogueStall.ItemsToGive['+i+'].ItemToGive',original:entry,
+      configuredGrantVerified:false,currentAvailabilityVerified:false}));
+  }
+  return Object.freeze(result);
+}
 export interface StallSourceDefinition {
   readonly stallItemId:number;
   readonly slotLootTableIds:readonly number[];
   readonly shopDataKey:string|null;
   readonly dialogueStall:ItemFieldValue|null;
+  readonly dialogueItems:readonly Readonly<DialogueStallItemOccurrence>[];
   readonly employeeItemIds:readonly number[]|null;
   readonly unlockWithItemId:number|null;
   readonly unlockAtLevel:number|null;
@@ -45,6 +68,7 @@ export interface StallItemEvidence {
   readonly itemId:number;
   readonly status:'indexed'|'not_indexed';
   readonly sources:readonly Readonly<StallItemSourceEvidence>[];
+  readonly dialogueSources:readonly Readonly<{stall:Readonly<StallSourceDefinition>;occurrence:Readonly<DialogueStallItemOccurrence>}>[];
   readonly currentAvailabilityVerified:false;
 }
 const slotField='source.SlotLootTableItemID';
@@ -58,6 +82,7 @@ function definition(stallItemId:number,v:Obj):Readonly<StallSourceDefinition>{
   return Object.freeze({stallItemId,slotLootTableIds:Object.freeze([...slots] as number[]),
     shopDataKey:typeof v['source.ShopData']==='string'?v['source.ShopData']:null,
     dialogueStall:v['source.DialogueStall']??null,
+    dialogueItems:dialogueItems(stallItemId,v['source.DialogueStall']??null),
     employeeItemIds:employees===undefined?null:Object.freeze([...employees] as number[]),
     unlockWithItemId:int(v['building.stallUnlockWithItemId']),
     unlockAtLevel:int(v['source.UnlockAtLevel']),unlockCost:v['source.UnlockCost']??null,
@@ -104,7 +129,7 @@ export function createStallLootReader(db:PublicCompleteItemMaster){
   async function getForItems(itemIds:readonly number[]):Promise<readonly (Readonly<StallItemEvidence>|null)[]>{
     input(itemIds);const catalog=await index();
     if(!catalog)return Object.freeze((await db.getItemFields(itemIds,['itemId'])).map(r=>r?Object.freeze({
-      itemId:r.itemId,status:'not_indexed' as const,sources:Object.freeze([]),currentAvailabilityVerified:false as const}):null));
+      itemId:r.itemId,status:'not_indexed' as const,sources:Object.freeze([]),dialogueSources:Object.freeze([]),currentAvailabilityVerified:false as const}):null));
     const rows=await loot.getForItems(itemIds);
     const tableIds=unique(rows.flatMap(r=>r?.sources.map(s=>s.occurrence.tableItemId)??[]));
     const references=await db.getItemsReferences(tableIds,'incoming');
@@ -120,19 +145,30 @@ export function createStallLootReader(db:PublicCompleteItemMaster){
       }
       refs.set(tableId,slots);
     }
+    // Direct dialogue rewards are not slot loot, prices, or generic item refs.
+    const dialogueRefs=await db.getItemsReferences(itemIds,'incoming');
+    const direct=dialogueRefs.map(r=>(r??[]).filter(([,path])=>
+      /^source\.DialogueStall\.ItemsToGive\[\d+\]\.ItemToGive$/.test(path)));
+    for(const entries of direct)for(const [stallId] of entries)stallIds.push(stallId);
     const stalls=new Map<number,Readonly<StallSourceDefinition>>();
     for(const r of await readStalls(unique(stallIds),catalog)){
       check(r?.definition,'STALL_JOIN');stalls.set(r.itemId,r.definition);
     }
-    return Object.freeze(rows.map(r=>{
+    return Object.freeze(rows.map((r,i)=>{
       if(!r)return null;
       const sources=r.sources.flatMap(source=>(refs.get(source.occurrence.tableItemId)??[]).map(({stallId,slotIndex})=>{
         const stall=stalls.get(stallId);
         check(stall&&stall.slotLootTableIds[slotIndex]===source.occurrence.tableItemId,'SLOT_REFERENCE');
         return Object.freeze({stall,slotIndex,loot:source});
       }));
+      const dialogueSources=direct[i].map(([stallId,path])=>{
+        const stall=stalls.get(stallId);check(stall,'DIALOGUE_STALL_JOIN');
+        const occurrence=stall.dialogueItems.find(a=>a.sourcePath===path&&a.itemId===r.itemId);
+        check(occurrence,'DIALOGUE_ITEM_JOIN');
+        return Object.freeze({stall,occurrence});
+      });
       return Object.freeze({itemId:r.itemId,status:r.status,sources:Object.freeze(sources),
-        currentAvailabilityVerified:false as const});
+        dialogueSources:Object.freeze(dialogueSources),currentAvailabilityVerified:false as const});
     }));
   }
   return Object.freeze({release,getForStalls,getForItems});
