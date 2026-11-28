@@ -192,7 +192,9 @@ try{
   console.log('Exact native alternate pose permalink ready:',maxDog);
   // Exercise the actual shared local save reader and the built renderer, not a
   // mocked appearance store. No private game save is used.
-  const avatar=(skin,eye,nose,mouth,jaw)=>({SkinColorIndex:skin,BodyType:5,FaceType:{'0':7,'1':nose,'2':mouth,'3':jaw},Eyeball:{EyeballItemID:eye,ColorIndex1:4,ColorIndex2:42,ColorIndex3:45}});
+  const worn=Object.entries(index.avatarMakeup.items).filter(([,r])=>[1,3,7].includes(r.subtype));
+   const makeup=Object.fromEntries([1,3,7].map(t=>{const [id,r]=worn.find(([,v])=>v.subtype===t);return [String(t),{MakeupItemID:Number(id),ColorIndex1:1,ColorIndex2:2,ColorIndex3:-1,Opacity:.75,Gloss:.5}]}));
+   const avatar=(skin,eye,nose,mouth,jaw)=>({SkinColorIndex:skin,BodyType:5,FaceType:{'0':7,'1':nose,'2':mouth,'3':jaw},Eyeball:{EyeballItemID:eye,ColorIndex1:4,ColorIndex2:42,ColorIndex3:45},Makeup:makeup});
   const profile={GameInfo:{Version:643},Player:{AvatarIsMale:false,FemaleAvatar:avatar(2,70000010,2,3,7),MaleAvatar:avatar(3,70000012,1,2,4),ListInventories:{},ContainerInventories:{},CollectionSets:[]},World:{GridCollection:{Grids:{},DiffGrids:{}}}};
   const saveInput=page.locator('input[aria-hidden="true"][accept*=".profile"]');
   const asset=entry=>base+'/photo-mode-preview/'+entry.sha256;
@@ -204,6 +206,7 @@ try{
   async function expectAppearance(body,skin,eye){
     const model=alternate[body].kind==='pair'?alternate[body].asset:alternate[body].kind==='mermaid'?alternate[body].model:index.models[body];const target=index.headGeometry.targets[model.sha256];const head=index.headGeometry.heads[body][7];assert.notEqual(target.index,7);const urls=[asset(index.bodyMorphs[body].asset)+'.wbm',asset(head.morph.asset)+'.wfm',...Object.values(head.parts).map(p=>asset(p.asset)+'.whg'),asset(index.eyePalette.items[String(eye)].texture)+'.png',...['body','face'].map(role=>asset(index.skinPalette[skin][body][role].texture)+'.webp')];
     const normal=index.nativeFaceNormals,choices=body==='male'?[7,1,2,4]:[7,2,3,7];urls.push(...choices.map(i=>asset(normal.bodies[body][i].asset)+'.wnt'),asset(normal.mask.asset)+'.wnt',asset(normal.geometry[head.parts.skull.asset.sha256].asset)+'.wsg');
+    urls.push(...Object.values(makeup).map(r=>asset(index.avatarMakeup.textures[index.avatarMakeup.items[String(r.MakeupItemID)].masks[body]].asset)+'.wmp'));
     for(const url of urls)if(!requested.has(url))await page.waitForResponse(r=>r.url()===url&&r.ok(),{timeout:45000});
     await page.waitForFunction(()=>{const e=document.querySelector('.pose-preview input.seek');return e&&!e.disabled},{},{timeout:45000});
     assert.equal(await controls.nth(body==='male'?0:1).getAttribute('aria-pressed'),'true');
@@ -212,6 +215,6 @@ try{
   await controls.nth(0).click();
   await expectAppearance('male',3,70000012);
   assert.ok(Number(await faceSeek.getAttribute('max'))>0);
-  console.log('Local synthetic save: both body branches load actual native skin, eye and face assets');
+  console.log('Local synthetic save: both body branches load actual native skin, eye, face and makeup assets');
 
 }finally{await browser?.close();server.kill('SIGTERM')}
