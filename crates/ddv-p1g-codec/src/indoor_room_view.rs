@@ -78,6 +78,7 @@ pub(super) fn project(source:&[u8])->Result<String,CodecError>{
          if storage_known{pose["storageKnown"]=json!(true);}
          if !storage_known&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["plain"]=json!(true);}
          if kind=="floor"&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|n%4==0)&&storage_pose(&root,obj)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["storage"]=json!(true);if ddv_save_patch::storage_pickup_eligible(&root,obj){pose["storageEmpty"]=json!(true);if crate::storage_source::restorable_empty_storage(&root,obj,item){pose["storageRestorable"]=json!(true);}}}
+         if !storage_known&&surface==1&&factor.is_some()&&oid.is_some_and(|n|n>0)&&item/100_000==400&&orientation.is_some_and(|n|matches!(n,0|4|8|12))&&obj.get("State").is_some_and(ddv_save_patch::transferable_local_grid_state)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["localTransform"]=json!(true);}
          if !storage_known&&terrain.is_some()&&oid==Some(0)&&orientation.is_some()&&obj.get("State").is_none_or(Value::is_null)&&obj.as_object().is_some_and(|o|o.keys().all(|k|matches!(k.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"|"State"))){pose["protected"]=json!(true);}
          positions.push(pose);}else{missing+=1;}
        }
@@ -299,7 +300,7 @@ pub(super) fn resolve_room_cut_source(source:&[u8],root:&Value,row:&Value,item:u
   let sx=t.get("sizeX").and_then(Value::as_u64).ok_or(bad)?;let sy=t.get("sizeY").and_then(Value::as_u64).ok_or(bad)?;
   let (x,y)=expected;if x<0||y<0||x as u64>=sx*u64::from(f)||y as u64>=sy*u64::from(f)||!free&&t.get("values").and_then(|v|v.get((y as usize/f as usize)*sx as usize+x as usize/f as usize)).and_then(Value::as_u64).is_none_or(|n|n==0){return Err(bad);}
   crate::grid_instance_preview::subgrid_tree(collection.as_object().ok_or(bad)?,&gid,key)?;
- }else if storage{if !ddv_save_patch::storage_transform_pose(root,obj)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}}else if obj.get("State").is_some_and(|s|!s.is_null()){return Err(bad);}
+ }else if storage{if !ddv_save_patch::storage_transform_pose(root,obj)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}}else if obj.get("State").is_some_and(|s|!s.is_null()&&!(free&&!crate::storage_source::is_storage(item)&&ddv_save_patch::transferable_local_grid_state(s)&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old))){return Err(bad);}
  let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:gid,object_id:key.clone(),item_id:item};
  let refs=crate::grid_instance_preview::grid_identity_dependencies(source,&target)?;
  if refs.blocking()>0||refs.historical>0{return Err(bad);}
@@ -580,6 +581,8 @@ fn furniture_candidate_mode(source:&[u8],plan:&str,private_storage:bool)->Result
   if let Some(state)=obj.get("State").filter(|s|!s.is_null()){
    if surface==1&&!support_pickup&&(stateful_transform||p.contains_key("pickup")&&row.get("storageEmpty").and_then(Value::as_bool)==Some(true)&&ddv_save_patch::storage_pickup_eligible(&root,obj))&&storage_pose(&root,obj){
     if stateful_transform&&!ddv_save_patch::storage_transform_pose(&root,obj)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!(if free{within_room(expected)}else{on_terrain(expected)}){return Err(bad);}
+   }else if surface==1&&free&&stateful_transform&&!support_pickup&&!crate::storage_source::is_storage(item)&&ddv_save_patch::transferable_local_grid_state(state)&&ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)&&within_room(expected){
+    // Same native identity and lexical State are preserved by the mixed writer.
    }else{
     if !(stateful_transform||support_pickup)||!(if free&&!support_pickup{within_room(expected)}else{on_terrain(expected)})||state.as_object().is_none_or(|m|m.len()!=1||!m.contains_key("SubGrid"))||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old){return Err(bad);}
     let c=collection.as_object().ok_or(bad)?;
