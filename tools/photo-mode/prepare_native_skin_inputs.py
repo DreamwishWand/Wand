@@ -49,9 +49,9 @@ def apply_skin_inputs(raw,dest,palette_source,base_source):
                     require(all(len(r[c])==4 and all(type(v) in (int,float) and math.isfinite(v) and 0<=v<=1 for v in r[c]) for c in ("specularColor","ambientColor")),"skin material colors")
                     spec=maps[r["spec"]];shadow=maps[r["shadow"]]
                     require(spec["width"]==spec["height"]==2048 and (shadow["width"],shadow["height"])==(1024,8),"skin map roles")
-                    normal=m["textures"][r["normal"]];require((role=="face")==("reuse" in normal),"skin normal role")
+                    normal=m["textures"][r["normal"]];require(role=="face" or "reuse" not in normal,"body normal role")
                     pair[role]={k:r[k] for k in ("faceFlag","glossMultiplier","shadowTerminatorIntensity","specularColor","ambientColor")}|{"spec":spec,"shadow":shadow}
-                    if role=="body":pair[role]["normal"]=maps[r["normal"]]
+                    if "reuse" not in normal:pair[role]["normal"]=maps[r["normal"]]
                     else:
                         match=re.fullmatch(r"avatar_"+body+r"_head_([a-hA-H])_nm",normal["name"]);require(match is not None,"skin original face normal index")
                         pair[role]["normalIndex"]=ord(match[1].lower())-97
@@ -60,7 +60,7 @@ def apply_skin_inputs(raw,dest,palette_source,base_source):
                         require(len(base)==1 and base[0]["materialSha256"]==s["materialSha256"],"default skin material identity")
                 out[body]=pair
             rows.append(out)
-        require(len(used)==120 and Counter(r["faceFlag"] for r in m["materials"].values())=={0:76,1:44},"skin material coverage")
+        require(len(used)==120 and sum("reuse" not in m["textures"][r["normal"]] for r in m["materials"].values() if r["role"]=="face")==9 and Counter(r["faceFlag"] for r in m["materials"].values())=={0:76,1:44},"skin material coverage")
     for name,data in assets.items():
         p=dest/name
         if p.exists():require(p.read_bytes()==data,"skin input conflict")
