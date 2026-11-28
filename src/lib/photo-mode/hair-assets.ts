@@ -2,6 +2,8 @@ import {decodeAttachmentPart,type AttachmentPartEntry,type AttachmentNode,type L
 import {nativeHairPropertyColors,validNativeHairPalette,type NativeHairPalette,type NativeHairInputs,type NativeHairMap} from './native-hair-inputs.ts';
 import {decodeVerifiedSurfaceMap,type NativeSkinMap} from './native-skin-inputs.ts';
 import type {SavedAvatarAppearance} from './saved-avatar-appearance.ts';
+import {nativeLightLinear} from './native-studio-lighting.ts';
+import type {RGBA} from './face-material-bake.ts';
 import type {BlobEntry} from '../../../tools/photo-mode/split-loader.ts';
 
 type Body='male'|'female';
@@ -10,7 +12,7 @@ type MapEntry=NativeSkinMap&{colorSpace:0|1;sampler:readonly [1,1,0,0,0,0]};
 type HairMaterial={shader:'PBR/PBR Hair';dst:0;mask:string;maps:string;normal:string};
 type HairPart=AttachmentPartEntry&{material:string};
 type HairVariant={extraNodes:readonly AttachmentNode[];parts:readonly HairPart[]};
-export type HairAssetIndex={schema:'wand.photo-mode.hair-assets@1';gameVersion:'1.26.2';colorEncoding:'linear-shader-uniform';gpuColorConversionVerified:true;shaderParityVerified:false;secondaryMotionVerified:false;palette:NativeHairPalette;standard:Record<Body,HairSelection>;items:Record<string,Partial<Record<Body,HairVariant>>>;textures:Record<string,MapEntry>;materials:Record<string,HairMaterial>};
+export type HairAssetIndex={schema:'wand.photo-mode.hair-assets@1';gameVersion:'1.26.2';testOnly:true;colorEncoding:'srgb-setcolor-input';previewColorConversion:'unity-linear';gpuColorConversionVerified:false;shaderParityVerified:false;secondaryMotionVerified:false;palette:NativeHairPalette;standard:Record<Body,HairSelection>;items:Record<string,Partial<Record<Body,HairVariant>>>;textures:Record<string,MapEntry>;materials:Record<string,HairMaterial>};
 const slots=[5,16,17] as const;
 const hash=(s:unknown)=>typeof s==='string'&&/^[0-9a-f]{64}$/.test(s);
 const int=(n:number,min:number,max:number)=>Number.isSafeInteger(n)&&n>=min&&n<=max;
@@ -21,7 +23,7 @@ function validPart(p:HairPart,m:HairAssetIndex){return !!p&&asset(p.asset)&&int(
 export function validHairAssetIndex(x:unknown):x is HairAssetIndex{
  try{
   if(!x||typeof x!=='object')return false;const m=x as HairAssetIndex;
-  if(m.schema!=='wand.photo-mode.hair-assets@1'||m.gameVersion!=='1.26.2'||m.colorEncoding!=='linear-shader-uniform'||m.gpuColorConversionVerified!==true||m.shaderParityVerified!==false||m.secondaryMotionVerified!==false||!validNativeHairPalette(m.palette))return false;
+  if(m.schema!=='wand.photo-mode.hair-assets@1'||m.gameVersion!=='1.26.2'||m.testOnly!==true||m.colorEncoding!=='srgb-setcolor-input'||m.previewColorConversion!=='unity-linear'||m.gpuColorConversionVerified!==false||m.shaderParityVerified!==false||m.secondaryMotionVerified!==false||!validNativeHairPalette(m.palette))return false;
   if(!m.items||!m.materials||!m.textures||!m.standard||Object.keys(m.items).length===0||Object.keys(m.items).length>4096||Object.keys(m.materials).length>8192||Object.keys(m.textures).length>24576)return false;
   if(!Object.values(m.textures).every(validMap))return false;
   for(const v of Object.values(m.materials))if(!v||v.shader!=='PBR/PBR Hair'||v.dst!==0||![v.mask,v.maps,v.normal].every(k=>typeof k==='string'&&Object.hasOwn(m.textures,k))||m.textures[v.normal].colorSpace!==0)return false;
@@ -42,13 +44,16 @@ export function hairSelections(m:HairAssetIndex,a:SavedAvatarAppearance|undefine
  return slots.flatMap(slot=>{const itemId=saved.Clothes?.[String(slot)];return itemId!==undefined&&validSlot(itemId)&&Math.floor(itemId/100000)%100===slot&&m.items[String(itemId)]?.[body]?[{itemId,hairIndex,highlightIndex}]:[]});
 }
 export function hairSelectionKey(m:HairAssetIndex,a:SavedAvatarAppearance|undefined,body:Body,mermaid=false):string{return hairSelections(m,a,body,mermaid).map(s=>[s.itemId,s.hairIndex,s.highlightIndex].join(':')).join('|')}
+/** Unity 6 MaterialPropertyBlock.SetColor takes sRGB and converts to linear in a linear target. The preview target is linear; the game's active project setting has not been independently decoded. Alpha remains unchanged. */
+export function previewHairLinear(c:RGBA):RGBA{return [nativeLightLinear(c[0]),nativeLightLinear(c[1]),nativeLightLinear(c[2]),c[3]]}
 export async function loadHairAttachments(m:HairAssetIndex|undefined,a:SavedAvatarAppearance|undefined,body:Body,fetchAsset:(e:BlobEntry,ext:'.wha'|'.wht')=>Promise<ArrayBuffer>,signal:AbortSignal):Promise<LoadedAttachment[]>{
  if(!m)return [];
  if(!validHairAssetIndex(m))throw Error('Invalid native hair index');
  const maps=new Map<string,Promise<NativeHairMap>>();
  const getMap=(key:string)=>{const entry=m.textures[key];let pending=maps.get(key);if(!pending){pending=fetchAsset(entry.asset,'.wht').then(raw=>decodeVerifiedSurfaceMap(raw,entry,signal)).then(map=>({...map,colorSpace:entry.colorSpace}));maps.set(key,pending)}return pending};
  return Promise.all(hairSelections(m,a,body).map(async s=>{
-  const row=m.items[String(s.itemId)][body]!,colors=nativeHairPropertyColors(m.palette,s.hairIndex,s.highlightIndex)!;
+  const row=m.items[String(s.itemId)][body]!,rawColors=nativeHairPropertyColors(m.palette,s.hairIndex,s.highlightIndex)!;
+  const colors={base:previewHairLinear(rawColors.base),one:previewHairLinear(rawColors.one),two:previewHairLinear(rawColors.two),three:previewHairLinear(rawColors.three)};
   const parts=await Promise.all(row.parts.map(async p=>{
    const material=m.materials[p.material];
    const [raw,mask,maps,normal]=await Promise.all([fetchAsset(p.asset,'.wha'),getMap(material.mask),getMap(material.maps),getMap(material.normal)]);signal.throwIfAborted();
